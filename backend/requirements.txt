@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+websockets
+python-multipart
+requests
+pydantic
+qrcode
+pillow
+python-dotenv
