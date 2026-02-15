@@ -40,6 +40,12 @@ export default function OrganizerPage() {
     const [isBonus, setIsBonus] = useState(false);
     const [showBonusSplash, setShowBonusSplash] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
+    const stateRef = useRef<OrganizerState>('PROMPT');
+    const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const roomCodeRef = useRef('');
+
+    useEffect(() => { stateRef.current = state; }, [state]);
+    useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
 
     useEffect(() => {
         fetch(`${API_URL}/sd/status`)
@@ -106,6 +112,39 @@ export default function OrganizerPage() {
             setPlayerCount(msg.player_count);
             setPlayers(msg.players || []);
             setState('ROOM');
+        }
+        else if (msg.type === 'ORGANIZER_RECONNECTED') {
+            setRoomCode(msg.room_code);
+            setPlayerCount(msg.player_count);
+            setPlayers(msg.players || []);
+            setTotalQuestions(msg.total_questions);
+            setLeaderboard(msg.leaderboard || []);
+            setTeamLeaderboard(msg.team_leaderboard || []);
+            setTimeLimit(msg.time_limit);
+            if (msg.quiz) {
+                setQuiz(msg.quiz);
+                setTotalQuestions(msg.quiz.questions.length);
+            }
+            if (msg.state === 'LOBBY' || msg.state === 'INTRO') {
+                setState('ROOM');
+            } else if (msg.state === 'QUESTION') {
+                setCurrentQuestion(msg.question_number);
+                setTimeRemaining(msg.time_remaining ?? msg.time_limit);
+                setAnsweredCount(msg.answered_count ?? 0);
+                setIsBonus(msg.is_bonus || false);
+                setState('QUESTION');
+            } else if (msg.state === 'LEADERBOARD') {
+                setCurrentQuestion(msg.question_number);
+                setState('LEADERBOARD');
+            } else if (msg.state === 'PODIUM') {
+                setState('PODIUM');
+                soundManager.play('fanfare');
+            }
+        }
+        else if (msg.type === 'ERROR') {
+            console.error('Organizer error:', msg.message);
+            setRoomCode('');
+            setState('PROMPT');
         }
     }, []);
 
@@ -210,6 +249,28 @@ export default function OrganizerPage() {
         input.click();
     };
 
+    const connectWs = useCallback((code: string) => {
+        if (wsRef.current) {
+            wsRef.current.onclose = null;
+            wsRef.current.close();
+        }
+        const clientId = `organizer-${Date.now()}`;
+        const ws = new WebSocket(`${WS_URL}/ws/${code}/${clientId}?organizer=true`);
+        wsRef.current = ws;
+        ws.onmessage = handleWsMessage;
+        ws.onclose = () => {
+            wsRef.current = null;
+            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'LEADERBOARD', 'PODIUM'];
+            if (roomCodeRef.current && activeStates.includes(stateRef.current)) {
+                reconnectTimerRef.current = setTimeout(() => connectWs(roomCodeRef.current), 2000);
+            }
+        };
+    }, [handleWsMessage]);
+
+    useEffect(() => {
+        return () => { if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current); };
+    }, []);
+
     const createRoom = async () => {
         // Play Again path: reuse existing room via RESET_ROOM
         if (roomCode && wsRef.current && wsRef.current.readyState === WebSocket.OPEN && quiz) {
@@ -231,11 +292,7 @@ export default function OrganizerPage() {
         const data = await res.json();
         setRoomCode(data.room_code);
         setState('ROOM');
-
-        const clientId = `organizer-${Date.now()}`;
-        const ws = new WebSocket(`${WS_URL}/ws/${data.room_code}/${clientId}?organizer=true`);
-        wsRef.current = ws;
-        ws.onmessage = handleWsMessage;
+        connectWs(data.room_code);
     };
 
     const startGame = () => {
@@ -245,6 +302,7 @@ export default function OrganizerPage() {
     };
 
     const nextQuestion = () => wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
+    const endQuiz = () => wsRef.current?.send(JSON.stringify({ type: 'END_QUIZ' }));
 
     const playAgain = () => {
         // Go back to PROMPT but keep the WebSocket connection and room alive
@@ -326,6 +384,8 @@ export default function OrganizerPage() {
                             answeredCount={answeredCount}
                             playerCount={playerCount}
                             isBonus={isBonus}
+                            onNextQuestion={nextQuestion}
+                            onEndQuiz={endQuiz}
                         />
                     )
                 )}
@@ -336,6 +396,7 @@ export default function OrganizerPage() {
                         questionNumber={currentQuestion}
                         totalQuestions={totalQuestions}
                         onNextQuestion={nextQuestion}
+                        onEndQuiz={endQuiz}
                     />
                 )}
 

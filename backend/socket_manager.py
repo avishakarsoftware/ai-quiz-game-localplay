@@ -205,9 +205,16 @@ class SocketManager:
         room.connections[client_id] = websocket
 
         if is_organizer:
+            # Clean up stale organizer connection if a different client_id
+            if room.organizer_id and room.organizer_id != client_id:
+                room.connections.pop(room.organizer_id, None)
             room.organizer = websocket
             room.organizer_id = client_id
-            await websocket.send_json({"type": "ROOM_CREATED", "room_code": room_code})
+            # Detect reconnection: room already has players or game has progressed
+            if room.current_question_index >= 0 or len(room.players) > 0:
+                await self._send_organizer_sync(room)
+            else:
+                await websocket.send_json({"type": "ROOM_CREATED", "room_code": room_code})
         else:
             await websocket.send_json({"type": "JOINED_ROOM", "room_code": room_code})
 
@@ -230,6 +237,36 @@ class SocketManager:
         finally:
             room._remove_connection(client_id)
 
+    async def _send_organizer_sync(self, room: Room):
+        """Send full game state to a reconnecting organizer."""
+        sync = {
+            "type": "ORGANIZER_RECONNECTED",
+            "room_code": room.room_code,
+            "state": room.state,
+            "player_count": len(room.players),
+            "players": [
+                {"nickname": p["nickname"], "avatar": p.get("avatar", "")}
+                for p in room.players.values()
+            ],
+            "question_number": room.current_question_index + 1,
+            "total_questions": len(room.quiz["questions"]),
+            "leaderboard": self.get_leaderboard(room),
+            "team_leaderboard": self.get_team_leaderboard(room),
+            "time_limit": room.time_limit,
+            "quiz": room.quiz,
+        }
+
+        if room.state == "QUESTION":
+            question = room.quiz["questions"][room.current_question_index]
+            sync["question"] = question
+            sync["answered_count"] = len(room.answered_players)
+            sync["is_bonus"] = room.current_question_index in room.bonus_questions
+            elapsed = time.time() - room.question_start_time
+            sync["time_remaining"] = max(0, room.time_limit - int(elapsed))
+
+        await room.organizer.send_json(sync)
+        logger.info("Organizer reconnected to room %s (state: %s)", room.room_code, room.state)
+
     async def handle_message(self, room: Room, client_id: str, message: dict, is_organizer: bool):
         msg_type = message.get("type")
 
@@ -240,12 +277,34 @@ class SocketManager:
                 await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
-                await self.start_question(room)
+                if room.state == "QUESTION":
+                    await self.end_question(room)
+                else:
+                    await self.start_question(room)
 
             elif msg_type == "SET_TIME_LIMIT":
                 new_limit = message.get("time_limit", 15)
                 if isinstance(new_limit, int) and 5 <= new_limit <= 60:
                     room.time_limit = new_limit
+
+            elif msg_type == "END_QUIZ":
+                if room.state in ("QUESTION", "LEADERBOARD"):
+                    if room.timer_task:
+                        room.timer_task.cancel()
+                        room.timer_task = None
+                    room.state = "PODIUM"
+                    leaderboard = self.get_leaderboard(room)
+                    team_leaderboard = self.get_team_leaderboard(room)
+                    await room.broadcast({
+                        "type": "PODIUM",
+                        "leaderboard": leaderboard,
+                        "team_leaderboard": team_leaderboard,
+                    })
+                    try:
+                        from main import game_history
+                        game_history.append(self.get_game_summary(room))
+                    except Exception:
+                        logger.warning("Could not save game history for room %s", room.room_code)
 
             elif msg_type == "RESET_ROOM":
                 if room.state != "PODIUM":

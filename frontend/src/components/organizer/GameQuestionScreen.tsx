@@ -10,11 +10,13 @@ interface GameQuestionScreenProps {
     answeredCount?: number;
     playerCount?: number;
     isBonus?: boolean;
+    onNextQuestion?: () => void;
+    onEndQuiz?: () => void;
 }
 
 export default function GameQuestionScreen({
     question, questionNumber, totalQuestions, timeRemaining, timeLimit, imageUrl,
-    answeredCount, playerCount, isBonus,
+    answeredCount, playerCount, isBonus, onNextQuestion, onEndQuiz,
 }: GameQuestionScreenProps) {
     const timerPct = (timeRemaining / timeLimit) * 100;
     const timerColor = timeRemaining <= 5 ? 'var(--accent-danger)'
@@ -74,6 +76,45 @@ export default function GameQuestionScreen({
                     </div>
                 ))}
             </div>
+
+            {(onNextQuestion || onEndQuiz) && (
+                <div className="mt-auto pb-6" style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', paddingTop: 32 }}>
+                    {onNextQuestion && (
+                        <button onClick={onNextQuestion}
+                            style={{
+                                width: '100%',
+                                height: 56,
+                                borderRadius: 12,
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontSize: 18,
+                                fontWeight: 600,
+                                background: 'linear-gradient(135deg, #14532d, #166534)',
+                                color: '#d1fae5',
+                                boxShadow: '0 4px 14px rgba(20, 83, 45, 0.25)',
+                            }}>
+                            Next Question &rarr;
+                        </button>
+                    )}
+                    {onEndQuiz && (
+                        <button onClick={onEndQuiz}
+                            style={{
+                                width: '100%',
+                                height: 56,
+                                borderRadius: 12,
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontSize: 18,
+                                fontWeight: 600,
+                                background: 'linear-gradient(135deg, #7f1d1d, #991b1b)',
+                                color: '#fee2e2',
+                                boxShadow: '0 4px 14px rgba(127, 29, 29, 0.25)',
+                            }}>
+                            End Quiz
+                        </button>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

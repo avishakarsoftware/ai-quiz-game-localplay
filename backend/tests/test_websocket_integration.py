@@ -1517,3 +1517,129 @@ class TestBonusReconnectionWS:
                     p_ws2.send_json({"type": "JOIN", "nickname": "Alice"})
                     recon = recv_until(p_ws2, "RECONNECTED")
                     assert recon.get("is_bonus") is True
+
+
+# ---------------------------------------------------------------------------
+# Organizer Reconnection Tests
+# ---------------------------------------------------------------------------
+
+class TestOrganizerReconnectionWS:
+    """Test organizer disconnect and reconnection."""
+
+    def test_organizer_reconnect_during_lobby(self):
+        """Organizer reconnecting in LOBBY gets ORGANIZER_RECONNECTED with player list."""
+        quiz_id = seed_quiz(num_questions=3)
+        room_code = create_room(quiz_id)
+
+        # Player connects first (outer) so it stays open when organizer disconnects
+        with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
+            p_ws.receive_json()  # JOINED_ROOM
+
+            with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+                org_ws.receive_json()  # ROOM_CREATED
+                p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                recv_until(org_ws, "PLAYER_JOINED")
+                recv_until(p_ws, "PLAYER_JOINED")
+
+            # Organizer disconnected, player still connected
+            time.sleep(0.3)
+            room = socket_manager.rooms[room_code]
+            assert room.organizer is None
+            assert len(room.players) == 1
+
+            # Organizer reconnects with new client_id
+            with client.websocket_connect(f"/ws/{room_code}/org-2?organizer=true") as org_ws2:
+                sync = org_ws2.receive_json()
+                assert sync["type"] == "ORGANIZER_RECONNECTED"
+                assert sync["state"] == "LOBBY"
+                assert sync["player_count"] == 1
+                assert any(p["nickname"] == "Alice" for p in sync["players"])
+                assert sync["quiz"] is not None
+
+    def test_organizer_reconnect_during_question(self):
+        """Organizer reconnecting mid-question gets question data and time_remaining."""
+        quiz_id = seed_quiz(num_questions=3)
+        room_code = create_room(quiz_id, time_limit=60)
+
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+            org_ws.receive_json()  # ROOM_CREATED
+
+            with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
+                p_ws.receive_json()
+                p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                recv_until(org_ws, "PLAYER_JOINED")
+                recv_until(p_ws, "PLAYER_JOINED")
+
+                # Start game
+                org_ws.send_json({"type": "START_GAME"})
+                org_ws.send_json({"type": "NEXT_QUESTION"})
+                recv_until(org_ws, "QUESTION")
+                recv_until(p_ws, "QUESTION")
+
+        # Organizer disconnected during question
+        time.sleep(0.3)
+        room = socket_manager.rooms[room_code]
+        assert room.state == "QUESTION"
+        assert room.organizer is None
+
+        # Organizer reconnects
+        with client.websocket_connect(f"/ws/{room_code}/org-2?organizer=true") as org_ws2:
+            sync = org_ws2.receive_json()
+            assert sync["type"] == "ORGANIZER_RECONNECTED"
+            assert sync["state"] == "QUESTION"
+            assert sync["question_number"] == 1
+            assert "question" in sync
+            assert sync["question"]["text"] == "Question 1?"
+            assert "time_remaining" in sync
+            assert sync["time_remaining"] > 0
+            assert "is_bonus" in sync
+
+    def test_organizer_reconnect_can_continue_game(self):
+        """After reconnecting, organizer can advance the game with NEXT_QUESTION."""
+        quiz_id = seed_quiz(num_questions=3)
+        room_code = create_room(quiz_id, time_limit=60)
+
+        # Start a game, get to Q1
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+            org_ws.receive_json()
+
+            with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
+                p_ws.receive_json()
+                p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                recv_until(org_ws, "PLAYER_JOINED")
+                recv_until(p_ws, "PLAYER_JOINED")
+
+                org_ws.send_json({"type": "START_GAME"})
+                org_ws.send_json({"type": "NEXT_QUESTION"})
+                recv_until(org_ws, "QUESTION")
+                recv_until(p_ws, "QUESTION")
+
+                # Alice answers Q1
+                p_ws.send_json({"type": "ANSWER", "answer_index": 0})
+                recv_until(p_ws, "ANSWER_RESULT")
+                recv_until(p_ws, "QUESTION_OVER")
+
+        # Organizer disconnected after Q1 ended
+        time.sleep(0.3)
+
+        # Reconnect and advance to Q2
+        with client.websocket_connect(f"/ws/{room_code}/org-2?organizer=true") as org_ws2:
+            sync = org_ws2.receive_json()
+            assert sync["type"] == "ORGANIZER_RECONNECTED"
+
+            # Send NEXT_QUESTION to advance
+            with client.websocket_connect(f"/ws/{room_code}/p-2") as p_ws2:
+                p_ws2.receive_json()
+                p_ws2.send_json({"type": "JOIN", "nickname": "Alice"})
+                recv_until(p_ws2, "RECONNECTED")
+
+                org_ws2.send_json({"type": "NEXT_QUESTION"})
+                q2 = recv_until(p_ws2, "QUESTION")
+                assert q2["question_number"] == 2
+
+    def test_organizer_reconnect_room_not_found(self):
+        """Connecting as organizer to nonexistent room gets ERROR."""
+        with client.websocket_connect(f"/ws/BADCODE/org-1?organizer=true") as org_ws:
+            msg = org_ws.receive_json()
+            assert msg["type"] == "ERROR"
+            assert "not found" in msg["message"].lower()

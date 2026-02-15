@@ -9,9 +9,10 @@ interface LeaderboardScreenProps {
     questionNumber: number;
     totalQuestions: number;
     onNextQuestion: () => void;
+    onEndQuiz?: () => void;
 }
 
-export default function LeaderboardScreen({ leaderboard, questionNumber, totalQuestions, onNextQuestion }: LeaderboardScreenProps) {
+export default function LeaderboardScreen({ leaderboard, questionNumber, totalQuestions, onNextQuestion, onEndQuiz: _onEndQuiz }: LeaderboardScreenProps) {
     const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
     useEffect(() => {
@@ -33,6 +34,10 @@ export default function LeaderboardScreen({ leaderboard, questionNumber, totalQu
 
             <div className="flex-1 mb-6">
                 <LeaderboardBarChart leaderboard={leaderboard} size="compact" />
+            </div>
+
+            <div className="pb-4 flex justify-center">
+                <p className="text-sm text-[--text-tertiary]">Auto-advancing to next question…</p>
             </div>
         </div>
     );
