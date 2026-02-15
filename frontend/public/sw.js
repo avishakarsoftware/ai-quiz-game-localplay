@@ -1,19 +1,7 @@
-const CACHE_NAME = 'localplay-v1';
-const STATIC_ASSETS = [
-    '/',
-    '/join',
-    '/manifest.json',
-    '/icons/icon-192.png',
-    '/icons/icon-512.png'
-];
+const CACHE_NAME = 'localplay-v2';
 
-// Install event - cache static assets
-self.addEventListener('install', (event) => {
-    event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(STATIC_ASSETS);
-        })
-    );
+// Install event - skip pre-caching to avoid failures on SPA routes
+self.addEventListener('install', () => {
     self.skipWaiting();
 });
 
@@ -33,16 +21,21 @@ self.addEventListener('activate', (event) => {
 
 // Fetch event - network first, fallback to cache
 self.addEventListener('fetch', (event) => {
-    // Skip non-GET requests and API calls
-    if (event.request.method !== 'GET' || event.request.url.includes('/api/') || event.request.url.includes('ws://')) {
+    // Skip non-GET requests, API calls, and WebSocket
+    if (
+        event.request.method !== 'GET' ||
+        event.request.url.includes('/api/') ||
+        event.request.url.includes('/ws/') ||
+        event.request.url.startsWith('ws')
+    ) {
         return;
     }
 
     event.respondWith(
         fetch(event.request)
             .then((response) => {
-                // Cache successful responses
-                if (response.status === 200) {
+                // Cache successful responses for static assets
+                if (response.status === 200 && response.type === 'basic') {
                     const responseClone = response.clone();
                     caches.open(CACHE_NAME).then((cache) => {
                         cache.put(event.request, responseClone);

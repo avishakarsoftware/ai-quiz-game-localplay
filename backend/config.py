@@ -8,6 +8,13 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:14b-instruct")
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 LLM_MAX_RETRIES = 3
 
+# --- Cloud AI Providers ---
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+DEFAULT_PROVIDER = os.getenv("DEFAULT_PROVIDER", "ollama")
+
 # --- Stable Diffusion ---
 SD_API_URL = os.getenv("SD_API_URL", "http://localhost:8765")
 

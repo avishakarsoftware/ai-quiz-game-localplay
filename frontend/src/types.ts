@@ -12,9 +12,15 @@ export interface Quiz {
     questions: Question[];
 }
 
+export interface PlayerInfo {
+    nickname: string;
+    avatar: string;
+}
+
 export interface LeaderboardEntry {
     nickname: string;
     score: number;
+    avatar?: string;
     rank_change?: number;
     streak?: number;
 }
@@ -39,6 +45,13 @@ export interface PowerUps {
     double_points: boolean;
     fifty_fifty: boolean;
 }
+
+export const AVATAR_EMOJIS = [
+    '🐶', '🐱', '🐸', '🦊', '🐻', '🐼', '🐨', '🦁',
+    '🐯', '🐮', '🐷', '🐵', '🐰', '🐔', '🦋', '🐙',
+    '🍕', '🌮', '🍩', '🍦', '🎸', '🚀', '⚡', '🔥',
+    '🌈', '🎯', '💎', '🎲', '🦄', '👾', '🤖', '🎃',
+];
 
 export const ANSWER_STYLES = [
     { bg: '#FF3B30', shape: '\u25B2', className: 'answer-red' },   // Red triangle

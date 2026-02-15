@@ -66,6 +66,7 @@ class QuizRequest(BaseModel):
     prompt: str
     difficulty: str = "medium"
     num_questions: int = config.DEFAULT_NUM_QUESTIONS
+    provider: str = ""
 
     @field_validator('prompt')
     @classmethod
@@ -108,9 +109,14 @@ class ImageGenerateRequest(BaseModel):
     question_id: Optional[int] = None  # If None, generate for all questions
 
 
+@app.get("/providers")
+async def get_providers():
+    return {"providers": quiz_engine.get_available_providers()}
+
+
 @app.post("/quiz/generate")
 async def generate_quiz(request: QuizRequest):
-    quiz_data = await quiz_engine.generate_quiz(request.prompt, request.difficulty, request.num_questions)
+    quiz_data = await quiz_engine.generate_quiz(request.prompt, request.difficulty, request.num_questions, request.provider)
     if not quiz_data:
         raise HTTPException(status_code=500, detail="Failed to generate quiz")
 

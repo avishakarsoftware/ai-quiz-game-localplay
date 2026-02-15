@@ -1,8 +1,12 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { API_URL, WS_URL } from '../config';
-import { type LeaderboardEntry, type PowerUps, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type PlayerInfo, type PowerUps, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
+import AnimatedNumber from '../components/AnimatedNumber';
+import Fireworks from '../components/Fireworks';
+import LeaderboardBarChart from '../components/LeaderboardBarChart';
+import { AVATAR_COLORS } from '../components/LeaderboardBarChart.constants';
 
 type PlayerState = 'JOIN' | 'LOBBY' | 'QUESTION' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING';
 
@@ -13,12 +17,22 @@ interface PlayerQuestion {
     image_url?: string;
 }
 
+function getSavedSession() {
+    try {
+        const raw = sessionStorage.getItem('localplay_session');
+        if (raw) return JSON.parse(raw) as { roomCode: string; nickname: string; team: string; avatar: string };
+    } catch {}
+    return null;
+}
+
 export default function PlayerPage() {
     const [searchParams] = useSearchParams();
+    const saved = getSavedSession();
     const [state, setState] = useState<PlayerState>('JOIN');
-    const [roomCode, setRoomCode] = useState(searchParams.get('room') || '');
-    const [nickname, setNickname] = useState('');
-    const [team, setTeam] = useState('');
+    const [roomCode, setRoomCode] = useState(searchParams.get('room') || saved?.roomCode || '');
+    const [nickname, setNickname] = useState(saved?.nickname || '');
+    const [team, setTeam] = useState(saved?.team || '');
+    const [avatar, setAvatar] = useState(saved?.avatar || AVATAR_EMOJIS[0]);
     const [currentQuestion, setCurrentQuestion] = useState<PlayerQuestion | null>(null);
     const [questionNumber, setQuestionNumber] = useState(0);
     const [totalQuestions, setTotalQuestions] = useState(0);
@@ -33,29 +47,57 @@ export default function PlayerPage() {
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
     const [myRank, setMyRank] = useState(0);
     const [error, setError] = useState('');
-    const [lobbyPlayers, setLobbyPlayers] = useState<string[]>([]);
+    const [lobbyPlayers, setLobbyPlayers] = useState<PlayerInfo[]>([]);
     const [powerUps, setPowerUps] = useState<PowerUps>({ double_points: true, fifty_fifty: true });
     const [hiddenOptions, setHiddenOptions] = useState<number[]>([]);
     const wsRef = useRef<WebSocket | null>(null);
+    const autoJoinedRef = useRef(false);
+    const kickedRef = useRef(false);
+
+    // Auto-rejoin if we have a saved session (e.g. page refresh)
+    useEffect(() => {
+        if (saved && !autoJoinedRef.current && !wsRef.current) {
+            autoJoinedRef.current = true;
+            // Small delay to let state settle
+            const timer = setTimeout(() => joinRoom(), 100);
+            return () => clearTimeout(timer);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const joinRoom = () => {
         if (!roomCode.trim() || !nickname.trim()) return;
         setError('');
+        kickedRef.current = false;
 
-        const clientId = `player-${Date.now()}`;
+        const clientId = `player-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
         const ws = new WebSocket(`${WS_URL}/ws/${roomCode}/${clientId}`);
         wsRef.current = ws;
 
-        ws.onopen = () => ws.send(JSON.stringify({ type: 'JOIN', nickname, team: team || undefined }));
+        ws.onopen = () => ws.send(JSON.stringify({ type: 'JOIN', nickname, team: team || undefined, avatar }));
 
         ws.onmessage = (event) => {
             const msg = JSON.parse(event.data);
             if (msg.type === 'ERROR') { setError(msg.message); return; }
-            if (msg.type === 'JOINED_ROOM') setState('LOBBY');
+            if (msg.type === 'KICKED') {
+                // Another tab/device took over this nickname
+                kickedRef.current = true;
+                wsRef.current = null;
+                setState('JOIN');
+                setError('You joined from another device');
+                return;
+            }
+            if (msg.type === 'JOINED_ROOM') {
+                sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode, nickname, team, avatar }));
+                setState('LOBBY');
+            }
             if (msg.type === 'RECONNECTED') {
+                sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode, nickname, team, avatar }));
                 setQuestionNumber(msg.question_number);
                 setTotalQuestions(msg.total_questions);
-                if (msg.state === 'QUESTION' && msg.question) {
+                if (msg.state === 'LOBBY') {
+                    setState('LOBBY');
+                } else if (msg.state === 'QUESTION' && msg.question) {
                     setCurrentQuestion(msg.question);
                     setTimeLimit(msg.time_limit);
                     setTimeRemaining(msg.time_limit);
@@ -124,11 +166,30 @@ export default function PlayerPage() {
                     setState('RESULT');
                 }
             }
-            if (msg.type === 'PODIUM') { setLeaderboard(msg.leaderboard); setState('PODIUM'); soundManager.play('podium'); }
+            if (msg.type === 'PODIUM') { setLeaderboard(msg.leaderboard); setState('PODIUM'); soundManager.play('fanfare'); }
+            if (msg.type === 'ROOM_RESET') {
+                setCurrentQuestion(null);
+                setQuestionNumber(0);
+                setTotalQuestions(0);
+                setSelectedAnswer(null);
+                setIsCorrect(null);
+                setPointsEarned(0);
+                setStreak(0);
+                setMultiplier(1.0);
+                setCorrectAnswer(null);
+                setLeaderboard([]);
+                setMyRank(0);
+                setHiddenOptions([]);
+                setPowerUps({ double_points: true, fifty_fifty: true });
+                if (msg.players) setLobbyPlayers(msg.players);
+                setState('LOBBY');
+                soundManager.play('playerJoin');
+            }
         };
 
         ws.onerror = () => setError('Connection failed');
         ws.onclose = () => {
+            if (kickedRef.current) { kickedRef.current = false; return; }
             setState((current) => {
                 if (current !== 'JOIN' && current !== 'PODIUM') {
                     setTimeout(() => joinRoom(), 2000);
@@ -150,8 +211,6 @@ export default function PlayerPage() {
         wsRef.current?.send(JSON.stringify({ type: 'USE_POWER_UP', power_up: powerUp }));
     };
 
-    const timerProgress = (timeRemaining / timeLimit) * 100;
-
     return (
         <div className="app-container">
             <div className="content-wrapper">
@@ -159,48 +218,78 @@ export default function PlayerPage() {
                 {/* JOIN */}
                 {state === 'JOIN' && (
                     <div className="min-h-dvh flex flex-col items-center justify-center container-responsive safe-bottom animate-in">
-                        <h1 className="text-3xl font-bold mb-2">Join Game</h1>
-                        <p className="text-[--text-tertiary] mb-8">Enter the game PIN</p>
+                        <div className="hero-icon mb-4">🎮</div>
+                        <h1 className="hero-title mb-2">Join Game</h1>
+                        <p className="text-[--text-tertiary] mb-8">Enter the game PIN to play</p>
 
                         <div className="w-full space-y-4">
-                            <input
-                                type="text"
-                                value={roomCode}
-                                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-                                placeholder="Game PIN"
-                                className="input-field text-center text-2xl tracking-widest uppercase"
-                                maxLength={6}
-                            />
+                            <div className="stagger-in" style={{ animationDelay: '0.05s' }}>
+                                <input
+                                    type="text"
+                                    value={roomCode}
+                                    onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                                    placeholder="Game PIN"
+                                    className="input-field text-center text-2xl tracking-widest uppercase"
+                                    maxLength={6}
+                                />
+                            </div>
 
-                            <input
-                                type="text"
-                                value={nickname}
-                                onChange={(e) => setNickname(e.target.value)}
-                                placeholder="Your nickname"
-                                className="input-field text-center"
-                                maxLength={20}
-                            />
+                            <div className="stagger-in" style={{ animationDelay: '0.1s' }}>
+                                <input
+                                    type="text"
+                                    value={nickname}
+                                    onChange={(e) => setNickname(e.target.value)}
+                                    placeholder="Your nickname"
+                                    className="input-field text-center"
+                                    maxLength={20}
+                                />
+                            </div>
 
-                            <input
-                                type="text"
-                                value={team}
-                                onChange={(e) => setTeam(e.target.value)}
-                                placeholder="Team name (optional)"
-                                className="input-field text-center"
-                                maxLength={20}
-                            />
+                            <div className="stagger-in" style={{ animationDelay: '0.15s' }}>
+                                <input
+                                    type="text"
+                                    value={team}
+                                    onChange={(e) => setTeam(e.target.value)}
+                                    placeholder="Team name (optional)"
+                                    className="input-field text-center"
+                                    maxLength={20}
+                                />
+                            </div>
+
+                            <div className="stagger-in" style={{ animationDelay: '0.18s' }}>
+                                <p className="text-[--text-secondary] text-sm font-medium text-center mb-2">Choose your avatar</p>
+                                <div className="grid grid-cols-8 gap-1.5 justify-items-center">
+                                    {AVATAR_EMOJIS.map((emoji) => (
+                                        <button
+                                            key={emoji}
+                                            type="button"
+                                            onClick={() => setAvatar(emoji)}
+                                            className="w-10 h-10 rounded-xl flex items-center justify-center text-xl transition-all"
+                                            style={{
+                                                backgroundColor: avatar === emoji ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+                                                transform: avatar === emoji ? 'scale(1.15)' : 'scale(1)',
+                                                boxShadow: avatar === emoji ? '0 0 0 2px var(--accent-primary), 0 4px 12px rgba(0,0,0,0.2)' : 'none',
+                                            }}
+                                        >
+                                            {emoji}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
 
                             {error && (
-                                <div className="status-pill status-error w-full justify-center">{error}</div>
+                                <div className="status-pill status-error w-full justify-center animate-shake">{error}</div>
                             )}
 
-                            <button
-                                onClick={joinRoom}
-                                disabled={!roomCode.trim() || !nickname.trim()}
-                                className="btn btn-primary w-full"
-                            >
-                                Join
-                            </button>
+                            <div className="stagger-in" style={{ animationDelay: '0.2s' }}>
+                                <button
+                                    onClick={joinRoom}
+                                    disabled={!roomCode.trim() || !nickname.trim()}
+                                    className="btn btn-primary btn-glow w-full"
+                                >
+                                    Join
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -212,19 +301,35 @@ export default function PlayerPage() {
                         <h2 className="text-2xl font-bold mb-2">You're in!</h2>
                         <p className="text-[--text-tertiary] mb-6">Waiting for host to start</p>
 
-                        <div className="card px-8 py-4 mb-6">
-                            <p className="text-lg font-semibold">{nickname}</p>
-                            {team && <p className="text-xs text-[--text-tertiary]">Team: {team}</p>}
-                        </div>
-
-                        {lobbyPlayers.length > 0 && (
-                            <div className="w-full mb-6 max-h-32 overflow-y-auto no-scrollbar">
-                                <p className="text-[--text-tertiary] text-xs text-center mb-2">{lobbyPlayers.length} player{lobbyPlayers.length !== 1 ? 's' : ''} joined</p>
-                                <div className="flex flex-wrap gap-2 justify-center">
-                                    {lobbyPlayers.map((name) => (
-                                        <span key={name} className={`player-chip ${name === nickname ? 'player-chip-self' : ''}`}>{name}</span>
-                                    ))}
+                        {lobbyPlayers.length > 0 ? (
+                            <div className="w-full mb-6">
+                                <p className="text-center mb-3">
+                                    <span className="text-2xl font-bold">{lobbyPlayers.length}</span>{' '}
+                                    <span className="text-[--text-secondary] font-medium">player{lobbyPlayers.length !== 1 ? 's' : ''}</span>
+                                </p>
+                                <div className="flex flex-wrap justify-center gap-2">
+                                    {lobbyPlayers.map((player, i) => {
+                                        const isSelf = player.nickname === nickname;
+                                        return (
+                                            <div key={player.nickname} className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${isSelf ? 'bg-[--accent-primary]/20 ring-1 ring-[--accent-primary]' : 'bg-[--bg-secondary]'}`}>
+                                                <div
+                                                    className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+                                                    style={{ backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }}
+                                                >
+                                                    <span style={{ fontSize: '0.85rem', lineHeight: 1 }}>{player.avatar || player.nickname.slice(0, 2).toUpperCase()}</span>
+                                                </div>
+                                                <span className={`text-sm ${isSelf ? 'font-bold text-[--accent-primary]' : 'font-medium'}`}>
+                                                    {player.nickname}{isSelf ? ' \u2605' : ''}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
+                            </div>
+                        ) : (
+                            <div className="card px-8 py-4 mb-6">
+                                <p className="text-lg font-semibold">{nickname}</p>
+                                {team && <p className="text-xs text-[--text-tertiary]">Team: {team}</p>}
                             </div>
                         )}
 
@@ -239,30 +344,39 @@ export default function PlayerPage() {
 
                 {/* QUESTION */}
                 {state === 'QUESTION' && currentQuestion && (
-                    <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
-                        <div className="flex items-center justify-between py-4">
-                            <span className="text-[--text-tertiary]">Q{questionNumber}/{totalQuestions}</span>
-                            {streak >= 3 && (
-                                <span className="streak-badge">{streak} streak</span>
-                            )}
-                            <span className={`timer-display text-3xl ${timeRemaining <= 5 ? 'danger' : timeRemaining <= 10 ? 'warning' : ''}`}>
-                                {timeRemaining}
-                            </span>
+                    <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom">
+                        <div className="py-4 stagger-in" style={{ animationDelay: '0s' }}>
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-[--text-tertiary] text-sm">Q{questionNumber}/{totalQuestions}</span>
+                                <div className="flex items-center gap-2">
+                                    {streak >= 3 && (
+                                        <span className="streak-fire">{streak} streak</span>
+                                    )}
+                                    <span className={`font-bold tabular-nums ${timeRemaining <= 5 ? 'timer-number-pulse' : ''}`}
+                                        style={{ color: timeRemaining <= 5 ? 'var(--accent-danger)' : timeRemaining <= 10 ? 'var(--accent-warning)' : 'var(--accent-primary)' }}>
+                                        {timeRemaining}s
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="question-timer-bar">
+                                <div
+                                    className="question-timer-fill"
+                                    style={{
+                                        width: `${(timeRemaining / timeLimit) * 100}%`,
+                                        background: timeRemaining <= 5 ? 'var(--accent-danger)' : timeRemaining <= 10 ? 'var(--accent-warning)' : 'var(--accent-primary)',
+                                    }}
+                                />
+                            </div>
                         </div>
 
-                        <div className="progress-bar mb-4">
-                            <div className={`progress-bar-fill ${timeRemaining <= 5 ? 'danger' : timeRemaining <= 10 ? 'warning' : ''}`}
-                                style={{ width: `${timerProgress}%` }} />
-                        </div>
-
-                        <div className={`question-card mb-4 ${currentQuestion.image_url ? 'has-image' : ''}`}
+                        <div className={`question-card mb-4 question-enter ${currentQuestion.image_url ? 'has-image' : ''}`}
                             style={currentQuestion.image_url ? { backgroundImage: `url(${API_URL}${currentQuestion.image_url})` } : undefined}>
                             <p className="question-text">{currentQuestion.text}</p>
                         </div>
 
                         {/* Power-ups */}
                         {selectedAnswer === null && (powerUps.double_points || powerUps.fifty_fifty) && (
-                            <div className="flex gap-2 mb-4 justify-center">
+                            <div className="flex gap-2 mb-4 justify-center stagger-in" style={{ animationDelay: '0.2s' }}>
                                 {powerUps.double_points && (
                                     <button onClick={() => usePowerUp('double_points')} className="power-up-btn">
                                         2x Points
@@ -282,7 +396,8 @@ export default function PlayerPage() {
                                     key={i}
                                     onClick={() => submitAnswer(i)}
                                     disabled={selectedAnswer !== null || hiddenOptions.includes(i)}
-                                    className={`answer-btn ${ANSWER_STYLES[i].className} ${selectedAnswer === i ? 'selected' : ''} ${selectedAnswer !== null && selectedAnswer !== i ? 'dimmed' : ''} ${hiddenOptions.includes(i) ? 'hidden-option' : ''}`}
+                                    className={`answer-btn answer-stagger ${ANSWER_STYLES[i].className} ${selectedAnswer === i ? 'selected' : ''} ${selectedAnswer !== null && selectedAnswer !== i ? 'dimmed' : ''} ${hiddenOptions.includes(i) ? 'hidden-option' : ''}`}
+                                    style={{ animationDelay: `${0.15 + i * 0.08}s` }}
                                 >
                                     <span className="text-2xl opacity-50 mr-2">{ANSWER_STYLES[i].shape}</span>
                                     <span>{opt}</span>
@@ -296,11 +411,21 @@ export default function PlayerPage() {
                 {state === 'WAITING' && (
                     <div className="min-h-dvh flex flex-col items-center justify-center container-responsive animate-in">
                         {isCorrect ? (
-                            <>
+                            <div className="celebration-container">
+                                {/* Particle burst */}
+                                <div className="celebration-burst">
+                                    {Array.from({ length: 12 }).map((_, i) => (
+                                        <span key={i} className="burst-particle" style={{
+                                            '--angle': `${i * 30}deg`,
+                                            '--delay': `${i * 0.03}s`,
+                                            '--color': ['#34C759', '#FFD700', '#007AFF', '#FF9500'][i % 4],
+                                        } as React.CSSProperties} />
+                                    ))}
+                                </div>
                                 <div className="text-6xl mb-4 animate-score-pop">✓</div>
                                 <h2 className="text-3xl font-bold text-[--accent-success] mb-4">Correct!</h2>
                                 {pointsEarned > 0 && (
-                                    <div className="card px-8 py-4 animate-score-pop">
+                                    <div className="card px-8 py-4 points-glow animate-score-pop" style={{ animationDelay: '0.15s' }}>
                                         <span className="text-3xl font-bold text-[--accent-success]">+{pointsEarned}</span>
                                         {multiplier > 1 && (
                                             <span className="text-sm text-[--accent-warning] ml-2">x{multiplier}</span>
@@ -308,14 +433,14 @@ export default function PlayerPage() {
                                     </div>
                                 )}
                                 {streak >= 3 && (
-                                    <p className="text-[--accent-warning] mt-3 font-semibold animate-score-pop">
+                                    <p className="streak-fire mt-3 animate-score-pop" style={{ animationDelay: '0.3s' }}>
                                         {streak} in a row!
                                     </p>
                                 )}
-                            </>
+                            </div>
                         ) : (
                             <>
-                                <div className="text-6xl mb-4 animate-score-pop">✗</div>
+                                <div className="text-6xl mb-4 wrong-shake">✗</div>
                                 <h2 className="text-3xl font-bold text-[--accent-danger] mb-4">Wrong</h2>
                             </>
                         )}
@@ -359,62 +484,81 @@ export default function PlayerPage() {
                             </div>
                         )}
 
-                        <div className="flex-1 space-y-2">
-                            {leaderboard.slice(0, 5).map((player, i) => (
-                                <div key={player.nickname}
-                                    className={`leaderboard-item ${player.nickname === nickname ? 'highlighted' : ''}`}>
-                                    <div className="flex items-center gap-3">
-                                        <span className={`rank-badge ${i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-default'}`}>
-                                            {i + 1}
-                                        </span>
-                                        <span className="font-medium">{player.nickname}</span>
-                                    </div>
-                                    <span className="font-bold">{player.score}</span>
-                                </div>
-                            ))}
+                        <div className="flex-1">
+                            <LeaderboardBarChart
+                                leaderboard={leaderboard}
+                                maxEntries={5}
+                                size="compact"
+                                highlightNickname={nickname}
+                            />
                         </div>
                     </div>
                 )}
 
                 {/* PODIUM */}
                 {state === 'PODIUM' && (
-                    <div className="min-h-dvh flex flex-col items-center justify-center container-responsive safe-bottom animate-in">
-                        <h2 className="text-2xl font-bold mb-2">Final Results</h2>
+                    <div className="min-h-dvh flex flex-col items-center justify-center container-responsive safe-bottom animate-in"
+                         style={{ position: 'relative', overflow: 'hidden' }}>
+                        <Fireworks duration={10000} maxRockets={2} />
 
-                        <div className="podium-container">
+                        <h2 className="text-2xl font-bold mb-2" style={{ position: 'relative', zIndex: 11 }}>Final Results</h2>
+
+                        {leaderboard[0] && (
+                            <div className="champion-label" style={{ position: 'relative', zIndex: 11 }}>
+                                <span className="crown-bounce text-xl">&#x1F451;</span>
+                                <span className="gold-shimmer text-lg">{leaderboard[0].nickname} wins!</span>
+                            </div>
+                        )}
+
+                        <div className="podium-container" style={{ position: 'relative', zIndex: 11 }}>
                             {leaderboard[1] && (
                                 <div className="podium-place podium-2">
+                                    <div className="w-10 h-10 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: '#C0C0C0' }}>
+                                        <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>{leaderboard[1].avatar || leaderboard[1].nickname.slice(0, 2).toUpperCase()}</span>
+                                    </div>
                                     <p className="podium-name">{leaderboard[1].nickname}</p>
                                     <div className="podium-bar">2</div>
-                                    <p className="podium-score">{leaderboard[1].score}</p>
+                                    <p className="podium-score"><AnimatedNumber value={leaderboard[1].score} /></p>
                                 </div>
                             )}
                             {leaderboard[0] && (
-                                <div className="podium-place podium-1">
-                                    <p className="text-3xl mb-2">🏆</p>
+                                <div className="podium-place podium-1 victory-glow">
+                                    <span className="crown-bounce text-2xl" style={{ marginBottom: 4 }}>&#x1F451;</span>
+                                    <div className="w-12 h-12 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: '#FFD700' }}>
+                                        <span style={{ fontSize: '1.5rem', lineHeight: 1 }}>{leaderboard[0].avatar || leaderboard[0].nickname.slice(0, 2).toUpperCase()}</span>
+                                    </div>
                                     <p className="podium-name">{leaderboard[0].nickname}</p>
                                     <div className="podium-bar">1</div>
-                                    <p className="podium-score">{leaderboard[0].score}</p>
+                                    <p className="podium-score"><AnimatedNumber value={leaderboard[0].score} /></p>
                                 </div>
                             )}
                             {leaderboard[2] && (
                                 <div className="podium-place podium-3">
+                                    <div className="w-10 h-10 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: '#CD7F32' }}>
+                                        <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>{leaderboard[2].avatar || leaderboard[2].nickname.slice(0, 2).toUpperCase()}</span>
+                                    </div>
                                     <p className="podium-name">{leaderboard[2].nickname}</p>
                                     <div className="podium-bar">3</div>
-                                    <p className="podium-score">{leaderboard[2].score}</p>
+                                    <p className="podium-score"><AnimatedNumber value={leaderboard[2].score} /></p>
                                 </div>
                             )}
                         </div>
 
                         {leaderboard.findIndex(p => p.nickname === nickname) >= 3 && (
-                            <p className="text-[--text-tertiary] mt-4">
+                            <p className="text-[--text-tertiary] mt-4" style={{ position: 'relative', zIndex: 11 }}>
                                 You finished #{leaderboard.findIndex(p => p.nickname === nickname) + 1}
                             </p>
                         )}
 
-                        <button onClick={() => window.location.reload()} className="btn btn-primary w-full mt-8">
-                            Play Again
-                        </button>
+                        <p className="text-[--text-tertiary] mt-8 text-center" style={{ position: 'relative', zIndex: 11 }}>
+                            Waiting for host to start a new game...
+                        </p>
+                        <div className="flex gap-1.5 mt-4" style={{ position: 'relative', zIndex: 11 }}>
+                            {[0, 1, 2].map((i) => (
+                                <div key={i} className="w-2 h-2 bg-[--accent-primary] rounded-full animate-bounce"
+                                    style={{ animationDelay: `${i * 0.15}s` }} />
+                            ))}
+                        </div>
                     </div>
                 )}
 

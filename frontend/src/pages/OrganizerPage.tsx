@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type LeaderboardEntry, type TeamLeaderboardEntry } from '../types';
+import { type Quiz, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry } from '../types';
 import { soundManager } from '../utils/sound';
-import PromptScreen from '../components/organizer/PromptScreen';
+import PromptScreen, { type AIProvider } from '../components/organizer/PromptScreen';
 import LoadingScreen from '../components/organizer/LoadingScreen';
 import ReviewScreen from '../components/organizer/ReviewScreen';
 import ImageGenerationScreen from '../components/organizer/ImageGenerationScreen';
@@ -32,7 +32,10 @@ export default function OrganizerPage() {
     const [imageProgress, setImageProgress] = useState(0);
     const [questionImages, setQuestionImages] = useState<Record<number, string>>({});
     const [networkIp, setNetworkIp] = useState(window.location.hostname);
-    const [players, setPlayers] = useState<string[]>([]);
+    const [players, setPlayers] = useState<PlayerInfo[]>([]);
+    const [answeredCount, setAnsweredCount] = useState(0);
+    const [provider, setProvider] = useState('ollama');
+    const [providers, setProviders] = useState<AIProvider[]>([]);
     const wsRef = useRef<WebSocket | null>(null);
 
     useEffect(() => {
@@ -40,6 +43,15 @@ export default function OrganizerPage() {
             .then(res => res.json())
             .then(data => setSdAvailable(data.available))
             .catch(() => setSdAvailable(false));
+
+        fetch(`${API_URL}/providers`)
+            .then(res => res.json())
+            .then(data => {
+                setProviders(data.providers || []);
+                const defaultProvider = data.providers?.find((p: AIProvider) => p.available);
+                if (defaultProvider) setProvider(defaultProvider.id);
+            })
+            .catch(() => {});
     }, []);
 
     useEffect(() => {
@@ -53,13 +65,88 @@ export default function OrganizerPage() {
             .catch(err => console.error("Failed to fetch system IP", err));
     }, []);
 
+    const handleWsMessage = useCallback((event: MessageEvent) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'PLAYER_JOINED') {
+            console.log('PLAYER_JOINED', msg);
+            setPlayerCount(msg.player_count);
+            setPlayers(msg.players || []);
+            soundManager.play('playerJoin');
+        }
+        else if (msg.type === 'QUESTION') {
+            setCurrentQuestion(msg.question_number);
+            setTotalQuestions(msg.total_questions);
+            setTimeRemaining(msg.time_limit);
+            setAnsweredCount(0);
+            setState('QUESTION');
+        }
+        else if (msg.type === 'TIMER') setTimeRemaining(msg.remaining);
+        else if (msg.type === 'ANSWER_COUNT') setAnsweredCount(msg.answered);
+        else if (msg.type === 'QUESTION_OVER') {
+            setLeaderboard(msg.leaderboard);
+            if (msg.is_final) {
+                // Skip leaderboard on final question — go straight to podium
+                wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
+            } else {
+                setState('LEADERBOARD');
+            }
+        }
+        else if (msg.type === 'PODIUM') {
+            setLeaderboard(msg.leaderboard);
+            setTeamLeaderboard(msg.team_leaderboard || []);
+            setState('PODIUM');
+            soundManager.play('fanfare');
+        }
+        else if (msg.type === 'ROOM_RESET') {
+            setPlayerCount(msg.player_count);
+            setPlayers(msg.players || []);
+            setState('ROOM');
+        }
+    }, []);
+
+    // DEBUG MODE: skip Ollama, import hardcoded questions, jump to REVIEW
+    const enterDebugMode = async () => {
+        const debugQuiz = {
+            quiz_title: 'Debug Quiz',
+            questions: [
+                { id: 1, text: 'What planet is closest to the Sun?', options: ['Venus', 'Mercury', 'Mars', 'Earth'], answer_index: 1, image_prompt: '' },
+                { id: 2, text: 'What is the largest ocean on Earth?', options: ['Atlantic', 'Indian', 'Pacific', 'Arctic'], answer_index: 2, image_prompt: '' },
+                { id: 3, text: 'How many continents are there?', options: ['5', '6', '7', '8'], answer_index: 2, image_prompt: '' },
+                { id: 4, text: 'Which gas do plants absorb?', options: ['Oxygen', 'Nitrogen', 'Carbon Dioxide', 'Helium'], answer_index: 2, image_prompt: '' },
+                { id: 5, text: 'What is the hardest natural substance?', options: ['Gold', 'Iron', 'Diamond', 'Quartz'], answer_index: 2, image_prompt: '' },
+                { id: 6, text: 'Which country has the most people?', options: ['USA', 'India', 'China', 'Russia'], answer_index: 1, image_prompt: '' },
+                { id: 7, text: 'What is the speed of light (approx)?', options: ['300k km/s', '150k km/s', '1M km/s', '30k km/s'], answer_index: 0, image_prompt: '' },
+                { id: 8, text: 'Who painted the Mona Lisa?', options: ['Picasso', 'Da Vinci', 'Van Gogh', 'Monet'], answer_index: 1, image_prompt: '' },
+                { id: 9, text: 'What is H2O commonly known as?', options: ['Salt', 'Water', 'Acid', 'Sugar'], answer_index: 1, image_prompt: '' },
+                { id: 10, text: 'How many legs does a spider have?', options: ['6', '8', '10', '12'], answer_index: 1, image_prompt: '' },
+            ],
+        };
+        try {
+            const res = await fetch(`${API_URL}/quiz/import`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quiz: debugQuiz }),
+            });
+            const data = await res.json();
+            if (data.quiz) {
+                setQuiz(data.quiz);
+                setQuizId(data.quiz_id);
+                setTotalQuestions(data.quiz.questions.length);
+                setNumQuestions(data.quiz.questions.length);
+                setState('REVIEW');
+            }
+        } catch {
+            alert('Debug mode failed — is the backend running?');
+        }
+    };
+
     const generateQuiz = async () => {
         setState('LOADING');
         try {
             const res = await fetch(`${API_URL}/quiz/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, difficulty, num_questions: numQuestions }),
+                body: JSON.stringify({ prompt, difficulty, num_questions: numQuestions, provider }),
             });
             const data = await res.json();
             if (data.quiz) {
@@ -155,6 +242,18 @@ export default function OrganizerPage() {
     };
 
     const createRoom = async () => {
+        // Play Again path: reuse existing room via RESET_ROOM
+        if (roomCode && wsRef.current && wsRef.current.readyState === WebSocket.OPEN && quiz) {
+            wsRef.current.send(JSON.stringify({
+                type: 'RESET_ROOM',
+                quiz_data: quiz,
+                time_limit: timeLimit,
+            }));
+            // State will transition to ROOM when ROOM_RESET message comes back
+            return;
+        }
+
+        // First-time room creation
         const res = await fetch(`${API_URL}/room/create`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -167,29 +266,7 @@ export default function OrganizerPage() {
         const clientId = `organizer-${Date.now()}`;
         const ws = new WebSocket(`${WS_URL}/ws/${data.room_code}/${clientId}?organizer=true`);
         wsRef.current = ws;
-
-        ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'PLAYER_JOINED') {
-                setPlayerCount(msg.player_count);
-                setPlayers(msg.players || []);
-                soundManager.play('playerJoin');
-            }
-            else if (msg.type === 'QUESTION') {
-                setCurrentQuestion(msg.question_number);
-                setTotalQuestions(msg.total_questions);
-                setTimeRemaining(msg.time_limit);
-                setState('QUESTION');
-            }
-            else if (msg.type === 'TIMER') setTimeRemaining(msg.remaining);
-            else if (msg.type === 'QUESTION_OVER') { setLeaderboard(msg.leaderboard); setState('LEADERBOARD'); }
-            else if (msg.type === 'PODIUM') {
-                setLeaderboard(msg.leaderboard);
-                setTeamLeaderboard(msg.team_leaderboard || []);
-                setState('PODIUM');
-                soundManager.play('podium');
-            }
-        };
+        ws.onmessage = handleWsMessage;
     };
 
     const startGame = () => {
@@ -199,6 +276,18 @@ export default function OrganizerPage() {
     };
 
     const nextQuestion = () => wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
+
+    const playAgain = () => {
+        // Go back to PROMPT but keep the WebSocket connection and room alive
+        setCurrentQuestion(0);
+        setLeaderboard([]);
+        setTeamLeaderboard([]);
+        setTimeRemaining(timeLimit);
+        setQuestionImages({});
+        setAnsweredCount(0);
+        setPrompt('');
+        setState('PROMPT');
+    };
 
     const joinUrl = `http://${networkIp}:5173/join?room=${roomCode}`;
     const currentQ = quiz?.questions[currentQuestion - 1];
@@ -215,8 +304,12 @@ export default function OrganizerPage() {
                         setDifficulty={setDifficulty}
                         numQuestions={numQuestions}
                         setNumQuestions={setNumQuestions}
+                        provider={provider}
+                        setProvider={setProvider}
+                        providers={providers}
                         onGenerate={generateQuiz}
                         sdAvailable={sdAvailable}
+                        onDebugMode={enterDebugMode}
                     />
                 )}
 
@@ -232,8 +325,6 @@ export default function OrganizerPage() {
                         onGenerateImages={generateImages}
                         onCreateRoom={createRoom}
                         onUpdateQuiz={updateQuiz}
-                        onExport={exportQuiz}
-                        onImport={importQuiz}
                         onBack={() => setState('PROMPT')}
                     />
                 )}
@@ -261,6 +352,8 @@ export default function OrganizerPage() {
                         timeRemaining={timeRemaining}
                         timeLimit={timeLimit}
                         imageUrl={currentImageUrl}
+                        answeredCount={answeredCount}
+                        playerCount={playerCount}
                     />
                 )}
 
@@ -277,6 +370,7 @@ export default function OrganizerPage() {
                     <PodiumScreen
                         leaderboard={leaderboard}
                         teamLeaderboard={teamLeaderboard}
+                        onPlayAgain={playAgain}
                     />
                 )}
             </div>

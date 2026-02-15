@@ -4,28 +4,39 @@
     "description": "AI-powered quiz game for parties and events",
     "start_url": "/",
     "display": "standalone",
-    "background_color": "#050510",
-    "theme_color": "#7000ff",
+    "background_color": "#46178F",
+    "theme_color": "#46178F",
     "orientation": "portrait-primary",
     "icons": [
         {
             "src": "/icons/icon-192.png",
             "sizes": "192x192",
             "type": "image/png",
-            "purpose": "any maskable"
+            "purpose": "any"
         },
         {
             "src": "/icons/icon-512.png",
             "sizes": "512x512",
             "type": "image/png",
-            "purpose": "any maskable"
+            "purpose": "any"
+        },
+        {
+            "src": "/icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "/icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
         }
     ],
     "categories": [
         "games",
         "entertainment"
     ],
-    "screenshots": [],
     "shortcuts": [
         {
             "name": "Join Game",

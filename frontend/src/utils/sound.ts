@@ -1,4 +1,4 @@
-type SoundName = 'playerJoin' | 'correct' | 'wrong' | 'timerTick' | 'gameStart' | 'podium' | 'lobbyAmbient' | 'streakBonus';
+type SoundName = 'playerJoin' | 'correct' | 'wrong' | 'timerTick' | 'gameStart' | 'podium' | 'lobbyAmbient' | 'streakBonus' | 'fanfare' | 'fireworkPop';
 
 const MUTE_KEY = 'localplay_muted';
 
@@ -76,6 +76,30 @@ class SoundManager {
                     this.tone(988, 0.08, 'sine', 0.15, 0.06);
                     this.tone(1175, 0.12, 'sine', 0.12, 0.12);
                     break;
+                case 'fanfare': {
+                    // Triumphant ascending brass-like fanfare
+                    this.tone(523, 0.3, 'square', 0.12);
+                    this.tone(659, 0.3, 'square', 0.12, 0.25);
+                    this.tone(784, 0.3, 'square', 0.12, 0.5);
+                    this.tone(1047, 0.6, 'square', 0.15, 0.75);
+                    // Harmony layer
+                    this.tone(440, 0.25, 'sine', 0.08);
+                    this.tone(523, 0.25, 'sine', 0.08, 0.25);
+                    this.tone(659, 0.25, 'sine', 0.08, 0.5);
+                    this.tone(880, 0.5, 'sine', 0.1, 0.75);
+                    // Final triumphant chord
+                    this.tone(1047, 0.8, 'sine', 0.08, 1.2);
+                    this.tone(1319, 0.8, 'sine', 0.06, 1.2);
+                    this.tone(1568, 0.8, 'sine', 0.05, 1.2);
+                    break;
+                }
+                case 'fireworkPop': {
+                    // Percussive burst with sparkle tail
+                    this.tone(200, 0.05, 'sawtooth', 0.15);
+                    this.tone(800 + Math.random() * 400, 0.08, 'sine', 0.1, 0.03);
+                    this.tone(2000 + Math.random() * 1000, 0.12, 'sine', 0.06, 0.05);
+                    break;
+                }
                 case 'lobbyAmbient':
                     this.startAmbient();
                     break;

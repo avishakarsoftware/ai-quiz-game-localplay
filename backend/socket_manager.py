@@ -36,6 +36,34 @@ class Room:
         # Power-ups
         self.power_ups: Dict[str, dict] = {}  # nickname -> {double_points: bool, fifty_fifty: bool}
 
+    def reset_for_new_game(self, new_quiz_data: dict, new_time_limit: int):
+        """Reset room for a new game round, keeping players connected."""
+        self.quiz = new_quiz_data
+        self.time_limit = new_time_limit
+
+        self.state = "LOBBY"
+        self.current_question_index = -1
+        self.question_start_time = 0
+        self.answered_players = set()
+        self.previous_leaderboard = []
+        self.answer_log = []
+
+        if self.timer_task:
+            self.timer_task.cancel()
+            self.timer_task = None
+
+        for client_id in self.players:
+            self.players[client_id]["score"] = 0
+            self.players[client_id]["prev_rank"] = 0
+            self.players[client_id]["streak"] = 0
+
+        self.disconnected_players.clear()
+
+        for nickname in self.power_ups:
+            self.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
+
+        self.touch()
+
     def touch(self):
         """Update last activity timestamp."""
         self.last_activity = time.time()
@@ -59,6 +87,7 @@ class Room:
                     "score": self.players[client_id]["score"],
                     "prev_rank": self.players[client_id]["prev_rank"],
                     "streak": self.players[client_id].get("streak", 0),
+                    "avatar": self.players[client_id].get("avatar", ""),
                 }
                 del self.players[client_id]
                 logger.info("Player '%s' disconnected from room %s (data preserved)", nickname, self.room_code)
@@ -156,7 +185,7 @@ class SocketManager:
                 "room_code": room_code,
                 "state": room.state,
                 "player_count": len(room.players),
-                "players": [p["nickname"] for p in room.players.values()],
+                "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
                 "question_number": room.current_question_index + 1,
                 "total_questions": len(room.quiz["questions"]),
                 "leaderboard": self.get_leaderboard(room),
@@ -214,6 +243,22 @@ class SocketManager:
                 if isinstance(new_limit, int) and 5 <= new_limit <= 60:
                     room.time_limit = new_limit
 
+            elif msg_type == "RESET_ROOM":
+                if room.state != "PODIUM":
+                    return
+                new_quiz_data = message.get("quiz_data")
+                new_time_limit = message.get("time_limit", room.time_limit)
+                if not new_quiz_data:
+                    return
+                room.reset_for_new_game(new_quiz_data, new_time_limit)
+                logger.info("Room %s reset for new game", room.room_code)
+                await room.broadcast({
+                    "type": "ROOM_RESET",
+                    "room_code": room.room_code,
+                    "player_count": len(room.players),
+                    "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
+                })
+
         else:
             if msg_type == "JOIN":
                 nickname = message.get("nickname", "").strip()
@@ -229,7 +274,9 @@ class SocketManager:
                         })
                     return
 
-                # Check for reconnection
+                avatar = message.get("avatar", "")
+
+                # Check for reconnection (disconnected mid-game)
                 if nickname in room.disconnected_players:
                     saved = room.disconnected_players.pop(nickname)
                     room.players[client_id] = {
@@ -237,6 +284,7 @@ class SocketManager:
                         "score": saved["score"],
                         "prev_rank": saved["prev_rank"],
                         "streak": saved.get("streak", 0),
+                        "avatar": saved.get("avatar", avatar),
                     }
                     logger.info("Player '%s' reconnected to room %s with score %d", nickname, room.room_code, saved["score"])
                     ws = room.connections.get(client_id)
@@ -247,6 +295,7 @@ class SocketManager:
                             "state": room.state,
                             "question_number": room.current_question_index + 1,
                             "total_questions": len(room.quiz["questions"]),
+                            "avatar": saved.get("avatar", avatar),
                         }
                         if room.state == "QUESTION":
                             question = room.quiz["questions"][room.current_question_index]
@@ -256,7 +305,46 @@ class SocketManager:
                         await ws.send_json(state_info)
                     return
 
-                room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0}
+                # Check for duplicate nickname among active players
+                existing_id = None
+                for pid, pdata in room.players.items():
+                    if pdata["nickname"] == nickname:
+                        existing_id = pid
+                        break
+
+                if existing_id:
+                    # Kick the old connection and let the new one take over
+                    old_ws = room.connections.pop(existing_id, None)
+                    if old_ws:
+                        try:
+                            await old_ws.send_json({"type": "KICKED", "message": "You joined from another device"})
+                            await old_ws.close()
+                        except Exception:
+                            pass
+                    # Transfer player data to new client_id
+                    player_data = room.players.pop(existing_id)
+                    room.players[client_id] = player_data
+                    logger.info("Player '%s' rejoined room %s (replaced old connection)", nickname, room.room_code)
+
+                    ws = room.connections.get(client_id)
+                    if ws:
+                        state_info = {
+                            "type": "RECONNECTED",
+                            "score": player_data["score"],
+                            "state": room.state,
+                            "question_number": room.current_question_index + 1,
+                            "total_questions": len(room.quiz["questions"]),
+                            "avatar": player_data.get("avatar", ""),
+                        }
+                        if room.state == "QUESTION":
+                            question = room.quiz["questions"][room.current_question_index]
+                            player_question = {k: v for k, v in question.items() if k != "answer_index"}
+                            state_info["question"] = player_question
+                            state_info["time_limit"] = room.time_limit
+                        await ws.send_json(state_info)
+                    return
+
+                room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
                 # Assign team if provided
                 if team:
                     room.teams[nickname] = team
@@ -266,7 +354,7 @@ class SocketManager:
                     "type": "PLAYER_JOINED",
                     "nickname": nickname,
                     "player_count": len(room.players),
-                    "players": [p["nickname"] for p in room.players.values()]
+                    "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()]
                 })
 
             elif msg_type == "ANSWER":
@@ -281,6 +369,14 @@ class SocketManager:
                         return
                     room.answered_players.add(client_id)
                     all_answered = len(room.answered_players) >= len(room.players)
+
+                # Notify organizer about answer progress
+                await room.send_to_organizer({
+                    "type": "ANSWER_COUNT",
+                    "answered": len(room.answered_players),
+                    "total": len(room.players),
+                })
+
                 ws = room.connections.get(client_id)
                 if not ws:
                     return
@@ -480,7 +576,7 @@ class SocketManager:
             key=lambda x: x["score"],
             reverse=True
         )
-        return [{"nickname": p["nickname"], "score": p["score"]} for p in sorted_players]
+        return [{"nickname": p["nickname"], "score": p["score"], "avatar": p.get("avatar", "")} for p in sorted_players]
 
     def get_leaderboard_with_changes(self, room: Room) -> List[dict]:
         prev_rankings = {p["nickname"]: i for i, p in enumerate(room.previous_leaderboard)}
@@ -497,6 +593,7 @@ class SocketManager:
             result.append({
                 "nickname": player["nickname"],
                 "score": player["score"],
+                "avatar": player.get("avatar", ""),
                 "prev_rank": prev_rank,
                 "rank_change": prev_rank - i  # positive = moved up
             })
