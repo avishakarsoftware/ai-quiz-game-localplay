@@ -22,22 +22,27 @@ export default function LobbyScreen({ roomCode, joinUrl, networkIp, playerCount,
     }, [playerCount]);
 
     return (
-        <div className="min-h-dvh flex flex-col items-center container-responsive safe-top safe-bottom animate-in">
-            <p className="text-[--text-tertiary] mb-1">Join at</p>
-            <p className="font-medium mb-6">{networkIp}:5173/join</p>
-
-            <div className="qr-container mb-6">
-                <QRCodeSVG value={joinUrl} size={180} bgColor="white" fgColor="#000000" level="H" />
+        <div className="min-h-dvh flex flex-col items-center justify-center container-responsive safe-top safe-bottom animate-in">
+            <div className="screen-hero">
+                <h1 className="hero-title">Game Lobby</h1>
+                <p className="hero-subtitle">Share the code below to invite players</p>
             </div>
 
-            <div className="room-code mb-6">{roomCode}</div>
+            <div className="text-center mb-4">
+                <div className="qr-container">
+                    <QRCodeSVG value={joinUrl} size={180} bgColor="white" fgColor="#000000" level="H" />
+                </div>
+            </div>
+
+            <div className="room-code mb-2 text-center">{roomCode}</div>
+            <p className="text-[--text-tertiary] text-sm mb-6 text-center">{networkIp}:5173/join</p>
 
             {/* Players section */}
-            <div className="w-full flex-1 flex flex-col mb-4">
+            <div className="w-full mb-3">
                 {playerCount === 0 ? (
-                    <div className="flex-1 flex flex-col items-center justify-center">
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '8px 0' }}>
                         <p className="text-[--text-secondary] font-medium mb-3 animate-pulse">Waiting for players...</p>
-                        <div className="flex gap-1.5">
+                        <div style={{ display: 'flex', gap: 6 }}>
                             {[0, 1, 2].map((i) => (
                                 <div key={i} className="w-2 h-2 bg-[--text-tertiary] rounded-full animate-bounce"
                                     style={{ animationDelay: `${i * 0.15}s` }} />

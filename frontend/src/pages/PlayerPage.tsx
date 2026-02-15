@@ -33,7 +33,7 @@ export default function PlayerPage() {
     const [roomCode, setRoomCode] = useState(searchParams.get('room') || saved?.roomCode || '');
     const [nickname, setNickname] = useState(saved?.nickname || '');
     const [team, setTeam] = useState(saved?.team || '');
-    const [avatar, setAvatar] = useState(saved?.avatar || AVATAR_EMOJIS[0]);
+    const [avatar, setAvatar] = useState(() => saved?.avatar || AVATAR_EMOJIS[Math.floor(Math.random() * AVATAR_EMOJIS.length)]);
     const [currentQuestion, setCurrentQuestion] = useState<PlayerQuestion | null>(null);
     const [questionNumber, setQuestionNumber] = useState(0);
     const [totalQuestions, setTotalQuestions] = useState(0);
@@ -227,7 +227,7 @@ export default function PlayerPage() {
 
                 {/* JOIN */}
                 {state === 'JOIN' && (
-                    <div className="min-h-dvh flex flex-col items-center justify-center container-responsive safe-bottom animate-in">
+                    <div className="container-responsive safe-bottom animate-in" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                         <div className="hero-icon mb-4">🎮</div>
                         <h1 className="hero-title mb-2">Join Game</h1>
                         <p className="text-[--text-tertiary] mb-8">Enter the game PIN to play</p>
@@ -268,14 +268,38 @@ export default function PlayerPage() {
 
                             <div className="stagger-in" style={{ animationDelay: '0.18s' }}>
                                 <p className="text-[--text-secondary] text-sm font-medium text-center mb-2">Choose your avatar</p>
-                                <div className="grid grid-cols-8 gap-1.5 justify-items-center">
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        gap: 8,
+                                        overflowX: 'auto',
+                                        padding: '8px 4px',
+                                        scrollSnapType: 'x mandatory',
+                                        WebkitOverflowScrolling: 'touch',
+                                        scrollbarWidth: 'none',
+                                        msOverflowStyle: 'none',
+                                    }}
+                                    className="no-scrollbar"
+                                >
                                     {AVATAR_EMOJIS.map((emoji) => (
                                         <button
                                             key={emoji}
                                             type="button"
                                             onClick={() => setAvatar(emoji)}
-                                            className="w-10 h-10 rounded-xl flex items-center justify-center text-xl transition-all"
                                             style={{
+                                                flex: '0 0 auto',
+                                                width: 48,
+                                                height: 48,
+                                                padding: 0,
+                                                borderRadius: 12,
+                                                border: 'none',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: '2rem',
+                                                scrollSnapAlign: 'start',
+                                                transition: 'transform 0.15s, box-shadow 0.15s',
                                                 backgroundColor: avatar === emoji ? 'var(--accent-primary)' : 'var(--bg-secondary)',
                                                 transform: avatar === emoji ? 'scale(1.15)' : 'scale(1)',
                                                 boxShadow: avatar === emoji ? '0 0 0 2px var(--accent-primary), 0 4px 12px rgba(0,0,0,0.2)' : 'none',
@@ -306,10 +330,12 @@ export default function PlayerPage() {
 
                 {/* LOBBY */}
                 {state === 'LOBBY' && (
-                    <div className="min-h-dvh flex flex-col items-center justify-center container-responsive animate-in">
-                        <div className="text-5xl mb-4">👋</div>
-                        <h2 className="text-2xl font-bold mb-2">You're in!</h2>
-                        <p className="text-[--text-tertiary] mb-6">Waiting for host to start</p>
+                    <div className="container-responsive animate-in" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <div className="screen-hero">
+                            <div className="hero-icon mb-4">👋</div>
+                            <h1 className="hero-title">You're in!</h1>
+                            <p className="hero-subtitle">Waiting for host to start</p>
+                        </div>
 
                         {lobbyPlayers.length > 0 ? (
                             <div className="w-full mb-6">
@@ -414,7 +440,7 @@ export default function PlayerPage() {
                                     className={`answer-btn answer-stagger ${ANSWER_STYLES[i].className} ${selectedAnswer === i ? 'selected' : ''} ${selectedAnswer !== null && selectedAnswer !== i ? 'dimmed' : ''} ${hiddenOptions.includes(i) ? 'hidden-option' : ''}`}
                                     style={{ animationDelay: `${0.15 + i * 0.08}s` }}
                                 >
-                                    <span className="text-2xl opacity-50 mr-2">{ANSWER_STYLES[i].shape}</span>
+                                    <span className="text-4xl opacity-50 mr-3">{ANSWER_STYLES[i].shape}</span>
                                     <span>{opt}</span>
                                 </button>
                             ))}
@@ -438,8 +464,8 @@ export default function PlayerPage() {
                                         } as React.CSSProperties} />
                                     ))}
                                 </div>
-                                <div className="text-6xl mb-4 animate-score-pop">✓</div>
-                                <h2 className="text-3xl font-bold text-[--accent-success] mb-4">Correct!</h2>
+                                <div className="result-icon result-icon-correct animate-score-pop">✓</div>
+                                <h2 className="hero-title text-[--accent-success] mb-4" style={{ WebkitTextFillColor: 'var(--accent-success)' }}>Correct!</h2>
                                 {pointsEarned > 0 && (
                                     <div className="card px-8 py-4 points-glow animate-score-pop" style={{ animationDelay: '0.15s' }}>
                                         <span className="text-3xl font-bold text-[--accent-success]">+{pointsEarned}</span>
@@ -456,19 +482,25 @@ export default function PlayerPage() {
                             </div>
                         ) : (
                             <>
-                                <div className="text-6xl mb-4 wrong-shake">✗</div>
-                                <h2 className="text-3xl font-bold text-[--accent-danger] mb-4">Wrong</h2>
+                                <div className="result-icon result-icon-wrong wrong-shake">✗</div>
+                                <h2 className="hero-title text-[--accent-danger] mb-4" style={{ WebkitTextFillColor: 'var(--accent-danger)' }}>Wrong</h2>
                             </>
                         )}
                         <p className="text-[--text-tertiary] mt-6">Waiting for others...</p>
+                        <div className="flex gap-1.5 mt-4">
+                            {[0, 1, 2].map((i) => (
+                                <div key={i} className="w-2 h-2 bg-[--accent-primary] rounded-full animate-bounce"
+                                    style={{ animationDelay: `${i * 0.15}s` }} />
+                            ))}
+                        </div>
                     </div>
                 )}
 
                 {/* RECONNECTING */}
                 {state === 'RECONNECTING' && (
                     <div className="min-h-dvh flex flex-col items-center justify-center container-responsive animate-in">
-                        <div className="text-5xl mb-4 animate-pulse">↻</div>
-                        <h2 className="text-2xl font-bold mb-2">Reconnecting...</h2>
+                        <div className="status-screen-icon animate-pulse">↻</div>
+                        <h2 className="text-2xl font-extrabold mb-2">Reconnecting...</h2>
                         <p className="text-[--text-tertiary]">Don't worry, your score is saved</p>
                         <div className="flex gap-1.5 mt-6">
                             {[0, 1, 2].map((i) => (
@@ -481,26 +513,29 @@ export default function PlayerPage() {
 
                 {/* RESULT */}
                 {state === 'RESULT' && (
-                    <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
+                    <div className="min-h-dvh flex flex-col items-center container-responsive safe-top safe-bottom animate-in">
                         <div className="text-center py-6">
                             {isCorrect ? (
-                                <h2 className="text-2xl font-bold text-[--accent-success]">✓ Correct!</h2>
+                                <div className="result-icon result-icon-correct mb-2" style={{ width: 56, height: 56, fontSize: 28 }}>✓</div>
                             ) : (
-                                <h2 className="text-2xl font-bold text-[--accent-danger]">✗ Wrong</h2>
+                                <div className="result-icon result-icon-wrong mb-2" style={{ width: 56, height: 56, fontSize: 28 }}>✗</div>
                             )}
+                            <h2 className="text-2xl font-extrabold" style={{ color: isCorrect ? 'var(--accent-success)' : 'var(--accent-danger)' }}>
+                                {isCorrect ? 'Correct!' : 'Wrong'}
+                            </h2>
                             {pointsEarned > 0 && (
                                 <p className="text-xl font-bold text-[--accent-success] mt-2">+{pointsEarned}</p>
                             )}
                         </div>
 
                         {myRank > 0 && (
-                            <div className="card text-center py-6 mb-4">
+                            <div className="card text-center py-6 mb-4 w-full">
                                 <p className="text-[--text-tertiary] text-sm mb-1">Your position</p>
                                 <p className="text-4xl font-bold">#{myRank}</p>
                             </div>
                         )}
 
-                        <div className="flex-1">
+                        <div className="flex-1 w-full">
                             <LeaderboardBarChart
                                 leaderboard={leaderboard}
                                 maxEntries={5}
@@ -517,7 +552,7 @@ export default function PlayerPage() {
                          style={{ position: 'relative', overflow: 'hidden' }}>
                         <Fireworks duration={10000} maxRockets={2} />
 
-                        <h2 className="text-3xl font-extrabold text-center tracking-tight mb-4" style={{ position: 'relative', zIndex: 11 }}>Final Results</h2>
+                        <h1 className="hero-title text-center mb-4" style={{ position: 'relative', zIndex: 11 }}>Final Results</h1>
 
                         {leaderboard[0] && (
                             <div className="champion-label" style={{ position: 'relative', zIndex: 11 }}>

@@ -1,24 +1,34 @@
 type SoundName = 'playerJoin' | 'correct' | 'wrong' | 'timerTick' | 'gameStart' | 'podium' | 'lobbyAmbient' | 'streakBonus' | 'fanfare' | 'fireworkPop' | 'bonusRound';
 
 const MUTE_KEY = 'localplay_muted';
+const VIBRATE_KEY = 'localplay_vibration';
 
 class SoundManager {
     private ctx: AudioContext | null = null;
     private _muted: boolean;
+    private _vibrationEnabled: boolean;
     private ambientOsc: OscillatorNode | null = null;
     private ambientGain: GainNode | null = null;
 
     constructor() {
         this._muted = localStorage.getItem(MUTE_KEY) === 'true';
+        this._vibrationEnabled = localStorage.getItem(VIBRATE_KEY) !== 'false'; // on by default
     }
 
     get muted() { return this._muted; }
+    get vibrationEnabled() { return this._vibrationEnabled; }
 
     toggleMute(): boolean {
         this._muted = !this._muted;
         localStorage.setItem(MUTE_KEY, String(this._muted));
         if (this._muted) this.stopAmbient();
         return this._muted;
+    }
+
+    toggleVibration(): boolean {
+        this._vibrationEnabled = !this._vibrationEnabled;
+        localStorage.setItem(VIBRATE_KEY, String(this._vibrationEnabled));
+        return this._vibrationEnabled;
     }
 
     private getCtx(): AudioContext {
@@ -148,7 +158,7 @@ class SoundManager {
     }
 
     vibrate(pattern: number | number[]) {
-        if (this._muted) return;
+        if (!this._vibrationEnabled) return;
         navigator.vibrate?.(pattern);
     }
 }

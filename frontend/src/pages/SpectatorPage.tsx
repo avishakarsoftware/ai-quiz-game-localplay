@@ -97,6 +97,12 @@ export default function SpectatorPage() {
         return () => ws.close();
     }, [roomCode]);
 
+    // Auto-fullscreen for spectator/TV view
+    useEffect(() => {
+        if (document.fullscreenElement) return;
+        document.documentElement.requestFullscreen?.().catch(() => {});
+    }, []);
+
     // Staggered podium reveal
     useEffect(() => {
         if (gameState !== 'PODIUM') return;
@@ -128,20 +134,31 @@ export default function SpectatorPage() {
     return (
         <div className="app-container">
             <div className="content-wrapper">
-                <div className="min-h-dvh flex flex-col" style={{ maxWidth: '100%', padding: '24px 40px' }}>
+                <div className="min-h-dvh flex flex-col justify-center" style={{ maxWidth: '100%', padding: '40px 60px' }}>
 
                     {(gameState === 'CONNECTING' || gameState === 'ERROR' || gameState === 'DISCONNECTED') && (
                         <div className="flex-1 flex flex-col items-center justify-center animate-in">
-                            <p className="text-2xl font-bold mb-2">
+                            <div className="status-screen-icon mb-4" style={{ width: 80, height: 80, fontSize: 36 }}>
+                                {gameState === 'CONNECTING' ? '📡' : gameState === 'ERROR' ? '⚠️' : '🔌'}
+                            </div>
+                            <h1 className="hero-title mb-2">
                                 {gameState === 'CONNECTING' ? 'Connecting...' : gameState === 'ERROR' ? 'Connection Error' : 'Disconnected'}
-                            </p>
-                            <p className="text-[--text-tertiary]">Room: {roomCode}</p>
+                            </h1>
+                            <p className="text-[--text-tertiary] text-lg">Room: {roomCode}</p>
+                            {gameState === 'CONNECTING' && (
+                                <div className="flex gap-1.5 mt-6">
+                                    {[0, 1, 2].map((i) => (
+                                        <div key={i} className="w-2.5 h-2.5 bg-[--accent-primary] rounded-full animate-bounce"
+                                            style={{ animationDelay: `${i * 0.15}s` }} />
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
 
                     {gameState === 'LOBBY' && (
                         <div className="flex-1 flex flex-col items-center justify-center animate-in">
-                            <h1 className="text-4xl font-bold mb-8">Join the Quiz!</h1>
+                            <h1 className="hero-title mb-8" style={{ fontSize: '3.5rem' }}>Join the Quiz!</h1>
 
                             <div className="flex items-center justify-center gap-12 mb-8">
                                 <div className="flex flex-col items-center">
@@ -183,14 +200,14 @@ export default function SpectatorPage() {
                         showBonusSplash ? (
                             <BonusSplash onComplete={() => setShowBonusSplash(false)} />
                         ) : (
-                            <>
+                            <div className="flex-1 flex flex-col justify-center">
                             <div className="py-4">
                                 <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xl text-[--text-tertiary]">Q{questionNumber}/{totalQuestions}</span>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-2xl font-bold text-[--text-tertiary]">Q{questionNumber}/{totalQuestions}</span>
                                         {isBonus && <span className="bonus-badge" style={{ fontSize: 16 }}>2X BONUS</span>}
                                     </div>
-                                    <span className={`font-bold tabular-nums text-2xl ${timeRemaining <= 5 ? 'timer-number-pulse' : ''}`}
+                                    <span className={`font-extrabold tabular-nums text-3xl ${timeRemaining <= 5 ? 'timer-number-pulse' : ''}`}
                                         style={{ color: timeRemaining <= 5 ? 'var(--accent-danger)' : timeRemaining <= 10 ? 'var(--accent-warning)' : 'var(--accent-primary)' }}>
                                         {timeRemaining}s
                                     </span>
@@ -205,28 +222,28 @@ export default function SpectatorPage() {
                                     />
                                 </div>
                             </div>
-                            <div className="question-card mb-8" style={{ padding: '40px', fontSize: '24px' }}>
-                                <p className="question-text" style={{ fontSize: '28px' }}>{question.text}</p>
+                            <div className="question-card mb-8" style={{ padding: '48px', fontSize: '24px' }}>
+                                <p className="question-text" style={{ fontSize: '32px', fontWeight: 700 }}>{question.text}</p>
                             </div>
                             <div className={question.options.length === 2 ? 'answer-grid-tf' : 'answer-grid'} style={{ gap: '16px' }}>
                                 {question.options.map((opt, i) => (
                                     <div key={i} className={`answer-btn ${ANSWER_STYLES[i].className}`} style={{ height: 100, fontSize: 20 }}>
-                                        <span className="text-3xl opacity-50 mr-3">{ANSWER_STYLES[i].shape}</span>
+                                        <span className="text-5xl opacity-50 mr-4">{ANSWER_STYLES[i].shape}</span>
                                         <span>{opt}</span>
                                     </div>
                                 ))}
                             </div>
-                            </>
+                            </div>
                         )
                     )}
 
                     {gameState === 'LEADERBOARD' && (
-                        <div className="flex-1 flex flex-col animate-in">
-                            <div className="text-center py-6">
-                                <h2 className="text-3xl font-bold mb-1">Leaderboard</h2>
-                                <p className="text-[--text-tertiary] text-lg">After question {questionNumber} of {totalQuestions}</p>
+                        <div className="flex-1 flex flex-col justify-center animate-in">
+                            <div className="text-center py-8">
+                                <h1 className="hero-title mb-2" style={{ fontSize: '2.5rem' }}>Leaderboard</h1>
+                                <p className="text-[--text-tertiary] text-xl">After question {questionNumber} of {totalQuestions}</p>
                             </div>
-                            <div className="flex-1 w-full max-w-3xl mx-auto">
+                            <div className="w-full max-w-3xl mx-auto">
                                 <LeaderboardBarChart leaderboard={leaderboard} maxEntries={10} size="large" />
                             </div>
                         </div>
@@ -237,7 +254,7 @@ export default function SpectatorPage() {
                              style={{ position: 'relative', overflow: 'hidden' }}>
                             <Fireworks duration={15000} maxRockets={4} />
 
-                            <h2 className="text-5xl font-extrabold text-center tracking-tight mb-6" style={{ position: 'relative', zIndex: 11 }}>Final Results</h2>
+                            <h1 className="hero-title text-center mb-6" style={{ position: 'relative', zIndex: 11, fontSize: '3rem' }}>Final Results</h1>
 
                             {podiumReveal >= 4 && leaderboard[0] && (
                                 <div className="champion-label" style={{ position: 'relative', zIndex: 11, fontSize: 28 }}>
@@ -282,7 +299,7 @@ export default function SpectatorPage() {
 
                             {podiumReveal >= 4 && teamLeaderboard.length > 1 && (
                                 <div className="w-full mt-8" style={{ position: 'relative', zIndex: 11, maxWidth: 600 }}>
-                                    <h3 className="text-2xl font-semibold text-center mb-4">Team Standings</h3>
+                                    <h3 className="text-3xl font-extrabold text-center mb-4">Team Standings</h3>
                                     <div className="podium-container" style={{ gap: 16 }}>
                                         {teamLeaderboard[1] && (
                                             <div className="podium-place podium-2">

@@ -28,8 +28,8 @@ export default function LeaderboardScreen({ leaderboard, questionNumber, totalQu
             </div>
 
             <div className="text-center py-6">
-                <h2 className="text-xl font-bold">Leaderboard</h2>
-                <p className="text-[--text-tertiary] text-sm">After question {questionNumber} of {totalQuestions}</p>
+                <h1 className="hero-title mb-2">Leaderboard</h1>
+                <p className="text-[--text-tertiary] text-base">After question {questionNumber} of {totalQuestions}</p>
             </div>
 
             <div className="flex-1 mb-6">

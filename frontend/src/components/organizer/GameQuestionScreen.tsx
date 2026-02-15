@@ -24,15 +24,15 @@ export default function GameQuestionScreen({
         : 'var(--accent-primary)';
 
     return (
-        <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom">
+        <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
             {/* Timer bar + question counter */}
             <div className="py-4 stagger-in" style={{ animationDelay: '0s' }}>
                 <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                        <span className="text-[--text-tertiary] text-sm">Q{questionNumber}/{totalQuestions}</span>
+                        <span className="text-[--text-tertiary] text-lg font-bold">Q{questionNumber}/{totalQuestions}</span>
                         {isBonus && <span className="bonus-badge">2X BONUS</span>}
                     </div>
-                    <span className={`font-bold tabular-nums text-lg ${timeRemaining <= 5 ? 'text-[--accent-danger] timer-number-pulse' : ''}`}
+                    <span className={`font-extrabold tabular-nums text-2xl ${timeRemaining <= 5 ? 'timer-number-pulse' : ''}`}
                         style={{ color: timerColor }}>
                         {timeRemaining}s
                     </span>
@@ -71,45 +71,21 @@ export default function GameQuestionScreen({
                 {question.options.map((opt, i) => (
                     <div key={i} className={`answer-btn answer-stagger ${ANSWER_STYLES[i].className}`}
                         style={{ animationDelay: `${0.2 + i * 0.08}s` }}>
-                        <span className="text-2xl opacity-50 mr-2">{ANSWER_STYLES[i].shape}</span>
+                        <span className="text-4xl opacity-50 mr-3">{ANSWER_STYLES[i].shape}</span>
                         <span>{opt}</span>
                     </div>
                 ))}
             </div>
 
             {(onNextQuestion || onEndQuiz) && (
-                <div className="mt-auto pb-6" style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', paddingTop: 32 }}>
+                <div className="mt-auto pb-6 space-y-3" style={{ paddingTop: 32 }}>
                     {onNextQuestion && (
-                        <button onClick={onNextQuestion}
-                            style={{
-                                width: '100%',
-                                height: 56,
-                                borderRadius: 12,
-                                border: 'none',
-                                cursor: 'pointer',
-                                fontSize: 18,
-                                fontWeight: 600,
-                                background: 'linear-gradient(135deg, #14532d, #166534)',
-                                color: '#d1fae5',
-                                boxShadow: '0 4px 14px rgba(20, 83, 45, 0.25)',
-                            }}>
+                        <button onClick={onNextQuestion} className="btn btn-game-next w-full" style={{ height: 56, fontSize: 18 }}>
                             Next Question &rarr;
                         </button>
                     )}
                     {onEndQuiz && (
-                        <button onClick={onEndQuiz}
-                            style={{
-                                width: '100%',
-                                height: 56,
-                                borderRadius: 12,
-                                border: 'none',
-                                cursor: 'pointer',
-                                fontSize: 18,
-                                fontWeight: 600,
-                                background: 'linear-gradient(135deg, #7f1d1d, #991b1b)',
-                                color: '#fee2e2',
-                                boxShadow: '0 4px 14px rgba(127, 29, 29, 0.25)',
-                            }}>
+                        <button onClick={onEndQuiz} className="btn btn-game-end w-full" style={{ height: 56, fontSize: 18 }}>
                             End Quiz
                         </button>
                     )}

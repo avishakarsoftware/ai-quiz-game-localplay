@@ -60,28 +60,107 @@ body {
     min-height: 100dvh;
 }
 
-/* Mute Toggle */
-.mute-toggle {
+/* Settings Trigger Button */
+.settings-trigger {
     position: fixed;
     top: max(12px, env(safe-area-inset-top));
     right: 12px;
-    z-index: 100;
+    z-index: 200;
     width: 36px;
     height: 36px;
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.15);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
     border: none;
-    font-size: 16px;
+    color: rgba(255, 255, 255, 0.7);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0.7;
-    transition: opacity 0.2s;
+    transition: opacity 0.2s, background 0.2s;
 }
 
-.mute-toggle:hover {
-    opacity: 1;
+.settings-trigger:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+/* Settings Drawer */
+.settings-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 300;
+    animation: fadeIn 0.2s ease;
+}
+
+.settings-drawer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 301;
+    background: var(--bg-secondary);
+    border-radius: 20px 20px 0 0;
+    padding: 12px 24px max(24px, env(safe-area-inset-bottom));
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.settings-drawer-open {
+    transform: translateY(0);
+}
+
+.settings-drawer-handle {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.2);
+    margin: 0 auto 12px;
+}
+
+.settings-drawer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.settings-drawer-row:last-of-type {
+    border-bottom: none;
+}
+
+/* Toggle switch */
+.settings-toggle {
+    position: relative;
+    width: 48px;
+    height: 28px;
+    border-radius: 14px;
+    border: none;
+    background: rgba(255, 255, 255, 0.15);
+    cursor: pointer;
+    transition: background 0.2s ease;
+    flex-shrink: 0;
+}
+
+.settings-toggle-on {
+    background: var(--accent-primary);
+}
+
+.settings-toggle-knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: white;
+    transition: transform 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.settings-toggle-on .settings-toggle-knob {
+    transform: translateX(20px);
 }
 
 /* Responsive Container */
@@ -1203,6 +1282,37 @@ body {
     background: var(--bg-tertiary);
 }
 
+/* Time preset selector */
+.time-preset-selector {
+    display: flex;
+    gap: 8px;
+}
+
+.time-preset-option {
+    flex: 1;
+    padding: 10px 4px;
+    border-radius: 12px;
+    background: var(--glass-bg);
+    border: 2px solid transparent;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: center;
+}
+
+.time-preset-option.active {
+    border-color: var(--accent-primary);
+    background: var(--accent-primary);
+    color: white;
+    box-shadow: 0 4px 16px rgba(108, 92, 231, 0.4);
+}
+
+.time-preset-option:not(.active):hover {
+    background: var(--bg-tertiary);
+}
+
 /* AI Provider selector */
 .provider-selector {
     display: flex;
@@ -1619,6 +1729,136 @@ body {
     font-weight: 600;
     margin-top: 8px;
     animation: bonusTitleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+}
+
+/* Swipe-back edge indicator */
+.swipe-back-indicator {
+    position: fixed;
+    left: 0;
+    top: 50%;
+    translate: 0 -50%;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    z-index: 100;
+    pointer-events: none;
+    box-shadow: 0 4px 16px rgba(108, 92, 231, 0.5);
+    transition: opacity 0.05s ease;
+}
+
+/* Shuffle topic button */
+.shuffle-btn {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: var(--bg-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.15rem;
+    transition: transform 0.2s ease, background 0.2s ease;
+    opacity: 0.7;
+}
+
+.shuffle-btn:hover {
+    opacity: 1;
+    background: var(--bg-tertiary);
+    transform: rotate(90deg) scale(1.1);
+}
+
+.shuffle-btn:active {
+    transform: rotate(180deg) scale(0.95);
+}
+
+/* ===== Professional-Grade Screen Styles ===== */
+
+/* Game control buttons (organizer next/end) */
+.btn-game-next {
+    background: linear-gradient(135deg, #14532d, #166534);
+    color: #d1fae5;
+    box-shadow: 0 4px 14px rgba(20, 83, 45, 0.25);
+}
+
+.btn-game-next:hover:not(:disabled) {
+    box-shadow: 0 6px 20px rgba(20, 83, 45, 0.35);
+}
+
+.btn-game-end {
+    background: linear-gradient(135deg, #7f1d1d, #991b1b);
+    color: #fee2e2;
+    box-shadow: 0 4px 14px rgba(127, 29, 29, 0.25);
+}
+
+.btn-game-end:hover:not(:disabled) {
+    box-shadow: 0 6px 20px rgba(127, 29, 29, 0.35);
+}
+
+/* Screen hero section - consistent across all screens */
+.screen-hero {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.screen-hero .hero-icon {
+    margin-bottom: 16px;
+}
+
+.screen-hero .hero-title {
+    margin-bottom: 8px;
+}
+
+.screen-hero .hero-subtitle {
+    color: var(--text-tertiary);
+    font-size: 16px;
+    font-weight: 400;
+}
+
+/* Result icon - large centered checkmark/cross */
+.result-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    font-weight: 700;
+    margin: 0 auto 16px;
+}
+
+.result-icon-correct {
+    background: rgba(38, 222, 129, 0.15);
+    color: var(--accent-success);
+    box-shadow: 0 0 40px rgba(38, 222, 129, 0.2);
+}
+
+.result-icon-wrong {
+    background: rgba(255, 107, 107, 0.15);
+    color: var(--accent-danger);
+    box-shadow: 0 0 40px rgba(255, 107, 107, 0.2);
+}
+
+/* Status screen - centered message with icon (connecting, error, etc.) */
+.status-screen-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin: 0 auto 16px;
 }
 
 .bonus-badge {

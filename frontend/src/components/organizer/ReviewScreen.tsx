@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { type Quiz, type Question, ANSWER_STYLES } from '../../types';
+import { useSwipeBack } from '../../utils/useSwipeBack';
 
 interface ReviewScreenProps {
     quiz: Quiz;
@@ -13,11 +14,21 @@ interface ReviewScreenProps {
     onBack: () => void;
 }
 
+const TIME_PRESETS = [
+    { value: 10, label: '10s' },
+    { value: 15, label: '15s' },
+    { value: 20, label: '20s' },
+    { value: 30, label: '30s' },
+    { value: 45, label: '45s' },
+    { value: 60, label: '60s' },
+];
+
 export default function ReviewScreen({
     quiz, timeLimit, setTimeLimit,
     sdAvailable: _sdAvailable, questionImages: _questionImages, onGenerateImages: _onGenerateImages,
     onCreateRoom, onUpdateQuiz, onBack,
 }: ReviewScreenProps) {
+    const swipeProgress = useSwipeBack(onBack);
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editQuestion, setEditQuestion] = useState<Question | null>(null);
 
@@ -53,49 +64,35 @@ export default function ReviewScreen({
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
-            {/* Header with back button */}
+            {/* Swipe-back indicator */}
+            {swipeProgress > 0 && (
+                <div className="swipe-back-indicator" style={{ opacity: swipeProgress, transform: `translateX(${swipeProgress * 24 - 24}px)` }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="15 18 9 12 15 6" />
+                    </svg>
+                </div>
+            )}
+            {/* Header */}
             <div className="review-header mb-4">
                 <div className="review-header-accent" />
-                <div className="flex items-center mb-1">
-                    <button onClick={onBack} className="nav-back-btn" title="Back">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="15 18 9 12 15 6" />
-                        </svg>
-                    </button>
-                    <h2 className="text-lg font-bold flex-1 text-center pr-9">{quiz.quiz_title}</h2>
-                </div>
-                <p className="text-center text-[--text-tertiary] text-sm">{quiz.questions.length} questions ready to go</p>
+                <h1 className="hero-title" style={{ textAlign: 'center', marginBottom: 8 }}>{quiz.quiz_title}</h1>
+                <p className="text-center text-[--text-tertiary] text-base">{quiz.questions.length} questions ready to go</p>
             </div>
 
-            {/* Settings strip */}
-            <div className="space-y-3 mb-4">
-                <div className="settings-row">
-                    <div className="flex items-center gap-2">
-                        <span className="text-lg">⏱</span>
-                        <div>
-                            <p className="font-medium">Time per question</p>
-                            <p className="text-xs text-[--text-tertiary]">5-60 seconds</p>
-                        </div>
-                    </div>
-                    <div className="stepper">
+            {/* Time per question */}
+            <div className="mb-4">
+                <p className="text-center font-semibold text-base mb-2"><span style={{ fontSize: '1.5rem', verticalAlign: 'middle', marginRight: 6 }}>⏱</span>Time per question</p>
+                <div className="time-preset-selector">
+                    {TIME_PRESETS.map((t) => (
                         <button
-                            onClick={() => setTimeLimit(Math.max(5, timeLimit - 5))}
-                            disabled={timeLimit <= 5}
-                            className="stepper-btn"
+                            key={t.value}
+                            onClick={() => setTimeLimit(t.value)}
+                            className={`time-preset-option ${timeLimit === t.value ? 'active' : ''}`}
                         >
-                            −
+                            {t.label}
                         </button>
-                        <span className="stepper-value">{timeLimit}s</span>
-                        <button
-                            onClick={() => setTimeLimit(Math.min(60, timeLimit + 5))}
-                            disabled={timeLimit >= 60}
-                            className="stepper-btn"
-                        >
-                            +
-                        </button>
-                    </div>
+                    ))}
                 </div>
-
             </div>
 
             {/* Question list */}
@@ -181,11 +178,14 @@ export default function ReviewScreen({
                                                 <div
                                                     key={j}
                                                     className={`review-option ${isCorrect ? 'review-option-correct' : ''}`}
-                                                    style={{ backgroundColor: isCorrect ? style.bg : `${style.bg}33` }}
+                                                    style={{
+                                                        backgroundColor: `${style.bg}33`,
+                                                        border: isCorrect ? `2px solid ${style.bg}` : '2px solid transparent',
+                                                    }}
                                                 >
-                                                    <span className="text-base">{style.shape}</span>
+                                                    <span className="text-xl">{style.shape}</span>
                                                     <span className="truncate">{opt}</span>
-                                                    {isCorrect && <span className="ml-auto text-xs opacity-80">✓</span>}
+                                                    {isCorrect && <span className="ml-auto text-xs font-bold" style={{ color: style.bg }}>✓</span>}
                                                 </div>
                                             );
                                         })}
@@ -197,8 +197,13 @@ export default function ReviewScreen({
                 ))}
             </div>
 
-            <div className="pb-4">
-                <button onClick={onCreateRoom} className="btn btn-primary btn-glow w-full">Create Room</button>
+            <div className="pb-4" style={{ display: 'flex', gap: 8 }}>
+                <button onClick={onBack} className="btn btn-secondary" style={{ flexShrink: 0, paddingLeft: 16, paddingRight: 16 }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="15 18 9 12 15 6" />
+                    </svg>
+                </button>
+                <button onClick={onCreateRoom} className="btn btn-primary btn-glow" style={{ flex: 1 }}>Create Room</button>
             </div>
         </div>
     );

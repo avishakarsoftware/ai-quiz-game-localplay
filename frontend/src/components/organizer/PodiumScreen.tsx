@@ -34,7 +34,7 @@ export default function PodiumScreen({ leaderboard, teamLeaderboard, onPlayAgain
              style={{ position: 'relative', overflow: 'hidden' }}>
             <Fireworks duration={15000} maxRockets={3} />
 
-            <h2 className="text-3xl font-extrabold text-center tracking-tight mb-4" style={{ position: 'relative', zIndex: 11 }}>Final Results</h2>
+            <h1 className="hero-title text-center mb-4" style={{ position: 'relative', zIndex: 11 }}>Final Results</h1>
 
             {revealPhase >= 4 && leaderboard[0] && (
                 <div className="champion-label" style={{ position: 'relative', zIndex: 11 }}>

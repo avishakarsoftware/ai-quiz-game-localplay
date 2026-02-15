@@ -19,21 +19,29 @@ export default function LoadingScreen() {
     }, []);
 
     return (
-        <div style={{ height: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="flex flex-col items-center text-center animate-in">
-                {/* Animated concentric rings */}
-                <div className="loading-rings mb-8">
-                    <div className="loading-ring ring-outer" />
-                    <div className="loading-ring ring-middle" />
-                    <div className="loading-ring ring-inner" />
-                    <span className="loading-icon">🧠</span>
-                </div>
+        <div
+            style={{
+                height: '100dvh',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+            }}
+            className="container-responsive animate-in"
+        >
+            <h1 className="hero-title mb-8">Generating Quiz</h1>
 
-                <p className="text-xl font-bold mb-2">Generating Quiz</p>
-                <p className="text-[--text-tertiary] loading-message-fade" key={msgIndex}>
-                    {LOADING_MESSAGES[msgIndex]}
-                </p>
+            {/* Animated concentric rings */}
+            <div className="loading-rings mb-8">
+                <div className="loading-ring ring-outer" />
+                <div className="loading-ring ring-middle" />
+                <div className="loading-ring ring-inner" />
+                <span className="loading-icon">🧠</span>
             </div>
+
+            <p className="text-[--text-tertiary] loading-message-fade" key={msgIndex}>
+                {LOADING_MESSAGES[msgIndex]}
+            </p>
         </div>
     );
 }
