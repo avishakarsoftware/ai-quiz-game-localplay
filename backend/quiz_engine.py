@@ -1,6 +1,7 @@
 import requests
 import json
 import logging
+import time
 from typing import Optional
 
 import config
@@ -96,6 +97,8 @@ async def _generate_ollama(prompt: str, difficulty: str, num_questions: int) -> 
             logger.error("Attempt %d: HTTP error calling Ollama: %s", attempt, e)
         except Exception as e:
             logger.error("Attempt %d: Unexpected error (Ollama): %s", attempt, e)
+        if attempt < config.LLM_MAX_RETRIES:
+            time.sleep(2 ** attempt)
 
     return None
 
@@ -136,6 +139,8 @@ async def _generate_gemini(prompt: str, difficulty: str, num_questions: int) -> 
             logger.error("Attempt %d: Unexpected Gemini response structure: %s", attempt, e)
         except Exception as e:
             logger.error("Attempt %d: Unexpected error (Gemini): %s", attempt, e)
+        if attempt < config.LLM_MAX_RETRIES:
+            time.sleep(2 ** attempt)
 
     return None
 
@@ -182,6 +187,8 @@ async def _generate_claude(prompt: str, difficulty: str, num_questions: int) -> 
             logger.error("Attempt %d: Unexpected Claude response structure: %s", attempt, e)
         except Exception as e:
             logger.error("Attempt %d: Unexpected error (Claude): %s", attempt, e)
+        if attempt < config.LLM_MAX_RETRIES:
+            time.sleep(2 ** attempt)
 
     return None
 
@@ -214,12 +221,20 @@ class QuizEngine:
 
     def get_available_providers(self) -> list[dict]:
         providers = []
-        # Ollama is always listed (local)
+        # Check if Ollama is actually reachable
+        ollama_available = False
+        try:
+            # Ollama API base is the generate URL minus the /api/generate path
+            base_url = config.OLLAMA_URL.rsplit("/api/", 1)[0]
+            r = requests.get(base_url, timeout=2)
+            ollama_available = r.status_code == 200
+        except Exception:
+            pass
         providers.append({
             "id": "ollama",
             "name": "Ollama (Local)",
             "description": f"Local LLM via Ollama ({config.OLLAMA_MODEL})",
-            "available": True,
+            "available": ollama_available,
         })
         providers.append({
             "id": "gemini",

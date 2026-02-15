@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { WS_URL } from '../config';
-import { type LeaderboardEntry, type PlayerInfo, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
 import { AVATAR_COLORS } from '../components/LeaderboardBarChart.constants';
 import { soundManager } from '../utils/sound';
+import BonusSplash from '../components/BonusSplash';
 
 interface SpectatorQuestion {
     id: number;
@@ -27,7 +28,10 @@ export default function SpectatorPage() {
     const [timeRemaining, setTimeRemaining] = useState(0);
     const [timeLimit, setTimeLimit] = useState(15);
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+    const [teamLeaderboard, setTeamLeaderboard] = useState<TeamLeaderboardEntry[]>([]);
     const [podiumReveal, setPodiumReveal] = useState(0);
+    const [isBonus, setIsBonus] = useState(false);
+    const [showBonusSplash, setShowBonusSplash] = useState(false);
 
     const joinUrl = `http://${window.location.hostname}:5173/join?room=${roomCode}`;
     const displayUrl = `${window.location.hostname}:5173/join`;
@@ -59,6 +63,8 @@ export default function SpectatorPage() {
                 setTotalQuestions(msg.total_questions);
                 setTimeLimit(msg.time_limit);
                 setTimeRemaining(msg.time_limit);
+                setIsBonus(msg.is_bonus || false);
+                if (msg.is_bonus) setShowBonusSplash(true);
                 setGameState('QUESTION');
             }
             else if (msg.type === 'TIMER') setTimeRemaining(msg.remaining);
@@ -71,6 +77,7 @@ export default function SpectatorPage() {
             }
             else if (msg.type === 'PODIUM') {
                 setLeaderboard(msg.leaderboard);
+                setTeamLeaderboard(msg.team_leaderboard || []);
                 setPodiumReveal(0);
                 setGameState('PODIUM');
                 soundManager.play('fanfare');
@@ -78,6 +85,8 @@ export default function SpectatorPage() {
             else if (msg.type === 'ROOM_RESET') {
                 setPlayers(msg.players || []);
                 setPlayerCount(msg.player_count);
+                setIsBonus(false);
+                setShowBonusSplash(false);
                 setGameState('LOBBY');
             }
         };
@@ -154,16 +163,15 @@ export default function SpectatorPage() {
                                 {playerCount} player{playerCount !== 1 ? 's' : ''}
                             </p>
                             {players.length > 0 && (
-                                <div className="flex flex-wrap gap-3 justify-center max-w-2xl">
+                                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12, maxWidth: 672 }}>
                                     {players.map((player, i) => (
-                                        <div key={player.nickname} className="flex items-center gap-2 px-4 py-2 rounded-full bg-[--bg-secondary]">
+                                        <div key={player.nickname} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 9999, background: 'var(--bg-secondary)' }}>
                                             <div
-                                                className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                                                style={{ backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }}
+                                                style={{ width: 40, height: 40, minWidth: 40, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }}
                                             >
-                                                <span style={{ fontSize: '1.15rem', lineHeight: 1 }}>{player.avatar || player.nickname.slice(0, 2).toUpperCase()}</span>
+                                                <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>{player.avatar || player.nickname.slice(0, 2).toUpperCase()}</span>
                                             </div>
-                                            <span className="text-base font-medium">{player.nickname}</span>
+                                            <span style={{ fontSize: '1.125rem', fontWeight: 500 }}>{player.nickname}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -172,10 +180,16 @@ export default function SpectatorPage() {
                     )}
 
                     {gameState === 'QUESTION' && question && (
-                        <>
+                        showBonusSplash ? (
+                            <BonusSplash onComplete={() => setShowBonusSplash(false)} />
+                        ) : (
+                            <>
                             <div className="py-4">
                                 <div className="flex items-center justify-between mb-2">
-                                    <span className="text-xl text-[--text-tertiary]">Q{questionNumber}/{totalQuestions}</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xl text-[--text-tertiary]">Q{questionNumber}/{totalQuestions}</span>
+                                        {isBonus && <span className="bonus-badge" style={{ fontSize: 16 }}>2X BONUS</span>}
+                                    </div>
                                     <span className={`font-bold tabular-nums text-2xl ${timeRemaining <= 5 ? 'timer-number-pulse' : ''}`}
                                         style={{ color: timeRemaining <= 5 ? 'var(--accent-danger)' : timeRemaining <= 10 ? 'var(--accent-warning)' : 'var(--accent-primary)' }}>
                                         {timeRemaining}s
@@ -202,7 +216,8 @@ export default function SpectatorPage() {
                                     </div>
                                 ))}
                             </div>
-                        </>
+                            </>
+                        )
                     )}
 
                     {gameState === 'LEADERBOARD' && (
@@ -222,7 +237,7 @@ export default function SpectatorPage() {
                              style={{ position: 'relative', overflow: 'hidden' }}>
                             <Fireworks duration={15000} maxRockets={4} />
 
-                            <h2 className="text-4xl font-bold mb-4" style={{ position: 'relative', zIndex: 11 }}>Final Results</h2>
+                            <h2 className="text-5xl font-extrabold text-center tracking-tight mb-6" style={{ position: 'relative', zIndex: 11 }}>Final Results</h2>
 
                             {podiumReveal >= 4 && leaderboard[0] && (
                                 <div className="champion-label" style={{ position: 'relative', zIndex: 11, fontSize: 28 }}>
@@ -264,6 +279,44 @@ export default function SpectatorPage() {
                                     </div>
                                 )}
                             </div>
+
+                            {podiumReveal >= 4 && teamLeaderboard.length > 1 && (
+                                <div className="w-full mt-8" style={{ position: 'relative', zIndex: 11, maxWidth: 600 }}>
+                                    <h3 className="text-2xl font-semibold text-center mb-4">Team Standings</h3>
+                                    <div className="podium-container" style={{ gap: 16 }}>
+                                        {teamLeaderboard[1] && (
+                                            <div className="podium-place podium-2">
+                                                <p className="podium-name" style={{ fontSize: 18, maxWidth: 120 }}>{teamLeaderboard[1].team}</p>
+                                                {teamLeaderboard[1].members > 1 && (
+                                                    <p className="text-xs text-[--text-tertiary]">{teamLeaderboard[1].members} members</p>
+                                                )}
+                                                <div className="podium-bar" style={{ width: 120, height: 100 }}>2</div>
+                                                <p className="podium-score" style={{ fontSize: 16 }}><AnimatedNumber value={teamLeaderboard[1].score} /></p>
+                                            </div>
+                                        )}
+                                        {teamLeaderboard[0] && (
+                                            <div className="podium-place podium-1 victory-glow">
+                                                <p className="podium-name" style={{ fontSize: 18, maxWidth: 120 }}>{teamLeaderboard[0].team}</p>
+                                                {teamLeaderboard[0].members > 1 && (
+                                                    <p className="text-xs text-[--text-tertiary]">{teamLeaderboard[0].members} members</p>
+                                                )}
+                                                <div className="podium-bar" style={{ width: 120, height: 140 }}>1</div>
+                                                <p className="podium-score" style={{ fontSize: 16 }}><AnimatedNumber value={teamLeaderboard[0].score} /></p>
+                                            </div>
+                                        )}
+                                        {teamLeaderboard[2] && (
+                                            <div className="podium-place podium-3">
+                                                <p className="podium-name" style={{ fontSize: 18, maxWidth: 120 }}>{teamLeaderboard[2].team}</p>
+                                                {teamLeaderboard[2].members > 1 && (
+                                                    <p className="text-xs text-[--text-tertiary]">{teamLeaderboard[2].members} members</p>
+                                                )}
+                                                <div className="podium-bar" style={{ width: 120, height: 60 }}>3</div>
+                                                <p className="podium-score" style={{ fontSize: 16 }}><AnimatedNumber value={teamLeaderboard[2].score} /></p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

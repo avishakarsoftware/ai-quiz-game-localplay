@@ -1,6 +1,9 @@
 """Centralized configuration — all env vars in one place."""
 import os
 import logging
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # --- Ollama / LLM ---
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
@@ -35,6 +38,9 @@ VALID_DIFFICULTIES = ("easy", "medium", "hard")
 
 # --- Streak bonus ---
 STREAK_THRESHOLDS = {3: 1.5, 5: 2.0}  # streak_count -> multiplier
+
+# --- Bonus rounds ---
+BONUS_ROUND_FRACTION = 0.3  # ~30% of questions will be bonus rounds (2x points)
 
 # --- Logging ---
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()

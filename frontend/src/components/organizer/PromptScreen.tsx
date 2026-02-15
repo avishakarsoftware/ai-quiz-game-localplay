@@ -19,7 +19,6 @@ interface PromptScreenProps {
     providers: AIProvider[];
     onGenerate: () => void;
     sdAvailable: boolean;
-    onDebugMode?: () => void;
 }
 
 const DIFFICULTIES = [
@@ -60,7 +59,7 @@ const TOPIC_IDEAS = [
 export default function PromptScreen({
     prompt, setPrompt, difficulty, setDifficulty,
     numQuestions, setNumQuestions, provider, setProvider,
-    providers, onGenerate, sdAvailable, onDebugMode,
+    providers, onGenerate, sdAvailable: _sdAvailable,
 }: PromptScreenProps) {
     const [initialTopic] = useState(() =>
         TOPIC_IDEAS[Math.floor(Math.random() * TOPIC_IDEAS.length)]
@@ -105,7 +104,7 @@ export default function PromptScreen({
                                     >
                                         <span className="text-lg">{PROVIDER_ICONS[p.id] || '🧠'}</span>
                                         <span className="provider-name">{p.name}</span>
-                                        {!p.available && <span className="provider-badge">No key</span>}
+                                        {!p.available && <span className="provider-badge">{p.id === 'ollama' ? 'Offline' : 'No key'}</span>}
                                     </button>
                                 ))}
                             </div>
@@ -154,15 +153,6 @@ export default function PromptScreen({
                         </div>
                     </div>
 
-                    {sdAvailable ? (
-                        <div className="status-pill status-success">
-                            <span>●</span> Image generation ready
-                        </div>
-                    ) : (
-                        <div className="status-pill status-warning">
-                            <span>●</span> Images unavailable
-                        </div>
-                    )}
                 </div>
             </div>
 
@@ -174,15 +164,7 @@ export default function PromptScreen({
                 >
                     Generate Quiz
                 </button>
-                {onDebugMode && (
-                    <button
-                        onClick={onDebugMode}
-                        className="btn w-full"
-                        style={{ background: 'rgba(255,255,255,0.08)', border: '1px dashed rgba(255,255,255,0.2)', fontSize: 13 }}
-                    >
-                        Debug Mode (10 hardcoded questions)
-                    </button>
-                )}
+
             </div>
         </div>
     );

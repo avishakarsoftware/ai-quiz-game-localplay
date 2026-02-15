@@ -1,4 +1,4 @@
-type SoundName = 'playerJoin' | 'correct' | 'wrong' | 'timerTick' | 'gameStart' | 'podium' | 'lobbyAmbient' | 'streakBonus' | 'fanfare' | 'fireworkPop';
+type SoundName = 'playerJoin' | 'correct' | 'wrong' | 'timerTick' | 'gameStart' | 'podium' | 'lobbyAmbient' | 'streakBonus' | 'fanfare' | 'fireworkPop' | 'bonusRound';
 
 const MUTE_KEY = 'localplay_muted';
 
@@ -98,6 +98,18 @@ class SoundManager {
                     this.tone(200, 0.05, 'sawtooth', 0.15);
                     this.tone(800 + Math.random() * 400, 0.08, 'sine', 0.1, 0.03);
                     this.tone(2000 + Math.random() * 1000, 0.12, 'sine', 0.06, 0.05);
+                    break;
+                }
+                case 'bonusRound': {
+                    // Dramatic ascending power-up sound
+                    this.tone(330, 0.15, 'square', 0.15);
+                    this.tone(440, 0.15, 'square', 0.15, 0.1);
+                    this.tone(554, 0.15, 'square', 0.15, 0.2);
+                    this.tone(660, 0.15, 'square', 0.18, 0.3);
+                    this.tone(880, 0.4, 'sawtooth', 0.12, 0.4);
+                    // Sparkle top
+                    this.tone(1760, 0.15, 'sine', 0.08, 0.6);
+                    this.tone(2200, 0.2, 'sine', 0.06, 0.65);
                     break;
                 }
                 case 'lobbyAmbient':

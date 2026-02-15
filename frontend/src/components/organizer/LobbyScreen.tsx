@@ -50,16 +50,15 @@ export default function LobbyScreen({ roomCode, joinUrl, networkIp, playerCount,
                             <span className="text-2xl font-bold">{playerCount}</span>{' '}
                             <span className="text-[--text-secondary] font-medium">player{playerCount !== 1 ? 's' : ''}</span>
                         </p>
-                        <div className="flex flex-wrap justify-center gap-2">
+                        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
                             {players.map((player, i) => (
-                                <div key={player.nickname} className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[--bg-secondary]">
+                                <div key={player.nickname} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 9999, background: 'var(--bg-secondary)' }}>
                                     <div
-                                        className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
-                                        style={{ backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }}
+                                        style={{ width: 36, height: 36, minWidth: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }}
                                     >
-                                        <span style={{ fontSize: '0.85rem', lineHeight: 1 }}>{player.avatar || player.nickname.slice(0, 2).toUpperCase()}</span>
+                                        <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>{player.avatar || player.nickname.slice(0, 2).toUpperCase()}</span>
                                     </div>
-                                    <span className="text-sm font-medium">{player.nickname}</span>
+                                    <span style={{ fontSize: '1rem', fontWeight: 500 }}>{player.nickname}</span>
                                 </div>
                             ))}
                         </div>

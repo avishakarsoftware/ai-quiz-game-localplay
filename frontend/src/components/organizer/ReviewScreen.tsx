@@ -14,8 +14,9 @@ interface ReviewScreenProps {
 }
 
 export default function ReviewScreen({
-    quiz, timeLimit, setTimeLimit, sdAvailable, questionImages,
-    onGenerateImages, onCreateRoom, onUpdateQuiz, onBack,
+    quiz, timeLimit, setTimeLimit,
+    sdAvailable: _sdAvailable, questionImages: _questionImages, onGenerateImages: _onGenerateImages,
+    onCreateRoom, onUpdateQuiz, onBack,
 }: ReviewScreenProps) {
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editQuestion, setEditQuestion] = useState<Question | null>(null);
@@ -95,17 +96,6 @@ export default function ReviewScreen({
                     </div>
                 </div>
 
-                {sdAvailable && Object.keys(questionImages).length === 0 && (
-                    <button onClick={onGenerateImages} className="btn btn-secondary w-full">
-                        Generate Images
-                    </button>
-                )}
-
-                {Object.keys(questionImages).length > 0 && (
-                    <div className="status-pill status-success">
-                        ✓ {Object.keys(questionImages).length} images ready
-                    </div>
-                )}
             </div>
 
             {/* Question list */}

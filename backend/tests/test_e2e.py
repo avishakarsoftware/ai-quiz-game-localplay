@@ -162,7 +162,8 @@ class TestEndToEnd:
 
             game_start = recv_until(org_ws, "QUESTION")
             assert game_start["question_number"] == 1
-            print(f"First question: {game_start['question']['text'][:60]}...")
+            assert "is_bonus" in game_start  # Bonus flag should always be present
+            print(f"First question: {game_start['question']['text'][:60]}... (bonus={game_start['is_bonus']})")
 
             # Players receive GAME_STARTING and then QUESTION
             for pw in player_ws_list:
@@ -182,6 +183,7 @@ class TestEndToEnd:
             # Step 7: Play through all questions
             # ==========================================
             alice_streak = 0
+            bonus_flags = [game_start["is_bonus"]]  # Track bonus flags
             for q_num in range(1, num_questions + 1):
                 print(f"\n--- Question {q_num}/{num_questions} ---")
 
@@ -192,7 +194,9 @@ class TestEndToEnd:
                 if q_num > 1:
                     # Navigate to next question
                     org_ws.send_json({"type": "NEXT_QUESTION"})
-                    recv_until(org_ws, "QUESTION")
+                    q_msg = recv_until(org_ws, "QUESTION")
+                    assert "is_bonus" in q_msg
+                    bonus_flags.append(q_msg["is_bonus"])
                     for pw in player_ws_list:
                         recv_until(pw, "QUESTION")
 
@@ -216,9 +220,11 @@ class TestEndToEnd:
                         answer = wrong_answer
                     pw.send_json({"type": "ANSWER", "answer_index": answer})
                     result = recv_until(pw, "ANSWER_RESULT")
+                    assert "is_bonus" in result  # Bonus flag in answer result
                     status = "correct" if result["correct"] else "wrong"
+                    bonus_info = " BONUS!" if result["is_bonus"] else ""
                     streak_info = f" streak={result.get('streak', 0)} mult={result.get('multiplier', 1.0)}"
-                    print(f"  {players[i]['name']}: answer={answer}, {status}, +{result['points']}pts{streak_info}")
+                    print(f"  {players[i]['name']}: answer={answer}, {status}, +{result['points']}pts{streak_info}{bonus_info}")
 
                     # Verify Alice's streak increments
                     if i == 0:
@@ -240,6 +246,13 @@ class TestEndToEnd:
 
                 for pw in player_ws_list:
                     recv_until(pw, "QUESTION_OVER")
+
+            # Verify bonus flags
+            print(f"\nBonus flags: {bonus_flags}")
+            assert bonus_flags[0] is False, "First question should not be bonus"
+            assert bonus_flags[-1] is False, "Last question should not be bonus"
+            if num_questions >= 4:
+                assert True in bonus_flags, "Should have at least one bonus question"
 
             # ==========================================
             # Step 8: Show podium
@@ -429,3 +442,89 @@ class TestExportImportE2E:
                 assert podium["leaderboard"][0]["nickname"] == "Tester"
 
         print("--- Export/Import E2E test passed! ---")
+
+
+class TestBonusRoundsE2E:
+    """E2E test for bonus rounds with live Ollama-generated quiz."""
+
+    def test_bonus_rounds_with_live_quiz(self):
+        """Generate a 6-question quiz, play through, verify bonus round behavior."""
+        # Step 1: Generate quiz with enough questions for bonus selection
+        print("\n--- Generate 6-question quiz for bonus test ---")
+        res = client.post("/quiz/generate", json={
+            "prompt": "6 questions about geography and world capitals",
+            "difficulty": "easy",
+            "num_questions": 6,
+        })
+        assert res.status_code == 200, f"Quiz generation failed: {res.text}"
+        quiz_id = res.json()["quiz_id"]
+        quiz = res.json()["quiz"]
+        num_questions = len(quiz["questions"])
+        print(f"Generated: '{quiz['quiz_title']}', {num_questions} questions")
+        assert num_questions >= 4, "Need at least 4 questions for bonus rounds"
+
+        # Step 2: Create room and connect
+        res = client.post("/room/create", json={"quiz_id": quiz_id, "time_limit": 10})
+        assert res.status_code == 200
+        room_code = res.json()["room_code"]
+
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+            org_ws.receive_json()
+
+            with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
+                p_ws.receive_json()
+                p_ws.send_json({"type": "JOIN", "nickname": "BonusTester"})
+                recv_until(org_ws, "PLAYER_JOINED")
+                recv_until(p_ws, "PLAYER_JOINED")
+
+                org_ws.send_json({"type": "START_GAME"})
+
+                bonus_flags = []
+                bonus_points = []
+                normal_points = []
+
+                for q_num in range(num_questions):
+                    org_ws.send_json({"type": "NEXT_QUESTION"})
+                    q = recv_until(org_ws, "QUESTION")
+                    recv_until(p_ws, "QUESTION")
+
+                    assert "is_bonus" in q
+                    bonus_flags.append(q["is_bonus"])
+                    print(f"  Q{q_num+1}: bonus={q['is_bonus']}")
+
+                    # Answer with the correct answer from quiz data
+                    correct = quiz["questions"][q_num]["answer_index"]
+                    p_ws.send_json({"type": "ANSWER", "answer_index": correct})
+                    result = recv_until(p_ws, "ANSWER_RESULT")
+                    assert "is_bonus" in result
+                    assert result["is_bonus"] == q["is_bonus"]
+
+                    if result["correct"]:
+                        if q["is_bonus"]:
+                            bonus_points.append(result["points"])
+                        else:
+                            normal_points.append(result["points"])
+                        print(f"    +{result['points']}pts (streak={result['streak']}, mult={result['multiplier']})")
+
+                    recv_until(org_ws, "QUESTION_OVER")
+                    recv_until(p_ws, "QUESTION_OVER")
+
+                # Verify bonus round constraints
+                print(f"\nBonus flags: {bonus_flags}")
+                assert bonus_flags[0] is False, "First question must not be bonus"
+                assert bonus_flags[-1] is False, "Last question must not be bonus"
+                assert True in bonus_flags, "Should have at least one bonus question"
+                assert False in bonus_flags, "Should have at least one non-bonus question"
+
+                # Podium
+                org_ws.send_json({"type": "NEXT_QUESTION"})
+                podium = recv_until(org_ws, "PODIUM")
+                assert podium["leaderboard"][0]["nickname"] == "BonusTester"
+
+                # Verify team_leaderboard has solo player entry
+                tl = podium["team_leaderboard"]
+                assert len(tl) == 1
+                assert tl[0]["team"] == "BonusTester"
+                assert tl[0]["members"] == 1
+
+        print("--- Bonus Rounds E2E test passed! ---")

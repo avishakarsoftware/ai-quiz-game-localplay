@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Kahoot-Style Bold Game Show Palette */
+/* Bold Game Show Palette */
 :root {
     /* Vibrant Accents */
     --accent-primary: #6C5CE7;
@@ -1094,8 +1094,11 @@ body {
 
 /* Hidden option (50/50) */
 .answer-btn.hidden-option {
+    animation: none;
     opacity: 0.15;
     pointer-events: none;
+    transform: scale(0.9);
+    transition: opacity 0.3s, transform 0.3s;
 }
 
 /* ===== Admin / Quiz Creation Screens ===== */
@@ -1548,4 +1551,91 @@ body {
 
 .no-scrollbar::-webkit-scrollbar {
     display: none;
+}
+
+/* ===== Bonus Round Splash ===== */
+
+.bonus-splash-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(255, 215, 0, 0.15) 0%, var(--bg-primary) 70%);
+    animation: bonusFadeIn 0.3s ease-out;
+}
+
+.bonus-splash-overlay.exiting {
+    animation: bonusFadeOut 0.4s ease-in forwards;
+}
+
+@keyframes bonusFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes bonusFadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+.bonus-multiplier {
+    font-size: 96px;
+    font-weight: 900;
+    background: linear-gradient(135deg, #FFD700, #FFA500, #FFD700);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: bonusScaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1), goldShimmer 2s linear infinite;
+    filter: drop-shadow(0 0 40px rgba(255, 215, 0, 0.5));
+}
+
+@keyframes bonusScaleIn {
+    0% { transform: scale(0.3) rotate(-10deg); opacity: 0; }
+    60% { transform: scale(1.15) rotate(2deg); }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+.bonus-title {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #FFD700;
+    text-shadow: 0 0 30px rgba(255, 215, 0, 0.4);
+    animation: bonusTitleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+
+@keyframes bonusTitleIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.bonus-subtitle {
+    font-size: 16px;
+    color: rgba(255, 215, 0, 0.7);
+    font-weight: 600;
+    margin-top: 8px;
+    animation: bonusTitleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+}
+
+.bonus-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 14px;
+    border-radius: 100px;
+    font-size: 13px;
+    font-weight: 700;
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.25), rgba(255, 165, 0, 0.25));
+    color: #FFD700;
+    border: 1px solid rgba(255, 215, 0, 0.3);
+    animation: bonusPulse 2s ease-in-out infinite;
+}
+
+@keyframes bonusPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.2); }
+    50% { box-shadow: 0 0 12px 4px rgba(255, 215, 0, 0.15); }
 }

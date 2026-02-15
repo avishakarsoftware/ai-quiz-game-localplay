@@ -34,7 +34,7 @@ export default function PodiumScreen({ leaderboard, teamLeaderboard, onPlayAgain
              style={{ position: 'relative', overflow: 'hidden' }}>
             <Fireworks duration={15000} maxRockets={3} />
 
-            <h2 className="text-2xl font-bold mb-2" style={{ position: 'relative', zIndex: 11 }}>Final Results</h2>
+            <h2 className="text-3xl font-extrabold text-center tracking-tight mb-4" style={{ position: 'relative', zIndex: 11 }}>Final Results</h2>
 
             {revealPhase >= 4 && leaderboard[0] && (
                 <div className="champion-label" style={{ position: 'relative', zIndex: 11 }}>
@@ -98,26 +98,64 @@ export default function PodiumScreen({ leaderboard, teamLeaderboard, onPlayAgain
                 </div>
             )}
 
-            {revealPhase >= 4 && teamLeaderboard && teamLeaderboard.length > 0 && (
+            {revealPhase >= 4 && teamLeaderboard && teamLeaderboard.length > 1 && (
                 <div className="w-full mt-6 mb-4" style={{ position: 'relative', zIndex: 11 }}>
-                    <h3 className="text-lg font-semibold text-center mb-3">Team Standings</h3>
-                    <div className="space-y-2">
-                        {teamLeaderboard.map((team, i) => (
-                            <div key={team.team} className="leaderboard-item stagger-in"
-                                 style={{ animationDelay: `${i * 0.1}s` }}>
-                                <div className="flex items-center gap-3">
-                                    <span className={`rank-badge ${i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-default'}`}>
-                                        {i + 1}
-                                    </span>
-                                    <div>
-                                        <span className="font-medium">{team.team}</span>
-                                        <span className="text-xs text-[--text-tertiary] ml-2">{team.members} members</span>
-                                    </div>
-                                </div>
-                                <AnimatedNumber value={team.score} className="font-bold" />
+                    <h3 className="text-lg font-semibold text-center mb-4">Team Standings</h3>
+                    <div className="podium-container" style={{ marginBottom: 8 }}>
+                        {/* 2nd */}
+                        {teamLeaderboard[1] && (
+                            <div className="podium-place podium-2">
+                                <p className="podium-name">{teamLeaderboard[1].team}</p>
+                                {teamLeaderboard[1].members > 1 && (
+                                    <p className="text-xs text-[--text-tertiary]">{teamLeaderboard[1].members} members</p>
+                                )}
+                                <div className="podium-bar">2</div>
+                                <p className="podium-score"><AnimatedNumber value={teamLeaderboard[1].score} /></p>
                             </div>
-                        ))}
+                        )}
+                        {/* 1st */}
+                        {teamLeaderboard[0] && (
+                            <div className="podium-place podium-1 victory-glow">
+                                <p className="podium-name">{teamLeaderboard[0].team}</p>
+                                {teamLeaderboard[0].members > 1 && (
+                                    <p className="text-xs text-[--text-tertiary]">{teamLeaderboard[0].members} members</p>
+                                )}
+                                <div className="podium-bar">1</div>
+                                <p className="podium-score"><AnimatedNumber value={teamLeaderboard[0].score} /></p>
+                            </div>
+                        )}
+                        {/* 3rd */}
+                        {teamLeaderboard[2] && (
+                            <div className="podium-place podium-3">
+                                <p className="podium-name">{teamLeaderboard[2].team}</p>
+                                {teamLeaderboard[2].members > 1 && (
+                                    <p className="text-xs text-[--text-tertiary]">{teamLeaderboard[2].members} members</p>
+                                )}
+                                <div className="podium-bar">3</div>
+                                <p className="podium-score"><AnimatedNumber value={teamLeaderboard[2].score} /></p>
+                            </div>
+                        )}
                     </div>
+                    {/* 4th+ teams */}
+                    {teamLeaderboard.length > 3 && (
+                        <div className="space-y-2 mt-2">
+                            {teamLeaderboard.slice(3).map((team, i) => (
+                                <div key={team.team} className="leaderboard-item stagger-in"
+                                     style={{ animationDelay: `${i * 0.1}s` }}>
+                                    <div className="flex items-center gap-3">
+                                        <span className="rank-badge rank-default">{i + 4}</span>
+                                        <div>
+                                            <span className="font-medium">{team.team}</span>
+                                            {team.members > 1 && (
+                                                <span className="text-xs text-[--text-tertiary] ml-2">{team.members} members</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <AnimatedNumber value={team.score} className="font-bold" />
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
 

@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { API_URL, WS_URL } from '../config';
-import { type LeaderboardEntry, type PlayerInfo, type PowerUps, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
+import BonusSplash from '../components/BonusSplash';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
 import { AVATAR_COLORS } from '../components/LeaderboardBarChart.constants';
 
@@ -45,11 +46,14 @@ export default function PlayerPage() {
     const [multiplier, setMultiplier] = useState(1.0);
     const [_correctAnswer, setCorrectAnswer] = useState<number | null>(null);
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+    const [teamLeaderboard, setTeamLeaderboard] = useState<TeamLeaderboardEntry[]>([]);
     const [myRank, setMyRank] = useState(0);
     const [error, setError] = useState('');
     const [lobbyPlayers, setLobbyPlayers] = useState<PlayerInfo[]>([]);
     const [powerUps, setPowerUps] = useState<PowerUps>({ double_points: true, fifty_fifty: true });
     const [hiddenOptions, setHiddenOptions] = useState<number[]>([]);
+    const [isBonus, setIsBonus] = useState(false);
+    const [showBonusSplash, setShowBonusSplash] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const kickedRef = useRef(false);
@@ -106,6 +110,7 @@ export default function PlayerPage() {
                     setPointsEarned(0);
                     setCorrectAnswer(null);
                     setHiddenOptions([]);
+                    setIsBonus(msg.is_bonus || false);
                     setState('QUESTION');
                 } else {
                     setState('WAITING');
@@ -128,6 +133,8 @@ export default function PlayerPage() {
                 setPointsEarned(0);
                 setCorrectAnswer(null);
                 setHiddenOptions([]);
+                setIsBonus(msg.is_bonus || false);
+                if (msg.is_bonus) setShowBonusSplash(true);
                 setState('QUESTION');
             }
             if (msg.type === 'TIMER') {
@@ -166,7 +173,7 @@ export default function PlayerPage() {
                     setState('RESULT');
                 }
             }
-            if (msg.type === 'PODIUM') { setLeaderboard(msg.leaderboard); setState('PODIUM'); soundManager.play('fanfare'); }
+            if (msg.type === 'PODIUM') { setLeaderboard(msg.leaderboard); setTeamLeaderboard(msg.team_leaderboard || []); setState('PODIUM'); soundManager.play('fanfare'); }
             if (msg.type === 'ROOM_RESET') {
                 setCurrentQuestion(null);
                 setQuestionNumber(0);
@@ -178,9 +185,12 @@ export default function PlayerPage() {
                 setMultiplier(1.0);
                 setCorrectAnswer(null);
                 setLeaderboard([]);
+                setTeamLeaderboard([]);
                 setMyRank(0);
                 setHiddenOptions([]);
                 setPowerUps({ double_points: true, fifty_fifty: true });
+                setIsBonus(false);
+                setShowBonusSplash(false);
                 if (msg.players) setLobbyPlayers(msg.players);
                 setState('LOBBY');
                 soundManager.play('playerJoin');
@@ -307,18 +317,17 @@ export default function PlayerPage() {
                                     <span className="text-2xl font-bold">{lobbyPlayers.length}</span>{' '}
                                     <span className="text-[--text-secondary] font-medium">player{lobbyPlayers.length !== 1 ? 's' : ''}</span>
                                 </p>
-                                <div className="flex flex-wrap justify-center gap-2">
+                                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
                                     {lobbyPlayers.map((player, i) => {
                                         const isSelf = player.nickname === nickname;
                                         return (
-                                            <div key={player.nickname} className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${isSelf ? 'bg-[--accent-primary]/20 ring-1 ring-[--accent-primary]' : 'bg-[--bg-secondary]'}`}>
+                                            <div key={player.nickname} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 9999, background: isSelf ? 'rgba(var(--accent-primary-rgb, 99,102,241), 0.2)' : 'var(--bg-secondary)', boxShadow: isSelf ? 'inset 0 0 0 1px var(--accent-primary)' : 'none' }}>
                                                 <div
-                                                    className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
-                                                    style={{ backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }}
+                                                    style={{ width: 36, height: 36, minWidth: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }}
                                                 >
-                                                    <span style={{ fontSize: '0.85rem', lineHeight: 1 }}>{player.avatar || player.nickname.slice(0, 2).toUpperCase()}</span>
+                                                    <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>{player.avatar || player.nickname.slice(0, 2).toUpperCase()}</span>
                                                 </div>
-                                                <span className={`text-sm ${isSelf ? 'font-bold text-[--accent-primary]' : 'font-medium'}`}>
+                                                <span style={{ fontSize: '1rem', fontWeight: isSelf ? 700 : 500, color: isSelf ? 'var(--accent-primary)' : undefined }}>
                                                     {player.nickname}{isSelf ? ' \u2605' : ''}
                                                 </span>
                                             </div>
@@ -344,10 +353,16 @@ export default function PlayerPage() {
 
                 {/* QUESTION */}
                 {state === 'QUESTION' && currentQuestion && (
+                    showBonusSplash ? (
+                        <BonusSplash onComplete={() => setShowBonusSplash(false)} />
+                    ) : (
                     <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom">
                         <div className="py-4 stagger-in" style={{ animationDelay: '0s' }}>
                             <div className="flex items-center justify-between mb-2">
-                                <span className="text-[--text-tertiary] text-sm">Q{questionNumber}/{totalQuestions}</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[--text-tertiary] text-sm">Q{questionNumber}/{totalQuestions}</span>
+                                    {isBonus && <span className="bonus-badge">2X BONUS</span>}
+                                </div>
                                 <div className="flex items-center gap-2">
                                     {streak >= 3 && (
                                         <span className="streak-fire">{streak} streak</span>
@@ -405,6 +420,7 @@ export default function PlayerPage() {
                             ))}
                         </div>
                     </div>
+                    )
                 )}
 
                 {/* WAITING */}
@@ -501,7 +517,7 @@ export default function PlayerPage() {
                          style={{ position: 'relative', overflow: 'hidden' }}>
                         <Fireworks duration={10000} maxRockets={2} />
 
-                        <h2 className="text-2xl font-bold mb-2" style={{ position: 'relative', zIndex: 11 }}>Final Results</h2>
+                        <h2 className="text-3xl font-extrabold text-center tracking-tight mb-4" style={{ position: 'relative', zIndex: 11 }}>Final Results</h2>
 
                         {leaderboard[0] && (
                             <div className="champion-label" style={{ position: 'relative', zIndex: 11 }}>
@@ -548,6 +564,44 @@ export default function PlayerPage() {
                             <p className="text-[--text-tertiary] mt-4" style={{ position: 'relative', zIndex: 11 }}>
                                 You finished #{leaderboard.findIndex(p => p.nickname === nickname) + 1}
                             </p>
+                        )}
+
+                        {teamLeaderboard.length > 1 && (
+                            <div className="w-full mt-6" style={{ position: 'relative', zIndex: 11 }}>
+                                <h3 className="text-lg font-semibold text-center mb-3">Team Standings</h3>
+                                <div className="podium-container">
+                                    {teamLeaderboard[1] && (
+                                        <div className="podium-place podium-2">
+                                            <p className="podium-name">{teamLeaderboard[1].team}</p>
+                                            {teamLeaderboard[1].members > 1 && (
+                                                <p className="text-xs text-[--text-tertiary]">{teamLeaderboard[1].members} members</p>
+                                            )}
+                                            <div className="podium-bar">2</div>
+                                            <p className="podium-score"><AnimatedNumber value={teamLeaderboard[1].score} /></p>
+                                        </div>
+                                    )}
+                                    {teamLeaderboard[0] && (
+                                        <div className="podium-place podium-1 victory-glow">
+                                            <p className="podium-name">{teamLeaderboard[0].team}</p>
+                                            {teamLeaderboard[0].members > 1 && (
+                                                <p className="text-xs text-[--text-tertiary]">{teamLeaderboard[0].members} members</p>
+                                            )}
+                                            <div className="podium-bar">1</div>
+                                            <p className="podium-score"><AnimatedNumber value={teamLeaderboard[0].score} /></p>
+                                        </div>
+                                    )}
+                                    {teamLeaderboard[2] && (
+                                        <div className="podium-place podium-3">
+                                            <p className="podium-name">{teamLeaderboard[2].team}</p>
+                                            {teamLeaderboard[2].members > 1 && (
+                                                <p className="text-xs text-[--text-tertiary]">{teamLeaderboard[2].members} members</p>
+                                            )}
+                                            <div className="podium-bar">3</div>
+                                            <p className="podium-score"><AnimatedNumber value={teamLeaderboard[2].score} /></p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         )}
 
                         <p className="text-[--text-tertiary] mt-8 text-center" style={{ position: 'relative', zIndex: 11 }}>

@@ -10,6 +10,7 @@ import LobbyScreen from '../components/organizer/LobbyScreen';
 import GameQuestionScreen from '../components/organizer/GameQuestionScreen';
 import LeaderboardScreen from '../components/organizer/LeaderboardScreen';
 import PodiumScreen from '../components/organizer/PodiumScreen';
+import BonusSplash from '../components/BonusSplash';
 
 type OrganizerState = 'PROMPT' | 'LOADING' | 'REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
 
@@ -36,6 +37,8 @@ export default function OrganizerPage() {
     const [answeredCount, setAnsweredCount] = useState(0);
     const [provider, setProvider] = useState('ollama');
     const [providers, setProviders] = useState<AIProvider[]>([]);
+    const [isBonus, setIsBonus] = useState(false);
+    const [showBonusSplash, setShowBonusSplash] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
 
     useEffect(() => {
@@ -78,6 +81,8 @@ export default function OrganizerPage() {
             setTotalQuestions(msg.total_questions);
             setTimeRemaining(msg.time_limit);
             setAnsweredCount(0);
+            setIsBonus(msg.is_bonus || false);
+            if (msg.is_bonus) setShowBonusSplash(true);
             setState('QUESTION');
         }
         else if (msg.type === 'TIMER') setTimeRemaining(msg.remaining);
@@ -103,42 +108,6 @@ export default function OrganizerPage() {
             setState('ROOM');
         }
     }, []);
-
-    // DEBUG MODE: skip Ollama, import hardcoded questions, jump to REVIEW
-    const enterDebugMode = async () => {
-        const debugQuiz = {
-            quiz_title: 'Debug Quiz',
-            questions: [
-                { id: 1, text: 'What planet is closest to the Sun?', options: ['Venus', 'Mercury', 'Mars', 'Earth'], answer_index: 1, image_prompt: '' },
-                { id: 2, text: 'What is the largest ocean on Earth?', options: ['Atlantic', 'Indian', 'Pacific', 'Arctic'], answer_index: 2, image_prompt: '' },
-                { id: 3, text: 'How many continents are there?', options: ['5', '6', '7', '8'], answer_index: 2, image_prompt: '' },
-                { id: 4, text: 'Which gas do plants absorb?', options: ['Oxygen', 'Nitrogen', 'Carbon Dioxide', 'Helium'], answer_index: 2, image_prompt: '' },
-                { id: 5, text: 'What is the hardest natural substance?', options: ['Gold', 'Iron', 'Diamond', 'Quartz'], answer_index: 2, image_prompt: '' },
-                { id: 6, text: 'Which country has the most people?', options: ['USA', 'India', 'China', 'Russia'], answer_index: 1, image_prompt: '' },
-                { id: 7, text: 'What is the speed of light (approx)?', options: ['300k km/s', '150k km/s', '1M km/s', '30k km/s'], answer_index: 0, image_prompt: '' },
-                { id: 8, text: 'Who painted the Mona Lisa?', options: ['Picasso', 'Da Vinci', 'Van Gogh', 'Monet'], answer_index: 1, image_prompt: '' },
-                { id: 9, text: 'What is H2O commonly known as?', options: ['Salt', 'Water', 'Acid', 'Sugar'], answer_index: 1, image_prompt: '' },
-                { id: 10, text: 'How many legs does a spider have?', options: ['6', '8', '10', '12'], answer_index: 1, image_prompt: '' },
-            ],
-        };
-        try {
-            const res = await fetch(`${API_URL}/quiz/import`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ quiz: debugQuiz }),
-            });
-            const data = await res.json();
-            if (data.quiz) {
-                setQuiz(data.quiz);
-                setQuizId(data.quiz_id);
-                setTotalQuestions(data.quiz.questions.length);
-                setNumQuestions(data.quiz.questions.length);
-                setState('REVIEW');
-            }
-        } catch {
-            alert('Debug mode failed — is the backend running?');
-        }
-    };
 
     const generateQuiz = async () => {
         setState('LOADING');
@@ -309,7 +278,6 @@ export default function OrganizerPage() {
                         providers={providers}
                         onGenerate={generateQuiz}
                         sdAvailable={sdAvailable}
-                        onDebugMode={enterDebugMode}
                     />
                 )}
 
@@ -345,16 +313,21 @@ export default function OrganizerPage() {
                 )}
 
                 {state === 'QUESTION' && quiz && currentQ && (
-                    <GameQuestionScreen
-                        question={currentQ}
-                        questionNumber={currentQuestion}
-                        totalQuestions={totalQuestions}
-                        timeRemaining={timeRemaining}
-                        timeLimit={timeLimit}
-                        imageUrl={currentImageUrl}
-                        answeredCount={answeredCount}
-                        playerCount={playerCount}
-                    />
+                    showBonusSplash ? (
+                        <BonusSplash onComplete={() => setShowBonusSplash(false)} />
+                    ) : (
+                        <GameQuestionScreen
+                            question={currentQ}
+                            questionNumber={currentQuestion}
+                            totalQuestions={totalQuestions}
+                            timeRemaining={timeRemaining}
+                            timeLimit={timeLimit}
+                            imageUrl={currentImageUrl}
+                            answeredCount={answeredCount}
+                            playerCount={playerCount}
+                            isBonus={isBonus}
+                        />
+                    )
                 )}
 
                 {state === 'LEADERBOARD' && (

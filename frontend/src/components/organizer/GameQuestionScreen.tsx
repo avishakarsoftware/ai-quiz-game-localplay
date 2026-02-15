@@ -9,11 +9,12 @@ interface GameQuestionScreenProps {
     imageUrl?: string;
     answeredCount?: number;
     playerCount?: number;
+    isBonus?: boolean;
 }
 
 export default function GameQuestionScreen({
     question, questionNumber, totalQuestions, timeRemaining, timeLimit, imageUrl,
-    answeredCount, playerCount,
+    answeredCount, playerCount, isBonus,
 }: GameQuestionScreenProps) {
     const timerPct = (timeRemaining / timeLimit) * 100;
     const timerColor = timeRemaining <= 5 ? 'var(--accent-danger)'
@@ -25,7 +26,10 @@ export default function GameQuestionScreen({
             {/* Timer bar + question counter */}
             <div className="py-4 stagger-in" style={{ animationDelay: '0s' }}>
                 <div className="flex items-center justify-between mb-2">
-                    <span className="text-[--text-tertiary] text-sm">Q{questionNumber}/{totalQuestions}</span>
+                    <div className="flex items-center gap-2">
+                        <span className="text-[--text-tertiary] text-sm">Q{questionNumber}/{totalQuestions}</span>
+                        {isBonus && <span className="bonus-badge">2X BONUS</span>}
+                    </div>
                     <span className={`font-bold tabular-nums text-lg ${timeRemaining <= 5 ? 'text-[--accent-danger] timer-number-pulse' : ''}`}
                         style={{ color: timerColor }}>
                         {timeRemaining}s

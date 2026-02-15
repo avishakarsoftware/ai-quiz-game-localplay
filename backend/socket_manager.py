@@ -35,6 +35,8 @@ class Room:
         self.teams: Dict[str, str] = {}  # nickname -> team_name
         # Power-ups
         self.power_ups: Dict[str, dict] = {}  # nickname -> {double_points: bool, fifty_fifty: bool}
+        # Bonus rounds
+        self.bonus_questions: set = set()  # indices of bonus round questions (2x points)
 
     def reset_for_new_game(self, new_quiz_data: dict, new_time_limit: int):
         """Reset room for a new game round, keeping players connected."""
@@ -58,6 +60,7 @@ class Room:
             self.players[client_id]["streak"] = 0
 
         self.disconnected_players.clear()
+        self.bonus_questions = set()
 
         for nickname in self.power_ups:
             self.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
@@ -232,6 +235,7 @@ class SocketManager:
 
         if is_organizer:
             if msg_type == "START_GAME":
+                self._select_bonus_questions(room)
                 room.state = "INTRO"
                 await room.broadcast({"type": "GAME_STARTING"})
 
@@ -302,6 +306,7 @@ class SocketManager:
                             player_question = {k: v for k, v in question.items() if k != "answer_index"}
                             state_info["question"] = player_question
                             state_info["time_limit"] = room.time_limit
+                            state_info["is_bonus"] = room.current_question_index in room.bonus_questions
                         await ws.send_json(state_info)
                     return
 
@@ -341,6 +346,7 @@ class SocketManager:
                             player_question = {k: v for k, v in question.items() if k != "answer_index"}
                             state_info["question"] = player_question
                             state_info["time_limit"] = room.time_limit
+                            state_info["is_bonus"] = room.current_question_index in room.bonus_questions
                         await ws.send_json(state_info)
                     return
 
@@ -389,6 +395,11 @@ class SocketManager:
                     time_ratio = max(0, 1 - (time_taken / room.time_limit))
                     base_points = int(100 + (900 * time_ratio))  # 100-1000 points
 
+                    # Bonus round (2x base points for everyone)
+                    is_bonus = room.current_question_index in room.bonus_questions
+                    if is_bonus:
+                        base_points *= 2
+
                     # Streak bonus
                     room.players[client_id]["streak"] = room.players[client_id].get("streak", 0) + 1
                     streak = room.players[client_id]["streak"]
@@ -411,6 +422,7 @@ class SocketManager:
                         "points": points,
                         "streak": streak,
                         "multiplier": multiplier,
+                        "is_bonus": is_bonus,
                     })
                 else:
                     room.players[client_id]["streak"] = 0
@@ -420,6 +432,7 @@ class SocketManager:
                         "points": 0,
                         "streak": 0,
                         "multiplier": 1.0,
+                        "is_bonus": room.current_question_index in room.bonus_questions,
                     })
 
                 # Log answer for game history
@@ -464,12 +477,11 @@ class SocketManager:
                     })
 
     def get_team_leaderboard(self, room: Room) -> List[dict]:
-        """Aggregate player scores by team."""
+        """Aggregate player scores by team. Solo players use their nickname."""
         team_scores: Dict[str, list] = {}
         for player in room.players.values():
-            team = room.teams.get(player["nickname"])
-            if team:
-                team_scores.setdefault(team, []).append(player["score"])
+            team = room.teams.get(player["nickname"]) or player["nickname"]
+            team_scores.setdefault(team, []).append(player["score"])
         result = []
         for team_name, scores in team_scores.items():
             result.append({
@@ -487,10 +499,24 @@ class SocketManager:
             "total_questions": len(room.quiz["questions"]),
             "player_count": len(room.players),
             "leaderboard": self.get_leaderboard(room),
-            "team_leaderboard": self.get_team_leaderboard(room) if room.teams else [],
+            "team_leaderboard": self.get_team_leaderboard(room),
             "answer_log": room.answer_log,
             "completed_at": time.time(),
         }
+
+    def _select_bonus_questions(self, room: Room):
+        """Pre-select which questions will be bonus rounds (2x points)."""
+        import random
+        total = len(room.quiz["questions"])
+        if total < 4:
+            room.bonus_questions = set()
+            return
+        # Eligible: exclude first and last question
+        eligible = list(range(1, total - 1))
+        num_bonus = max(1, int(total * config.BONUS_ROUND_FRACTION))
+        num_bonus = min(num_bonus, len(eligible))
+        room.bonus_questions = set(random.sample(eligible, num_bonus))
+        logger.info("Room %s bonus questions: %s", room.room_code, room.bonus_questions)
 
     async def start_question(self, room: Room):
         if room.timer_task:
@@ -501,7 +527,7 @@ class SocketManager:
         if room.current_question_index >= len(room.quiz["questions"]):
             room.state = "PODIUM"
             leaderboard = self.get_leaderboard(room)
-            team_leaderboard = self.get_team_leaderboard(room) if room.teams else []
+            team_leaderboard = self.get_team_leaderboard(room)
             await room.broadcast({
                 "type": "PODIUM",
                 "leaderboard": leaderboard,
@@ -520,20 +546,27 @@ class SocketManager:
         room.previous_leaderboard = self.get_leaderboard(room)
 
         room.state = "QUESTION"
-        room.question_start_time = time.time()
         room.answered_players = set()
 
         question = room.quiz["questions"][room.current_question_index]
         player_question = {k: v for k, v in question.items() if k != "answer_index"}
+
+        is_bonus = room.current_question_index in room.bonus_questions
 
         await room.broadcast({
             "type": "QUESTION",
             "question": player_question,
             "question_number": room.current_question_index + 1,
             "total_questions": len(room.quiz["questions"]),
-            "time_limit": room.time_limit
+            "time_limit": room.time_limit,
+            "is_bonus": is_bonus,
         })
 
+        # Delay timer start for bonus rounds so the splash animation plays first
+        if is_bonus:
+            await asyncio.sleep(2)
+
+        room.question_start_time = time.time()
         room.timer_task = asyncio.create_task(self.question_timer(room))
 
     async def question_timer(self, room: Room):
@@ -557,6 +590,11 @@ class SocketManager:
         if room.timer_task:
             room.timer_task.cancel()
             room.timer_task = None
+
+        # Reset streak for players who didn't answer
+        for cid, player in room.players.items():
+            if cid not in room.answered_players:
+                player["streak"] = 0
 
         question = room.quiz["questions"][room.current_question_index]
         current_leaderboard = self.get_leaderboard_with_changes(room)

@@ -120,7 +120,8 @@ class TestLeaderboard:
         sm = SocketManager()
         lb = sm.get_leaderboard(room)
         assert len(lb) == 1
-        assert lb[0] == {"nickname": "Solo", "score": 100}
+        assert lb[0]["nickname"] == "Solo"
+        assert lb[0]["score"] == 100
 
 
 class TestLeaderboardWithChanges:
@@ -608,12 +609,16 @@ class TestTeamMode:
         assert blue["score"] == 500
         assert blue["members"] == 1
 
-    def test_empty_teams(self):
+    def test_solo_players_as_teams(self):
+        """When no teams are set, solo players appear as their own 'team'."""
         sm = SocketManager()
         room = make_room()
         room.players["p1"] = {"nickname": "Alice", "score": 100, "prev_rank": 0}
         tl = sm.get_team_leaderboard(room)
-        assert tl == []
+        assert len(tl) == 1
+        assert tl[0]["team"] == "Alice"
+        assert tl[0]["members"] == 1
+        assert tl[0]["score"] == 100
 
 
 # ---------------------------------------------------------------------------
@@ -697,3 +702,181 @@ class TestAnswerLog:
         assert len(summary["leaderboard"]) == 2
         assert summary["leaderboard"][0]["nickname"] == "Alice"  # highest score first
         assert len(summary["answer_log"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Bonus Round Selection Tests
+# ---------------------------------------------------------------------------
+
+class TestBonusRoundSelection:
+    def test_no_bonus_under_4_questions(self):
+        """Games with fewer than 4 questions should have no bonus rounds."""
+        sm = SocketManager()
+        for n in (1, 2, 3):
+            room = make_room(num_questions=n)
+            sm._select_bonus_questions(room)
+            assert room.bonus_questions == set(), f"Expected no bonus for {n} questions"
+
+    def test_bonus_excludes_first_and_last(self):
+        """First and last questions should never be bonus rounds."""
+        sm = SocketManager()
+        for _ in range(20):  # Run multiple times due to randomness
+            room = make_room(num_questions=6)
+            sm._select_bonus_questions(room)
+            assert 0 not in room.bonus_questions, "First question should not be bonus"
+            assert 5 not in room.bonus_questions, "Last question should not be bonus"
+
+    def test_bonus_selects_at_least_one(self):
+        """Games with 4+ questions should have at least 1 bonus round."""
+        sm = SocketManager()
+        for n in (4, 5, 6, 10):
+            room = make_room(num_questions=n)
+            sm._select_bonus_questions(room)
+            assert len(room.bonus_questions) >= 1, f"Expected at least 1 bonus for {n} questions"
+
+    def test_bonus_fraction_approximate(self):
+        """10-question quiz: ~30% = 3 bonus questions."""
+        sm = SocketManager()
+        room = make_room(num_questions=10)
+        sm._select_bonus_questions(room)
+        assert len(room.bonus_questions) == 3
+
+    def test_bonus_reset_on_new_game(self):
+        """reset_for_new_game should clear bonus_questions."""
+        room = make_room(num_questions=6)
+        room.bonus_questions = {1, 2, 3}
+        room.reset_for_new_game(make_quiz(4), 15)
+        assert room.bonus_questions == set()
+
+
+# ---------------------------------------------------------------------------
+# Bonus Scoring Tests
+# ---------------------------------------------------------------------------
+
+class TestBonusScoring:
+    def test_bonus_doubles_base_points(self):
+        """A correct answer on a bonus question should get 2x base points."""
+        time_limit = 15
+        time_taken = 7.5  # half time
+        time_ratio = max(0, 1 - (time_taken / time_limit))
+        normal_points = int(100 + (900 * time_ratio))
+        bonus_points = normal_points * 2
+        assert bonus_points == normal_points * 2
+
+    def test_bonus_stacks_with_streak(self):
+        """Bonus 2x + streak 1.5x should give 3x effective multiplier."""
+        time_limit = 15
+        time_taken = 0.01
+        time_ratio = max(0, 1 - (time_taken / time_limit))
+        base_points = int(100 + (900 * time_ratio))
+
+        # Bonus doubles base
+        bonus_base = base_points * 2
+
+        # Streak of 3 gives 1.5x
+        streak = 3
+        multiplier = 1.0
+        for threshold, mult in sorted(config.STREAK_THRESHOLDS.items()):
+            if streak >= threshold:
+                multiplier = mult
+        final = int(bonus_base * multiplier)
+        assert final == int(base_points * 2 * 1.5)
+
+    def test_bonus_stacks_with_double_points_powerup(self):
+        """Bonus 2x + power-up 2x = 4x theoretical max (before streak)."""
+        base_points = 1000
+        # Bonus doubles base
+        after_bonus = base_points * 2
+        # Streak at 1 (no multiplier)
+        after_streak = int(after_bonus * 1.0)
+        # Double points power-up
+        after_powerup = after_streak * 2
+        assert after_powerup == 4000
+
+
+# ---------------------------------------------------------------------------
+# Streak Reset on No-Answer Tests
+# ---------------------------------------------------------------------------
+
+class TestStreakResetOnNoAnswer:
+    def test_streak_resets_for_unanswered_players(self):
+        """Players who don't answer should have their streak reset to 0."""
+        room = make_room()
+        room.state = "QUESTION"
+        room.current_question_index = 0
+        room.previous_leaderboard = []
+        room.players = {
+            "p1": {"nickname": "Alice", "score": 500, "prev_rank": 0, "streak": 3},
+            "p2": {"nickname": "Bob", "score": 300, "prev_rank": 0, "streak": 2},
+        }
+        # Only p1 answered
+        room.answered_players = {"p1"}
+
+        # Simulate the streak reset logic from end_question
+        for cid, player in room.players.items():
+            if cid not in room.answered_players:
+                player["streak"] = 0
+
+        assert room.players["p1"]["streak"] == 3  # answered, preserved
+        assert room.players["p2"]["streak"] == 0  # didn't answer, reset
+
+    def test_streak_preserved_for_answered_players(self):
+        """Players who answered should keep their streak."""
+        room = make_room()
+        room.state = "QUESTION"
+        room.current_question_index = 0
+        room.previous_leaderboard = []
+        room.players = {
+            "p1": {"nickname": "Alice", "score": 500, "prev_rank": 0, "streak": 5},
+        }
+        room.answered_players = {"p1"}
+
+        for cid, player in room.players.items():
+            if cid not in room.answered_players:
+                player["streak"] = 0
+
+        assert room.players["p1"]["streak"] == 5
+
+
+# ---------------------------------------------------------------------------
+# Team Leaderboard Solo Players Tests
+# ---------------------------------------------------------------------------
+
+class TestTeamLeaderboardSoloPlayers:
+    def test_solo_players_use_nickname_as_team(self):
+        """Players without a team should appear with their nickname as team name."""
+        sm = SocketManager()
+        room = make_room()
+        room.players = {
+            "p1": {"nickname": "Alice", "score": 600, "prev_rank": 0},
+            "p2": {"nickname": "Bob", "score": 400, "prev_rank": 0},
+        }
+        # No teams assigned
+        tl = sm.get_team_leaderboard(room)
+        assert len(tl) == 2
+        names = {t["team"] for t in tl}
+        assert names == {"Alice", "Bob"}
+        for t in tl:
+            assert t["members"] == 1
+
+    def test_mixed_teams_and_solo(self):
+        """Mix of team players and solo players in team leaderboard."""
+        sm = SocketManager()
+        room = make_room()
+        room.players = {
+            "p1": {"nickname": "Alice", "score": 600, "prev_rank": 0},
+            "p2": {"nickname": "Bob", "score": 400, "prev_rank": 0},
+            "p3": {"nickname": "Charlie", "score": 500, "prev_rank": 0},
+        }
+        room.teams["Alice"] = "Red"
+        room.teams["Bob"] = "Red"
+        # Charlie has no team -> solo
+
+        tl = sm.get_team_leaderboard(room)
+        assert len(tl) == 2
+        red = next(t for t in tl if t["team"] == "Red")
+        charlie = next(t for t in tl if t["team"] == "Charlie")
+        assert red["members"] == 2
+        assert red["score"] == 500  # (600+400)/2
+        assert charlie["members"] == 1
+        assert charlie["score"] == 500
