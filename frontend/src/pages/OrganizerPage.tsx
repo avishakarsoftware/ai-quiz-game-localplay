@@ -43,6 +43,7 @@ export default function OrganizerPage() {
     const stateRef = useRef<OrganizerState>('PROMPT');
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const roomCodeRef = useRef('');
+    const organizerTokenRef = useRef('');
 
     useEffect(() => { stateRef.current = state; }, [state]);
     useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
@@ -156,6 +157,11 @@ export default function OrganizerPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt, difficulty, num_questions: numQuestions, provider }),
             });
+            if (res.status === 429) {
+                alert('Too many requests. Please wait a minute before generating another quiz.');
+                setState('PROMPT');
+                return;
+            }
             const data = await res.json();
             if (data.quiz) {
                 setQuiz(data.quiz);
@@ -255,7 +261,8 @@ export default function OrganizerPage() {
             wsRef.current.close();
         }
         const clientId = `organizer-${Date.now()}`;
-        const ws = new WebSocket(`${WS_URL}/ws/${code}/${clientId}?organizer=true`);
+        const token = encodeURIComponent(organizerTokenRef.current);
+        const ws = new WebSocket(`${WS_URL}/ws/${code}/${clientId}?organizer=true&token=${token}`);
         wsRef.current = ws;
         ws.onmessage = handleWsMessage;
         ws.onclose = () => {
@@ -291,6 +298,7 @@ export default function OrganizerPage() {
         });
         const data = await res.json();
         setRoomCode(data.room_code);
+        organizerTokenRef.current = data.organizer_token || '';
         setState('ROOM');
         connectWs(data.room_code);
     };

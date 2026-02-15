@@ -59,7 +59,18 @@ class ImageEngine:
             if response.status_code == 200:
                 result = response.json()
                 if "image_base64" in result:
-                    return result["image_base64"]
+                    image_b64 = result["image_base64"]
+                    # Validate image size to prevent memory abuse
+                    if len(image_b64) > config.MAX_IMAGE_SIZE_BYTES:
+                        logger.warning("Image too large (%d bytes), rejecting", len(image_b64))
+                        return None
+                    # Validate it's actually valid base64
+                    try:
+                        base64.b64decode(image_b64, validate=True)
+                    except Exception:
+                        logger.warning("Invalid base64 in image response")
+                        return None
+                    return image_b64
 
             return None
         except Exception as e:

@@ -12,10 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 class Room:
-    def __init__(self, room_code: str, quiz_data: dict, time_limit: int = 15):
+    def __init__(self, room_code: str, quiz_data: dict, time_limit: int = 15,
+                 organizer_token: str = ""):
         self.room_code = room_code
         self.quiz = quiz_data
         self.time_limit = time_limit
+        self.organizer_token = organizer_token  # secret token for organizer auth
         self.players: Dict[str, dict] = {}  # socket_id -> {nickname, score, prev_rank, streak, ...}
         self.organizer: Optional[WebSocket] = None
         self.organizer_id: Optional[str] = None
@@ -31,6 +33,8 @@ class Room:
         self.last_activity = time.time()
         self.disconnected_players: Dict[str, dict] = {}  # nickname -> {score, prev_rank, streak}
         self.answer_log: List[dict] = []  # game history: per-question answer records
+        # WS rate limiting: client_id -> list of timestamps
+        self.msg_timestamps: Dict[str, list] = {}
         # Team mode
         self.teams: Dict[str, str] = {}  # nickname -> team_name
         # Power-ups
@@ -163,14 +167,16 @@ class SocketManager:
             except Exception:
                 logger.exception("Error in room cleanup loop")
 
-    def create_room(self, room_code: str, quiz_data: dict, time_limit: int = 15) -> Room:
-        room = Room(room_code, quiz_data, time_limit)
+    def create_room(self, room_code: str, quiz_data: dict, time_limit: int = 15,
+                    organizer_token: str = "") -> Room:
+        room = Room(room_code, quiz_data, time_limit, organizer_token=organizer_token)
         self.rooms[room_code] = room
         self.start_cleanup_loop()
         return room
 
     async def connect(self, websocket: WebSocket, room_code: str, client_id: str,
-                      is_organizer: bool = False, is_spectator: bool = False):
+                      is_organizer: bool = False, is_spectator: bool = False,
+                      token: str = ""):
         await websocket.accept()
         if room_code not in self.rooms:
             await websocket.send_json({"type": "ERROR", "message": "Room not found"})
@@ -178,6 +184,14 @@ class SocketManager:
             return
 
         room = self.rooms[room_code]
+
+        # Verify organizer token
+        if is_organizer:
+            if not token or token != room.organizer_token:
+                await websocket.send_json({"type": "ERROR", "message": "Invalid organizer token"})
+                await websocket.close()
+                return
+
         room.touch()
 
         if is_spectator:
@@ -221,6 +235,21 @@ class SocketManager:
         try:
             while True:
                 data = await websocket.receive_text()
+
+                # Enforce message size limit
+                if len(data) > config.MAX_WS_MESSAGE_SIZE:
+                    await websocket.send_json({"type": "ERROR", "message": "Message too large"})
+                    continue
+
+                # Per-client rate limiting
+                now = time.time()
+                timestamps = room.msg_timestamps.setdefault(client_id, [])
+                timestamps[:] = [t for t in timestamps if now - t < 1.0]
+                if len(timestamps) >= config.WS_RATE_LIMIT_PER_SEC:
+                    await websocket.send_json({"type": "ERROR", "message": "Too many messages"})
+                    continue
+                timestamps.append(now)
+
                 try:
                     message = json.loads(data)
                 except json.JSONDecodeError:
@@ -326,7 +355,7 @@ class SocketManager:
             if msg_type == "JOIN":
                 nickname = message.get("nickname", "").strip()
                 team = message.get("team", "").strip() or None
-                # Sanitize first: strip HTML tags to prevent XSS
+                # Sanitize: strip HTML tags to prevent XSS
                 nickname = re.sub(r'<[^>]+>', '', nickname).strip()
                 if not nickname or len(nickname) > config.MAX_NICKNAME_LENGTH:
                     ws = room.connections.get(client_id)
@@ -337,7 +366,19 @@ class SocketManager:
                         })
                     return
 
+                # Sanitize team name
+                if team:
+                    team = re.sub(r'<[^>]+>', '', team).strip()
+                    if len(team) > config.MAX_TEAM_NAME_LENGTH:
+                        team = team[:config.MAX_TEAM_NAME_LENGTH]
+                    if not team:
+                        team = None
+
+                # Sanitize and limit avatar length
                 avatar = message.get("avatar", "")
+                if not isinstance(avatar, str):
+                    avatar = ""
+                avatar = avatar[:config.MAX_AVATAR_LENGTH]
 
                 # Check for reconnection (disconnected mid-game)
                 if nickname in room.disconnected_players:
@@ -424,6 +465,9 @@ class SocketManager:
 
             elif msg_type == "ANSWER":
                 answer_index = message.get("answer_index")
+                # Bounds check to prevent IndexError
+                if room.current_question_index < 0 or room.current_question_index >= len(room.quiz["questions"]):
+                    return
                 question = room.quiz["questions"][room.current_question_index]
                 num_options = len(question.get("options", []))
                 if not isinstance(answer_index, int) or not (0 <= answer_index < num_options):
@@ -511,29 +555,34 @@ class SocketManager:
                 nickname = room.players.get(client_id, {}).get("nickname")
                 if not nickname or power_up not in ("double_points", "fifty_fifty"):
                     return
-                pups = room.power_ups.get(nickname, {})
                 ws = room.connections.get(client_id)
                 if not ws:
                     return
-                if not pups.get(power_up):
-                    await ws.send_json({"type": "ERROR", "message": "Power-up already used"})
-                    return
-                if power_up == "double_points":
-                    pups["double_points"] = False
-                    pups["double_points_active"] = True
-                    await ws.send_json({"type": "POWER_UP_ACTIVATED", "power_up": "double_points"})
-                elif power_up == "fifty_fifty":
-                    pups["fifty_fifty"] = False
-                    question = room.quiz["questions"][room.current_question_index]
-                    correct_idx = question["answer_index"]
-                    wrong_indices = [i for i in range(len(question["options"])) if i != correct_idx]
-                    import random
-                    remove = random.sample(wrong_indices, min(2, len(wrong_indices)))
-                    await ws.send_json({
-                        "type": "POWER_UP_ACTIVATED",
-                        "power_up": "fifty_fifty",
-                        "remove_indices": remove,
-                    })
+
+                async with room.lock:
+                    pups = room.power_ups.get(nickname, {})
+                    if not pups.get(power_up):
+                        await ws.send_json({"type": "ERROR", "message": "Power-up already used"})
+                        return
+                    if power_up == "double_points":
+                        pups["double_points"] = False
+                        pups["double_points_active"] = True
+                        await ws.send_json({"type": "POWER_UP_ACTIVATED", "power_up": "double_points"})
+                    elif power_up == "fifty_fifty":
+                        pups["fifty_fifty"] = False
+                        # Bounds check before accessing question
+                        if room.current_question_index < 0 or room.current_question_index >= len(room.quiz["questions"]):
+                            return
+                        question = room.quiz["questions"][room.current_question_index]
+                        correct_idx = question["answer_index"]
+                        wrong_indices = [i for i in range(len(question["options"])) if i != correct_idx]
+                        import random
+                        remove = random.sample(wrong_indices, min(2, len(wrong_indices)))
+                        await ws.send_json({
+                            "type": "POWER_UP_ACTIVATED",
+                            "power_up": "fifty_fifty",
+                            "remove_indices": remove,
+                        })
 
     def get_team_leaderboard(self, room: Room) -> List[dict]:
         """Aggregate player scores by team. Solo players use their nickname."""

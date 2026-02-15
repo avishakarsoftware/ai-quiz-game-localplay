@@ -1,13 +1,17 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, field_validator
 from typing import List, Optional, Dict
+from collections import defaultdict
+import re
+import time
 from contextlib import asynccontextmanager
 import uvicorn
 import uuid
 import random
 import string
+import secrets
 import base64
 import logging
 import socket as socketlib
@@ -15,7 +19,7 @@ import socket as socketlib
 import config
 config.setup_logging()
 
-from quiz_engine import quiz_engine
+from quiz_engine import quiz_engine, _sanitize_quiz
 from socket_manager import socket_manager
 from image_engine import image_engine
 
@@ -49,9 +53,46 @@ async def get_system_info():
     return {"ip": get_local_ip()}
 
 
-# In-memory storage
-quizzes: Dict[str, dict] = {}
+# In-memory rate limiter
+_rate_limit_store: Dict[str, list] = defaultdict(list)
+
+
+def _check_rate_limit(client_ip: str) -> bool:
+    """Return True if the request is allowed, False if rate-limited."""
+    now = time.time()
+    window = config.RATE_LIMIT_WINDOW
+    # Prune old entries
+    _rate_limit_store[client_ip] = [
+        t for t in _rate_limit_store[client_ip] if now - t < window
+    ]
+    if len(_rate_limit_store[client_ip]) >= config.RATE_LIMIT_MAX_REQUESTS:
+        return False
+    _rate_limit_store[client_ip].append(now)
+    return True
+
+
+# In-memory storage with timestamps for cleanup
+quizzes: Dict[str, dict] = {}  # quiz_id -> quiz_data
+quiz_timestamps: Dict[str, float] = {}  # quiz_id -> creation time
 quiz_images: Dict[str, Dict[int, str]] = {}  # quiz_id -> {question_id: base64_image}
+
+
+def _evict_old_quizzes():
+    """Evict oldest quizzes if storage limit exceeded, and expire stale ones."""
+    now = time.time()
+    # Remove expired quizzes
+    expired = [qid for qid, ts in quiz_timestamps.items()
+               if now - ts > config.QUIZ_TTL_SECONDS]
+    for qid in expired:
+        quizzes.pop(qid, None)
+        quiz_timestamps.pop(qid, None)
+        quiz_images.pop(qid, None)
+    # If still over limit, evict oldest
+    while len(quizzes) >= config.MAX_QUIZZES and quiz_timestamps:
+        oldest_id = min(quiz_timestamps, key=quiz_timestamps.get)
+        quizzes.pop(oldest_id, None)
+        quiz_timestamps.pop(oldest_id, None)
+        quiz_images.pop(oldest_id, None)
 
 def generate_room_code() -> str:
     """Generate a unique 6-character room code, checking for collisions."""
@@ -71,9 +112,28 @@ class QuizRequest(BaseModel):
     @field_validator('prompt')
     @classmethod
     def validate_prompt(cls, v: str) -> str:
+        # Strip null bytes and control characters (keep newlines, tabs)
+        v = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', v)
+        # Strip HTML tags to prevent XSS
+        v = re.sub(r'<[^>]+>', '', v)
         v = v.strip()
-        if not v or len(v) > 500:
-            raise ValueError('Prompt must be 1-500 characters')
+        if not v or len(v) > config.MAX_PROMPT_LENGTH:
+            raise ValueError(f'Prompt must be 1-{config.MAX_PROMPT_LENGTH} characters')
+        # Block prompt injection patterns (case-insensitive)
+        injection_patterns = [
+            r'ignore\s+(all\s+)?previous\s+instructions',
+            r'ignore\s+(all\s+)?above',
+            r'disregard\s+(all\s+)?previous',
+            r'you\s+are\s+now\s+(?:a|an|in)',
+            r'new\s+instructions?\s*:',
+            r'system\s*:\s*',
+            r'<\s*/?script',
+            r'javascript\s*:',
+        ]
+        lower_v = v.lower()
+        for pattern in injection_patterns:
+            if re.search(pattern, lower_v):
+                raise ValueError('Prompt contains disallowed content')
         return v
 
     @field_validator('difficulty')
@@ -115,13 +175,18 @@ async def get_providers():
 
 
 @app.post("/quiz/generate")
-async def generate_quiz(request: QuizRequest):
+async def generate_quiz(request: QuizRequest, req: Request):
+    client_ip = req.client.host if req.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating another quiz.")
     quiz_data = await quiz_engine.generate_quiz(request.prompt, request.difficulty, request.num_questions, request.provider)
     if not quiz_data:
         raise HTTPException(status_code=500, detail="Failed to generate quiz")
 
+    _evict_old_quizzes()
     quiz_id = str(uuid.uuid4())
     quizzes[quiz_id] = quiz_data
+    quiz_timestamps[quiz_id] = time.time()
     logger.info("Quiz created: %s ('%s')", quiz_id, quiz_data.get("quiz_title", "Untitled"))
     return {"quiz_id": quiz_id, "quiz": quiz_data}
 
@@ -159,8 +224,10 @@ class QuizUpdateRequest(BaseModel):
 async def update_quiz(quiz_id: str, request: QuizUpdateRequest):
     if quiz_id not in quizzes:
         raise HTTPException(status_code=404, detail="Quiz not found")
-    quizzes[quiz_id] = {"quiz_title": request.quiz_title, "questions": request.questions}
-    logger.info("Quiz updated: %s ('%s'), %d questions", quiz_id, request.quiz_title, len(request.questions))
+    quiz_data = {"quiz_title": request.quiz_title, "questions": request.questions}
+    quiz_data = _sanitize_quiz(quiz_data)
+    quizzes[quiz_id] = quiz_data
+    logger.info("Quiz updated: %s ('%s'), %d questions", quiz_id, quiz_data["quiz_title"], len(quiz_data["questions"]))
     return {"quiz_id": quiz_id, "quiz": quizzes[quiz_id]}
 
 
@@ -230,8 +297,13 @@ async def create_room(request: RoomCreateRequest):
     if request.quiz_id not in quizzes:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
+    # Enforce max rooms limit
+    if len(socket_manager.rooms) >= config.MAX_ROOMS:
+        raise HTTPException(status_code=429, detail="Too many active rooms. Please try again later.")
+
     room_code = generate_room_code()
     quiz_data = quizzes[request.quiz_id]
+    organizer_token = secrets.token_urlsafe(32)
 
     # Attach image URLs to quiz data if available
     if request.quiz_id in quiz_images:
@@ -239,16 +311,19 @@ async def create_room(request: RoomCreateRequest):
             if question["id"] in quiz_images[request.quiz_id]:
                 question["image_url"] = f"/quiz/{request.quiz_id}/image/{question['id']}"
 
-    socket_manager.create_room(room_code, quiz_data, request.time_limit)
+    socket_manager.create_room(room_code, quiz_data, request.time_limit,
+                               organizer_token=organizer_token)
     logger.info("Room created: %s", room_code)
-    return {"room_code": room_code}
+    return {"room_code": room_code, "organizer_token": organizer_token}
 
 
 @app.websocket("/ws/{room_code}/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, room_code: str, client_id: str,
-                             organizer: bool = False, spectator: bool = False):
+                             organizer: bool = False, spectator: bool = False,
+                             token: str = ""):
     await socket_manager.connect(websocket, room_code, client_id,
-                                 is_organizer=organizer, is_spectator=spectator)
+                                 is_organizer=organizer, is_spectator=spectator,
+                                 token=token)
 
 
 # --- Export / Import ---
@@ -282,9 +357,12 @@ class QuizImportRequest(BaseModel):
 @app.post("/quiz/import")
 async def import_quiz(request: QuizImportRequest):
     """Import a previously exported quiz."""
+    _evict_old_quizzes()
     quiz_id = str(uuid.uuid4())
-    quizzes[quiz_id] = request.quiz
-    logger.info("Quiz imported: %s ('%s')", quiz_id, request.quiz.get("quiz_title", "Untitled"))
+    quiz_data = _sanitize_quiz(request.quiz)
+    quizzes[quiz_id] = quiz_data
+    quiz_timestamps[quiz_id] = time.time()
+    logger.info("Quiz imported: %s ('%s')", quiz_id, quiz_data.get("quiz_title", "Untitled"))
     return {"quiz_id": quiz_id, "quiz": quizzes[quiz_id]}
 
 

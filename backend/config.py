@@ -26,7 +26,24 @@ HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "8000"))
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "")
 
+# --- Rate Limiting ---
+RATE_LIMIT_WINDOW = 60  # seconds
+RATE_LIMIT_MAX_REQUESTS = 5  # max quiz generations per window per IP
+
+# --- WebSocket Security ---
+WS_RATE_LIMIT_PER_SEC = 10  # max messages per second per client
+MAX_WS_MESSAGE_SIZE = 4096  # bytes
+MAX_AVATAR_LENGTH = 10  # emoji avatars only
+MAX_TEAM_NAME_LENGTH = 30
+
+# --- Storage Limits ---
+MAX_ROOMS = 50
+MAX_QUIZZES = 100
+MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024  # 2MB per image
+QUIZ_TTL_SECONDS = 3600  # 1 hour
+
 # --- Game ---
+MAX_PROMPT_LENGTH = 500
 MAX_NICKNAME_LENGTH = 20
 ROOM_TTL_SECONDS = int(os.getenv("ROOM_TTL_SECONDS", "1800"))
 MAX_ROOM_CODE_ATTEMPTS = 10

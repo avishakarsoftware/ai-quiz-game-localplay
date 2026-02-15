@@ -187,9 +187,10 @@ export default function PromptScreen({
                     <div className="prompt-input-wrapper" style={{ position: 'relative' }}>
                         <textarea
                             value={prompt}
-                            onChange={(e) => setPrompt(e.target.value)}
+                            onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
                             placeholder="Describe your quiz topic..."
                             className="input-field input-large"
+                            maxLength={500}
                         />
                         <button
                             type="button"
@@ -199,6 +200,9 @@ export default function PromptScreen({
                         >
                             🎲
                         </button>
+                        <div className="text-xs text-right mt-1" style={{ color: prompt.length > 450 ? 'var(--color-error, #ef4444)' : 'var(--text-tertiary)' }}>
+                            {prompt.length}/500
+                        </div>
                     </div>
 
                     {/* AI Provider selector */}
