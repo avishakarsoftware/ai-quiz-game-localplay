@@ -7,3 +7,5 @@ pydantic
 qrcode
 pillow
 python-dotenv
+pytest
+pytest-asyncio

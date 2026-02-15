@@ -1,5 +1,4 @@
 import { useCallback } from 'react';
-import { API_HOST } from '../config';
 
 interface CastButtonProps {
   roomCode: string;

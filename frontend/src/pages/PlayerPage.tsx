@@ -1,20 +1,16 @@
 import { useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { API_URL, WS_URL } from '../config';
+import { type LeaderboardEntry, type PowerUps, ANSWER_STYLES } from '../types';
+import { soundManager } from '../utils/sound';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'QUESTION' | 'WAITING' | 'RESULT' | 'PODIUM';
+type PlayerState = 'JOIN' | 'LOBBY' | 'QUESTION' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING';
 
-interface Question {
+interface PlayerQuestion {
     id: number;
     text: string;
     options: string[];
     image_url?: string;
-}
-
-interface LeaderboardEntry {
-    nickname: string;
-    score: number;
-    rank_change?: number;
 }
 
 export default function PlayerPage() {
@@ -22,7 +18,8 @@ export default function PlayerPage() {
     const [state, setState] = useState<PlayerState>('JOIN');
     const [roomCode, setRoomCode] = useState(searchParams.get('room') || '');
     const [nickname, setNickname] = useState('');
-    const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
+    const [team, setTeam] = useState('');
+    const [currentQuestion, setCurrentQuestion] = useState<PlayerQuestion | null>(null);
     const [questionNumber, setQuestionNumber] = useState(0);
     const [totalQuestions, setTotalQuestions] = useState(0);
     const [timeLimit, setTimeLimit] = useState(15);
@@ -30,13 +27,16 @@ export default function PlayerPage() {
     const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
     const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
     const [pointsEarned, setPointsEarned] = useState(0);
-    const [correctAnswer, setCorrectAnswer] = useState<number | null>(null);
+    const [streak, setStreak] = useState(0);
+    const [multiplier, setMultiplier] = useState(1.0);
+    const [_correctAnswer, setCorrectAnswer] = useState<number | null>(null);
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
     const [myRank, setMyRank] = useState(0);
     const [error, setError] = useState('');
+    const [lobbyPlayers, setLobbyPlayers] = useState<string[]>([]);
+    const [powerUps, setPowerUps] = useState<PowerUps>({ double_points: true, fifty_fifty: true });
+    const [hiddenOptions, setHiddenOptions] = useState<number[]>([]);
     const wsRef = useRef<WebSocket | null>(null);
-
-    const answerStyles = ['answer-red', 'answer-blue', 'answer-yellow', 'answer-green'];
 
     const joinRoom = () => {
         if (!roomCode.trim() || !nickname.trim()) return;
@@ -46,12 +46,34 @@ export default function PlayerPage() {
         const ws = new WebSocket(`${WS_URL}/ws/${roomCode}/${clientId}`);
         wsRef.current = ws;
 
-        ws.onopen = () => ws.send(JSON.stringify({ type: 'JOIN', nickname }));
+        ws.onopen = () => ws.send(JSON.stringify({ type: 'JOIN', nickname, team: team || undefined }));
 
         ws.onmessage = (event) => {
             const msg = JSON.parse(event.data);
             if (msg.type === 'ERROR') { setError(msg.message); return; }
             if (msg.type === 'JOINED_ROOM') setState('LOBBY');
+            if (msg.type === 'RECONNECTED') {
+                setQuestionNumber(msg.question_number);
+                setTotalQuestions(msg.total_questions);
+                if (msg.state === 'QUESTION' && msg.question) {
+                    setCurrentQuestion(msg.question);
+                    setTimeLimit(msg.time_limit);
+                    setTimeRemaining(msg.time_limit);
+                    setSelectedAnswer(null);
+                    setIsCorrect(null);
+                    setPointsEarned(0);
+                    setCorrectAnswer(null);
+                    setHiddenOptions([]);
+                    setState('QUESTION');
+                } else {
+                    setState('WAITING');
+                }
+                return;
+            }
+            if (msg.type === 'PLAYER_JOINED') {
+                if (msg.players) setLobbyPlayers(msg.players);
+                soundManager.play('playerJoin');
+            }
             if (msg.type === 'GAME_STARTING') setState('LOBBY');
             if (msg.type === 'QUESTION') {
                 setCurrentQuestion(msg.question);
@@ -63,36 +85,69 @@ export default function PlayerPage() {
                 setIsCorrect(null);
                 setPointsEarned(0);
                 setCorrectAnswer(null);
+                setHiddenOptions([]);
                 setState('QUESTION');
             }
-            if (msg.type === 'TIMER') setTimeRemaining(msg.remaining);
+            if (msg.type === 'TIMER') {
+                setTimeRemaining(msg.remaining);
+                if (msg.remaining <= 5 && msg.remaining > 0) soundManager.play('timerTick');
+            }
             if (msg.type === 'ANSWER_RESULT') {
                 setIsCorrect(msg.correct);
                 setPointsEarned(msg.points);
+                setStreak(msg.streak || 0);
+                setMultiplier(msg.multiplier || 1.0);
                 setState('WAITING');
+                if (msg.correct) {
+                    soundManager.play('correct');
+                    soundManager.vibrate(100);
+                } else {
+                    soundManager.play('wrong');
+                    soundManager.vibrate([100, 50, 100]);
+                }
+            }
+            if (msg.type === 'POWER_UP_ACTIVATED') {
+                if (msg.power_up === 'double_points') {
+                    setPowerUps(prev => ({ ...prev, double_points: false }));
+                } else if (msg.power_up === 'fifty_fifty') {
+                    setPowerUps(prev => ({ ...prev, fifty_fifty: false }));
+                    if (msg.remove_indices) setHiddenOptions(msg.remove_indices);
+                }
             }
             if (msg.type === 'QUESTION_OVER') {
                 setCorrectAnswer(msg.answer);
                 setLeaderboard(msg.leaderboard);
                 setMyRank(msg.leaderboard.findIndex((p: LeaderboardEntry) => p.nickname === nickname) + 1);
-                // On last question, stay in WAITING until organizer shows podium
                 if (msg.is_final) {
-                    // Stay in WAITING state - don't show RESULT
+                    // Stay in WAITING state until organizer shows podium
                 } else {
                     setState('RESULT');
                 }
             }
-            if (msg.type === 'PODIUM') { setLeaderboard(msg.leaderboard); setState('PODIUM'); }
+            if (msg.type === 'PODIUM') { setLeaderboard(msg.leaderboard); setState('PODIUM'); soundManager.play('podium'); }
         };
 
         ws.onerror = () => setError('Connection failed');
-        ws.onclose = () => { if (state === 'JOIN') setError('Room not found'); };
+        ws.onclose = () => {
+            setState((current) => {
+                if (current !== 'JOIN' && current !== 'PODIUM') {
+                    setTimeout(() => joinRoom(), 2000);
+                    return 'RECONNECTING';
+                }
+                if (current === 'JOIN') setError('Room not found');
+                return current;
+            });
+        };
     };
 
     const submitAnswer = (index: number) => {
         if (selectedAnswer !== null) return;
         setSelectedAnswer(index);
         wsRef.current?.send(JSON.stringify({ type: 'ANSWER', answer_index: index }));
+    };
+
+    const usePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
+        wsRef.current?.send(JSON.stringify({ type: 'USE_POWER_UP', power_up: powerUp }));
     };
 
     const timerProgress = (timeRemaining / timeLimit) * 100;
@@ -126,6 +181,15 @@ export default function PlayerPage() {
                                 maxLength={20}
                             />
 
+                            <input
+                                type="text"
+                                value={team}
+                                onChange={(e) => setTeam(e.target.value)}
+                                placeholder="Team name (optional)"
+                                className="input-field text-center"
+                                maxLength={20}
+                            />
+
                             {error && (
                                 <div className="status-pill status-error w-full justify-center">{error}</div>
                             )}
@@ -148,11 +212,23 @@ export default function PlayerPage() {
                         <h2 className="text-2xl font-bold mb-2">You're in!</h2>
                         <p className="text-[--text-tertiary] mb-6">Waiting for host to start</p>
 
-                        <div className="card px-8 py-4">
+                        <div className="card px-8 py-4 mb-6">
                             <p className="text-lg font-semibold">{nickname}</p>
+                            {team && <p className="text-xs text-[--text-tertiary]">Team: {team}</p>}
                         </div>
 
-                        <div className="flex gap-1.5 mt-8">
+                        {lobbyPlayers.length > 0 && (
+                            <div className="w-full mb-6 max-h-32 overflow-y-auto no-scrollbar">
+                                <p className="text-[--text-tertiary] text-xs text-center mb-2">{lobbyPlayers.length} player{lobbyPlayers.length !== 1 ? 's' : ''} joined</p>
+                                <div className="flex flex-wrap gap-2 justify-center">
+                                    {lobbyPlayers.map((name) => (
+                                        <span key={name} className={`player-chip ${name === nickname ? 'player-chip-self' : ''}`}>{name}</span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex gap-1.5 mt-4">
                             {[0, 1, 2].map((i) => (
                                 <div key={i} className="w-2 h-2 bg-[--accent-primary] rounded-full animate-bounce"
                                     style={{ animationDelay: `${i * 0.15}s` }} />
@@ -166,6 +242,9 @@ export default function PlayerPage() {
                     <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
                         <div className="flex items-center justify-between py-4">
                             <span className="text-[--text-tertiary]">Q{questionNumber}/{totalQuestions}</span>
+                            {streak >= 3 && (
+                                <span className="streak-badge">{streak} streak</span>
+                            )}
                             <span className={`timer-display text-3xl ${timeRemaining <= 5 ? 'danger' : timeRemaining <= 10 ? 'warning' : ''}`}>
                                 {timeRemaining}
                             </span>
@@ -176,26 +255,39 @@ export default function PlayerPage() {
                                 style={{ width: `${timerProgress}%` }} />
                         </div>
 
-                        <div className={`question-card mb-6 ${currentQuestion.image_url ? 'has-image' : ''}`}
+                        <div className={`question-card mb-4 ${currentQuestion.image_url ? 'has-image' : ''}`}
                             style={currentQuestion.image_url ? { backgroundImage: `url(${API_URL}${currentQuestion.image_url})` } : undefined}>
                             <p className="question-text">{currentQuestion.text}</p>
                         </div>
 
-                        <div className="answer-grid flex-1">
-                            {currentQuestion.options.map((opt, i) => {
-                                const shapes = ['▲', '◆', '●', '■'];
-                                return (
-                                    <button
-                                        key={i}
-                                        onClick={() => submitAnswer(i)}
-                                        disabled={selectedAnswer !== null}
-                                        className={`answer-btn ${answerStyles[i]} ${selectedAnswer === i ? 'selected' : ''} ${selectedAnswer !== null && selectedAnswer !== i ? 'dimmed' : ''}`}
-                                    >
-                                        <span className="text-2xl opacity-50 mr-2">{shapes[i]}</span>
-                                        <span>{opt}</span>
+                        {/* Power-ups */}
+                        {selectedAnswer === null && (powerUps.double_points || powerUps.fifty_fifty) && (
+                            <div className="flex gap-2 mb-4 justify-center">
+                                {powerUps.double_points && (
+                                    <button onClick={() => usePowerUp('double_points')} className="power-up-btn">
+                                        2x Points
                                     </button>
-                                );
-                            })}
+                                )}
+                                {powerUps.fifty_fifty && currentQuestion.options.length === 4 && (
+                                    <button onClick={() => usePowerUp('fifty_fifty')} className="power-up-btn">
+                                        50/50
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        <div className={`flex-1 ${currentQuestion.options.length === 2 ? 'answer-grid-tf' : 'answer-grid'}`}>
+                            {currentQuestion.options.map((opt, i) => (
+                                <button
+                                    key={i}
+                                    onClick={() => submitAnswer(i)}
+                                    disabled={selectedAnswer !== null || hiddenOptions.includes(i)}
+                                    className={`answer-btn ${ANSWER_STYLES[i].className} ${selectedAnswer === i ? 'selected' : ''} ${selectedAnswer !== null && selectedAnswer !== i ? 'dimmed' : ''} ${hiddenOptions.includes(i) ? 'hidden-option' : ''}`}
+                                >
+                                    <span className="text-2xl opacity-50 mr-2">{ANSWER_STYLES[i].shape}</span>
+                                    <span>{opt}</span>
+                                </button>
+                            ))}
                         </div>
                     </div>
                 )}
@@ -210,7 +302,15 @@ export default function PlayerPage() {
                                 {pointsEarned > 0 && (
                                     <div className="card px-8 py-4 animate-score-pop">
                                         <span className="text-3xl font-bold text-[--accent-success]">+{pointsEarned}</span>
+                                        {multiplier > 1 && (
+                                            <span className="text-sm text-[--accent-warning] ml-2">x{multiplier}</span>
+                                        )}
                                     </div>
+                                )}
+                                {streak >= 3 && (
+                                    <p className="text-[--accent-warning] mt-3 font-semibold animate-score-pop">
+                                        {streak} in a row!
+                                    </p>
                                 )}
                             </>
                         ) : (
@@ -220,6 +320,21 @@ export default function PlayerPage() {
                             </>
                         )}
                         <p className="text-[--text-tertiary] mt-6">Waiting for others...</p>
+                    </div>
+                )}
+
+                {/* RECONNECTING */}
+                {state === 'RECONNECTING' && (
+                    <div className="min-h-dvh flex flex-col items-center justify-center container-responsive animate-in">
+                        <div className="text-5xl mb-4 animate-pulse">↻</div>
+                        <h2 className="text-2xl font-bold mb-2">Reconnecting...</h2>
+                        <p className="text-[--text-tertiary]">Don't worry, your score is saved</p>
+                        <div className="flex gap-1.5 mt-6">
+                            {[0, 1, 2].map((i) => (
+                                <div key={i} className="w-2 h-2 bg-[--accent-primary] rounded-full animate-bounce"
+                                    style={{ animationDelay: `${i * 0.15}s` }} />
+                            ))}
+                        </div>
                     </div>
                 )}
 
@@ -267,7 +382,6 @@ export default function PlayerPage() {
                         <h2 className="text-2xl font-bold mb-2">Final Results</h2>
 
                         <div className="podium-container">
-                            {/* 2nd Place */}
                             {leaderboard[1] && (
                                 <div className="podium-place podium-2">
                                     <p className="podium-name">{leaderboard[1].nickname}</p>
@@ -275,7 +389,6 @@ export default function PlayerPage() {
                                     <p className="podium-score">{leaderboard[1].score}</p>
                                 </div>
                             )}
-                            {/* 1st Place */}
                             {leaderboard[0] && (
                                 <div className="podium-place podium-1">
                                     <p className="text-3xl mb-2">🏆</p>
@@ -284,7 +397,6 @@ export default function PlayerPage() {
                                     <p className="podium-score">{leaderboard[0].score}</p>
                                 </div>
                             )}
-                            {/* 3rd Place */}
                             {leaderboard[2] && (
                                 <div className="podium-place podium-3">
                                     <p className="podium-name">{leaderboard[2].nickname}</p>

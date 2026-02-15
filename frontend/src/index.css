@@ -50,6 +50,30 @@ body {
     min-height: 100dvh;
 }
 
+/* Mute Toggle */
+.mute-toggle {
+    position: fixed;
+    top: max(12px, env(safe-area-inset-top));
+    right: 12px;
+    z-index: 100;
+    width: 36px;
+    height: 36px;
+    border-radius: 18px;
+    background: var(--bg-tertiary);
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.mute-toggle:hover {
+    opacity: 1;
+}
+
 /* Responsive Container */
 .container-responsive {
     width: 100%;
@@ -232,6 +256,12 @@ body {
 .answer-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.answer-grid-tf {
+    display: grid;
+    grid-template-columns: 1fr;
     gap: 12px;
 }
 
@@ -442,6 +472,22 @@ body {
     margin-top: 8px;
 }
 
+/* Player Chips */
+.player-chip {
+    display: inline-block;
+    padding: 6px 14px;
+    background: var(--bg-tertiary);
+    border-radius: 100px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.player-chip-self {
+    background: var(--accent-primary);
+    color: white;
+}
+
 /* Settings Row */
 .settings-row {
     display: flex;
@@ -462,6 +508,33 @@ body {
     font-size: 17px;
     font-weight: 600;
     text-align: center;
+}
+
+/* Segmented Control - iOS Style */
+.segmented-control {
+    display: flex;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 2px;
+}
+
+.segmented-option {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-tertiary);
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.segmented-option.active {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-weight: 600;
 }
 
 /* Status Indicators */
@@ -640,4 +713,73 @@ body {
 
 .no-scrollbar::-webkit-scrollbar {
     display: none;
+}
+
+/* Streak Badge */
+.streak-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 100px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(255, 149, 0, 0.2);
+    color: var(--accent-warning);
+    animation: pulse 1s ease-in-out infinite;
+}
+
+/* Power-up Buttons */
+.power-up-btn {
+    padding: 8px 16px;
+    border-radius: 100px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 2px solid var(--accent-secondary);
+    color: var(--accent-secondary);
+    background: rgba(88, 86, 214, 0.1);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.power-up-btn:active {
+    transform: scale(0.95);
+    background: var(--accent-secondary);
+    color: white;
+}
+
+/* Hidden option (50/50) */
+.answer-btn.hidden-option {
+    opacity: 0.15;
+    pointer-events: none;
+}
+
+/* Page transition */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.animate-slide-in {
+    animation: slideIn 0.3s ease-out;
+}
+
+/* Ambient background glow (subtle) */
+@keyframes glowPulse {
+    0%, 100% {
+        box-shadow: 0 0 30px rgba(0, 122, 255, 0.05);
+    }
+    50% {
+        box-shadow: 0 0 60px rgba(0, 122, 255, 0.1);
+    }
+}
+
+.question-card {
+    animation: glowPulse 3s ease-in-out infinite;
 }
