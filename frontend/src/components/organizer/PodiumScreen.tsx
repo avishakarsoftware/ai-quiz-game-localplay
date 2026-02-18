@@ -37,10 +37,19 @@ export default function PodiumScreen({ leaderboard, teamLeaderboard, onPlayAgain
             <h1 className="hero-title text-center mb-4" style={{ position: 'relative', zIndex: 11 }}>Final Results</h1>
 
             {revealPhase >= 4 && leaderboard[0] && (
-                <div className="champion-label" style={{ position: 'relative', zIndex: 11 }}>
-                    <span className="crown-bounce text-2xl">&#x1F451;</span>
-                    <span className="gold-shimmer text-xl">{leaderboard[0].nickname} is the Champion!</span>
-                </div>
+                (() => {
+                    const isTied = leaderboard[1] && leaderboard[0].score === leaderboard[1].score;
+                    return isTied ? (
+                        <div className="champion-label" style={{ position: 'relative', zIndex: 11 }}>
+                            <span className="gold-shimmer text-xl">It's a Tie!</span>
+                        </div>
+                    ) : (
+                        <div className="champion-label" style={{ position: 'relative', zIndex: 11 }}>
+                            <span className="crown-bounce text-2xl">&#x1F451;</span>
+                            <span className="gold-shimmer text-xl">{leaderboard[0].nickname} is the Champion!</span>
+                        </div>
+                    );
+                })()
             )}
 
             <div className="podium-container" style={{ position: 'relative', zIndex: 11 }}>
@@ -57,8 +66,8 @@ export default function PodiumScreen({ leaderboard, teamLeaderboard, onPlayAgain
                 )}
                 {/* 1st Place */}
                 {leaderboard[0] && (
-                    <div className={`podium-place podium-1 ${revealPhase >= 3 ? '' : 'podium-hidden'} ${revealPhase >= 4 ? 'victory-glow' : ''}`}>
-                        {revealPhase >= 4 && <span className="crown-bounce text-3xl" style={{ marginBottom: 4 }}>&#x1F451;</span>}
+                    <div className={`podium-place podium-1 ${revealPhase >= 3 ? '' : 'podium-hidden'} ${revealPhase >= 4 && !(leaderboard[1] && leaderboard[0].score === leaderboard[1].score) ? 'victory-glow' : ''}`}>
+                        {revealPhase >= 4 && !(leaderboard[1] && leaderboard[0].score === leaderboard[1].score) && <span className="crown-bounce text-3xl" style={{ marginBottom: 4 }}>&#x1F451;</span>}
                         <div className="w-14 h-14 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: '#FFD700' }}>
                             <span style={{ fontSize: '1.75rem', lineHeight: 1 }}>{leaderboard[0].avatar || leaderboard[0].nickname.slice(0, 2).toUpperCase()}</span>
                         </div>
@@ -98,7 +107,7 @@ export default function PodiumScreen({ leaderboard, teamLeaderboard, onPlayAgain
                 </div>
             )}
 
-            {revealPhase >= 4 && teamLeaderboard && teamLeaderboard.length > 1 && (
+            {revealPhase >= 4 && teamLeaderboard && teamLeaderboard.some(t => t.members > 1) && (
                 <div className="w-full mt-6 mb-4" style={{ position: 'relative', zIndex: 11 }}>
                     <h3 className="text-lg font-semibold text-center mb-4">Team Standings</h3>
                     <div className="podium-container" style={{ marginBottom: 8 }}>

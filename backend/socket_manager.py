@@ -58,6 +58,14 @@ class Room:
             self.timer_task.cancel()
             self.timer_task = None
 
+        # Remove players who are no longer connected
+        stale = [cid for cid in self.players if cid not in self.connections]
+        for cid in stale:
+            nickname = self.players[cid]["nickname"]
+            self.teams.pop(nickname, None)
+            self.power_ups.pop(nickname, None)
+            del self.players[cid]
+
         for client_id in self.players:
             self.players[client_id]["score"] = 0
             self.players[client_id]["prev_rank"] = 0
@@ -196,18 +204,18 @@ class SocketManager:
 
         if is_spectator:
             room.spectators[client_id] = websocket
-            # Send current state sync to spectator
-            await websocket.send_json({
-                "type": "SPECTATOR_SYNC",
-                "room_code": room_code,
-                "state": room.state,
-                "player_count": len(room.players),
-                "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
-                "question_number": room.current_question_index + 1,
-                "total_questions": len(room.quiz["questions"]),
-                "leaderboard": self.get_leaderboard(room),
-            })
             try:
+                # Send current state sync to spectator
+                await websocket.send_json({
+                    "type": "SPECTATOR_SYNC",
+                    "room_code": room_code,
+                    "state": room.state,
+                    "player_count": len(room.players),
+                    "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
+                    "question_number": room.current_question_index + 1,
+                    "total_questions": len(room.quiz["questions"]),
+                    "leaderboard": self.get_leaderboard(room),
+                })
                 while True:
                     await websocket.receive_text()  # spectators are read-only
             except (WebSocketDisconnect, Exception):

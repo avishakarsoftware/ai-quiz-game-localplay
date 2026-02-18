@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { QRCodeSVG } from 'qrcode.react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
 import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -17,9 +17,12 @@ interface SpectatorQuestion {
 }
 
 export default function SpectatorPage() {
-    const [searchParams] = useSearchParams();
-    const roomCode = searchParams.get('room') || '';
-    const [gameState, setGameState] = useState('CONNECTING');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const roomFromUrl = searchParams.get('room') || '';
+    const [roomCode, setRoomCode] = useState(roomFromUrl);
+    const [roomInput, setRoomInput] = useState('');
+    const [joined, setJoined] = useState(!!roomFromUrl);
+    const [gameState, setGameState] = useState(roomFromUrl ? 'CONNECTING' : 'LOBBY');
     const [players, setPlayers] = useState<PlayerInfo[]>([]);
     const [playerCount, setPlayerCount] = useState(0);
     const [question, setQuestion] = useState<SpectatorQuestion | null>(null);
@@ -36,8 +39,17 @@ export default function SpectatorPage() {
     const joinUrl = `http://${window.location.hostname}:5173/join?room=${roomCode}`;
     const displayUrl = `${window.location.hostname}:5173/join`;
 
+    const handleJoinRoom = () => {
+        const code = roomInput.trim().toUpperCase();
+        if (code.length < 4) return;
+        setRoomCode(code);
+        setJoined(true);
+        setGameState('CONNECTING');
+        setSearchParams({ room: code });
+    };
+
     useEffect(() => {
-        if (!roomCode) return;
+        if (!joined || !roomCode) return;
         const clientId = `spectator-${Date.now()}`;
         const ws = new WebSocket(`${WS_URL}/ws/${roomCode}/${clientId}?spectator=true`);
 
@@ -95,7 +107,7 @@ export default function SpectatorPage() {
         ws.onclose = () => setGameState('DISCONNECTED');
 
         return () => ws.close();
-    }, [roomCode]);
+    }, [joined, roomCode]);
 
     // Auto-fullscreen for spectator/TV view
     useEffect(() => {
@@ -123,10 +135,45 @@ export default function SpectatorPage() {
         }
     }, [podiumReveal]);
 
-    if (!roomCode) {
+    if (!joined) {
         return (
-            <div className="min-h-dvh flex items-center justify-center">
-                <p className="text-[--text-tertiary]">Add ?room=CODE to the URL</p>
+            <div className="app-container">
+                <div className="content-wrapper min-h-dvh flex flex-col items-center justify-center" style={{ padding: '40px 60px' }}>
+                    <div className="animate-in text-center" style={{ maxWidth: 500, width: '100%' }}>
+                        <div style={{ fontSize: '4rem', marginBottom: 16 }}>📺</div>
+                        <h1 className="hero-title" style={{ fontSize: '3rem', marginBottom: 8 }}>TV Mode</h1>
+                        <p className="text-[--text-tertiary]" style={{ fontSize: '1.25rem', marginBottom: 40 }}>
+                            Enter the room code to spectate
+                        </p>
+                        <input
+                            type="text"
+                            value={roomInput}
+                            onChange={(e) => setRoomInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
+                            onKeyDown={(e) => e.key === 'Enter' && handleJoinRoom()}
+                            placeholder="ROOM CODE"
+                            autoFocus
+                            className="w-full text-center font-extrabold mb-6"
+                            style={{
+                                fontSize: '3rem',
+                                letterSpacing: '0.3em',
+                                padding: '20px 24px',
+                                borderRadius: 16,
+                                border: '2px solid rgba(255, 255, 255, 0.15)',
+                                background: 'var(--bg-secondary)',
+                                color: 'var(--text-primary)',
+                                outline: 'none',
+                            }}
+                        />
+                        <button
+                            onClick={handleJoinRoom}
+                            disabled={roomInput.trim().length < 4}
+                            className="btn btn-primary btn-glow w-full"
+                            style={{ fontSize: '1.25rem', padding: '16px 24px' }}
+                        >
+                            Watch Game
+                        </button>
+                    </div>
+                </div>
             </div>
         );
     }
@@ -134,7 +181,7 @@ export default function SpectatorPage() {
     return (
         <div className="app-container">
             <div className="content-wrapper">
-                <div className="min-h-dvh flex flex-col justify-center" style={{ maxWidth: '100%', padding: '40px 60px' }}>
+                <div className="min-h-dvh flex flex-col justify-center" style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 60px' }}>
 
                     {(gameState === 'CONNECTING' || gameState === 'ERROR' || gameState === 'DISCONNECTED') && (
                         <div className="flex-1 flex flex-col items-center justify-center animate-in">
@@ -153,6 +200,15 @@ export default function SpectatorPage() {
                                     ))}
                                 </div>
                             )}
+                            {(gameState === 'ERROR' || gameState === 'DISCONNECTED') && (
+                                <button
+                                    onClick={() => { setJoined(false); setRoomInput(''); setSearchParams({}); }}
+                                    className="btn btn-secondary mt-6"
+                                    style={{ fontSize: '1.125rem' }}
+                                >
+                                    Try Another Room
+                                </button>
+                            )}
                         </div>
                     )}
 
@@ -163,7 +219,7 @@ export default function SpectatorPage() {
                             <div className="flex items-center justify-center gap-12 mb-8">
                                 <div className="flex flex-col items-center">
                                     <div className="qr-container mb-2">
-                                        <QRCodeSVG value={joinUrl} size={200} bgColor="white" fgColor="#000000" level="H" />
+                                        <QRCodeCanvas value={joinUrl} size={200} bgColor="white" fgColor="#000000" level="H" />
                                     </div>
                                     <p className="text-[--text-tertiary] text-sm">Scan with your phone</p>
                                 </div>
@@ -182,13 +238,13 @@ export default function SpectatorPage() {
                             {players.length > 0 && (
                                 <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12, maxWidth: 672 }}>
                                     {players.map((player, i) => (
-                                        <div key={player.nickname} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 9999, background: 'var(--bg-secondary)' }}>
+                                        <div key={player.nickname} style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: '10px 20px', borderRadius: 9999, background: 'var(--bg-secondary)' }}>
                                             <div
-                                                style={{ width: 40, height: 40, minWidth: 40, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }}
+                                                style={{ width: 44, height: 44, minWidth: 44, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }}
                                             >
-                                                <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>{player.avatar || player.nickname.slice(0, 2).toUpperCase()}</span>
+                                                <span style={{ fontSize: '1.8rem', lineHeight: 1 }}>{player.avatar || player.nickname.slice(0, 2).toUpperCase()}</span>
                                             </div>
-                                            <span style={{ fontSize: '1.125rem', fontWeight: 500 }}>{player.nickname}</span>
+                                            <span style={{ fontSize: '1.25rem', fontWeight: 500 }}>{player.nickname}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -257,10 +313,19 @@ export default function SpectatorPage() {
                             <h1 className="hero-title text-center mb-6" style={{ position: 'relative', zIndex: 11, fontSize: '3rem' }}>Final Results</h1>
 
                             {podiumReveal >= 4 && leaderboard[0] && (
-                                <div className="champion-label" style={{ position: 'relative', zIndex: 11, fontSize: 28 }}>
-                                    <span className="crown-bounce" style={{ fontSize: 36 }}>&#x1F451;</span>
-                                    <span className="gold-shimmer">{leaderboard[0].nickname} is the Champion!</span>
-                                </div>
+                                (() => {
+                                    const isTied = leaderboard[1] && leaderboard[0].score === leaderboard[1].score;
+                                    return isTied ? (
+                                        <div className="champion-label" style={{ position: 'relative', zIndex: 11, fontSize: 28 }}>
+                                            <span className="gold-shimmer">It's a Tie!</span>
+                                        </div>
+                                    ) : (
+                                        <div className="champion-label" style={{ position: 'relative', zIndex: 11, fontSize: 28 }}>
+                                            <span className="crown-bounce" style={{ fontSize: 36 }}>&#x1F451;</span>
+                                            <span className="gold-shimmer">{leaderboard[0].nickname} is the Champion!</span>
+                                        </div>
+                                    );
+                                })()
                             )}
 
                             <div className="podium-container" style={{ gap: 16, padding: '40px 0', position: 'relative', zIndex: 11 }}>
@@ -275,8 +340,8 @@ export default function SpectatorPage() {
                                     </div>
                                 )}
                                 {leaderboard[0] && (
-                                    <div className={`podium-place podium-1 ${podiumReveal >= 3 ? '' : 'podium-hidden'} ${podiumReveal >= 4 ? 'victory-glow' : ''}`}>
-                                        {podiumReveal >= 4 && <span className="crown-bounce" style={{ fontSize: 40, marginBottom: 4 }}>&#x1F451;</span>}
+                                    <div className={`podium-place podium-1 ${podiumReveal >= 3 ? '' : 'podium-hidden'} ${podiumReveal >= 4 && !(leaderboard[1] && leaderboard[0].score === leaderboard[1].score) ? 'victory-glow' : ''}`}>
+                                        {podiumReveal >= 4 && !(leaderboard[1] && leaderboard[0].score === leaderboard[1].score) && <span className="crown-bounce" style={{ fontSize: 40, marginBottom: 4 }}>&#x1F451;</span>}
                                         <div className="w-16 h-16 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: '#FFD700' }}>
                                             <span style={{ fontSize: '2.5rem', lineHeight: 1 }}>{leaderboard[0].avatar || leaderboard[0].nickname.slice(0, 2).toUpperCase()}</span>
                                         </div>
@@ -297,7 +362,7 @@ export default function SpectatorPage() {
                                 )}
                             </div>
 
-                            {podiumReveal >= 4 && teamLeaderboard.length > 1 && (
+                            {podiumReveal >= 4 && teamLeaderboard.some(t => t.members > 1) && (
                                 <div className="w-full mt-8" style={{ position: 'relative', zIndex: 11, maxWidth: 600 }}>
                                     <h3 className="text-3xl font-extrabold text-center mb-4">Team Standings</h3>
                                     <div className="podium-container" style={{ gap: 16 }}>

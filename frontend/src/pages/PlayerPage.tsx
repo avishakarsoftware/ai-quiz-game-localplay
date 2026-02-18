@@ -601,7 +601,7 @@ export default function PlayerPage() {
                             </p>
                         )}
 
-                        {teamLeaderboard.length > 1 && (
+                        {teamLeaderboard.some(t => t.members > 1) && (
                             <div className="w-full mt-6" style={{ position: 'relative', zIndex: 11 }}>
                                 <h3 className="text-lg font-semibold text-center mb-3">Team Standings</h3>
                                 <div className="podium-container">
