@@ -83,7 +83,18 @@ export default function PlayerPage() {
         ws.onmessage = (event) => {
             let msg: Record<string, unknown>;
             try { msg = JSON.parse(event.data); } catch { return; }
-            if (msg.type === 'ERROR') { setError(msg.message as string); return; }
+            if (msg.type === 'ERROR') {
+                setError(msg.message as string);
+                // If room doesn't exist, stop reconnection attempts
+                if (msg.message === 'Room not found' || msg.message === 'Room is full') {
+                    kickedRef.current = true;
+                    wsRef.current?.close();
+                    wsRef.current = null;
+                    sessionStorage.removeItem('localplay_session');
+                    setState('JOIN');
+                }
+                return;
+            }
             if (msg.type === 'KICKED') {
                 // Another tab/device took over this nickname
                 kickedRef.current = true;
@@ -172,20 +183,29 @@ export default function PlayerPage() {
                 setLeaderboard(msg.leaderboard);
                 setMyRank(msg.leaderboard.findIndex((p: LeaderboardEntry) => p.nickname === nickname) + 1);
                 if (msg.is_final) {
-                    // Stay in WAITING state until organizer shows podium
+                    setState('WAITING');
                 } else {
                     setState('RESULT');
                 }
             }
             if (msg.type === 'PODIUM') { setLeaderboard(msg.leaderboard); setTeamLeaderboard(msg.team_leaderboard || []); setState('PODIUM'); soundManager.play('fanfare'); }
             if (msg.type === 'ORGANIZER_DISCONNECTED') {
-                // Host left — close connection and show join screen with message
+                // Host disconnected — show warning but stay connected (they may reconnect)
+                setError('The host has disconnected. Waiting for them to return...');
+                return;
+            }
+            if (msg.type === 'ROOM_CLOSED') {
+                // Host didn't reconnect — room is gone
                 wsRef.current?.close();
                 wsRef.current = null;
                 kickedRef.current = true; // prevent auto-reconnect
                 sessionStorage.removeItem('localplay_session');
                 setState('JOIN');
-                setError('The host has left the game');
+                setError('The host has left and the room was closed');
+                return;
+            }
+            if (msg.type === 'HOST_RECONNECTED') {
+                setError('');
                 return;
             }
             if (msg.type === 'ROOM_RESET') {
@@ -454,8 +474,8 @@ export default function PlayerPage() {
                                     className={`answer-btn answer-stagger ${ANSWER_STYLES[i].className} ${selectedAnswer === i ? 'selected' : ''} ${selectedAnswer !== null && selectedAnswer !== i ? 'dimmed' : ''} ${hiddenOptions.includes(i) ? 'hidden-option' : ''}`}
                                     style={{ animationDelay: `${0.15 + i * 0.08}s` }}
                                 >
-                                    <span className="text-4xl opacity-50 mr-3">{ANSWER_STYLES[i].shape}</span>
-                                    <span>{opt}</span>
+                                    <span className="text-4xl opacity-50 mr-3 flex-shrink-0">{ANSWER_STYLES[i].shape}</span>
+                                    <span className="min-w-0" style={{ fontSize: opt.length > 50 ? 13 : opt.length > 30 ? 14 : 16 }}>{opt}</span>
                                 </button>
                             ))}
                         </div>

@@ -86,12 +86,7 @@ export default function OrganizerPage() {
         else if (msg.type === 'ANSWER_COUNT') setAnsweredCount(msg.answered);
         else if (msg.type === 'QUESTION_OVER') {
             setLeaderboard(msg.leaderboard);
-            if (msg.is_final) {
-                // Skip leaderboard on final question — go straight to podium
-                wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
-            } else {
-                setState('LEADERBOARD');
-            }
+            setState('LEADERBOARD');
         }
         else if (msg.type === 'PODIUM') {
             setLeaderboard(msg.leaderboard);

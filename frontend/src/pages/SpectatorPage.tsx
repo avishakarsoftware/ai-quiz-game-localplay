@@ -25,6 +25,9 @@ export default function SpectatorPage() {
     const [roomInput, setRoomInput] = useState('');
     const [joined, setJoined] = useState(!!roomFromUrl);
     const [gameState, setGameState] = useState(roomFromUrl ? 'CONNECTING' : 'LOBBY');
+    const gameStateRef = useRef(gameState);
+    const preDisconnectRef = useRef('LOBBY');
+    useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
     const [players, setPlayers] = useState<PlayerInfo[]>([]);
     const [playerCount, setPlayerCount] = useState(0);
     const [question, setQuestion] = useState<SpectatorQuestion | null>(null);
@@ -101,17 +104,23 @@ export default function SpectatorPage() {
             let msg: Record<string, unknown>;
             try { msg = JSON.parse(event.data); } catch { return; }
             if (msg.type === 'SPECTATOR_SYNC') {
-                setGameState(msg.state);
                 setPlayers(msg.players || []);
                 setPlayerCount(msg.player_count);
                 setQuestionNumber(msg.question_number);
                 setTotalQuestions(msg.total_questions);
                 setLeaderboard(msg.leaderboard || []);
+                // Handle mid-question sync
+                if (msg.state === 'QUESTION' && msg.question) {
+                    setQuestion(msg.question);
+                    setTimeLimit(msg.time_limit);
+                    setTimeRemaining(msg.time_remaining ?? msg.time_limit);
+                    setIsBonus(msg.is_bonus || false);
+                }
+                setGameState(msg.state === 'INTRO' ? 'LOBBY' : msg.state);
             }
             else if (msg.type === 'PLAYER_JOINED') {
                 setPlayerCount(msg.player_count);
                 setPlayers(msg.players || []);
-                setGameState('LOBBY');
             }
             else if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED') {
                 setPlayerCount(msg.player_count);
@@ -121,7 +130,7 @@ export default function SpectatorPage() {
                 setPlayerCount(msg.player_count);
                 setPlayers(msg.players || []);
             }
-            else if (msg.type === 'GAME_STARTING') setGameState('INTRO');
+            else if (msg.type === 'GAME_STARTING') { /* stay on LOBBY until first QUESTION arrives */ }
             else if (msg.type === 'QUESTION') {
                 setQuestion(msg.question);
                 setQuestionNumber(msg.question_number);
@@ -148,6 +157,13 @@ export default function SpectatorPage() {
                 soundManager.play('fanfare');
             }
             else if (msg.type === 'ORGANIZER_DISCONNECTED') {
+                preDisconnectRef.current = gameStateRef.current;
+                setGameState('DISCONNECTED');
+            }
+            else if (msg.type === 'HOST_RECONNECTED') {
+                setGameState(preDisconnectRef.current || 'LOBBY');
+            }
+            else if (msg.type === 'ROOM_CLOSED') {
                 setGameState('DISCONNECTED');
             }
             else if (msg.type === 'ROOM_RESET') {

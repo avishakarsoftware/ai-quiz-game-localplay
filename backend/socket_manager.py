@@ -38,6 +38,7 @@ class Room:
         self.answer_log: List[dict] = []  # game history: per-question answer records
         # WS rate limiting: client_id -> list of timestamps
         self.msg_timestamps: Dict[str, list] = {}
+        self._organizer_cleanup_task: Optional[asyncio.Task] = None
         # Team mode
         self.teams: Dict[str, str] = {}  # nickname -> team_name
         # Power-ups
@@ -108,6 +109,7 @@ class Room:
                     "prev_rank": self.players[client_id]["prev_rank"],
                     "streak": self.players[client_id].get("streak", 0),
                     "avatar": self.players[client_id].get("avatar", ""),
+                    "_answered_client_id": client_id if client_id in self.answered_players else None,
                 }
                 del self.players[client_id]
                 self._player_event = ("disconnected", nickname)
@@ -183,6 +185,20 @@ class SocketManager:
             except Exception:
                 logger.exception("Error in room cleanup loop")
 
+    async def _delayed_room_cleanup(self, room_code: str, delay: int = 30):
+        """Delete a room after a grace period if the organizer hasn't reconnected."""
+        try:
+            await asyncio.sleep(delay)
+            room = self.rooms.get(room_code)
+            if room and room.organizer is None:
+                await room.broadcast({"type": "ROOM_CLOSED"})
+                self.rooms.pop(room_code, None)
+                if room.timer_task:
+                    room.timer_task.cancel()
+                logger.info("Room %s deleted (organizer did not reconnect within %ds)", room_code, delay)
+        except asyncio.CancelledError:
+            pass
+
     def create_room(self, room_code: str, quiz_data: dict, time_limit: int = 15,
                     organizer_token: str = "") -> Room:
         room = Room(room_code, quiz_data, time_limit, organizer_token=organizer_token)
@@ -221,7 +237,7 @@ class SocketManager:
             room.spectators[client_id] = websocket
             try:
                 # Send current state sync to spectator
-                await websocket.send_json({
+                sync: dict = {
                     "type": "SPECTATOR_SYNC",
                     "room_code": room_code,
                     "state": room.state,
@@ -230,7 +246,16 @@ class SocketManager:
                     "question_number": room.current_question_index + 1,
                     "total_questions": len(room.quiz["questions"]),
                     "leaderboard": self.get_leaderboard(room),
-                })
+                }
+                # Include question data if game is in progress
+                if room.state == "QUESTION" and 0 <= room.current_question_index < len(room.quiz["questions"]):
+                    question = room.quiz["questions"][room.current_question_index]
+                    sync["question"] = {k: v for k, v in question.items() if k != "answer_index"}
+                    sync["time_limit"] = room.time_limit
+                    elapsed = time.time() - room.question_start_time
+                    sync["time_remaining"] = max(0, room.time_limit - int(elapsed))
+                    sync["is_bonus"] = room.current_question_index in room.bonus_questions
+                await websocket.send_json(sync)
                 while True:
                     await websocket.receive_text()  # spectators are read-only
             except (WebSocketDisconnect, Exception):
@@ -242,11 +267,20 @@ class SocketManager:
         room.connections[client_id] = websocket
 
         if is_organizer:
+            # Cancel pending room cleanup if organizer is reconnecting
+            was_disconnected = room.organizer is None
+            if room._organizer_cleanup_task:
+                room._organizer_cleanup_task.cancel()
+                room._organizer_cleanup_task = None
+                logger.info("Organizer reconnected to room %s, cleanup cancelled", room_code)
             # Clean up stale organizer connection if a different client_id
             if room.organizer_id and room.organizer_id != client_id:
                 room.connections.pop(room.organizer_id, None)
             room.organizer = websocket
             room.organizer_id = client_id
+            # Notify players and spectators that host is back
+            if was_disconnected:
+                await room.broadcast({"type": "HOST_RECONNECTED"})
             # Detect reconnection: room already has players or game has progressed
             if room.current_question_index >= 0 or len(room.players) > 0:
                 await self._send_organizer_sync(room)
@@ -291,6 +325,10 @@ class SocketManager:
             if room._organizer_just_disconnected:
                 room._organizer_just_disconnected = False
                 await room.broadcast({"type": "ORGANIZER_DISCONNECTED"})
+                # Start grace period — delete room if organizer doesn't reconnect
+                room._organizer_cleanup_task = asyncio.create_task(
+                    self._delayed_room_cleanup(room_code, delay=5)
+                )
             if room._player_event:
                 event_type, nickname = room._player_event
                 room._player_event = None
@@ -337,6 +375,8 @@ class SocketManager:
 
         if is_organizer:
             if msg_type == "START_GAME":
+                if room.state != "LOBBY":
+                    return
                 self._select_bonus_questions(room)
                 room.state = "INTRO"
                 await room.broadcast({"type": "GAME_STARTING"})
@@ -344,13 +384,14 @@ class SocketManager:
             elif msg_type == "NEXT_QUESTION":
                 if room.state == "QUESTION":
                     await self.end_question(room)
-                else:
+                elif room.state in ("INTRO", "LEADERBOARD"):
                     await self.start_question(room)
 
             elif msg_type == "SET_TIME_LIMIT":
-                new_limit = message.get("time_limit", 15)
-                if isinstance(new_limit, int) and 5 <= new_limit <= 60:
-                    room.time_limit = new_limit
+                if room.state in ("LOBBY", "LEADERBOARD", "PODIUM"):
+                    new_limit = message.get("time_limit", 15)
+                    if isinstance(new_limit, int) and 5 <= new_limit <= 60:
+                        room.time_limit = new_limit
 
             elif msg_type == "END_QUIZ":
                 if room.state in ("QUESTION", "LEADERBOARD"):
@@ -380,6 +421,12 @@ class SocketManager:
                 new_time_limit = message.get("time_limit", room.time_limit)
                 if not new_quiz_data:
                     return
+                # Validate and sanitize quiz data from WebSocket
+                from quiz_engine import _validate_quiz, _sanitize_quiz
+                if not _validate_quiz(new_quiz_data, 1):
+                    logger.warning("RESET_ROOM rejected: invalid quiz data for room %s", room.room_code)
+                    return
+                new_quiz_data = _sanitize_quiz(new_quiz_data)
                 room.reset_for_new_game(new_quiz_data, new_time_limit)
                 logger.info("Room %s reset for new game", room.room_code)
                 await room.broadcast({
@@ -430,6 +477,11 @@ class SocketManager:
                         "streak": saved.get("streak", 0),
                         "avatar": saved.get("avatar", avatar),
                     }
+                    # Transfer answered status to new client_id
+                    old_cid = saved.get("_answered_client_id")
+                    if old_cid and old_cid in room.answered_players:
+                        room.answered_players.discard(old_cid)
+                        room.answered_players.add(client_id)
                     logger.info("Player '%s' reconnected to room %s with score %d", nickname, room.room_code, saved["score"])
                     ws = room.connections.get(client_id)
                     if ws:
@@ -472,9 +524,12 @@ class SocketManager:
                             await old_ws.close()
                         except Exception:
                             pass
-                    # Transfer player data to new client_id
+                    # Transfer player data and answered status to new client_id
                     player_data = room.players.pop(existing_id)
                     room.players[client_id] = player_data
+                    if existing_id in room.answered_players:
+                        room.answered_players.discard(existing_id)
+                        room.answered_players.add(client_id)
                     logger.info("Player '%s' rejoined room %s (replaced old connection)", nickname, room.room_code)
 
                     ws = room.connections.get(client_id)
@@ -497,7 +552,9 @@ class SocketManager:
                     return
 
                 if len(room.players) >= config.MAX_PLAYERS_PER_ROOM:
-                    await ws.send_json({"type": "ERROR", "message": "Room is full"})
+                    conn = room.connections.get(client_id)
+                    if conn:
+                        await conn.send_json({"type": "ERROR", "message": "Room is full"})
                     return
 
                 room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
@@ -514,6 +571,8 @@ class SocketManager:
                 })
 
             elif msg_type == "ANSWER":
+                if client_id not in room.players:
+                    return
                 answer_index = message.get("answer_index")
                 # Bounds check to prevent IndexError
                 if room.current_question_index < 0 or room.current_question_index >= len(room.quiz["questions"]):
@@ -601,6 +660,8 @@ class SocketManager:
                     await self.end_question(room)
 
             elif msg_type == "USE_POWER_UP":
+                if room.state != "QUESTION":
+                    return
                 power_up = message.get("power_up")
                 nickname = room.players.get(client_id, {}).get("nickname")
                 if not nickname or power_up not in ("double_points", "fifty_fifty"):
@@ -705,7 +766,6 @@ class SocketManager:
         # Store previous leaderboard for animation
         room.previous_leaderboard = self.get_leaderboard(room)
 
-        room.state = "QUESTION"
         room.answered_players = set()
 
         question = room.quiz["questions"][room.current_question_index]
@@ -723,18 +783,21 @@ class SocketManager:
         })
 
         # Delay timer start for bonus rounds so the splash animation plays first
+        # Keep state as non-QUESTION during splash so answers are rejected
         if is_bonus:
             await asyncio.sleep(2)
 
         room.question_start_time = time.time()
+        room.state = "QUESTION"
         room.timer_task = asyncio.create_task(self.question_timer(room))
 
     async def question_timer(self, room: Room):
         """Timer that ends the question after time_limit seconds."""
         try:
-            for remaining in range(room.time_limit, 0, -1):
+            for remaining in range(room.time_limit, -1, -1):
                 await room.broadcast({"type": "TIMER", "remaining": remaining})
-                await asyncio.sleep(1)
+                if remaining > 0:
+                    await asyncio.sleep(1)
 
             await self.end_question(room)
         except asyncio.CancelledError:

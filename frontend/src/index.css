@@ -376,18 +376,20 @@ body {
 .answer-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
+    grid-auto-rows: 1fr;
     gap: 12px;
 }
 
 .answer-grid-tf {
     display: grid;
     grid-template-columns: 1fr;
+    grid-auto-rows: 1fr;
     gap: 12px;
 }
 
 /* Answer Buttons - Glassmorphism with vibrant colors */
 .answer-btn {
-    height: 80px;
+    min-height: 80px;
     border-radius: 16px;
     font-size: 16px;
     font-weight: 600;
@@ -402,6 +404,8 @@ body {
     cursor: pointer;
     transition: transform 0.15s ease, box-shadow 0.15s ease;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .answer-btn:active {
