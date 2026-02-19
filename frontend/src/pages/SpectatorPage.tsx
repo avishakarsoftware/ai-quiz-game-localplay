@@ -331,14 +331,14 @@ export default function SpectatorPage() {
                             <div className="flex-1 flex flex-col justify-center">
                             <div className="py-4">
                                 <div className="flex items-center justify-between mb-2">
+                                    <span className="text-2xl font-bold text-[--text-tertiary]">Q{questionNumber}/{totalQuestions}</span>
                                     <div className="flex items-center gap-3">
-                                        <span className="text-2xl font-bold text-[--text-tertiary]">Q{questionNumber}/{totalQuestions}</span>
                                         {isBonus && <span className="bonus-badge" style={{ fontSize: 16 }}>2X BONUS</span>}
-                                    </div>
-                                    <span className={`font-extrabold tabular-nums text-3xl ${timeRemaining <= 5 ? 'timer-number-pulse' : ''}`}
+                                        <span className={`font-extrabold tabular-nums text-3xl ${timeRemaining <= 5 ? 'timer-number-pulse' : ''}`}
                                         style={{ color: timeRemaining <= 5 ? 'var(--accent-danger)' : timeRemaining <= 10 ? 'var(--accent-warning)' : 'var(--accent-primary)' }}>
                                         {timeRemaining}s
                                     </span>
+                                    </div>
                                 </div>
                                 <div className="question-timer-bar" style={{ height: 8 }}>
                                     <div

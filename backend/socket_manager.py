@@ -100,6 +100,8 @@ class Room:
             if self.state in ("LOBBY",):
                 # In lobby, fully remove the player
                 del self.players[client_id]
+                self.teams.pop(nickname, None)
+                self.power_ups.pop(nickname, None)
                 self._player_event = ("left", nickname)
                 logger.info("Player '%s' left room %s", nickname, self.room_code)
             else:
@@ -246,6 +248,7 @@ class SocketManager:
                     "question_number": room.current_question_index + 1,
                     "total_questions": len(room.quiz["questions"]),
                     "leaderboard": self.get_leaderboard(room),
+                    "team_leaderboard": self.get_team_leaderboard(room),
                 }
                 # Include question data if game is in progress
                 if room.state == "QUESTION" and 0 <= room.current_question_index < len(room.quiz["questions"]):
@@ -278,8 +281,8 @@ class SocketManager:
                 room.connections.pop(room.organizer_id, None)
             room.organizer = websocket
             room.organizer_id = client_id
-            # Notify players and spectators that host is back
-            if was_disconnected:
+            # Notify players and spectators that host is back (only on actual reconnect, not first connect)
+            if was_disconnected and (room.current_question_index >= 0 or len(room.players) > 0):
                 await room.broadcast({"type": "HOST_RECONNECTED"})
             # Detect reconnection: room already has players or game has progressed
             if room.current_question_index >= 0 or len(room.players) > 0:

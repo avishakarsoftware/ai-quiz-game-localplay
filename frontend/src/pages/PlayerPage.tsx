@@ -419,11 +419,9 @@ export default function PlayerPage() {
                     <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom">
                         <div className="py-4 stagger-in" style={{ animationDelay: '0s' }}>
                             <div className="flex items-center justify-between mb-2">
+                                <span className="text-[--text-tertiary] text-sm">Q{questionNumber}/{totalQuestions}</span>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[--text-tertiary] text-sm">Q{questionNumber}/{totalQuestions}</span>
                                     {isBonus && <span className="bonus-badge">2X BONUS</span>}
-                                </div>
-                                <div className="flex items-center gap-2">
                                     {streak >= 3 && (
                                         <span className="streak-fire">{streak} streak</span>
                                     )}

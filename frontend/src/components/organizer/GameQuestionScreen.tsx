@@ -28,14 +28,14 @@ export default function GameQuestionScreen({
             {/* Timer bar + question counter */}
             <div className="py-4 stagger-in" style={{ animationDelay: '0s' }}>
                 <div className="flex items-center justify-between mb-2">
+                    <span className="text-[--text-tertiary] text-lg font-bold">Q{questionNumber}/{totalQuestions}</span>
                     <div className="flex items-center gap-2">
-                        <span className="text-[--text-tertiary] text-lg font-bold">Q{questionNumber}/{totalQuestions}</span>
                         {isBonus && <span className="bonus-badge">2X BONUS</span>}
+                        <span className={`font-extrabold tabular-nums text-2xl ${timeRemaining <= 5 ? 'timer-number-pulse' : ''}`}
+                            style={{ color: timerColor }}>
+                            {timeRemaining}s
+                        </span>
                     </div>
-                    <span className={`font-extrabold tabular-nums text-2xl ${timeRemaining <= 5 ? 'timer-number-pulse' : ''}`}
-                        style={{ color: timerColor }}>
-                        {timeRemaining}s
-                    </span>
                 </div>
                 <div className="question-timer-bar">
                     <div
