@@ -3,8 +3,8 @@
 ## Architecture Overview
 
 ```
-Users → revelryapp.me (IONOS CDN) → static frontend
-     → api.revelryapp.me (GCP VM)  → FastAPI backend + WebSockets
+Users → games.revelryapp.me (IONOS CDN) → static frontend
+     → gamesapi.revelryapp.me (GCP VM)  → FastAPI backend + WebSockets
 ```
 
 - **Frontend**: Static React/Vite build hosted on IONOS shared hosting
@@ -16,11 +16,21 @@ Users → revelryapp.me (IONOS CDN) → static frontend
 
 | Component | URL |
 |-----------|-----|
-| Frontend  | https://revelryapp.me/standalone/quiz/ |
-| Backend API | https://api.revelryapp.me |
-| Spectator/TV | https://revelryapp.me/standalone/quiz/spectator |
-| Player join  | https://revelryapp.me/standalone/quiz/join |
+| Frontend  | https://games.revelryapp.me/quiz/ |
+| Backend API | https://gamesapi.revelryapp.me |
+| Spectator/TV | https://games.revelryapp.me/quiz/spectator |
+| Player join  | https://games.revelryapp.me/quiz/join |
 | Cast App ID  | `1BC9ACD8` |
+
+## IONOS Directory Structure
+
+```
+~/revelryapp/
+  site/          → revelryapp.me (marketing website)
+  app/           → app.revelryapp.me (platform frontend, future)
+  games/         → games.revelryapp.me
+    quiz/        → games.revelryapp.me/quiz (quiz game)
+```
 
 ## Credentials & Access
 
@@ -47,7 +57,7 @@ Users → revelryapp.me (IONOS CDN) → static frontend
 cd frontend
 
 # Production build with subpath and backend URL
-VITE_BASE_PATH=/standalone/quiz/ VITE_API_URL=https://api.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npm run build
+VITE_BASE_PATH=/quiz/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npx vite build
 ```
 
 This produces `frontend/dist/` with all static assets.
@@ -55,7 +65,7 @@ This produces `frontend/dist/` with all static assets.
 ### Step 2: Clean old assets on IONOS
 
 ```bash
-ssh u69414981@home420463025.1and1-data.host "rm -rf ~/revelryapp/standalone/quiz/assets"
+ssh u69414981@home420463025.1and1-data.host "rm -rf ~/revelryapp/games/quiz/assets"
 ```
 
 Old JS/CSS bundles have hashed filenames that accumulate. Always clean before deploying.
@@ -63,23 +73,23 @@ Old JS/CSS bundles have hashed filenames that accumulate. Always clean before de
 ### Step 3: Upload to IONOS
 
 ```bash
-scp -r frontend/dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/standalone/quiz/
+scp -r frontend/dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/quiz/
 ```
 
 ### Step 4: Verify
 
-Open https://revelryapp.me/standalone/quiz/ in a browser. Check the browser console for errors.
+Open https://games.revelryapp.me/quiz/ in a browser. Check the browser console for errors.
 
 ### SPA Routing
 
-An `.htaccess` file at `~/revelryapp/standalone/quiz/.htaccess` handles client-side routing:
+An `.htaccess` file at `~/revelryapp/games/quiz/.htaccess` handles client-side routing:
 
 ```apache
 RewriteEngine On
-RewriteBase /standalone/quiz/
+RewriteBase /quiz/
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule . /standalone/quiz/index.html [L]
+RewriteRule . /quiz/index.html [L]
 ```
 
 This file is already deployed. Only re-upload it if the base path changes.
@@ -150,7 +160,7 @@ sudo docker logs revelry-backend --tail 20
 curl http://localhost:8000/providers
 ```
 
-Then test from your browser: https://api.revelryapp.me/providers
+Then test from your browser: https://gamesapi.revelryapp.me/providers
 
 ### Zero-downtime shortcut (restart only, no rebuild)
 
@@ -163,7 +173,10 @@ sudo docker restart revelry-backend
 
 ## Nginx Configuration
 
-Nginx runs on the VM as a reverse proxy. Config is at `/etc/nginx/sites-available/default`.
+Nginx runs on the VM as a reverse proxy. Each subdomain has its own config file:
+
+- `/etc/nginx/sites-available/revelry-gamesapi` — `gamesapi.revelryapp.me` (quiz game backend)
+- `/etc/nginx/sites-available/revelry-api` — `api.revelryapp.me` (legacy, kept for backward compat)
 
 Key sections:
 - Listens on 443 (HTTPS) with Let's Encrypt certs
@@ -173,7 +186,7 @@ Key sections:
 
 ### View current config
 ```bash
-sudo cat /etc/nginx/sites-available/default
+sudo cat /etc/nginx/sites-available/revelry-gamesapi
 ```
 
 ### After editing Nginx config
@@ -208,13 +221,13 @@ The production `.env` on the VM should have at minimum:
 ```env
 # AI Providers — at least one must be configured
 GEMINI_API_KEY=<your-key>
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-2.5-flash
 DEFAULT_PROVIDER=gemini
 
 # Server
 HOST=0.0.0.0
 PORT=8000
-ALLOWED_ORIGINS=https://revelryapp.me,https://www.revelryapp.me
+ALLOWED_ORIGINS=https://revelryapp.me,https://www.revelryapp.me,https://games.revelryapp.me
 
 # Game
 ROOM_TTL_SECONDS=1800
@@ -234,11 +247,11 @@ Ollama and Stable Diffusion are NOT available on the production VM (no GPU).
 
 # 1. Build frontend
 cd frontend
-VITE_BASE_PATH=/standalone/quiz/ VITE_API_URL=https://api.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npm run build
+VITE_BASE_PATH=/quiz/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npx vite build
 
 # 2. Deploy frontend
-ssh u69414981@home420463025.1and1-data.host "rm -rf ~/revelryapp/standalone/quiz/assets"
-scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/standalone/quiz/
+ssh u69414981@home420463025.1and1-data.host "rm -rf ~/revelryapp/games/quiz/assets"
+scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/quiz/
 
 # 3. Deploy backend
 cd ../backend
@@ -259,12 +272,12 @@ gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a -- 
 
 ### Check if backend is healthy
 ```bash
-curl -s https://api.revelryapp.me/providers | python3 -m json.tool
+curl -s https://gamesapi.revelryapp.me/providers | python3 -m json.tool
 ```
 
 ### Check IONOS disk usage
 ```bash
-ssh u69414981@home420463025.1and1-data.host "du -sh ~/revelryapp/standalone/quiz/"
+ssh u69414981@home420463025.1and1-data.host "du -sh ~/revelryapp/games/quiz/"
 ```
 
 ---
