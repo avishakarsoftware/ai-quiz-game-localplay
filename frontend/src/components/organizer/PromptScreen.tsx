@@ -243,28 +243,20 @@ export default function PromptScreen({
                         </div>
                     </div>
 
-                    {/* Question count stepper */}
-                    <div className="settings-row">
-                        <div>
-                            <p className="font-medium">Questions</p>
-                            <p className="text-xs text-[--text-tertiary]">3-20 questions</p>
-                        </div>
-                        <div className="stepper">
-                            <button
-                                onClick={() => setNumQuestions(Math.max(3, numQuestions - 1))}
-                                disabled={numQuestions <= 3}
-                                className="stepper-btn"
-                            >
-                                −
-                            </button>
-                            <span className="stepper-value">{numQuestions}</span>
-                            <button
-                                onClick={() => setNumQuestions(Math.min(20, numQuestions + 1))}
-                                disabled={numQuestions >= 20}
-                                className="stepper-btn"
-                            >
-                                +
-                            </button>
+                    {/* Question count */}
+                    <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+                        <p className="font-medium">Questions</p>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            {[5, 10, 15, 20, 25].map(n => (
+                                <button
+                                    key={n}
+                                    onClick={() => setNumQuestions(n)}
+                                    className={`btn ${numQuestions === n ? 'btn-primary' : 'btn-secondary'}`}
+                                    style={{ flex: 1, padding: '8px 0', fontSize: '1rem' }}
+                                >
+                                    {n}
+                                </button>
+                            ))}
                         </div>
                     </div>
 

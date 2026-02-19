@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
@@ -9,6 +9,8 @@ import LeaderboardBarChart from '../components/LeaderboardBarChart';
 import { AVATAR_COLORS } from '../components/LeaderboardBarChart.constants';
 import { soundManager } from '../utils/sound';
 import BonusSplash from '../components/BonusSplash';
+import '../cast.d.ts';
+import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
 interface SpectatorQuestion {
     id: number;
@@ -47,6 +49,47 @@ export default function SpectatorPage() {
         setGameState('CONNECTING');
         setSearchParams({ room: code });
     };
+
+    // Cast Receiver: dynamically load SDK and auto-join when sender sends room code
+    const castInitialized = useRef(false);
+    useEffect(() => {
+        if (castInitialized.current) return;
+        castInitialized.current = true;
+
+        const initReceiver = () => {
+            try {
+                if (typeof cast === 'undefined' || !cast.framework?.CastReceiverContext) return;
+                const receiverContext = cast.framework.CastReceiverContext.getInstance();
+                if (!receiverContext) return;
+
+                receiverContext.addCustomMessageListener(CAST_NAMESPACE, (event) => {
+                    try {
+                        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                        const code = String(data.roomCode || '').toUpperCase();
+                        if (data.type === 'JOIN_ROOM' && /^[A-Z0-9]{4,6}$/.test(code)) {
+                            setRoomCode(code);
+                            setJoined(true);
+                            setGameState('CONNECTING');
+                            setSearchParams({ room: code });
+                        }
+                    } catch (err) {
+                        console.error('Cast receiver message parse error:', err);
+                    }
+                });
+
+                receiverContext.start();
+            } catch {
+                // Not running as a Cast receiver — normal browser mode
+            }
+        };
+
+        // Dynamically load receiver SDK only on spectator page
+        const script = document.createElement('script');
+        script.src = CAST_RECEIVER_SDK_URL;
+        script.onload = initReceiver;
+        script.onerror = () => {}; // Silently fail if SDK can't load
+        document.head.appendChild(script);
+    }, [setSearchParams]);
 
     useEffect(() => {
         if (!joined || !roomCode) return;
