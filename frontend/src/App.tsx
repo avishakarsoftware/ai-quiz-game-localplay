@@ -9,7 +9,7 @@ import SettingsDrawer from './components/SettingsDrawer';
 function App() {
   return (
     <ErrorBoundary>
-      <Router>
+      <Router basename={import.meta.env.BASE_URL}>
         <SettingsDrawer />
         <Routes>
           <Route path="/" element={<OrganizerPage />} />

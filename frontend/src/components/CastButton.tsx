@@ -5,16 +5,14 @@ import { CAST_APP_ID, CAST_NAMESPACE } from '../cast-constants';
 interface CastButtonProps {
   roomCode: string;
   joinUrl: string;
-  displayUrl?: string;
 }
 
-export default function CastButton({ roomCode, displayUrl }: CastButtonProps) {
+export default function CastButton({ roomCode }: CastButtonProps) {
   const [castSdkReady, setCastSdkReady] = useState(false);
   const [casting, setCasting] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
 
-  const hostname = displayUrl?.split(':')[0] || window.location.hostname;
-  const tvUrl = `${window.location.protocol}//${hostname}:${window.location.port}/spectator`;
+  const tvUrl = `${window.location.origin}${import.meta.env.BASE_URL}spectator`;
 
   useEffect(() => {
     if (!CAST_APP_ID) return;
@@ -51,19 +49,28 @@ export default function CastButton({ roomCode, displayUrl }: CastButtonProps) {
   // Send room code when casting starts or room code changes
   useEffect(() => {
     if (!casting || !roomCode) return;
-    const session = cast.framework.CastContext.getInstance().getCurrentSession();
-    if (session) {
-      session.sendMessage(CAST_NAMESPACE, JSON.stringify({ type: 'JOIN_ROOM', roomCode }))
-        .catch(err => console.error('Cast sendMessage error:', err));
+    try {
+      const session = cast.framework.CastContext.getInstance().getCurrentSession();
+      if (session) {
+        session.sendMessage(CAST_NAMESPACE, JSON.stringify({ type: 'JOIN_ROOM', roomCode }))
+          .catch(err => console.error('Cast sendMessage error:', err));
+      }
+    } catch (err) {
+      console.error('Cast session access error:', err);
     }
   }, [casting, roomCode]);
 
   const handleCast = useCallback(async () => {
     if (castSdkReady) {
       try {
-        await cast.framework.CastContext.getInstance().requestSession();
-      } catch (err) {
-        console.error('Cast request failed:', err);
+        const context = cast.framework.CastContext.getInstance();
+        await context.requestSession();
+      } catch (err: unknown) {
+        // 'cancel' means user closed the device picker — not a real error
+        const isCancel = err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'cancel';
+        if (!isCancel) {
+          console.error('Cast request failed:', err);
+        }
       }
     } else {
       setShowFallback(prev => !prev);

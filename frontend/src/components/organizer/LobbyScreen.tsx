@@ -7,13 +7,12 @@ import { AVATAR_COLORS } from '../LeaderboardBarChart.constants';
 interface LobbyScreenProps {
     roomCode: string;
     joinUrl: string;
-    networkIp: string;
     playerCount: number;
     players: PlayerInfo[];
     onStartGame: () => void;
 }
 
-export default function LobbyScreen({ roomCode, joinUrl, networkIp, playerCount, players, onStartGame }: LobbyScreenProps) {
+export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, onStartGame }: LobbyScreenProps) {
     const prevCountRef = useRef(playerCount);
     const justJoined = playerCount > prevCountRef.current;
 
@@ -35,7 +34,7 @@ export default function LobbyScreen({ roomCode, joinUrl, networkIp, playerCount,
             </div>
 
             <div className="room-code mb-2 text-center">{roomCode}</div>
-            <p className="text-[--text-tertiary] text-sm mb-6 text-center">{networkIp}:5173/join</p>
+            <p className="text-[--text-tertiary] text-sm mb-6 text-center">{new URL(joinUrl).host}{new URL(joinUrl).pathname}</p>
 
             {/* Players section */}
             <div className="w-full mb-3">
@@ -72,7 +71,7 @@ export default function LobbyScreen({ roomCode, joinUrl, networkIp, playerCount,
             </div>
 
             <div className="w-full mb-4">
-                <CastButton roomCode={roomCode} joinUrl={joinUrl} displayUrl={`${networkIp}:5173/join`} />
+                <CastButton roomCode={roomCode} joinUrl={joinUrl} />
             </div>
 
             <button onClick={onStartGame} disabled={playerCount === 0} className="btn btn-primary btn-glow w-full">

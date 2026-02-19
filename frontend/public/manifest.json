@@ -1,33 +1,33 @@
 {
-    "name": "LocalPlay Quiz",
-    "short_name": "LocalPlay",
+    "name": "Revelry Quiz",
+    "short_name": "Revelry",
     "description": "AI-powered quiz game for parties and events",
-    "start_url": "/",
+    "start_url": ".",
     "display": "standalone",
     "background_color": "#46178F",
     "theme_color": "#46178F",
     "orientation": "portrait-primary",
     "icons": [
         {
-            "src": "/icons/icon-192.png",
+            "src": "icons/icon-192.png",
             "sizes": "192x192",
             "type": "image/png",
             "purpose": "any"
         },
         {
-            "src": "/icons/icon-512.png",
+            "src": "icons/icon-512.png",
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "any"
         },
         {
-            "src": "/icons/icon-192.png",
+            "src": "icons/icon-192.png",
             "sizes": "192x192",
             "type": "image/png",
             "purpose": "maskable"
         },
         {
-            "src": "/icons/icon-512.png",
+            "src": "icons/icon-512.png",
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "maskable"
@@ -41,13 +41,13 @@
         {
             "name": "Join Game",
             "short_name": "Join",
-            "url": "/join",
+            "url": "join",
             "description": "Join an existing quiz game"
         },
         {
             "name": "Create Quiz",
             "short_name": "Create",
-            "url": "/",
+            "url": ".",
             "description": "Create a new quiz as organizer"
         }
     ]

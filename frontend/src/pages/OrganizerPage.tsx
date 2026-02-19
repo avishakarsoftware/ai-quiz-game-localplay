@@ -32,7 +32,6 @@ export default function OrganizerPage() {
     const [sdAvailable, setSdAvailable] = useState(false);
     const [imageProgress, setImageProgress] = useState(0);
     const [questionImages, setQuestionImages] = useState<Record<number, string>>({});
-    const [networkIp, setNetworkIp] = useState(window.location.hostname);
     const [players, setPlayers] = useState<PlayerInfo[]>([]);
     const [answeredCount, setAnsweredCount] = useState(0);
     const [provider, setProvider] = useState('ollama');
@@ -64,16 +63,6 @@ export default function OrganizerPage() {
             .catch(() => {});
     }, []);
 
-    useEffect(() => {
-        fetch(`${API_URL}/system/info`)
-            .then(res => res.json())
-            .then(data => {
-                if (data.ip && data.ip !== '127.0.0.1') {
-                    setNetworkIp(data.ip);
-                }
-            })
-            .catch(err => console.error("Failed to fetch system IP", err));
-    }, []);
 
     const handleWsMessage = useCallback((event: MessageEvent) => {
         const msg = JSON.parse(event.data);
@@ -108,6 +97,14 @@ export default function OrganizerPage() {
             setTeamLeaderboard(msg.team_leaderboard || []);
             setState('PODIUM');
             soundManager.play('fanfare');
+        }
+        else if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED') {
+            setPlayerCount(msg.player_count);
+            setPlayers(msg.players || []);
+        }
+        else if (msg.type === 'PLAYER_RECONNECTED') {
+            setPlayerCount(msg.player_count);
+            setPlayers(msg.players || []);
         }
         else if (msg.type === 'ROOM_RESET') {
             setPlayerCount(msg.player_count);
@@ -209,52 +206,6 @@ export default function OrganizerPage() {
         });
     };
 
-    const exportQuiz = async () => {
-        if (!quizId) return;
-        try {
-            const res = await fetch(`${API_URL}/quiz/${quizId}/export`);
-            const data = await res.json();
-            const blob = new Blob([JSON.stringify(data.quiz, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${data.quiz.quiz_title || 'quiz'}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-        } catch {
-            alert('Export failed');
-        }
-    };
-
-    const importQuiz = async () => {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json';
-        input.onchange = async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (!file) return;
-            try {
-                const text = await file.text();
-                const quizData = JSON.parse(text);
-                const res = await fetch(`${API_URL}/quiz/import`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ quiz: quizData }),
-                });
-                const data = await res.json();
-                if (data.quiz) {
-                    setQuiz(data.quiz);
-                    setQuizId(data.quiz_id);
-                    setTotalQuestions(data.quiz.questions.length);
-                    setState('REVIEW');
-                }
-            } catch {
-                alert('Invalid quiz file');
-            }
-        };
-        input.click();
-    };
-
     const connectWs = useCallback((code: string) => {
         if (wsRef.current) {
             wsRef.current.onclose = null;
@@ -324,7 +275,8 @@ export default function OrganizerPage() {
         setState('PROMPT');
     };
 
-    const joinUrl = `http://${networkIp}:5173/join?room=${roomCode}`;
+    const baseUrl = `${window.location.origin}${import.meta.env.BASE_URL}`;
+    const joinUrl = `${baseUrl}join?room=${roomCode}`;
     const currentQ = quiz?.questions[currentQuestion - 1];
     const currentImageUrl = currentQ ? questionImages[currentQ.id] : undefined;
 
@@ -371,7 +323,6 @@ export default function OrganizerPage() {
                     <LobbyScreen
                         roomCode={roomCode}
                         joinUrl={joinUrl}
-                        networkIp={networkIp}
                         playerCount={playerCount}
                         players={players}
                         onStartGame={startGame}

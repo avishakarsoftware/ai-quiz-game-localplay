@@ -111,6 +111,14 @@ export default function SpectatorPage() {
                 setPlayers(msg.players || []);
                 setGameState('LOBBY');
             }
+            else if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED') {
+                setPlayerCount(msg.player_count);
+                setPlayers(msg.players || []);
+            }
+            else if (msg.type === 'PLAYER_RECONNECTED') {
+                setPlayerCount(msg.player_count);
+                setPlayers(msg.players || []);
+            }
             else if (msg.type === 'GAME_STARTING') setGameState('INTRO');
             else if (msg.type === 'QUESTION') {
                 setQuestion(msg.question);
@@ -136,6 +144,9 @@ export default function SpectatorPage() {
                 setPodiumReveal(0);
                 setGameState('PODIUM');
                 soundManager.play('fanfare');
+            }
+            else if (msg.type === 'ORGANIZER_DISCONNECTED') {
+                setGameState('DISCONNECTED');
             }
             else if (msg.type === 'ROOM_RESET') {
                 setPlayers(msg.players || []);

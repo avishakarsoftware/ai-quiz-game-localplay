@@ -121,6 +121,9 @@ export default function PlayerPage() {
                 if (msg.players) setLobbyPlayers(msg.players);
                 soundManager.play('playerJoin');
             }
+            if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED' || msg.type === 'PLAYER_RECONNECTED') {
+                if (msg.players) setLobbyPlayers(msg.players);
+            }
             if (msg.type === 'GAME_STARTING') setState('LOBBY');
             if (msg.type === 'QUESTION') {
                 setCurrentQuestion(msg.question);
@@ -174,6 +177,16 @@ export default function PlayerPage() {
                 }
             }
             if (msg.type === 'PODIUM') { setLeaderboard(msg.leaderboard); setTeamLeaderboard(msg.team_leaderboard || []); setState('PODIUM'); soundManager.play('fanfare'); }
+            if (msg.type === 'ORGANIZER_DISCONNECTED') {
+                // Host left — close connection and show join screen with message
+                wsRef.current?.close();
+                wsRef.current = null;
+                kickedRef.current = true; // prevent auto-reconnect
+                sessionStorage.removeItem('localplay_session');
+                setState('JOIN');
+                setError('The host has left the game');
+                return;
+            }
             if (msg.type === 'ROOM_RESET') {
                 setCurrentQuestion(null);
                 setQuestionNumber(0);

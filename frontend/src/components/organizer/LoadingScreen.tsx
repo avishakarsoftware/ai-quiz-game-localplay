@@ -36,7 +36,7 @@ export default function LoadingScreen() {
                 <div className="loading-ring ring-outer" />
                 <div className="loading-ring ring-middle" />
                 <div className="loading-ring ring-inner" />
-                <img src="/icons/icon-192.png" alt="LocalPlay" className="loading-icon" style={{ width: 48, height: 48, borderRadius: 10 }} />
+                <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="Revelry" className="loading-icon" style={{ width: 48, height: 48, borderRadius: 10 }} />
             </div>
 
             <p className="text-[--text-tertiary] loading-message-fade" key={msgIndex}>

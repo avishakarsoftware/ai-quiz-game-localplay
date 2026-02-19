@@ -31,6 +31,8 @@ class Room:
         self.previous_leaderboard: List[dict] = []
         self.lock = asyncio.Lock()
         self.last_activity = time.time()
+        self._organizer_just_disconnected = False  # flag for post-disconnect notification
+        self._player_event: Optional[tuple] = None  # ('left'|'disconnected'|'reconnected', nickname)
         self.disconnected_players: Dict[str, dict] = {}  # nickname -> {score, prev_rank, streak}
         self.answer_log: List[dict] = []  # game history: per-question answer records
         # WS rate limiting: client_id -> list of timestamps
@@ -95,6 +97,7 @@ class Room:
             if self.state in ("LOBBY",):
                 # In lobby, fully remove the player
                 del self.players[client_id]
+                self._player_event = ("left", nickname)
                 logger.info("Player '%s' left room %s", nickname, self.room_code)
             else:
                 # During active game, preserve data for reconnection
@@ -105,10 +108,12 @@ class Room:
                     "avatar": self.players[client_id].get("avatar", ""),
                 }
                 del self.players[client_id]
+                self._player_event = ("disconnected", nickname)
                 logger.info("Player '%s' disconnected from room %s (data preserved)", nickname, self.room_code)
         if self.organizer_id == client_id:
             self.organizer = None
             self.organizer_id = None
+            self._organizer_just_disconnected = True
             logger.info("Organizer disconnected from room %s", self.room_code)
 
     async def broadcast(self, message: dict):
@@ -273,6 +278,19 @@ class SocketManager:
             logger.exception("WebSocket error for client %s in room %s", client_id, room_code)
         finally:
             room._remove_connection(client_id)
+            if room._organizer_just_disconnected:
+                room._organizer_just_disconnected = False
+                await room.broadcast({"type": "ORGANIZER_DISCONNECTED"})
+            if room._player_event:
+                event_type, nickname = room._player_event
+                room._player_event = None
+                msg_type = "PLAYER_LEFT" if event_type == "left" else "PLAYER_DISCONNECTED"
+                await room.broadcast({
+                    "type": msg_type,
+                    "nickname": nickname,
+                    "player_count": len(room.players),
+                    "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
+                })
 
     async def _send_organizer_sync(self, room: Room):
         """Send full game state to a reconnecting organizer."""
@@ -416,6 +434,12 @@ class SocketManager:
                             state_info["time_limit"] = room.time_limit
                             state_info["is_bonus"] = room.current_question_index in room.bonus_questions
                         await ws.send_json(state_info)
+                    await room.broadcast({
+                        "type": "PLAYER_RECONNECTED",
+                        "nickname": nickname,
+                        "player_count": len(room.players),
+                        "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
+                    })
                     return
 
                 # Check for duplicate nickname among active players
