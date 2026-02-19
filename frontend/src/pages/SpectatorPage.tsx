@@ -38,8 +38,9 @@ export default function SpectatorPage() {
     const [isBonus, setIsBonus] = useState(false);
     const [showBonusSplash, setShowBonusSplash] = useState(false);
 
-    const joinUrl = `http://${window.location.hostname}:5173/join?room=${roomCode}`;
-    const displayUrl = `${window.location.hostname}:5173/join`;
+    const baseUrl = `${window.location.origin}${import.meta.env.BASE_URL}`;
+    const joinUrl = `${baseUrl}join?room=${roomCode}`;
+    const displayUrl = `${new URL(joinUrl).host}${new URL(joinUrl).pathname}`;
 
     const handleJoinRoom = () => {
         const code = roomInput.trim().toUpperCase();
@@ -97,7 +98,8 @@ export default function SpectatorPage() {
         const ws = new WebSocket(`${WS_URL}/ws/${roomCode}/${clientId}?spectator=true`);
 
         ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
+            let msg: Record<string, unknown>;
+            try { msg = JSON.parse(event.data); } catch { return; }
             if (msg.type === 'SPECTATOR_SYNC') {
                 setGameState(msg.state);
                 setPlayers(msg.players || []);

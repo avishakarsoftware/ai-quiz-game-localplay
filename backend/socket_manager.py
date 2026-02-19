@@ -1,6 +1,7 @@
 from fastapi import WebSocket, WebSocketDisconnect
 from typing import Dict, List, Optional
 import json
+import hmac
 import time
 import asyncio
 import logging
@@ -92,6 +93,7 @@ class Room:
         """Remove a connection. During active game, preserve player data for reconnection."""
         self.connections.pop(client_id, None)
         self.spectators.pop(client_id, None)
+        self.msg_timestamps.pop(client_id, None)
         if client_id in self.players:
             nickname = self.players[client_id]["nickname"]
             if self.state in ("LOBBY",):
@@ -158,6 +160,7 @@ class SocketManager:
     def __init__(self):
         self.rooms: Dict[str, Room] = {}
         self._cleanup_task: Optional[asyncio.Task] = None
+        self.allowed_origins: List[str] = []
 
     def start_cleanup_loop(self):
         """Start the background room cleanup task."""
@@ -190,6 +193,13 @@ class SocketManager:
     async def connect(self, websocket: WebSocket, room_code: str, client_id: str,
                       is_organizer: bool = False, is_spectator: bool = False,
                       token: str = ""):
+        # Validate WebSocket origin
+        origin = websocket.headers.get("origin", "")
+        if self.allowed_origins and origin not in self.allowed_origins:
+            logger.warning("Rejected WebSocket from unauthorized origin: %s", origin)
+            await websocket.close(code=1008)
+            return
+
         await websocket.accept()
         if room_code not in self.rooms:
             await websocket.send_json({"type": "ERROR", "message": "Room not found"})
@@ -200,7 +210,7 @@ class SocketManager:
 
         # Verify organizer token
         if is_organizer:
-            if not token or token != room.organizer_token:
+            if not token or not hmac.compare_digest(token, room.organizer_token):
                 await websocket.send_json({"type": "ERROR", "message": "Invalid organizer token"})
                 await websocket.close()
                 return
@@ -358,6 +368,8 @@ class SocketManager:
                     try:
                         from main import game_history
                         game_history.append(self.get_game_summary(room))
+                        if len(game_history) > config.MAX_GAME_HISTORY:
+                            del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
                     except Exception:
                         logger.warning("Could not save game history for room %s", room.room_code)
 
@@ -381,8 +393,9 @@ class SocketManager:
             if msg_type == "JOIN":
                 nickname = message.get("nickname", "").strip()
                 team = message.get("team", "").strip() or None
-                # Sanitize: strip HTML tags to prevent XSS
-                nickname = re.sub(r'<[^>]+>', '', nickname).strip()
+                # Sanitize: strip HTML tags and control characters
+                nickname = re.sub(r'<[^>]+>', '', nickname)
+                nickname = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', nickname).strip()
                 if not nickname or len(nickname) > config.MAX_NICKNAME_LENGTH:
                     ws = room.connections.get(client_id)
                     if ws:
@@ -394,7 +407,8 @@ class SocketManager:
 
                 # Sanitize team name
                 if team:
-                    team = re.sub(r'<[^>]+>', '', team).strip()
+                    team = re.sub(r'<[^>]+>', '', team)
+                    team = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', team).strip()
                     if len(team) > config.MAX_TEAM_NAME_LENGTH:
                         team = team[:config.MAX_TEAM_NAME_LENGTH]
                     if not team:
@@ -404,7 +418,7 @@ class SocketManager:
                 avatar = message.get("avatar", "")
                 if not isinstance(avatar, str):
                     avatar = ""
-                avatar = avatar[:config.MAX_AVATAR_LENGTH]
+                avatar = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', avatar)[:config.MAX_AVATAR_LENGTH]
 
                 # Check for reconnection (disconnected mid-game)
                 if nickname in room.disconnected_players:
@@ -480,6 +494,10 @@ class SocketManager:
                             state_info["time_limit"] = room.time_limit
                             state_info["is_bonus"] = room.current_question_index in room.bonus_questions
                         await ws.send_json(state_info)
+                    return
+
+                if len(room.players) >= config.MAX_PLAYERS_PER_ROOM:
+                    await ws.send_json({"type": "ERROR", "message": "Room is full"})
                     return
 
                 room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
@@ -677,6 +695,8 @@ class SocketManager:
             try:
                 from main import game_history
                 game_history.append(self.get_game_summary(room))
+                if len(game_history) > config.MAX_GAME_HISTORY:
+                    del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
                 logger.info("Game history saved for room %s", room.room_code)
             except Exception:
                 logger.warning("Could not save game history for room %s", room.room_code)

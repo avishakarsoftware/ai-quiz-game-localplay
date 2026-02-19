@@ -81,8 +81,9 @@ export default function PlayerPage() {
         ws.onopen = () => ws.send(JSON.stringify({ type: 'JOIN', nickname, team: team || undefined, avatar }));
 
         ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'ERROR') { setError(msg.message); return; }
+            let msg: Record<string, unknown>;
+            try { msg = JSON.parse(event.data); } catch { return; }
+            if (msg.type === 'ERROR') { setError(msg.message as string); return; }
             if (msg.type === 'KICKED') {
                 // Another tab/device took over this nickname
                 kickedRef.current = true;
@@ -250,7 +251,7 @@ export default function PlayerPage() {
                                 <input
                                     type="text"
                                     value={roomCode}
-                                    onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                                    onChange={(e) => setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
                                     placeholder="Game PIN"
                                     className="input-field text-center text-2xl tracking-widest uppercase"
                                     maxLength={6}

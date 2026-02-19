@@ -65,7 +65,8 @@ export default function OrganizerPage() {
 
 
     const handleWsMessage = useCallback((event: MessageEvent) => {
-        const msg = JSON.parse(event.data);
+        let msg: Record<string, unknown>;
+        try { msg = JSON.parse(event.data); } catch { return; }
         if (msg.type === 'PLAYER_JOINED') {
             console.log('PLAYER_JOINED', msg);
             setPlayerCount(msg.player_count);

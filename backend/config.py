@@ -53,6 +53,10 @@ MIN_QUESTIONS = 3
 MAX_QUESTIONS = 20
 VALID_DIFFICULTIES = ("easy", "medium", "hard")
 
+# --- Player / history limits ---
+MAX_PLAYERS_PER_ROOM = 100
+MAX_GAME_HISTORY = 1000
+
 # --- Streak bonus ---
 STREAK_THRESHOLDS = {3: 1.5, 5: 2.0}  # streak_count -> multiplier
 

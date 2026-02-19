@@ -9,7 +9,6 @@ import time
 from contextlib import asynccontextmanager
 import uvicorn
 import uuid
-import random
 import string
 import secrets
 import base64
@@ -97,7 +96,7 @@ def _evict_old_quizzes():
 def generate_room_code() -> str:
     """Generate a unique 6-character room code, checking for collisions."""
     for _ in range(config.MAX_ROOM_CODE_ATTEMPTS):
-        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))
         if code not in socket_manager.rooms:
             return code
     raise RuntimeError("Failed to generate unique room code")
@@ -404,6 +403,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type"],
 )
+
+# Share allowed origins with WebSocket manager for origin validation
+socket_manager.allowed_origins = origins
 
 
 @app.get("/")

@@ -109,8 +109,9 @@ export default function ReviewScreen({
                                     <input
                                         type="text"
                                         value={editQuestion.text}
-                                        onChange={(e) => setEditQuestion({ ...editQuestion, text: e.target.value })}
+                                        onChange={(e) => setEditQuestion({ ...editQuestion, text: e.target.value.slice(0, 2000) })}
                                         className="input-field text-sm"
+                                        maxLength={2000}
                                     />
                                     <div className="grid grid-cols-2 gap-2">
                                         {editQuestion.options.map((opt, j) => {
@@ -123,10 +124,11 @@ export default function ReviewScreen({
                                                         value={opt}
                                                         onChange={(e) => {
                                                             const opts = [...editQuestion.options];
-                                                            opts[j] = e.target.value;
+                                                            opts[j] = e.target.value.slice(0, 500);
                                                             setEditQuestion({ ...editQuestion, options: opts });
                                                         }}
                                                         className="input-field text-xs flex-1"
+                                                        maxLength={500}
                                                         style={{ borderLeft: `3px solid ${style.bg}` }}
                                                     />
                                                     <button

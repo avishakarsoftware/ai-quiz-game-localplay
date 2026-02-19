@@ -60,17 +60,23 @@ def _sanitize_text(text: str) -> str:
     return text.strip()
 
 
+MAX_QUIZ_TITLE_LENGTH = 500
+MAX_QUESTION_TEXT_LENGTH = 2000
+MAX_OPTION_LENGTH = 500
+MAX_IMAGE_PROMPT_LENGTH = 2000
+
+
 def _sanitize_quiz(quiz_data: dict) -> dict:
     """Sanitize all user-visible text fields in quiz output."""
     if "quiz_title" in quiz_data:
-        quiz_data["quiz_title"] = _sanitize_text(quiz_data["quiz_title"])
+        quiz_data["quiz_title"] = _sanitize_text(quiz_data["quiz_title"])[:MAX_QUIZ_TITLE_LENGTH]
     for q in quiz_data.get("questions", []):
         if "text" in q:
-            q["text"] = _sanitize_text(q["text"])
+            q["text"] = _sanitize_text(q["text"])[:MAX_QUESTION_TEXT_LENGTH]
         if "options" in q:
-            q["options"] = [_sanitize_text(opt) for opt in q["options"]]
+            q["options"] = [_sanitize_text(opt)[:MAX_OPTION_LENGTH] for opt in q["options"]]
         if "image_prompt" in q:
-            q["image_prompt"] = _sanitize_text(q["image_prompt"])
+            q["image_prompt"] = _sanitize_text(q["image_prompt"])[:MAX_IMAGE_PROMPT_LENGTH]
     return quiz_data
 
 
@@ -140,7 +146,8 @@ async def _generate_gemini(prompt: str, difficulty: str, num_questions: int) -> 
         return None
 
     system_prompt = _build_system_prompt(difficulty, num_questions)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent?key={config.GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent"
+    headers = {"x-goog-api-key": config.GEMINI_API_KEY}
 
     wrapped_topic = _wrap_user_topic(prompt)
     payload = {
@@ -154,7 +161,7 @@ async def _generate_gemini(prompt: str, difficulty: str, num_questions: int) -> 
     for attempt in range(1, config.LLM_MAX_RETRIES + 1):
         try:
             logger.info("Gemini attempt %d/%d for: '%s'", attempt, config.LLM_MAX_RETRIES, prompt[:100])
-            response = requests.post(url, json=payload, timeout=60)
+            response = requests.post(url, json=payload, headers=headers, timeout=60)
             response.raise_for_status()
             result = response.json()
             text = result["candidates"][0]["content"]["parts"][0]["text"]

@@ -47,7 +47,7 @@ Users → revelryapp.me (IONOS CDN) → static frontend
 cd frontend
 
 # Production build with subpath and backend URL
-VITE_BASE_PATH=/standalone/quiz/ VITE_API_URL=https://api.revelryapp.me npm run build
+VITE_BASE_PATH=/standalone/quiz/ VITE_API_URL=https://api.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npm run build
 ```
 
 This produces `frontend/dist/` with all static assets.
@@ -234,7 +234,7 @@ Ollama and Stable Diffusion are NOT available on the production VM (no GPU).
 
 # 1. Build frontend
 cd frontend
-VITE_BASE_PATH=/standalone/quiz/ VITE_API_URL=https://api.revelryapp.me npm run build
+VITE_BASE_PATH=/standalone/quiz/ VITE_API_URL=https://api.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npm run build
 
 # 2. Deploy frontend
 ssh u69414981@home420463025.1and1-data.host "rm -rf ~/revelryapp/standalone/quiz/assets"

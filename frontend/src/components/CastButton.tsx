@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import '../cast.d.ts';
 import { CAST_APP_ID, CAST_NAMESPACE } from '../cast-constants';
+
+const CAST_SENDER_SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
 
 interface CastButtonProps {
   roomCode: string;
@@ -11,11 +13,15 @@ export default function CastButton({ roomCode }: CastButtonProps) {
   const [castSdkReady, setCastSdkReady] = useState(false);
   const [casting, setCasting] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
+  const sdkLoaded = useRef(false);
 
   const tvUrl = `${window.location.origin}${import.meta.env.BASE_URL}spectator`;
 
+  // Dynamically load Cast Sender SDK (not in index.html to avoid conflict with receiver on spectator page)
   useEffect(() => {
-    if (!CAST_APP_ID) return;
+    if (sdkLoaded.current) return;
+    sdkLoaded.current = true;
+
     const initCast = (isAvailable: boolean) => {
       if (!isAvailable) return;
       try {
@@ -39,11 +45,13 @@ export default function CastButton({ roomCode }: CastButtonProps) {
       }
     };
 
-    if (typeof cast !== 'undefined' && cast.framework) {
-      initCast(true);
-    } else {
-      window.__onGCastApiAvailable = initCast;
-    }
+    // Set callback before loading script
+    window.__onGCastApiAvailable = initCast;
+
+    const script = document.createElement('script');
+    script.src = CAST_SENDER_SDK_URL;
+    script.onerror = () => {}; // Silently fail if SDK can't load
+    document.head.appendChild(script);
   }, []);
 
   // Send room code when casting starts or room code changes
