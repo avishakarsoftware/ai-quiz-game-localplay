@@ -22,10 +22,13 @@ def clear_state():
     quizzes.clear()
     game_history.clear()
     socket_manager.rooms.clear()
+    saved_origins = socket_manager.allowed_origins
+    socket_manager.allowed_origins = []
     yield
     quizzes.clear()
     game_history.clear()
     socket_manager.rooms.clear()
+    socket_manager.allowed_origins = saved_origins
 
 
 client = TestClient(app)
@@ -66,10 +69,11 @@ def seed_mixed_quiz():
 
 
 def create_room(quiz_id, time_limit=30):
-    """Create a room and return the room code."""
+    """Create a room and return (room_code, organizer_token)."""
     res = client.post("/room/create", json={"quiz_id": quiz_id, "time_limit": time_limit})
     assert res.status_code == 200
-    return res.json()["room_code"]
+    data = res.json()
+    return data["room_code"], data["organizer_token"]
 
 
 def recv_until(ws, msg_type, max_messages=50):
@@ -91,9 +95,9 @@ class TestStreakBonusWS:
     def test_streak_multiplier_applied_after_3_correct(self):
         """Player answering correctly 3+ times should get streak multiplier."""
         quiz_id = seed_quiz(num_questions=4)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()  # ROOM_CREATED
 
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
@@ -136,9 +140,9 @@ class TestStreakBonusWS:
     def test_streak_resets_on_wrong_answer(self):
         """Streak should reset to 0 when player answers incorrectly."""
         quiz_id = seed_quiz(num_questions=3)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
@@ -190,9 +194,9 @@ class TestPowerUpsWS:
     def test_double_points_power_up(self):
         """Double points power-up should double the score on next correct answer."""
         quiz_id = seed_quiz(num_questions=2)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
@@ -232,9 +236,9 @@ class TestPowerUpsWS:
     def test_fifty_fifty_power_up(self):
         """50/50 should remove exactly 2 wrong options."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
@@ -259,9 +263,9 @@ class TestPowerUpsWS:
     def test_power_up_cannot_be_used_twice(self):
         """Each power-up can only be used once per game."""
         quiz_id = seed_quiz(num_questions=2)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
@@ -298,9 +302,9 @@ class TestPowerUpsWS:
     def test_double_points_not_applied_on_wrong_answer(self):
         """Double points should be consumed but not affect score on wrong answer."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
@@ -334,9 +338,9 @@ class TestTeamModeWS:
     def test_team_leaderboard_in_podium(self):
         """Players with team names should produce team_leaderboard in PODIUM."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             p1_ws = client.websocket_connect(f"/ws/{room_code}/p-1")
@@ -388,9 +392,9 @@ class TestTeamModeWS:
     def test_solo_player_in_team_leaderboard(self):
         """When no teams are set, solo player appears with nickname as team."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -419,9 +423,9 @@ class TestTeamModeWS:
     def test_same_team_multiple_players(self):
         """Multiple players on the same team should have averaged scores."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             p1_ws = client.websocket_connect(f"/ws/{room_code}/p-1")
@@ -486,9 +490,9 @@ class TestSpectatorWS:
     def test_spectator_receives_sync_on_connect(self):
         """Spectator should receive SPECTATOR_SYNC immediately on connect."""
         quiz_id = seed_quiz(num_questions=2)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()  # ROOM_CREATED
 
             # Add a player first
@@ -511,9 +515,9 @@ class TestSpectatorWS:
     def test_spectator_registered_in_room(self):
         """Spectator should be tracked in room.spectators, not room.players."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/spec-1?spectator=true") as spec_ws:
@@ -529,9 +533,9 @@ class TestSpectatorWS:
     def test_spectator_does_not_count_as_player(self):
         """Spectators should not appear in player count or player list."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/spec-1?spectator=true") as spec_ws:
@@ -542,9 +546,9 @@ class TestSpectatorWS:
     def test_spectator_sync_includes_leaderboard(self):
         """SPECTATOR_SYNC should include the current leaderboard."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/spec-1?spectator=true") as spec_ws:
@@ -563,9 +567,9 @@ class TestAnswerLoggingWS:
     def test_answers_logged_correctly(self):
         """All player answers should be recorded in the answer log."""
         quiz_id = seed_quiz(num_questions=2)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -616,11 +620,11 @@ class TestGameHistoryWS:
     def test_game_saved_to_history(self):
         """After reaching PODIUM, game summary should be saved to history."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
         assert len(game_history) == 0
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -658,9 +662,9 @@ class TestGameHistoryWS:
     def test_history_accessible_via_api(self):
         """Game history should be queryable via GET /history and /history/{room_code}."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -703,9 +707,9 @@ class TestMultiPlayerGameFlow:
     def test_all_players_answered_ends_question_early(self):
         """When all players answer, question should end immediately."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id, time_limit=60)  # Long timer
+        room_code, org_token = create_room(quiz_id, time_limit=60)  # Long timer
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             p1_ws = client.websocket_connect(f"/ws/{room_code}/p-1")
@@ -747,9 +751,9 @@ class TestMultiPlayerGameFlow:
     def test_player_cannot_answer_twice(self):
         """A player's second answer should be silently ignored."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id, time_limit=60)
+        room_code, org_token = create_room(quiz_id, time_limit=60)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -776,9 +780,9 @@ class TestMultiPlayerGameFlow:
     def test_leaderboard_rank_changes(self):
         """Leaderboard should include rank_change data."""
         quiz_id = seed_quiz(num_questions=2)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             p1_ws = client.websocket_connect(f"/ws/{room_code}/p-1")
@@ -843,9 +847,9 @@ class TestMixedQuestionTypesWS:
     def test_tf_question_answer_validation(self):
         """True/False question should accept answer_index 0 or 1."""
         quiz_id = seed_mixed_quiz()
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -897,9 +901,9 @@ class TestMixedQuestionTypesWS:
         }
         quiz_id = str(uuid.uuid4())
         quizzes[quiz_id] = quiz_data
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -930,9 +934,9 @@ class TestReconnectionWS:
     def test_reconnected_player_keeps_streak(self):
         """Reconnected player should retain their streak count."""
         quiz_id = seed_quiz(num_questions=3)
-        room_code = create_room(quiz_id, time_limit=60)
+        room_code, org_token = create_room(quiz_id, time_limit=60)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             # Player joins and answers Q1
@@ -967,9 +971,9 @@ class TestReconnectionWS:
     def test_reconnected_player_appears_in_leaderboard(self):
         """Reconnected player should still appear in final leaderboard."""
         quiz_id = seed_quiz(num_questions=2)
-        room_code = create_room(quiz_id, time_limit=60)
+        room_code, org_token = create_room(quiz_id, time_limit=60)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             # Player joins and answers Q1
@@ -1032,9 +1036,9 @@ class TestEdgeCases:
     def test_invalid_answer_index_ignored(self):
         """An out-of-range answer index should be silently ignored."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id, time_limit=60)
+        room_code, org_token = create_room(quiz_id, time_limit=60)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -1058,9 +1062,9 @@ class TestEdgeCases:
     def test_nickname_too_long_rejected(self):
         """A nickname exceeding max length should be rejected."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -1073,9 +1077,9 @@ class TestEdgeCases:
     def test_empty_nickname_rejected(self):
         """Empty nickname should be rejected."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -1087,9 +1091,9 @@ class TestEdgeCases:
     def test_html_in_nickname_sanitized(self):
         """HTML tags in nickname should be stripped."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -1110,9 +1114,9 @@ class TestBonusRoundsWS:
     def test_bonus_flag_in_question_message(self):
         """QUESTION messages should include is_bonus field; some True for 5+ Q quiz."""
         quiz_id = seed_quiz(num_questions=5)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -1146,9 +1150,9 @@ class TestBonusRoundsWS:
     def test_bonus_scoring_doubles_points(self):
         """Correct answer on bonus question should give ~2x points vs non-bonus."""
         quiz_id = seed_quiz(num_questions=5)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -1188,9 +1192,9 @@ class TestBonusRoundsWS:
     def test_bonus_flag_in_answer_result(self):
         """ANSWER_RESULT should include is_bonus field."""
         quiz_id = seed_quiz(num_questions=5)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -1211,9 +1215,9 @@ class TestBonusRoundsWS:
     def test_no_bonus_for_small_quiz(self):
         """3-question quiz should have no bonus rounds."""
         quiz_id = seed_quiz(num_questions=3)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -1252,9 +1256,9 @@ class TestStreakResetNoAnswerWS:
     def test_streak_resets_for_non_answering_player(self):
         """Player who doesn't answer should have streak reset to 0."""
         quiz_id = seed_quiz(num_questions=3)
-        room_code = create_room(quiz_id, time_limit=60)
+        room_code, org_token = create_room(quiz_id, time_limit=60)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             p1_ws = client.websocket_connect(f"/ws/{room_code}/p-1")
@@ -1332,9 +1336,9 @@ class TestStreakResetNoAnswerWS:
         """Verify streak reset logic works on room state level."""
         # This test verifies the end_question streak reset by inspecting room state
         quiz_id = seed_quiz(num_questions=2)
-        room_code = create_room(quiz_id, time_limit=60)
+        room_code, org_token = create_room(quiz_id, time_limit=60)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -1380,9 +1384,9 @@ class TestTeamLeaderboardSoloWS:
     def test_solo_player_appears_in_team_leaderboard(self):
         """Solo player (no team) should appear in team_leaderboard with their nickname."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -1414,9 +1418,9 @@ class TestTeamLeaderboardSoloWS:
     def test_mixed_team_and_solo_in_podium(self):
         """Mix of team players and solo player in podium team_leaderboard."""
         quiz_id = seed_quiz(num_questions=1)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             p1_ws = client.websocket_connect(f"/ws/{room_code}/p-1")
@@ -1472,9 +1476,9 @@ class TestBonusReconnectionWS:
     def test_reconnection_during_bonus_includes_is_bonus(self):
         """Reconnecting during a bonus question should have is_bonus in RECONNECTED."""
         quiz_id = seed_quiz(num_questions=5)
-        room_code = create_room(quiz_id, time_limit=60)
+        room_code, org_token = create_room(quiz_id, time_limit=60)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             # Join player
@@ -1529,13 +1533,13 @@ class TestOrganizerReconnectionWS:
     def test_organizer_reconnect_during_lobby(self):
         """Organizer reconnecting in LOBBY gets ORGANIZER_RECONNECTED with player list."""
         quiz_id = seed_quiz(num_questions=3)
-        room_code = create_room(quiz_id)
+        room_code, org_token = create_room(quiz_id)
 
         # Player connects first (outer) so it stays open when organizer disconnects
         with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
             p_ws.receive_json()  # JOINED_ROOM
 
-            with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+            with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
                 org_ws.receive_json()  # ROOM_CREATED
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
                 recv_until(org_ws, "PLAYER_JOINED")
@@ -1548,7 +1552,7 @@ class TestOrganizerReconnectionWS:
             assert len(room.players) == 1
 
             # Organizer reconnects with new client_id
-            with client.websocket_connect(f"/ws/{room_code}/org-2?organizer=true") as org_ws2:
+            with client.websocket_connect(f"/ws/{room_code}/org-2?organizer=true&token={org_token}") as org_ws2:
                 sync = org_ws2.receive_json()
                 assert sync["type"] == "ORGANIZER_RECONNECTED"
                 assert sync["state"] == "LOBBY"
@@ -1559,9 +1563,9 @@ class TestOrganizerReconnectionWS:
     def test_organizer_reconnect_during_question(self):
         """Organizer reconnecting mid-question gets question data and time_remaining."""
         quiz_id = seed_quiz(num_questions=3)
-        room_code = create_room(quiz_id, time_limit=60)
+        room_code, org_token = create_room(quiz_id, time_limit=60)
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()  # ROOM_CREATED
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -1583,7 +1587,7 @@ class TestOrganizerReconnectionWS:
         assert room.organizer is None
 
         # Organizer reconnects
-        with client.websocket_connect(f"/ws/{room_code}/org-2?organizer=true") as org_ws2:
+        with client.websocket_connect(f"/ws/{room_code}/org-2?organizer=true&token={org_token}") as org_ws2:
             sync = org_ws2.receive_json()
             assert sync["type"] == "ORGANIZER_RECONNECTED"
             assert sync["state"] == "QUESTION"
@@ -1597,10 +1601,10 @@ class TestOrganizerReconnectionWS:
     def test_organizer_reconnect_can_continue_game(self):
         """After reconnecting, organizer can advance the game with NEXT_QUESTION."""
         quiz_id = seed_quiz(num_questions=3)
-        room_code = create_room(quiz_id, time_limit=60)
+        room_code, org_token = create_room(quiz_id, time_limit=60)
 
         # Start a game, get to Q1
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -1623,7 +1627,7 @@ class TestOrganizerReconnectionWS:
         time.sleep(0.3)
 
         # Reconnect and advance to Q2
-        with client.websocket_connect(f"/ws/{room_code}/org-2?organizer=true") as org_ws2:
+        with client.websocket_connect(f"/ws/{room_code}/org-2?organizer=true&token={org_token}") as org_ws2:
             sync = org_ws2.receive_json()
             assert sync["type"] == "ORGANIZER_RECONNECTED"
 

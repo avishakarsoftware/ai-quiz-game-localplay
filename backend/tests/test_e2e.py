@@ -25,11 +25,14 @@ def clear_state():
     quiz_images.clear()
     game_history.clear()
     socket_manager.rooms.clear()
+    saved_origins = socket_manager.allowed_origins
+    socket_manager.allowed_origins = []
     yield
     quizzes.clear()
     quiz_images.clear()
     game_history.clear()
     socket_manager.rooms.clear()
+    socket_manager.allowed_origins = saved_origins
 
 
 client = TestClient(app)
@@ -109,14 +112,16 @@ class TestEndToEnd:
         print("\n--- Step 3: Create room ---")
         res = client.post("/room/create", json={"quiz_id": quiz_id, "time_limit": 8})
         assert res.status_code == 200
-        room_code = res.json()["room_code"]
+        room_data = res.json()
+        room_code = room_data["room_code"]
+        org_token = room_data["organizer_token"]
         print(f"Room: {room_code}")
 
         # ==========================================
         # Step 4: Connect organizer
         # ==========================================
         print("\n--- Step 4: Connect organizer ---")
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             msg = org_ws.receive_json()
             assert msg["type"] == "ROOM_CREATED"
 
@@ -331,9 +336,11 @@ class TestReconnectionE2E:
         quizzes[quiz_id] = quiz_data
 
         res = client.post("/room/create", json={"quiz_id": quiz_id, "time_limit": 30})
-        room_code = res.json()["room_code"]
+        room_data = res.json()
+        room_code = room_data["room_code"]
+        org_token = room_data["organizer_token"]
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()  # ROOM_CREATED
 
             # Player joins
@@ -413,9 +420,11 @@ class TestExportImportE2E:
         # Step 4: Create room with imported quiz and play
         res = client.post("/room/create", json={"quiz_id": imported_id, "time_limit": 10})
         assert res.status_code == 200
-        room_code = res.json()["room_code"]
+        room_data = res.json()
+        room_code = room_data["room_code"]
+        org_token = room_data["organizer_token"]
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -466,9 +475,11 @@ class TestBonusRoundsE2E:
         # Step 2: Create room and connect
         res = client.post("/room/create", json={"quiz_id": quiz_id, "time_limit": 10})
         assert res.status_code == 200
-        room_code = res.json()["room_code"]
+        room_data = res.json()
+        room_code = room_data["room_code"]
+        org_token = room_data["organizer_token"]
 
-        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true") as org_ws:
+        with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:

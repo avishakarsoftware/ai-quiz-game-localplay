@@ -1883,3 +1883,69 @@ body {
     0%, 100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.2); }
     50% { box-shadow: 0 0 12px 4px rgba(255, 215, 0, 0.15); }
 }
+
+/* ===== Spectator/TV Viewport Lock ===== */
+/* All rules scoped to .spectator-root so player/organizer views are unaffected */
+
+.spectator-root {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+}
+
+.spectator-root .app-container {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.spectator-root .content-wrapper {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.spectator-layout {
+    height: 100%;
+    max-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+}
+
+/* Answer buttons: fixed height, truncate long text */
+.spectator-root .answer-btn {
+    height: 100px;
+    min-height: unset;
+    max-height: 100px;
+    overflow: hidden;
+}
+
+.spectator-root .answer-btn span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+    max-width: 100%;
+}
+
+/* Question card + text: cap height, clamp lines */
+.spectator-root .question-card {
+    max-height: 35vh;
+    overflow: hidden;
+}
+
+.spectator-root .question-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Lobby player list: cap height */
+.spectator-player-list {
+    max-height: 35vh;
+    overflow: hidden;
+}

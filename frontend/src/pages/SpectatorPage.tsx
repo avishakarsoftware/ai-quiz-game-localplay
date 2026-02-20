@@ -209,8 +209,9 @@ export default function SpectatorPage() {
 
     if (!joined) {
         return (
+            <div className="spectator-root">
             <div className="app-container">
-                <div className="content-wrapper min-h-dvh flex flex-col items-center justify-center" style={{ padding: '40px 60px' }}>
+                <div className="content-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 60px' }}>
                     <div className="animate-in text-center" style={{ maxWidth: 500, width: '100%' }}>
                         <div style={{ fontSize: '4rem', marginBottom: 16 }}>📺</div>
                         <h1 className="hero-title" style={{ fontSize: '3rem', marginBottom: 8 }}>TV Mode</h1>
@@ -247,13 +248,15 @@ export default function SpectatorPage() {
                     </div>
                 </div>
             </div>
+            </div>
         );
     }
 
     return (
+        <div className="spectator-root">
         <div className="app-container">
             <div className="content-wrapper">
-                <div className="min-h-dvh flex flex-col justify-center" style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 60px' }}>
+                <div className="spectator-layout" style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 60px' }}>
 
                     {(gameState === 'CONNECTING' || gameState === 'ERROR' || gameState === 'DISCONNECTED') && (
                         <div className="flex-1 flex flex-col items-center justify-center animate-in">
@@ -308,7 +311,7 @@ export default function SpectatorPage() {
                                 {playerCount} player{playerCount !== 1 ? 's' : ''}
                             </p>
                             {players.length > 0 && (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12, maxWidth: 672 }}>
+                                <div className="spectator-player-list" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12, maxWidth: 672 }}>
                                     {players.map((player, i) => (
                                         <div key={player.nickname} style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: '10px 20px', borderRadius: 9999, background: 'var(--bg-secondary)' }}>
                                             <div
@@ -328,8 +331,8 @@ export default function SpectatorPage() {
                         showBonusSplash ? (
                             <BonusSplash onComplete={() => setShowBonusSplash(false)} />
                         ) : (
-                            <div className="flex-1 flex flex-col justify-center">
-                            <div className="py-4">
+                            <div className="flex-1 flex flex-col justify-center" style={{ minHeight: 0, overflow: 'hidden' }}>
+                            <div className="py-4" style={{ flexShrink: 0 }}>
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-2xl font-bold text-[--text-tertiary]">Q{questionNumber}/{totalQuestions}</span>
                                     <div className="flex items-center gap-3">
@@ -355,9 +358,9 @@ export default function SpectatorPage() {
                             </div>
                             <div className={question.options.length === 2 ? 'answer-grid-tf' : 'answer-grid'} style={{ gap: '16px' }}>
                                 {question.options.map((opt, i) => (
-                                    <div key={i} className={`answer-btn ${ANSWER_STYLES[i].className}`} style={{ height: 100, fontSize: 20 }}>
-                                        <span className="text-5xl opacity-50 mr-4">{ANSWER_STYLES[i].shape}</span>
-                                        <span>{opt}</span>
+                                    <div key={i} className={`answer-btn ${ANSWER_STYLES[i].className}`} style={{ height: 100, fontSize: 20, overflow: 'hidden' }}>
+                                        <span className="text-5xl opacity-50 mr-4" style={{ flexShrink: 0 }}>{ANSWER_STYLES[i].shape}</span>
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt}</span>
                                     </div>
                                 ))}
                             </div>
@@ -366,23 +369,23 @@ export default function SpectatorPage() {
                     )}
 
                     {gameState === 'LEADERBOARD' && (
-                        <div className="flex-1 flex flex-col justify-center animate-in">
-                            <div className="text-center py-8">
+                        <div className="flex-1 flex flex-col justify-center animate-in" style={{ minHeight: 0, overflow: 'hidden' }}>
+                            <div className="text-center" style={{ flexShrink: 0, padding: '16px 0' }}>
                                 <h1 className="hero-title mb-2" style={{ fontSize: '2.5rem' }}>Leaderboard</h1>
                                 <p className="text-[--text-tertiary] text-xl">After question {questionNumber} of {totalQuestions}</p>
                             </div>
-                            <div className="w-full max-w-3xl mx-auto">
-                                <LeaderboardBarChart leaderboard={leaderboard} maxEntries={10} size="large" />
+                            <div className="w-full max-w-3xl mx-auto" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                                <LeaderboardBarChart leaderboard={leaderboard} maxEntries={8} size="large" />
                             </div>
                         </div>
                     )}
 
                     {gameState === 'PODIUM' && (
                         <div className="flex-1 flex flex-col items-center justify-center animate-in"
-                             style={{ position: 'relative', overflow: 'hidden' }}>
+                             style={{ position: 'relative', overflow: 'hidden', minHeight: 0 }}>
                             <Fireworks duration={15000} maxRockets={4} />
 
-                            <h1 className="hero-title text-center mb-6" style={{ position: 'relative', zIndex: 11, fontSize: '3rem' }}>Final Results</h1>
+                            <h1 className="hero-title text-center mb-4" style={{ position: 'relative', zIndex: 11, fontSize: '2.5rem' }}>Final Results</h1>
 
                             {podiumReveal >= 4 && leaderboard[0] && (
                                 (() => {
@@ -400,14 +403,14 @@ export default function SpectatorPage() {
                                 })()
                             )}
 
-                            <div className="podium-container" style={{ gap: 16, padding: '40px 0', position: 'relative', zIndex: 11 }}>
+                            <div className="podium-container" style={{ gap: 16, padding: '16px 0', position: 'relative', zIndex: 11 }}>
                                 {leaderboard[1] && (
                                     <div className={`podium-place podium-2 ${podiumReveal >= 2 ? '' : 'podium-hidden'}`}>
                                         <div className="w-14 h-14 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: '#C0C0C0' }}>
                                             <span style={{ fontSize: '2rem', lineHeight: 1 }}>{leaderboard[1].avatar || leaderboard[1].nickname.slice(0, 2).toUpperCase()}</span>
                                         </div>
                                         <p className="podium-name" style={{ fontSize: 18, maxWidth: 120 }}>{leaderboard[1].nickname}</p>
-                                        <div className="podium-bar" style={{ width: 120, height: 120 }}>2</div>
+                                        <div className="podium-bar" style={{ width: 120, height: 100 }}>2</div>
                                         <p className="podium-score" style={{ fontSize: 16 }}><AnimatedNumber value={podiumReveal >= 2 ? leaderboard[1].score : 0} /></p>
                                     </div>
                                 )}
@@ -418,7 +421,7 @@ export default function SpectatorPage() {
                                             <span style={{ fontSize: '2.5rem', lineHeight: 1 }}>{leaderboard[0].avatar || leaderboard[0].nickname.slice(0, 2).toUpperCase()}</span>
                                         </div>
                                         <p className="podium-name" style={{ fontSize: 18, maxWidth: 120 }}>{leaderboard[0].nickname}</p>
-                                        <div className="podium-bar" style={{ width: 120, height: 160 }}>1</div>
+                                        <div className="podium-bar" style={{ width: 120, height: 140 }}>1</div>
                                         <p className="podium-score" style={{ fontSize: 16 }}><AnimatedNumber value={podiumReveal >= 3 ? leaderboard[0].score : 0} /></p>
                                     </div>
                                 )}
@@ -428,15 +431,15 @@ export default function SpectatorPage() {
                                             <span style={{ fontSize: '2rem', lineHeight: 1 }}>{leaderboard[2].avatar || leaderboard[2].nickname.slice(0, 2).toUpperCase()}</span>
                                         </div>
                                         <p className="podium-name" style={{ fontSize: 18, maxWidth: 120 }}>{leaderboard[2].nickname}</p>
-                                        <div className="podium-bar" style={{ width: 120, height: 80 }}>3</div>
+                                        <div className="podium-bar" style={{ width: 120, height: 70 }}>3</div>
                                         <p className="podium-score" style={{ fontSize: 16 }}><AnimatedNumber value={podiumReveal >= 1 ? leaderboard[2].score : 0} /></p>
                                     </div>
                                 )}
                             </div>
 
                             {podiumReveal >= 4 && teamLeaderboard.some(t => t.members > 1) && (
-                                <div className="w-full mt-8" style={{ position: 'relative', zIndex: 11, maxWidth: 600 }}>
-                                    <h3 className="text-3xl font-extrabold text-center mb-4">Team Standings</h3>
+                                <div className="w-full mt-4" style={{ position: 'relative', zIndex: 11, maxWidth: 600 }}>
+                                    <h3 className="text-2xl font-extrabold text-center mb-3">Team Standings</h3>
                                     <div className="podium-container" style={{ gap: 16 }}>
                                         {teamLeaderboard[1] && (
                                             <div className="podium-place podium-2">
@@ -444,7 +447,7 @@ export default function SpectatorPage() {
                                                 {teamLeaderboard[1].members > 1 && (
                                                     <p className="text-xs text-[--text-tertiary]">{teamLeaderboard[1].members} members</p>
                                                 )}
-                                                <div className="podium-bar" style={{ width: 120, height: 100 }}>2</div>
+                                                <div className="podium-bar" style={{ width: 120, height: 80 }}>2</div>
                                                 <p className="podium-score" style={{ fontSize: 16 }}><AnimatedNumber value={teamLeaderboard[1].score} /></p>
                                             </div>
                                         )}
@@ -454,7 +457,7 @@ export default function SpectatorPage() {
                                                 {teamLeaderboard[0].members > 1 && (
                                                     <p className="text-xs text-[--text-tertiary]">{teamLeaderboard[0].members} members</p>
                                                 )}
-                                                <div className="podium-bar" style={{ width: 120, height: 140 }}>1</div>
+                                                <div className="podium-bar" style={{ width: 120, height: 110 }}>1</div>
                                                 <p className="podium-score" style={{ fontSize: 16 }}><AnimatedNumber value={teamLeaderboard[0].score} /></p>
                                             </div>
                                         )}
@@ -464,7 +467,7 @@ export default function SpectatorPage() {
                                                 {teamLeaderboard[2].members > 1 && (
                                                     <p className="text-xs text-[--text-tertiary]">{teamLeaderboard[2].members} members</p>
                                                 )}
-                                                <div className="podium-bar" style={{ width: 120, height: 60 }}>3</div>
+                                                <div className="podium-bar" style={{ width: 120, height: 50 }}>3</div>
                                                 <p className="podium-score" style={{ fontSize: 16 }}><AnimatedNumber value={teamLeaderboard[2].score} /></p>
                                             </div>
                                         )}
@@ -475,6 +478,7 @@ export default function SpectatorPage() {
                     )}
                 </div>
             </div>
+        </div>
         </div>
     );
 }
