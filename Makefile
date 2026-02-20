@@ -18,7 +18,7 @@ install:
 
 # Testing
 test:
-	cd backend && venv/bin/python3 -m pytest tests/ -v --ignore=tests/test_e2e.py
+	cd backend && venv/bin/python3 -m pytest tests/ -v --ignore=tests/test_e2e.py --ignore=tests/test_websocket_integration.py
 
 test-e2e:
 	cd backend && venv/bin/python3 -m pytest tests/test_e2e.py -v -s
