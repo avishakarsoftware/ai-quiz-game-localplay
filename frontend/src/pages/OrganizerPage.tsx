@@ -276,7 +276,11 @@ export default function OrganizerPage() {
         setState('PROMPT');
     };
 
-    const baseUrl = `${window.location.origin}${import.meta.env.BASE_URL}`;
+    // In Capacitor, window.location.origin is capacitor://localhost — use the web URL instead
+    const isCapacitor = window.location.protocol === 'capacitor:' || window.location.hostname === 'localhost' && !window.location.port;
+    const baseUrl = isCapacitor
+        ? (import.meta.env.VITE_WEB_URL || 'https://games.revelryapp.me/quiz/')
+        : `${window.location.origin}${import.meta.env.BASE_URL}`;
     const joinUrl = `${baseUrl}join/${roomCode}`;
     const currentQ = quiz?.questions[currentQuestion - 1];
     const currentImageUrl = currentQ ? questionImages[currentQ.id] : undefined;

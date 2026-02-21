@@ -41,7 +41,11 @@ export default function SpectatorPage() {
     const [isBonus, setIsBonus] = useState(false);
     const [showBonusSplash, setShowBonusSplash] = useState(false);
 
-    const baseUrl = `${window.location.origin}${import.meta.env.BASE_URL}`;
+    // In Capacitor, window.location.origin is capacitor://localhost — use the web URL
+    const isCapacitor = window.location.protocol === 'capacitor:' || (window.location.hostname === 'localhost' && !window.location.port);
+    const baseUrl = isCapacitor
+        ? (import.meta.env.VITE_WEB_URL || 'https://games.revelryapp.me/quiz/')
+        : `${window.location.origin}${import.meta.env.BASE_URL}`;
     const joinUrl = `${baseUrl}join?room=${roomCode}`;
     const displayUrl = `${new URL(joinUrl).host}${new URL(joinUrl).pathname}`;
 

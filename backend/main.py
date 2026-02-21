@@ -397,6 +397,10 @@ else:
         "http://127.0.0.1:5174",
         f"http://{local_ip}:5173",
         f"http://{local_ip}:5174",
+        # Capacitor native app origins
+        "capacitor://localhost",  # iOS
+        "http://localhost",       # Android
+        "https://localhost",      # Android (androidScheme: https)
     ]
 
 app.add_middleware(

@@ -49,10 +49,20 @@ export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, l
             </div>
 
             <div className="room-code mb-2 text-center">{roomCode}</div>
-            <p className="text-[--text-tertiary] text-sm mb-3 text-center">{new URL(joinUrl).host}{new URL(joinUrl).pathname}</p>
-            <button onClick={shareLink} className="btn btn-secondary mb-6" style={{ fontSize: '0.875rem', padding: '8px 20px' }}>
-                {copied ? 'Copied!' : 'Share Link'}
-            </button>
+            <p className="text-[--text-tertiary] text-sm mb-2 text-center">{new URL(joinUrl).host}{new URL(joinUrl).pathname}</p>
+
+            {/* Share & Lock row */}
+            <div style={{ display: 'flex', flexDirection: 'row', gap: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+                <button onClick={shareLink} className="btn btn-secondary" style={{ fontSize: '0.875rem', padding: '8px 20px', height: 40 }}>
+                    {copied ? 'Copied!' : 'Share Link'}
+                </button>
+                <button onClick={onToggleLock} className="btn btn-secondary" style={{ fontSize: '0.875rem', padding: '8px 16px', height: 40, gap: 6 }}>
+                    {locked ? '\uD83D\uDD12 Locked' : '\uD83D\uDD13 Open'}
+                </button>
+            </div>
+            <p className="text-[--text-tertiary] mb-6" style={{ fontSize: '0.7rem', textAlign: 'center' }}>
+                {locked ? 'Room is locked — no new players can join' : 'Lock the room to stop new players from joining'}
+            </p>
 
             {/* Players section */}
             <div className="w-full mb-3">
@@ -92,14 +102,9 @@ export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, l
                 <CastButton roomCode={roomCode} joinUrl={joinUrl} />
             </div>
 
-            <div className="w-full flex gap-3">
-                <button onClick={onToggleLock} className="btn btn-secondary" style={{ padding: '12px 16px', fontSize: '1rem' }}>
-                    {locked ? '\uD83D\uDD12' : '\uD83D\uDD13'}
-                </button>
-                <button onClick={onStartGame} disabled={playerCount === 0} className="btn btn-primary btn-glow" style={{ flex: 1 }}>
-                    Start Game
-                </button>
-            </div>
+            <button onClick={onStartGame} disabled={playerCount === 0} className="btn btn-primary btn-glow w-full">
+                Start Game
+            </button>
         </div>
     );
 }

@@ -15,7 +15,11 @@ export default function CastButton({ roomCode }: CastButtonProps) {
   const [showFallback, setShowFallback] = useState(false);
   const sdkLoaded = useRef(false);
 
-  const tvUrl = `${window.location.origin}${import.meta.env.BASE_URL}spectator`;
+  // In Capacitor, window.location.origin is capacitor://localhost — use the web URL
+  const isCapacitor = window.location.protocol === 'capacitor:' || (window.location.hostname === 'localhost' && !window.location.port);
+  const tvUrl = isCapacitor
+    ? `${import.meta.env.VITE_WEB_URL || 'https://games.revelryapp.me/quiz/'}spectator`
+    : `${window.location.origin}${import.meta.env.BASE_URL}spectator`;
 
   // Dynamically load Cast Sender SDK (not in index.html to avoid conflict with receiver on spectator page)
   useEffect(() => {
