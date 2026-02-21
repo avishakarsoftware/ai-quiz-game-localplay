@@ -182,11 +182,7 @@ export default function PlayerPage() {
                 setCorrectAnswer(msg.answer);
                 setLeaderboard(msg.leaderboard);
                 setMyRank(msg.leaderboard.findIndex((p: LeaderboardEntry) => p.nickname === nickname) + 1);
-                if (msg.is_final) {
-                    setState('WAITING');
-                } else {
-                    setState('RESULT');
-                }
+                setState('RESULT');
             }
             if (msg.type === 'PODIUM') { setLeaderboard(msg.leaderboard); setTeamLeaderboard(msg.team_leaderboard || []); setState('PODIUM'); soundManager.play('fanfare'); }
             if (msg.type === 'ORGANIZER_DISCONNECTED') {

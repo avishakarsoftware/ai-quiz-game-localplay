@@ -206,7 +206,7 @@ export default function PromptScreen({
                     </div>
 
                     {/* AI Provider selector */}
-                    {providers.length > 0 && (
+                    {import.meta.env.DEV && providers.length > 0 && (
                         <div>
                             <p className="section-header mb-2">AI Provider</p>
                             <div className="provider-selector">

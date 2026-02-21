@@ -16,7 +16,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
-DEFAULT_PROVIDER = os.getenv("DEFAULT_PROVIDER", "ollama")
+DEFAULT_PROVIDER = os.getenv("DEFAULT_PROVIDER", "gemini")
 
 # --- Stable Diffusion ---
 SD_API_URL = os.getenv("SD_API_URL", "http://localhost:8765")
