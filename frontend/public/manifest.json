@@ -1,6 +1,6 @@
 {
     "name": "Revelry Quiz",
-    "short_name": "Revelry",
+    "short_name": "Revelry Quiz",
     "description": "AI-powered quiz game for parties and events",
     "start_url": "./",
     "scope": "./",
