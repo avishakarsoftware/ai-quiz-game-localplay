@@ -15,6 +15,7 @@ function App() {
           <Route path="/" element={<OrganizerPage />} />
           <Route path="/organizer" element={<OrganizerPage />} />
           <Route path="/join" element={<PlayerPage />} />
+          <Route path="/join/:code" element={<PlayerPage />} />
           <Route path="/spectator" element={<SpectatorPage />} />
         </Routes>
       </Router>

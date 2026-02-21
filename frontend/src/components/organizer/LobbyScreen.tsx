@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import CastButton from '../CastButton';
 import { type PlayerInfo } from '../../types';
@@ -9,16 +9,31 @@ interface LobbyScreenProps {
     joinUrl: string;
     playerCount: number;
     players: PlayerInfo[];
+    locked: boolean;
     onStartGame: () => void;
+    onToggleLock: () => void;
 }
 
-export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, onStartGame }: LobbyScreenProps) {
+export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, locked, onStartGame, onToggleLock }: LobbyScreenProps) {
     const prevCountRef = useRef(playerCount);
     const justJoined = playerCount > prevCountRef.current;
+    const [copied, setCopied] = useState(false);
 
     useEffect(() => {
         prevCountRef.current = playerCount;
     }, [playerCount]);
+
+    const shareLink = async () => {
+        if (navigator.share) {
+            try {
+                await navigator.share({ title: 'Join my quiz!', url: joinUrl });
+                return;
+            } catch {}
+        }
+        await navigator.clipboard.writeText(joinUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
 
     return (
         <div className="min-h-dvh flex flex-col items-center justify-center container-responsive safe-top safe-bottom animate-in">
@@ -34,7 +49,10 @@ export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, o
             </div>
 
             <div className="room-code mb-2 text-center">{roomCode}</div>
-            <p className="text-[--text-tertiary] text-sm mb-6 text-center">{new URL(joinUrl).host}{new URL(joinUrl).pathname}</p>
+            <p className="text-[--text-tertiary] text-sm mb-3 text-center">{new URL(joinUrl).host}{new URL(joinUrl).pathname}</p>
+            <button onClick={shareLink} className="btn btn-secondary mb-6" style={{ fontSize: '0.875rem', padding: '8px 20px' }}>
+                {copied ? 'Copied!' : 'Share Link'}
+            </button>
 
             {/* Players section */}
             <div className="w-full mb-3">
@@ -74,9 +92,14 @@ export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, o
                 <CastButton roomCode={roomCode} joinUrl={joinUrl} />
             </div>
 
-            <button onClick={onStartGame} disabled={playerCount === 0} className="btn btn-primary btn-glow w-full">
-                Start Game
-            </button>
+            <div className="w-full flex gap-3">
+                <button onClick={onToggleLock} className="btn btn-secondary" style={{ padding: '12px 16px', fontSize: '1rem' }}>
+                    {locked ? '\uD83D\uDD12' : '\uD83D\uDD13'}
+                </button>
+                <button onClick={onStartGame} disabled={playerCount === 0} className="btn btn-primary btn-glow" style={{ flex: 1 }}>
+                    Start Game
+                </button>
+            </div>
         </div>
     );
 }

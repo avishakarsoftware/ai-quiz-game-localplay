@@ -45,6 +45,7 @@ class Room:
         self.power_ups: Dict[str, dict] = {}  # nickname -> {double_points: bool, fifty_fifty: bool}
         # Bonus rounds
         self.bonus_questions: set = set()  # indices of bonus round questions (2x points)
+        self.locked: bool = False  # True = no new players can join
 
     def reset_for_new_game(self, new_quiz_data: dict, new_time_limit: int):
         """Reset room for a new game round, keeping players connected."""
@@ -52,6 +53,7 @@ class Room:
         self.time_limit = new_time_limit
 
         self.state = "LOBBY"
+        self.locked = False
         self.current_question_index = -1
         self.question_start_time = 0
         self.answered_players = set()
@@ -380,6 +382,7 @@ class SocketManager:
             if msg_type == "START_GAME":
                 if room.state != "LOBBY":
                     return
+                room.locked = True
                 self._select_bonus_questions(room)
                 room.state = "INTRO"
                 await room.broadcast({"type": "GAME_STARTING"})
@@ -438,6 +441,11 @@ class SocketManager:
                     "player_count": len(room.players),
                     "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
                 })
+
+            elif msg_type == "TOGGLE_LOCK":
+                if room.state == "LOBBY":
+                    room.locked = not room.locked
+                    await room.broadcast({"type": "ROOM_LOCK_STATUS", "locked": room.locked})
 
         else:
             if msg_type == "JOIN":
@@ -552,6 +560,24 @@ class SocketManager:
                             state_info["time_limit"] = room.time_limit
                             state_info["is_bonus"] = room.current_question_index in room.bonus_questions
                         await ws.send_json(state_info)
+                    return
+
+                # Block new players if room is locked
+                if room.locked:
+                    conn = room.connections.get(client_id)
+                    if conn:
+                        await conn.send_json({"type": "ERROR", "message": "Room is locked by the host"})
+                    return
+
+                # Block new players if game is in progress
+                if room.state != "LOBBY":
+                    conn = room.connections.get(client_id)
+                    if conn:
+                        await conn.send_json({
+                            "type": "GAME_IN_PROGRESS",
+                            "question_number": room.current_question_index + 1,
+                            "total_questions": len(room.quiz["questions"]),
+                        })
                     return
 
                 if len(room.players) >= config.MAX_PLAYERS_PER_ROOM:

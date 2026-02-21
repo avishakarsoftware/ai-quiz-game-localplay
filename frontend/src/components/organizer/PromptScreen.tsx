@@ -82,6 +82,28 @@ const TOPIC_IDEAS = [
     'K-pop bands and Korean pop culture',
     'Classic TV sitcoms from the 80s and 90s',
     'James Bond movies and spy fiction',
+    'Stranger Things and 80s nostalgia',
+    'The Batman and DC cinematic universe',
+    'Succession, Yellowstone, and prestige TV dramas',
+    'The Bear, Fleabag, and critically acclaimed comedies',
+    'Squid Game and international TV hits',
+    'Bridgerton and period drama adaptations',
+    'The Hunger Games and dystopian fiction',
+    'Percy Jackson and Greek mythology in fiction',
+    'Dune universe and Frank Herbert lore',
+    'Stephen King novels and adaptations',
+    'The Witcher books, games, and TV series',
+    'Sherlock Holmes adaptations through the decades',
+    'The Crown and British royal history on screen',
+    'Rick and Morty and adult animated shows',
+    'One Piece and the big three of anime',
+    'Wes Anderson films and visual storytelling',
+    'Christopher Nolan films and mind-bending plots',
+    'Oscar Best Picture winners through the years',
+    'Beyonce, Rihanna, and modern pop icons',
+    'Travis Scott, Drake, and modern hip hop',
+    'The Beatles and the British Invasion',
+    'Pixar easter eggs and connected universe theories',
 
     // Sports
     'World Cup football trivia',
@@ -138,6 +160,68 @@ const TOPIC_IDEAS = [
     'Cryptography and secret codes throughout history',
     'Probability, statistics, and surprising facts',
 
+    // Trending & Modern
+    'Taylor Swift eras and album trivia',
+    'Famous memes and internet culture',
+    'Reality TV shows and iconic moments',
+    'TikTok trends and viral moments',
+    'Crypto, blockchain, and Web3 milestones',
+    'Climate change facts and green energy',
+    'Recent Mars missions and space discoveries',
+    'AI breakthroughs and tech headlines',
+    'Viral moments from recent Olympics',
+
+    // Regional: South Asia
+    'Bollywood movies and iconic actors',
+    'Indian history from Maurya to modern era',
+    'Cricket legends and IPL trivia',
+    'Indian cuisine and regional dishes',
+    'Festivals of India and their origins',
+    'Mughal Empire architecture and history',
+
+    // Regional: East Asia
+    'Anime and manga classics',
+    'Chinese dynasties and ancient history',
+    'Japanese samurai, ninjas, and feudal history',
+    'Korean drama and K-culture trivia',
+    'Martial arts styles and their origins',
+    'Chinese inventions that shaped the world',
+
+    // Regional: Middle East & Africa
+    'Ancient Mesopotamia and the cradle of civilization',
+    'African kingdoms and empires',
+    'Middle Eastern cuisine and culinary traditions',
+    'The history of Arabic science and mathematics',
+    'African wildlife safaris and national parks',
+    'Egyptian pharaohs and the pyramids',
+
+    // Regional: Latin America
+    'Aztec and Mayan civilizations',
+    'Latin American music genres: salsa, bossa nova, reggaeton',
+    'Famous Latin American authors and magical realism',
+    'Carnival and Latin American festivals',
+    'The Inca Empire and Machu Picchu',
+
+    // Niche Deep-Cuts
+    'The Office quotes and episode trivia',
+    'Friends TV show trivia',
+    'Seinfeld episodes and catchphrases',
+    'Minecraft, Roblox, and sandbox games',
+    'Dungeons & Dragons lore and monsters',
+    'True crime famous cases and investigations',
+    'Pokémon generations and evolution trivia',
+    'The Simpsons predictions and episodes',
+    'Game of Thrones houses and lore',
+    'Breaking Bad and Better Call Saul trivia',
+    'Formula 1 technical rules and pit strategy',
+    'Astronomy: constellations and stargazing',
+    'Cheese varieties from around the world',
+    'The history of tattoos and body art',
+    'Famous heists and bank robberies',
+    'Horror movies and slasher film history',
+    'Roller coasters and theme park engineering',
+    'Whiskey, bourbon, and spirits trivia',
+
     // Miscellaneous & Fun
     'World records and bizarre achievements',
     'Urban legends and strange true stories',
@@ -156,14 +240,6 @@ export default function PromptScreen({
     numQuestions, setNumQuestions, provider, setProvider,
     providers, onGenerate, sdAvailable: _sdAvailable,
 }: PromptScreenProps) {
-    const [initialTopic] = useState(() =>
-        TOPIC_IDEAS[Math.floor(Math.random() * TOPIC_IDEAS.length)]
-    );
-
-    useEffect(() => {
-        if (!prompt) setPrompt(initialTopic);
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
     const shuffleTopic = () => {
         let next: string;
         do {
@@ -187,10 +263,10 @@ export default function PromptScreen({
                     <div className="prompt-input-wrapper" style={{ position: 'relative' }}>
                         <textarea
                             value={prompt}
-                            onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
-                            placeholder="Describe your quiz topic..."
+                            onChange={(e) => setPrompt(e.target.value.slice(0, 140))}
+                            placeholder="Enter any topic for your quiz, or tap the dice for a random one!"
                             className="input-field input-large"
-                            maxLength={500}
+                            maxLength={140}
                         />
                         <button
                             type="button"

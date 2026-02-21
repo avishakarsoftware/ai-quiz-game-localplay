@@ -38,6 +38,7 @@ export default function OrganizerPage() {
     const [providers, setProviders] = useState<AIProvider[]>([]);
     const [isBonus, setIsBonus] = useState(false);
     const [showBonusSplash, setShowBonusSplash] = useState(false);
+    const [roomLocked, setRoomLocked] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
     const stateRef = useRef<OrganizerState>('PROMPT');
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -105,7 +106,11 @@ export default function OrganizerPage() {
         else if (msg.type === 'ROOM_RESET') {
             setPlayerCount(msg.player_count);
             setPlayers(msg.players || []);
+            setRoomLocked(false);
             setState('ROOM');
+        }
+        else if (msg.type === 'ROOM_LOCK_STATUS') {
+            setRoomLocked(msg.locked as boolean);
         }
         else if (msg.type === 'ORGANIZER_RECONNECTED') {
             setRoomCode(msg.room_code);
@@ -272,7 +277,7 @@ export default function OrganizerPage() {
     };
 
     const baseUrl = `${window.location.origin}${import.meta.env.BASE_URL}`;
-    const joinUrl = `${baseUrl}join?room=${roomCode}`;
+    const joinUrl = `${baseUrl}join/${roomCode}`;
     const currentQ = quiz?.questions[currentQuestion - 1];
     const currentImageUrl = currentQ ? questionImages[currentQ.id] : undefined;
 
@@ -321,7 +326,9 @@ export default function OrganizerPage() {
                         joinUrl={joinUrl}
                         playerCount={playerCount}
                         players={players}
+                        locked={roomLocked}
                         onStartGame={startGame}
+                        onToggleLock={() => wsRef.current?.send(JSON.stringify({ type: 'TOGGLE_LOCK' }))}
                     />
                 )}
 

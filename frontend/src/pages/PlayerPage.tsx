@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useParams } from 'react-router-dom';
 import { API_URL, WS_URL } from '../config';
 import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
@@ -9,7 +9,7 @@ import BonusSplash from '../components/BonusSplash';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
 import { AVATAR_COLORS } from '../components/LeaderboardBarChart.constants';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'QUESTION' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING';
+type PlayerState = 'JOIN' | 'LOBBY' | 'QUESTION' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
 interface PlayerQuestion {
     id: number;
@@ -28,9 +28,10 @@ function getSavedSession() {
 
 export default function PlayerPage() {
     const [searchParams] = useSearchParams();
+    const { code: urlCode } = useParams();
     const saved = getSavedSession();
     const [state, setState] = useState<PlayerState>('JOIN');
-    const [roomCode, setRoomCode] = useState(searchParams.get('room') || saved?.roomCode || '');
+    const [roomCode, setRoomCode] = useState(urlCode || searchParams.get('room') || saved?.roomCode || '');
     const [nickname, setNickname] = useState(saved?.nickname || '');
     const [team, setTeam] = useState(saved?.team || '');
     const [avatar, setAvatar] = useState(() => saved?.avatar || AVATAR_EMOJIS[Math.floor(Math.random() * AVATAR_EMOJIS.length)]);
@@ -86,13 +87,19 @@ export default function PlayerPage() {
             if (msg.type === 'ERROR') {
                 setError(msg.message as string);
                 // If room doesn't exist, stop reconnection attempts
-                if (msg.message === 'Room not found' || msg.message === 'Room is full') {
+                if (msg.message === 'Room not found' || msg.message === 'Room is full' || msg.message === 'Room is locked by the host') {
                     kickedRef.current = true;
                     wsRef.current?.close();
                     wsRef.current = null;
                     sessionStorage.removeItem('localplay_session');
                     setState('JOIN');
                 }
+                return;
+            }
+            if (msg.type === 'GAME_IN_PROGRESS') {
+                setQuestionNumber(msg.question_number as number);
+                setTotalQuestions(msg.total_questions as number);
+                setState('GAME_IN_PROGRESS');
                 return;
             }
             if (msg.type === 'KICKED') {
@@ -530,6 +537,26 @@ export default function PlayerPage() {
                         <div className="status-screen-icon animate-pulse">↻</div>
                         <h2 className="text-2xl font-extrabold mb-2">Reconnecting...</h2>
                         <p className="text-[--text-tertiary]">Don't worry, your score is saved</p>
+                        <div className="flex gap-1.5 mt-6">
+                            {[0, 1, 2].map((i) => (
+                                <div key={i} className="w-2 h-2 bg-[--accent-primary] rounded-full animate-bounce"
+                                    style={{ animationDelay: `${i * 0.15}s` }} />
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* GAME IN PROGRESS */}
+                {state === 'GAME_IN_PROGRESS' && (
+                    <div className="min-h-dvh flex flex-col items-center justify-center container-responsive animate-in">
+                        <div className="status-screen-icon">&#9881;</div>
+                        <h2 className="text-2xl font-extrabold mb-2">Game in Progress</h2>
+                        <p className="text-[--text-secondary] text-center mb-4">
+                            Question {questionNumber} of {totalQuestions}
+                        </p>
+                        <p className="text-[--text-tertiary] text-center">
+                            Wait for the next round to join!
+                        </p>
                         <div className="flex gap-1.5 mt-6">
                             {[0, 1, 2].map((i) => (
                                 <div key={i} className="w-2 h-2 bg-[--accent-primary] rounded-full animate-bounce"
