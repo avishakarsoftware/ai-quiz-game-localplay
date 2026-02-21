@@ -11,16 +11,30 @@
     <meta name="apple-mobile-web-app-title" content="Revelry Quiz" />
     <meta name="description" content="AI-powered quiz game for parties and events" />
 
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Revelry - AI Quiz Game" />
+    <meta property="og:description" content="Join the quiz! AI-generated questions on any topic. No app download needed." />
+    <meta property="og:image" content="https://games.revelryapp.me/quiz/og-image.png" />
+    <meta property="og:url" content="https://games.revelryapp.me/quiz/" />
+    <meta name="twitter:card" content="summary_large_image" />
+
     <!-- PWA Links (Vite rewrites these paths when base is set) -->
     <link rel="manifest" href="manifest.json" />
-    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
     <link rel="icon" href="favicon.ico" sizes="32x32" />
     <link rel="icon" type="image/png" href="icons/icon-192.png" sizes="192x192" />
 
-    <!-- Preconnect for fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+    <!-- Self-hosted font -->
+    <style>
+      @font-face {
+        font-family: 'Outfit';
+        font-style: normal;
+        font-weight: 400 900;
+        font-display: swap;
+        src: url('fonts/outfit-variable.woff2') format('woff2');
+      }
+    </style>
 
     <title>Revelry - AI Quiz Game</title>
   </head>

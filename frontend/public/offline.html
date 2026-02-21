@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#46178F" />
+    <title>Revelry - Offline</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: #fff;
+            min-height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 24px;
+        }
+        .container { max-width: 360px; }
+        .icon { font-size: 4rem; margin-bottom: 16px; }
+        h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: 8px; }
+        p { color: #a0a0b8; font-size: 1rem; line-height: 1.5; margin-bottom: 24px; }
+        button {
+            background: #7c3aed;
+            color: #fff;
+            border: none;
+            padding: 14px 32px;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        button:active { opacity: 0.8; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">&#128268;</div>
+        <h1>You're Offline</h1>
+        <p>Revelry needs an internet connection to generate quizzes and connect players. Check your connection and try again.</p>
+        <button onclick="location.reload()">Retry</button>
+    </div>
+</body>
+</html>

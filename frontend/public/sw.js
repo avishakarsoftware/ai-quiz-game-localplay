@@ -1,7 +1,11 @@
-const CACHE_NAME = 'localplay-v2';
+const CACHE_NAME = 'localplay-v3';
+const OFFLINE_URL = 'offline.html';
 
-// Install event - skip pre-caching to avoid failures on SPA routes
-self.addEventListener('install', () => {
+// Install event - pre-cache offline fallback page
+self.addEventListener('install', (event) => {
+    event.waitUntil(
+        caches.open(CACHE_NAME).then((cache) => cache.add(OFFLINE_URL))
+    );
     self.skipWaiting();
 });
 
@@ -19,15 +23,17 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Fetch event - network first, fallback to cache
+// Fetch event - network first, fallback to cache, then offline page
 self.addEventListener('fetch', (event) => {
-    // Skip non-GET requests, API calls, and WebSocket
-    if (
-        event.request.method !== 'GET' ||
-        event.request.url.includes('/api/') ||
-        event.request.url.includes('/ws/') ||
-        event.request.url.startsWith('ws')
-    ) {
+    const url = new URL(event.request.url);
+
+    // Skip non-GET requests and WebSocket
+    if (event.request.method !== 'GET' || url.protocol === 'ws:' || url.protocol === 'wss:') {
+        return;
+    }
+
+    // Skip backend API calls (different port locally, different host in prod)
+    if (url.port === '8000' || url.hostname === 'gamesapi.revelryapp.me') {
         return;
     }
 
@@ -45,7 +51,13 @@ self.addEventListener('fetch', (event) => {
             })
             .catch(() => {
                 // Fallback to cache
-                return caches.match(event.request);
+                return caches.match(event.request).then((cached) => {
+                    if (cached) return cached;
+                    // For navigation requests, try cached index.html (SPA) then offline page
+                    if (event.request.mode === 'navigate') {
+                        return caches.match('./').then((index) => index || caches.match(OFFLINE_URL));
+                    }
+                });
             })
     );
 });
