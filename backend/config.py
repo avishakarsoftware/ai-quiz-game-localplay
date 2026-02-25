@@ -13,7 +13,7 @@ LLM_MAX_RETRIES = 3
 
 # --- Cloud AI Providers ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemma-3-27b-it")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
 DEFAULT_PROVIDER = os.getenv("DEFAULT_PROVIDER", "gemini")
@@ -29,6 +29,7 @@ ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "")
 # --- Rate Limiting ---
 RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX_REQUESTS = 5  # max quiz generations per window per IP
+DAILY_QUIZ_LIMIT = int(os.getenv("DAILY_QUIZ_LIMIT", "100"))  # max quiz generations per day (0 = unlimited)
 
 # --- WebSocket Security ---
 WS_RATE_LIMIT_PER_SEC = 10  # max messages per second per client

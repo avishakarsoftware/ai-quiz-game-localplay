@@ -3,6 +3,7 @@ import requests
 import json
 import logging
 import time
+from datetime import date
 from typing import Optional
 
 import config
@@ -146,16 +147,23 @@ async def _generate_gemini(prompt: str, difficulty: str, num_questions: int) -> 
         return None
 
     system_prompt = _build_system_prompt(difficulty, num_questions)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent"
-    headers = {"x-goog-api-key": config.GEMINI_API_KEY}
+    is_gemma = config.GEMINI_MODEL.startswith("gemma")
+    # Gemma models require key as query param; Gemini models use header auth
+    if is_gemma:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent?key={config.GEMINI_API_KEY}"
+        headers = {}
+    else:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent"
+        headers = {"x-goog-api-key": config.GEMINI_API_KEY}
 
     wrapped_topic = _wrap_user_topic(prompt)
+    gen_config: dict = {"temperature": 0.8}
+    # Gemma models don't support responseMimeType
+    if not is_gemma:
+        gen_config["responseMimeType"] = "application/json"
     payload = {
         "contents": [{"parts": [{"text": f"{system_prompt}\n\n{wrapped_topic}"}]}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "temperature": 0.8,
-        }
+        "generationConfig": gen_config,
     }
 
     for attempt in range(1, config.LLM_MAX_RETRIES + 1):
@@ -165,6 +173,9 @@ async def _generate_gemini(prompt: str, difficulty: str, num_questions: int) -> 
             response.raise_for_status()
             result = response.json()
             text = result["candidates"][0]["content"]["parts"][0]["text"]
+            # Gemma may wrap JSON in markdown code blocks
+            if text.strip().startswith("```"):
+                text = text.strip().split("\n", 1)[1].rsplit("```", 1)[0]
             quiz_data = json.loads(text)
             if _validate_quiz(quiz_data, attempt):
                 quiz_data = _sanitize_quiz(quiz_data)
@@ -241,13 +252,34 @@ PROVIDERS = {
 }
 
 
+class DailyLimitExceeded(Exception):
+    """Raised when the daily quiz generation limit is reached."""
+    pass
+
+
 class QuizEngine:
     def __init__(self):
-        pass
+        self._daily_count = 0
+        self._daily_date = date.today()
+
+    def _check_daily_limit(self) -> bool:
+        """Reset counter on new day; return True if under limit."""
+        today = date.today()
+        if today != self._daily_date:
+            self._daily_count = 0
+            self._daily_date = today
+        if config.DAILY_QUIZ_LIMIT <= 0:
+            return True  # 0 = unlimited
+        return self._daily_count < config.DAILY_QUIZ_LIMIT
 
     async def generate_quiz(self, prompt: str, difficulty: str = "medium",
                             num_questions: int = config.DEFAULT_NUM_QUESTIONS,
                             provider: str = "") -> Optional[dict]:
+        if not self._check_daily_limit():
+            logger.warning("Daily quiz limit reached (%d/%d)",
+                           self._daily_count, config.DAILY_QUIZ_LIMIT)
+            raise DailyLimitExceeded()
+
         provider = provider or config.DEFAULT_PROVIDER
         gen_fn = PROVIDERS.get(provider)
         if not gen_fn:
@@ -256,7 +288,10 @@ class QuizEngine:
 
         logger.info("Generating quiz with provider '%s' for prompt: '%s'", provider, prompt[:100])
         result = await gen_fn(prompt, difficulty, num_questions)
-        if not result:
+        if result:
+            self._daily_count += 1
+            logger.info("Daily quiz count: %d/%d", self._daily_count, config.DAILY_QUIZ_LIMIT)
+        else:
             logger.error("Provider '%s' failed to generate quiz for: '%s'", provider, prompt[:100])
         return result
 
@@ -279,8 +314,8 @@ class QuizEngine:
         })
         providers.append({
             "id": "gemini",
-            "name": "Gemini Flash",
-            "description": f"Google Gemini ({config.GEMINI_MODEL})",
+            "name": "Google AI",
+            "description": f"Google AI ({config.GEMINI_MODEL})",
             "available": bool(config.GEMINI_API_KEY),
         })
         providers.append({

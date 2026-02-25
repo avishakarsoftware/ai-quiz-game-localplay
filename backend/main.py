@@ -18,7 +18,7 @@ import socket as socketlib
 import config
 config.setup_logging()
 
-from quiz_engine import quiz_engine, _sanitize_quiz
+from quiz_engine import quiz_engine, _sanitize_quiz, DailyLimitExceeded
 from socket_manager import socket_manager
 from image_engine import image_engine
 
@@ -178,7 +178,10 @@ async def generate_quiz(request: QuizRequest, req: Request):
     client_ip = req.client.host if req.client else "unknown"
     if not _check_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating another quiz.")
-    quiz_data = await quiz_engine.generate_quiz(request.prompt, request.difficulty, request.num_questions, request.provider)
+    try:
+        quiz_data = await quiz_engine.generate_quiz(request.prompt, request.difficulty, request.num_questions, request.provider)
+    except DailyLimitExceeded:
+        raise HTTPException(status_code=429, detail="Daily quiz limit reached. Please try again tomorrow!")
     if not quiz_data:
         raise HTTPException(status_code=500, detail="Failed to generate quiz")
 
