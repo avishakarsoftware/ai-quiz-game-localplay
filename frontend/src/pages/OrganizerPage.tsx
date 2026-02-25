@@ -45,6 +45,8 @@ export default function OrganizerPage() {
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const roomCodeRef = useRef('');
     const organizerTokenRef = useRef('');
+    const mountedRef = useRef(true);
+    const connectWsRef = useRef<(code: string) => void>(() => {});
 
     useEffect(() => { stateRef.current = state; }, [state]);
     useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
@@ -67,7 +69,7 @@ export default function OrganizerPage() {
 
 
     const handleWsMessage = useCallback((event: MessageEvent) => {
-        let msg: Record<string, any>;
+        let msg: Record<string, unknown>;
         try { msg = JSON.parse(event.data); } catch { return; }
         if (msg.type === 'PLAYER_JOINED') {
             console.log('PLAYER_JOINED', msg);
@@ -93,7 +95,7 @@ export default function OrganizerPage() {
         else if (msg.type === 'PODIUM') {
             setLeaderboard(msg.leaderboard);
             setTeamLeaderboard(msg.team_leaderboard || []);
-            track('game_completed', { room_code: roomCodeRef.current, player_count: (msg.leaderboard as any[])?.length || 0, winner: (msg.leaderboard as any[])?.[0]?.nickname });
+            track('game_completed', { room_code: roomCodeRef.current, player_count: (msg.leaderboard as LeaderboardEntry[])?.length || 0, winner: (msg.leaderboard as LeaderboardEntry[])?.[0]?.nickname });
             setState('PODIUM');
             soundManager.play('fanfare');
         }
@@ -204,11 +206,16 @@ export default function OrganizerPage() {
     const updateQuiz = async (updated: Quiz) => {
         setQuiz(updated);
         setTotalQuestions(updated.questions.length);
-        await fetch(`${API_URL}/quiz/${quizId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updated),
-        });
+        try {
+            const res = await fetch(`${API_URL}/quiz/${quizId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updated),
+            });
+            if (!res.ok) console.error('Failed to save quiz update:', res.status);
+        } catch (err) {
+            console.error('Failed to save quiz update:', err);
+        }
     };
 
     const connectWs = useCallback((code: string) => {
@@ -223,15 +230,20 @@ export default function OrganizerPage() {
         ws.onmessage = handleWsMessage;
         ws.onclose = () => {
             wsRef.current = null;
+            if (!mountedRef.current) return;
             const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'LEADERBOARD', 'PODIUM'];
             if (roomCodeRef.current && activeStates.includes(stateRef.current)) {
-                reconnectTimerRef.current = setTimeout(() => connectWs(roomCodeRef.current), 2000);
+                reconnectTimerRef.current = setTimeout(() => connectWsRef.current(roomCodeRef.current), 2000);
             }
         };
     }, [handleWsMessage]);
+    useEffect(() => { connectWsRef.current = connectWs; }, [connectWs]);
 
     useEffect(() => {
-        return () => { if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current); };
+        return () => {
+            mountedRef.current = false;
+            if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+        };
     }, []);
 
     const createRoom = async () => {
@@ -247,17 +259,26 @@ export default function OrganizerPage() {
         }
 
         // First-time room creation
-        const res = await fetch(`${API_URL}/room/create`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ quiz_id: quizId, time_limit: timeLimit }),
-        });
-        const data = await res.json();
-        setRoomCode(data.room_code);
-        organizerTokenRef.current = data.organizer_token || '';
-        track('room_created', { room_code: data.room_code, time_limit: timeLimit });
-        setState('ROOM');
-        connectWs(data.room_code);
+        try {
+            const res = await fetch(`${API_URL}/room/create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quiz_id: quizId, time_limit: timeLimit }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Failed to create room' }));
+                alert(err.detail || `Server error (${res.status})`);
+                return;
+            }
+            const data = await res.json();
+            setRoomCode(data.room_code);
+            organizerTokenRef.current = data.organizer_token || '';
+            track('room_created', { room_code: data.room_code, time_limit: timeLimit });
+            setState('ROOM');
+            connectWs(data.room_code);
+        } catch {
+            alert('Connection error — could not create room');
+        }
     };
 
     const startGame = () => {
@@ -306,7 +327,6 @@ export default function OrganizerPage() {
                         setProvider={setProvider}
                         providers={providers}
                         onGenerate={generateQuiz}
-                        sdAvailable={sdAvailable}
                     />
                 )}
 

@@ -6,7 +6,6 @@ const CAST_SENDER_SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender
 
 interface CastButtonProps {
   roomCode: string;
-  joinUrl: string;
 }
 
 export default function CastButton({ roomCode }: CastButtonProps) {
@@ -23,23 +22,37 @@ export default function CastButton({ roomCode }: CastButtonProps) {
 
   // Dynamically load Cast Sender SDK (not in index.html to avoid conflict with receiver on spectator page)
   useEffect(() => {
+    let listener: ((event: cast.framework.CastStateEvent) => void) | null = null;
+
     // If the Cast framework is already loaded (e.g. component remount after game reset),
     // just re-read its state instead of loading the script again.
     if (window.cast?.framework) {
       try {
         const context = cast.framework.CastContext.getInstance();
+        // Syncing state from external Cast SDK — not a cascading render.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCastSdkReady(true);
         setCasting(context.getCastState() === cast.framework.CastState.CONNECTED);
+        listener = (event: cast.framework.CastStateEvent) => {
+          setCasting(event.castState === cast.framework.CastState.CONNECTED);
+        };
         context.addEventListener(
           cast.framework.CastContextEventType.CAST_STATE_CHANGED,
-          (event: cast.framework.CastStateEvent) => {
-            setCasting(event.castState === cast.framework.CastState.CONNECTED);
-          }
+          listener,
         );
       } catch (err) {
         console.error('Cast SDK re-init error:', err);
       }
-      return;
+      return () => {
+        if (listener && window.cast?.framework) {
+          try {
+            cast.framework.CastContext.getInstance().removeEventListener(
+              cast.framework.CastContextEventType.CAST_STATE_CHANGED,
+              listener,
+            );
+          } catch { /* cleanup best-effort */ }
+        }
+      };
     }
 
     if (sdkLoaded.current) return;
@@ -54,11 +67,12 @@ export default function CastButton({ roomCode }: CastButtonProps) {
           autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
         });
 
+        listener = (event: cast.framework.CastStateEvent) => {
+          setCasting(event.castState === cast.framework.CastState.CONNECTED);
+        };
         context.addEventListener(
           cast.framework.CastContextEventType.CAST_STATE_CHANGED,
-          (event: cast.framework.CastStateEvent) => {
-            setCasting(event.castState === cast.framework.CastState.CONNECTED);
-          }
+          listener,
         );
 
         setCastSdkReady(true);
@@ -75,6 +89,17 @@ export default function CastButton({ roomCode }: CastButtonProps) {
     script.src = CAST_SENDER_SDK_URL;
     script.onerror = () => {}; // Silently fail if SDK can't load
     document.head.appendChild(script);
+
+    return () => {
+      if (listener && window.cast?.framework) {
+        try {
+          cast.framework.CastContext.getInstance().removeEventListener(
+            cast.framework.CastContextEventType.CAST_STATE_CHANGED,
+            listener,
+          );
+        } catch { /* cleanup best-effort */ }
+      }
+    };
   }, []);
 
   // Send room code when casting starts or room code changes

@@ -1,5 +1,3 @@
-import { useState, useEffect } from 'react';
-
 export interface AIProvider {
     id: string;
     name: string;
@@ -18,7 +16,6 @@ interface PromptScreenProps {
     setProvider: (v: string) => void;
     providers: AIProvider[];
     onGenerate: () => void;
-    sdAvailable: boolean;
 }
 
 const DIFFICULTIES = [
@@ -238,7 +235,7 @@ const TOPIC_IDEAS = [
 export default function PromptScreen({
     prompt, setPrompt, difficulty, setDifficulty,
     numQuestions, setNumQuestions, provider, setProvider,
-    providers, onGenerate, sdAvailable: _sdAvailable,
+    providers, onGenerate,
 }: PromptScreenProps) {
     const shuffleTopic = () => {
         let next: string;

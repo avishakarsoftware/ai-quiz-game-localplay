@@ -18,22 +18,25 @@ export function initAnalytics() {
   initialized = true;
 }
 
+interface CapacitorGlobal { isNativePlatform?: () => boolean; getPlatform?: () => string }
+
 function getPlatform(): string {
-  if ((window as any).Capacitor?.isNativePlatform?.()) {
-    return (window as any).Capacitor.getPlatform?.() || 'native';
+  const cap = (window as unknown as { Capacitor?: CapacitorGlobal }).Capacitor;
+  if (cap?.isNativePlatform?.()) {
+    return cap.getPlatform?.() || 'native';
   }
   if (window.matchMedia('(display-mode: standalone)').matches) return 'pwa';
   return 'web';
 }
 
 /** Track a named event with optional properties. No-op if PostHog is not initialized. */
-export function track(event: string, properties?: Record<string, any>) {
+export function track(event: string, properties?: Record<string, unknown>) {
   if (!initialized) return;
   posthog.capture(event, { ...properties, platform: getPlatform() });
 }
 
 /** Identify a user (e.g. anonymous organizer ID). */
-export function identify(id: string, properties?: Record<string, any>) {
+export function identify(id: string, properties?: Record<string, unknown>) {
   if (!initialized) return;
   posthog.identify(id, properties);
 }

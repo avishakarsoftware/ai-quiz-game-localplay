@@ -105,7 +105,7 @@ export default function SpectatorPage() {
         const ws = new WebSocket(`${WS_URL}/ws/${roomCode}/${clientId}?spectator=true`);
 
         ws.onmessage = (event) => {
-            let msg: Record<string, any>;
+            let msg: Record<string, unknown>;
             try { msg = JSON.parse(event.data); } catch { return; }
             if (msg.type === 'SPECTATOR_SYNC') {
                 setPlayers(msg.players || []);
@@ -194,6 +194,8 @@ export default function SpectatorPage() {
     // Staggered podium reveal
     useEffect(() => {
         if (gameState !== 'PODIUM') return;
+        // Reset before starting the timed reveal sequence.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setPodiumReveal(0);
         const timers = [
             setTimeout(() => setPodiumReveal(1), 300),

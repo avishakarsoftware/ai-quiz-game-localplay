@@ -16,10 +16,18 @@ interface LobbyScreenProps {
 
 export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, locked, onStartGame, onToggleLock }: LobbyScreenProps) {
     const prevCountRef = useRef(playerCount);
-    const justJoined = playerCount > prevCountRef.current;
+    const [justJoined, setJustJoined] = useState(false);
     const [copied, setCopied] = useState(false);
 
     useEffect(() => {
+        if (playerCount > prevCountRef.current) {
+            // Flagging a player-join bump — this is derived from a prop change, not a cascading render.
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setJustJoined(true);
+            const timer = setTimeout(() => setJustJoined(false), 600);
+            prevCountRef.current = playerCount;
+            return () => clearTimeout(timer);
+        }
         prevCountRef.current = playerCount;
     }, [playerCount]);
 
@@ -28,7 +36,7 @@ export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, l
             try {
                 await navigator.share({ title: 'Join my quiz!', url: joinUrl });
                 return;
-            } catch {}
+            } catch { /* user cancelled share dialog */ }
         }
         await navigator.clipboard.writeText(joinUrl);
         setCopied(true);
@@ -99,7 +107,7 @@ export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, l
             </div>
 
             <div className="w-full mb-4">
-                <CastButton roomCode={roomCode} joinUrl={joinUrl} />
+                <CastButton roomCode={roomCode} />
             </div>
 
             <button onClick={onStartGame} disabled={playerCount === 0} className="btn btn-primary btn-glow w-full">

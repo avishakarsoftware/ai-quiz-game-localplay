@@ -23,7 +23,7 @@ function getSavedSession() {
     try {
         const raw = sessionStorage.getItem('localplay_session');
         if (raw) return JSON.parse(raw) as { roomCode: string; nickname: string; team: string; avatar: string };
-    } catch {}
+    } catch { /* corrupted session data */ }
     return null;
 }
 
@@ -46,7 +46,7 @@ export default function PlayerPage() {
     const [pointsEarned, setPointsEarned] = useState(0);
     const [streak, setStreak] = useState(0);
     const [multiplier, setMultiplier] = useState(1.0);
-    const [_correctAnswer, setCorrectAnswer] = useState<number | null>(null);
+    const [, setCorrectAnswer] = useState<number | null>(null);
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
     const [teamLeaderboard, setTeamLeaderboard] = useState<TeamLeaderboardEntry[]>([]);
     const [myRank, setMyRank] = useState(0);
@@ -59,6 +59,8 @@ export default function PlayerPage() {
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const kickedRef = useRef(false);
+    const mountedRef = useRef(true);
+    useEffect(() => () => { mountedRef.current = false; }, []);
 
     // Auto-rejoin if we have a saved session (e.g. page refresh)
     useEffect(() => {
@@ -86,7 +88,7 @@ export default function PlayerPage() {
         };
 
         ws.onmessage = (event) => {
-            let msg: Record<string, any>;
+            let msg: Record<string, unknown>;
             try { msg = JSON.parse(event.data); } catch { return; }
             if (msg.type === 'ERROR') {
                 setError(msg.message as string);
@@ -196,8 +198,9 @@ export default function PlayerPage() {
                 setState('RESULT');
             }
             if (msg.type === 'PODIUM') {
-                const rank = (msg.leaderboard as any[]).findIndex((p: any) => p.nickname === nickname) + 1;
-                track('player_game_finished', { room_code: roomCode, nickname, rank, total_players: (msg.leaderboard as any[]).length });
+                const lb = msg.leaderboard as LeaderboardEntry[];
+                const rank = lb.findIndex((p) => p.nickname === nickname) + 1;
+                track('player_game_finished', { room_code: roomCode, nickname, rank, total_players: lb.length });
                 setLeaderboard(msg.leaderboard); setTeamLeaderboard(msg.team_leaderboard || []); setState('PODIUM'); soundManager.play('fanfare');
             }
             if (msg.type === 'ORGANIZER_DISCONNECTED') {
@@ -245,12 +248,13 @@ export default function PlayerPage() {
         ws.onerror = () => setError('Connection failed');
         ws.onclose = () => {
             if (kickedRef.current) { kickedRef.current = false; return; }
+            if (!mountedRef.current) return;
             setState((current) => {
                 if (current !== 'JOIN' && current !== 'PODIUM') {
                     setTimeout(() => joinRoom(), 2000);
                     return 'RECONNECTING';
                 }
-                if (current === 'JOIN') setError('Room not found');
+                if (current === 'JOIN') setError('Unable to connect. Check your internet and try again.');
                 return current;
             });
         };
@@ -262,7 +266,7 @@ export default function PlayerPage() {
         wsRef.current?.send(JSON.stringify({ type: 'ANSWER', answer_index: index }));
     };
 
-    const usePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
+    const activatePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
         wsRef.current?.send(JSON.stringify({ type: 'USE_POWER_UP', power_up: powerUp }));
     };
 
@@ -462,12 +466,12 @@ export default function PlayerPage() {
                         {selectedAnswer === null && (powerUps.double_points || powerUps.fifty_fifty) && (
                             <div className="flex gap-2 mb-4 justify-center stagger-in" style={{ animationDelay: '0.2s' }}>
                                 {powerUps.double_points && (
-                                    <button onClick={() => usePowerUp('double_points')} className="power-up-btn">
+                                    <button onClick={() => activatePowerUp('double_points')} className="power-up-btn">
                                         2x Points
                                     </button>
                                 )}
                                 {powerUps.fifty_fifty && currentQuestion.options.length === 4 && (
-                                    <button onClick={() => usePowerUp('fifty_fifty')} className="power-up-btn">
+                                    <button onClick={() => activatePowerUp('fifty_fifty')} className="power-up-btn">
                                         50/50
                                     </button>
                                 )}
