@@ -79,6 +79,6 @@ describe('SettingsDrawer', () => {
 
         await user.click(screen.getByTitle('Settings'));
 
-        expect(screen.getByText('LocalPlay v1.0')).toBeInTheDocument();
+        expect(screen.getByText('Revelry Quiz v1.0')).toBeInTheDocument();
     });
 });

@@ -1,0 +1,9 @@
+RewriteEngine On
+RewriteBase /quiz/
+
+# If the request is for an existing file or directory, serve it directly
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Otherwise rewrite to index.html for SPA routing
+RewriteRule ^ index.html [L]

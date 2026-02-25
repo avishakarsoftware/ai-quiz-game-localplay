@@ -105,7 +105,7 @@ export default function SpectatorPage() {
         const ws = new WebSocket(`${WS_URL}/ws/${roomCode}/${clientId}?spectator=true`);
 
         ws.onmessage = (event) => {
-            let msg: Record<string, unknown>;
+            let msg: Record<string, any>;
             try { msg = JSON.parse(event.data); } catch { return; }
             if (msg.type === 'SPECTATOR_SYNC') {
                 setPlayers(msg.players || []);

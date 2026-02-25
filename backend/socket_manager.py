@@ -292,7 +292,9 @@ class SocketManager:
             else:
                 await websocket.send_json({"type": "ROOM_CREATED", "room_code": room_code})
         else:
-            await websocket.send_json({"type": "JOINED_ROOM", "room_code": room_code})
+            # Don't send JOINED_ROOM yet — wait until JOIN validation succeeds
+            # to avoid the client entering LOBBY before nickname is accepted
+            pass
 
         try:
             while True:
@@ -344,6 +346,11 @@ class SocketManager:
                     "player_count": len(room.players),
                     "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
                 })
+                # Re-evaluate all_answered: if remaining players have all answered,
+                # end the question instead of waiting for the full timer
+                if room.state == "QUESTION" and len(room.players) > 0:
+                    if all(cid in room.answered_players for cid in room.players):
+                        await self.end_question(room)
 
     async def _send_organizer_sync(self, room: Room):
         """Send full game state to a reconnecting organizer."""
@@ -362,6 +369,7 @@ class SocketManager:
             "team_leaderboard": self.get_team_leaderboard(room),
             "time_limit": room.time_limit,
             "quiz": room.quiz,
+            "locked": room.locked,
         }
 
         if room.state == "QUESTION":
@@ -592,6 +600,10 @@ class SocketManager:
                     room.teams[nickname] = team
                 # Initialize power-ups
                 room.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
+                # Confirm join to the player (after validation succeeded)
+                ws = room.connections.get(client_id)
+                if ws:
+                    await ws.send_json({"type": "JOINED_ROOM", "room_code": room.room_code})
                 await room.broadcast({
                     "type": "PLAYER_JOINED",
                     "nickname": nickname,
@@ -727,7 +739,7 @@ class SocketManager:
     def get_team_leaderboard(self, room: Room) -> List[dict]:
         """Aggregate player scores by team. Solo players use their nickname."""
         team_scores: Dict[str, list] = {}
-        for player in room.players.values():
+        for player in self._all_players_for_leaderboard(room):
             team = room.teams.get(player["nickname"]) or player["nickname"]
             team_scores.setdefault(team, []).append(player["score"])
         result = []
@@ -741,11 +753,12 @@ class SocketManager:
 
     def get_game_summary(self, room: Room) -> dict:
         """Build a game summary for history storage."""
+        all_player_count = len(room.players) + len(room.disconnected_players)
         return {
             "room_code": room.room_code,
             "quiz_title": room.quiz.get("quiz_title", "Untitled"),
             "total_questions": len(room.quiz["questions"]),
-            "player_count": len(room.players),
+            "player_count": all_player_count,
             "leaderboard": self.get_leaderboard(room),
             "team_leaderboard": self.get_team_leaderboard(room),
             "answer_log": room.answer_log,
@@ -802,6 +815,12 @@ class SocketManager:
 
         is_bonus = room.current_question_index in room.bonus_questions
 
+        # Set state to QUESTION before broadcast so answers are accepted
+        # immediately. The organizer's handler coroutine is blocked during
+        # the bonus sleep (same coroutine), so duplicate NEXT_QUESTION
+        # cannot arrive until the sleep completes.
+        room.state = "QUESTION"
+
         await room.broadcast({
             "type": "QUESTION",
             "question": player_question,
@@ -812,12 +831,15 @@ class SocketManager:
         })
 
         # Delay timer start for bonus rounds so the splash animation plays first
-        # Keep state as non-QUESTION during splash so answers are rejected
         if is_bonus:
             await asyncio.sleep(2)
 
+        # If all players answered during the bonus splash, end_question was
+        # already called — don't start the timer.
+        if room.state != "QUESTION":
+            return
+
         room.question_start_time = time.time()
-        room.state = "QUESTION"
         room.timer_task = asyncio.create_task(self.question_timer(room))
 
     async def question_timer(self, room: Room):
@@ -860,9 +882,22 @@ class SocketManager:
             "is_final": is_final
         })
 
+    def _all_players_for_leaderboard(self, room: Room) -> List[dict]:
+        """Combine active and disconnected players for leaderboard inclusion."""
+        all_players = list(room.players.values())
+        for nickname, data in room.disconnected_players.items():
+            all_players.append({
+                "nickname": nickname,
+                "score": data["score"],
+                "avatar": data.get("avatar", ""),
+                "prev_rank": data.get("prev_rank", 0),
+                "streak": data.get("streak", 0),
+            })
+        return all_players
+
     def get_leaderboard(self, room: Room) -> List[dict]:
         sorted_players = sorted(
-            room.players.values(),
+            self._all_players_for_leaderboard(room),
             key=lambda x: x["score"],
             reverse=True
         )
@@ -872,7 +907,7 @@ class SocketManager:
         prev_rankings = {p["nickname"]: i for i, p in enumerate(room.previous_leaderboard)}
 
         sorted_players = sorted(
-            room.players.values(),
+            self._all_players_for_leaderboard(room),
             key=lambda x: x["score"],
             reverse=True
         )

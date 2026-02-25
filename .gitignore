@@ -15,5 +15,8 @@ logs/
 # Environment
 .env
 
+# IDE
+.vscode/
+
 # OS
 .DS_Store

@@ -3,6 +3,7 @@ import { useSearchParams, useParams } from 'react-router-dom';
 import { API_URL, WS_URL } from '../config';
 import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
+import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import BonusSplash from '../components/BonusSplash';
@@ -79,10 +80,13 @@ export default function PlayerPage() {
         const ws = new WebSocket(`${WS_URL}/ws/${roomCode}/${clientId}`);
         wsRef.current = ws;
 
-        ws.onopen = () => ws.send(JSON.stringify({ type: 'JOIN', nickname, team: team || undefined, avatar }));
+        ws.onopen = () => {
+            track('player_joined', { room_code: roomCode, nickname, has_team: !!team });
+            ws.send(JSON.stringify({ type: 'JOIN', nickname, team: team || undefined, avatar }));
+        };
 
         ws.onmessage = (event) => {
-            let msg: Record<string, unknown>;
+            let msg: Record<string, any>;
             try { msg = JSON.parse(event.data); } catch { return; }
             if (msg.type === 'ERROR') {
                 setError(msg.message as string);
@@ -191,7 +195,11 @@ export default function PlayerPage() {
                 setMyRank(msg.leaderboard.findIndex((p: LeaderboardEntry) => p.nickname === nickname) + 1);
                 setState('RESULT');
             }
-            if (msg.type === 'PODIUM') { setLeaderboard(msg.leaderboard); setTeamLeaderboard(msg.team_leaderboard || []); setState('PODIUM'); soundManager.play('fanfare'); }
+            if (msg.type === 'PODIUM') {
+                const rank = (msg.leaderboard as any[]).findIndex((p: any) => p.nickname === nickname) + 1;
+                track('player_game_finished', { room_code: roomCode, nickname, rank, total_players: (msg.leaderboard as any[]).length });
+                setLeaderboard(msg.leaderboard); setTeamLeaderboard(msg.team_leaderboard || []); setState('PODIUM'); soundManager.play('fanfare');
+            }
             if (msg.type === 'ORGANIZER_DISCONNECTED') {
                 // Host disconnected — show warning but stay connected (they may reconnect)
                 setError('The host has disconnected. Waiting for them to return...');

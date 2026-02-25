@@ -9,8 +9,23 @@ import os
 import json
 import time
 import asyncio
+import urllib.request
 
 import pytest
+
+
+def _ollama_available():
+    """Check if Ollama is running locally."""
+    try:
+        urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
+        return True
+    except Exception:
+        return False
+
+
+requires_ollama = pytest.mark.skipif(
+    not _ollama_available(), reason="Ollama not running locally"
+)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -47,6 +62,7 @@ def recv_until(ws, msg_type, max_messages=50):
     raise TimeoutError(f"Never received {msg_type} after {max_messages} messages")
 
 
+@requires_ollama
 class TestEndToEnd:
     """Full game flow: generate quiz -> edit -> create room -> play -> podium."""
 
@@ -141,22 +157,23 @@ class TestEndToEnd:
                 ws.__enter__()
                 player_ws_list.append(ws)
 
-                joined = ws.receive_json()
-                assert joined["type"] == "JOINED_ROOM"
-
                 ws.send_json({"type": "JOIN", "nickname": p["name"], "team": p["team"]})
+                joined = recv_until(ws, "JOINED_ROOM")
+                assert joined["type"] == "JOINED_ROOM"
 
                 # Drain PLAYER_JOINED from organizer
                 org_msg = recv_until(org_ws, "PLAYER_JOINED")
                 assert org_msg["nickname"] == p["name"]
                 assert "players" in org_msg
-                assert p["name"] in org_msg["players"]
-                print(f"  {p['name']} joined (team {p['team']}). Players: {org_msg['players']}")
+                player_names = [pl["nickname"] for pl in org_msg["players"]]
+                assert p["name"] in player_names
+                print(f"  {p['name']} joined (team {p['team']}). Players: {player_names}")
 
                 # Each player also gets PLAYER_JOINED
                 for pw in player_ws_list:
                     player_msg = recv_until(pw, "PLAYER_JOINED")
-                    assert p["name"] in player_msg["players"]
+                    player_names = [pl["nickname"] for pl in player_msg["players"]]
+                    assert p["name"] in player_names
 
             # ==========================================
             # Step 6: Start game
@@ -345,8 +362,8 @@ class TestReconnectionE2E:
 
             # Player joins
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
-                p_ws.receive_json()  # JOINED_ROOM
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                recv_until(p_ws, "JOINED_ROOM")
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -374,9 +391,8 @@ class TestReconnectionE2E:
             assert room.disconnected_players["Alice"]["score"] == score_before
             assert room.disconnected_players["Alice"]["streak"] == 1
 
-            # Player reconnects
+            # Player reconnects (no JOINED_ROOM for reconnecting players)
             with client.websocket_connect(f"/ws/{room_code}/player-2") as p_ws2:
-                p_ws2.receive_json()  # JOINED_ROOM
                 p_ws2.send_json({"type": "JOIN", "nickname": "Alice"})
 
                 # Should get RECONNECTED instead of PLAYER_JOINED
@@ -388,6 +404,7 @@ class TestReconnectionE2E:
         print("--- Reconnection E2E test passed! ---")
 
 
+@requires_ollama
 class TestExportImportE2E:
     """E2E test for export/import with live Ollama-generated quiz."""
 
@@ -428,8 +445,8 @@ class TestExportImportE2E:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Tester"})
+                recv_until(p_ws, "JOINED_ROOM")
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -453,6 +470,7 @@ class TestExportImportE2E:
         print("--- Export/Import E2E test passed! ---")
 
 
+@requires_ollama
 class TestBonusRoundsE2E:
     """E2E test for bonus rounds with live Ollama-generated quiz."""
 
@@ -483,8 +501,8 @@ class TestBonusRoundsE2E:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "BonusTester"})
+                recv_until(p_ws, "JOINED_ROOM")
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 

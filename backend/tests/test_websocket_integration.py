@@ -101,8 +101,8 @@ class TestStreakBonusWS:
             org_ws.receive_json()  # ROOM_CREATED
 
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
-                p_ws.receive_json()  # JOINED_ROOM
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -146,8 +146,8 @@ class TestStreakBonusWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -200,8 +200,8 @@ class TestPowerUpsWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -242,8 +242,8 @@ class TestPowerUpsWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -269,8 +269,8 @@ class TestPowerUpsWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -308,8 +308,8 @@ class TestPowerUpsWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -345,15 +345,15 @@ class TestTeamModeWS:
 
             p1_ws = client.websocket_connect(f"/ws/{room_code}/p-1")
             p1_ws.__enter__()
-            p1_ws.receive_json()
             p1_ws.send_json({"type": "JOIN", "nickname": "Alice", "team": "Red"})
+            p1_ws.receive_json()  # JOINED_ROOM
             recv_until(org_ws, "PLAYER_JOINED")
             recv_until(p1_ws, "PLAYER_JOINED")
 
             p2_ws = client.websocket_connect(f"/ws/{room_code}/p-2")
             p2_ws.__enter__()
-            p2_ws.receive_json()
             p2_ws.send_json({"type": "JOIN", "nickname": "Bob", "team": "Blue"})
+            p2_ws.receive_json()  # JOINED_ROOM
             recv_until(org_ws, "PLAYER_JOINED")
             recv_until(p1_ws, "PLAYER_JOINED")
             recv_until(p2_ws, "PLAYER_JOINED")
@@ -398,8 +398,8 @@ class TestTeamModeWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})  # No team
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -430,15 +430,15 @@ class TestTeamModeWS:
 
             p1_ws = client.websocket_connect(f"/ws/{room_code}/p-1")
             p1_ws.__enter__()
-            p1_ws.receive_json()
             p1_ws.send_json({"type": "JOIN", "nickname": "Alice", "team": "Tigers"})
+            p1_ws.receive_json()  # JOINED_ROOM
             recv_until(org_ws, "PLAYER_JOINED")
             recv_until(p1_ws, "PLAYER_JOINED")
 
             p2_ws = client.websocket_connect(f"/ws/{room_code}/p-2")
             p2_ws.__enter__()
-            p2_ws.receive_json()
             p2_ws.send_json({"type": "JOIN", "nickname": "Bob", "team": "Tigers"})
+            p2_ws.receive_json()  # JOINED_ROOM
             recv_until(org_ws, "PLAYER_JOINED")
             recv_until(p1_ws, "PLAYER_JOINED")
             recv_until(p2_ws, "PLAYER_JOINED")
@@ -497,8 +497,8 @@ class TestSpectatorWS:
 
             # Add a player first
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -573,8 +573,8 @@ class TestAnswerLoggingWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -628,8 +628,8 @@ class TestGameHistoryWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -668,8 +668,8 @@ class TestGameHistoryWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Bob"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -714,15 +714,15 @@ class TestMultiPlayerGameFlow:
 
             p1_ws = client.websocket_connect(f"/ws/{room_code}/p-1")
             p1_ws.__enter__()
-            p1_ws.receive_json()
             p1_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+            p1_ws.receive_json()  # JOINED_ROOM
             recv_until(org_ws, "PLAYER_JOINED")
             recv_until(p1_ws, "PLAYER_JOINED")
 
             p2_ws = client.websocket_connect(f"/ws/{room_code}/p-2")
             p2_ws.__enter__()
-            p2_ws.receive_json()
             p2_ws.send_json({"type": "JOIN", "nickname": "Bob"})
+            p2_ws.receive_json()  # JOINED_ROOM
             recv_until(org_ws, "PLAYER_JOINED")
             recv_until(p1_ws, "PLAYER_JOINED")
             recv_until(p2_ws, "PLAYER_JOINED")
@@ -757,8 +757,8 @@ class TestMultiPlayerGameFlow:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -787,15 +787,15 @@ class TestMultiPlayerGameFlow:
 
             p1_ws = client.websocket_connect(f"/ws/{room_code}/p-1")
             p1_ws.__enter__()
-            p1_ws.receive_json()
             p1_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+            p1_ws.receive_json()  # JOINED_ROOM
             recv_until(org_ws, "PLAYER_JOINED")
             recv_until(p1_ws, "PLAYER_JOINED")
 
             p2_ws = client.websocket_connect(f"/ws/{room_code}/p-2")
             p2_ws.__enter__()
-            p2_ws.receive_json()
             p2_ws.send_json({"type": "JOIN", "nickname": "Bob"})
+            p2_ws.receive_json()  # JOINED_ROOM
             recv_until(org_ws, "PLAYER_JOINED")
             recv_until(p1_ws, "PLAYER_JOINED")
             recv_until(p2_ws, "PLAYER_JOINED")
@@ -853,8 +853,8 @@ class TestMixedQuestionTypesWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -907,8 +907,8 @@ class TestMixedQuestionTypesWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -941,8 +941,8 @@ class TestReconnectionWS:
 
             # Player joins and answers Q1
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -963,7 +963,6 @@ class TestReconnectionWS:
 
             # Player reconnects
             with client.websocket_connect(f"/ws/{room_code}/p-2") as p_ws2:
-                p_ws2.receive_json()
                 p_ws2.send_json({"type": "JOIN", "nickname": "Alice"})
                 recon = recv_until(p_ws2, "RECONNECTED")
                 assert recon["score"] == r1["points"]
@@ -978,8 +977,8 @@ class TestReconnectionWS:
 
             # Player joins and answers Q1
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -998,7 +997,6 @@ class TestReconnectionWS:
 
             # Reconnect
             with client.websocket_connect(f"/ws/{room_code}/p-2") as p_ws2:
-                p_ws2.receive_json()
                 p_ws2.send_json({"type": "JOIN", "nickname": "Alice"})
                 recv_until(p_ws2, "RECONNECTED")
 
@@ -1042,8 +1040,8 @@ class TestEdgeCases:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -1068,7 +1066,6 @@ class TestEdgeCases:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 long_name = "A" * (config.MAX_NICKNAME_LENGTH + 1)
                 p_ws.send_json({"type": "JOIN", "nickname": long_name})
                 err = recv_until(p_ws, "ERROR")
@@ -1083,7 +1080,6 @@ class TestEdgeCases:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "   "})
                 err = recv_until(p_ws, "ERROR")
                 assert "character" in err["message"].lower()
@@ -1097,8 +1093,8 @@ class TestEdgeCases:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "<b>Evil</b>"})
+                p_ws.receive_json()  # JOINED_ROOM
                 joined = recv_until(org_ws, "PLAYER_JOINED")
                 assert "<" not in joined["nickname"]
                 assert joined["nickname"] == "Evil"
@@ -1120,8 +1116,8 @@ class TestBonusRoundsWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -1156,8 +1152,8 @@ class TestBonusRoundsWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -1198,8 +1194,8 @@ class TestBonusRoundsWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -1221,8 +1217,8 @@ class TestBonusRoundsWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -1263,15 +1259,15 @@ class TestStreakResetNoAnswerWS:
 
             p1_ws = client.websocket_connect(f"/ws/{room_code}/p-1")
             p1_ws.__enter__()
-            p1_ws.receive_json()
             p1_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+            p1_ws.receive_json()  # JOINED_ROOM
             recv_until(org_ws, "PLAYER_JOINED")
             recv_until(p1_ws, "PLAYER_JOINED")
 
             p2_ws = client.websocket_connect(f"/ws/{room_code}/p-2")
             p2_ws.__enter__()
-            p2_ws.receive_json()
             p2_ws.send_json({"type": "JOIN", "nickname": "Bob"})
+            p2_ws.receive_json()  # JOINED_ROOM
             recv_until(org_ws, "PLAYER_JOINED")
             recv_until(p1_ws, "PLAYER_JOINED")
             recv_until(p2_ws, "PLAYER_JOINED")
@@ -1342,8 +1338,8 @@ class TestStreakResetNoAnswerWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -1390,8 +1386,8 @@ class TestTeamLeaderboardSoloWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})  # No team
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -1425,15 +1421,15 @@ class TestTeamLeaderboardSoloWS:
 
             p1_ws = client.websocket_connect(f"/ws/{room_code}/p-1")
             p1_ws.__enter__()
-            p1_ws.receive_json()
             p1_ws.send_json({"type": "JOIN", "nickname": "Alice", "team": "Red"})
+            p1_ws.receive_json()  # JOINED_ROOM
             recv_until(org_ws, "PLAYER_JOINED")
             recv_until(p1_ws, "PLAYER_JOINED")
 
             p2_ws = client.websocket_connect(f"/ws/{room_code}/p-2")
             p2_ws.__enter__()
-            p2_ws.receive_json()
             p2_ws.send_json({"type": "JOIN", "nickname": "Bob"})  # Solo
+            p2_ws.receive_json()  # JOINED_ROOM
             recv_until(org_ws, "PLAYER_JOINED")
             recv_until(p1_ws, "PLAYER_JOINED")
             recv_until(p2_ws, "PLAYER_JOINED")
@@ -1483,8 +1479,8 @@ class TestBonusReconnectionWS:
 
             # Join player
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -1517,7 +1513,6 @@ class TestBonusReconnectionWS:
 
                 # Reconnect
                 with client.websocket_connect(f"/ws/{room_code}/p-2") as p_ws2:
-                    p_ws2.receive_json()
                     p_ws2.send_json({"type": "JOIN", "nickname": "Alice"})
                     recon = recv_until(p_ws2, "RECONNECTED")
                     assert recon.get("is_bonus") is True
@@ -1537,11 +1532,11 @@ class TestOrganizerReconnectionWS:
 
         # Player connects first (outer) so it stays open when organizer disconnects
         with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-            p_ws.receive_json()  # JOINED_ROOM
 
             with client.websocket_connect(f"/ws/{room_code}/org-1?organizer=true&token={org_token}") as org_ws:
                 org_ws.receive_json()  # ROOM_CREATED
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -1553,8 +1548,7 @@ class TestOrganizerReconnectionWS:
 
             # Organizer reconnects with new client_id
             with client.websocket_connect(f"/ws/{room_code}/org-2?organizer=true&token={org_token}") as org_ws2:
-                sync = org_ws2.receive_json()
-                assert sync["type"] == "ORGANIZER_RECONNECTED"
+                sync = recv_until(org_ws2, "ORGANIZER_RECONNECTED")
                 assert sync["state"] == "LOBBY"
                 assert sync["player_count"] == 1
                 assert any(p["nickname"] == "Alice" for p in sync["players"])
@@ -1569,8 +1563,8 @@ class TestOrganizerReconnectionWS:
             org_ws.receive_json()  # ROOM_CREATED
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -1588,8 +1582,7 @@ class TestOrganizerReconnectionWS:
 
         # Organizer reconnects
         with client.websocket_connect(f"/ws/{room_code}/org-2?organizer=true&token={org_token}") as org_ws2:
-            sync = org_ws2.receive_json()
-            assert sync["type"] == "ORGANIZER_RECONNECTED"
+            sync = recv_until(org_ws2, "ORGANIZER_RECONNECTED")
             assert sync["state"] == "QUESTION"
             assert sync["question_number"] == 1
             assert "question" in sync
@@ -1608,8 +1601,8 @@ class TestOrganizerReconnectionWS:
             org_ws.receive_json()
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
-                p_ws.receive_json()
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -1628,12 +1621,10 @@ class TestOrganizerReconnectionWS:
 
         # Reconnect and advance to Q2
         with client.websocket_connect(f"/ws/{room_code}/org-2?organizer=true&token={org_token}") as org_ws2:
-            sync = org_ws2.receive_json()
-            assert sync["type"] == "ORGANIZER_RECONNECTED"
+            recv_until(org_ws2, "ORGANIZER_RECONNECTED")
 
             # Send NEXT_QUESTION to advance
             with client.websocket_connect(f"/ws/{room_code}/p-2") as p_ws2:
-                p_ws2.receive_json()
                 p_ws2.send_json({"type": "JOIN", "nickname": "Alice"})
                 recv_until(p_ws2, "RECONNECTED")
 

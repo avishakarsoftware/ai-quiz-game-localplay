@@ -23,6 +23,25 @@ export default function CastButton({ roomCode }: CastButtonProps) {
 
   // Dynamically load Cast Sender SDK (not in index.html to avoid conflict with receiver on spectator page)
   useEffect(() => {
+    // If the Cast framework is already loaded (e.g. component remount after game reset),
+    // just re-read its state instead of loading the script again.
+    if (window.cast?.framework) {
+      try {
+        const context = cast.framework.CastContext.getInstance();
+        setCastSdkReady(true);
+        setCasting(context.getCastState() === cast.framework.CastState.CONNECTED);
+        context.addEventListener(
+          cast.framework.CastContextEventType.CAST_STATE_CHANGED,
+          (event: cast.framework.CastStateEvent) => {
+            setCasting(event.castState === cast.framework.CastState.CONNECTED);
+          }
+        );
+      } catch (err) {
+        console.error('Cast SDK re-init error:', err);
+      }
+      return;
+    }
+
     if (sdkLoaded.current) return;
     sdkLoaded.current = true;
 

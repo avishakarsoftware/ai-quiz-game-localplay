@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { API_URL, WS_URL } from '../config';
 import { type Quiz, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry } from '../types';
 import { soundManager } from '../utils/sound';
+import { track } from '../utils/analytics';
 import PromptScreen, { type AIProvider } from '../components/organizer/PromptScreen';
 import LoadingScreen from '../components/organizer/LoadingScreen';
 import ReviewScreen from '../components/organizer/ReviewScreen';
@@ -66,7 +67,7 @@ export default function OrganizerPage() {
 
 
     const handleWsMessage = useCallback((event: MessageEvent) => {
-        let msg: Record<string, unknown>;
+        let msg: Record<string, any>;
         try { msg = JSON.parse(event.data); } catch { return; }
         if (msg.type === 'PLAYER_JOINED') {
             console.log('PLAYER_JOINED', msg);
@@ -92,6 +93,7 @@ export default function OrganizerPage() {
         else if (msg.type === 'PODIUM') {
             setLeaderboard(msg.leaderboard);
             setTeamLeaderboard(msg.team_leaderboard || []);
+            track('game_completed', { room_code: roomCodeRef.current, player_count: (msg.leaderboard as any[])?.length || 0, winner: (msg.leaderboard as any[])?.[0]?.nickname });
             setState('PODIUM');
             soundManager.play('fanfare');
         }
@@ -120,6 +122,7 @@ export default function OrganizerPage() {
             setLeaderboard(msg.leaderboard || []);
             setTeamLeaderboard(msg.team_leaderboard || []);
             setTimeLimit(msg.time_limit);
+            setRoomLocked(msg.locked ?? false);
             if (msg.quiz) {
                 setQuiz(msg.quiz);
                 setTotalQuestions(msg.quiz.questions.length);
@@ -165,6 +168,7 @@ export default function OrganizerPage() {
                 setQuiz(data.quiz);
                 setQuizId(data.quiz_id);
                 setTotalQuestions(data.quiz.questions.length);
+                track('quiz_generated', { topic: prompt, difficulty, num_questions: numQuestions, provider });
                 setState('REVIEW');
             } else {
                 alert('Failed to generate quiz');
@@ -251,12 +255,14 @@ export default function OrganizerPage() {
         const data = await res.json();
         setRoomCode(data.room_code);
         organizerTokenRef.current = data.organizer_token || '';
+        track('room_created', { room_code: data.room_code, time_limit: timeLimit });
         setState('ROOM');
         connectWs(data.room_code);
     };
 
     const startGame = () => {
         soundManager.play('gameStart');
+        track('game_started', { room_code: roomCode, player_count: playerCount, num_questions: totalQuestions });
         wsRef.current?.send(JSON.stringify({ type: 'START_GAME' }));
         wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
     };

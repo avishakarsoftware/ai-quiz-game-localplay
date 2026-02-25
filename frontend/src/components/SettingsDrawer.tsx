@@ -94,9 +94,10 @@ export default function SettingsDrawer() {
                     </button>
                 </div>
 
-                <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-quaternary)', marginTop: 16 }}>
-                    LocalPlay v1.0
-                </p>
+                <div style={{ textAlign: 'center', marginTop: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <p style={{ fontSize: 11, color: 'var(--text-quaternary)' }}>Revelry Quiz v1.0</p>
+                    <a href="privacy.html" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: 'var(--text-tertiary)', textDecoration: 'underline' }}>Privacy Policy</a>
+                </div>
             </div>
         </>
     );

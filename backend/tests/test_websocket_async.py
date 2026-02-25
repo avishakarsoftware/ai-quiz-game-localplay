@@ -157,8 +157,8 @@ class TestTimerExpiry:
             await recv_until(org_ws, "ROOM_CREATED")
 
             async with websockets.connect(ws_url(server_port, room_code, "p-1")) as p_ws:
-                await recv_until(p_ws, "JOINED_ROOM")
                 await send_json(p_ws, {"type": "JOIN", "nickname": "Alice"})
+                await recv_until(p_ws, "JOINED_ROOM")
                 await recv_until(org_ws, "PLAYER_JOINED")
                 await recv_until(p_ws, "PLAYER_JOINED")
 
@@ -183,8 +183,8 @@ class TestTimerExpiry:
             await recv_until(org_ws, "ROOM_CREATED")
 
             async with websockets.connect(ws_url(server_port, room_code, "p-1")) as p_ws:
-                await recv_until(p_ws, "JOINED_ROOM")
                 await send_json(p_ws, {"type": "JOIN", "nickname": "Alice"})
+                await recv_until(p_ws, "JOINED_ROOM")
                 await recv_until(org_ws, "PLAYER_JOINED")
                 await recv_until(p_ws, "PLAYER_JOINED")
 
@@ -221,8 +221,8 @@ class TestStreakResetOnTimeout:
             await recv_until(org_ws, "ROOM_CREATED")
 
             async with websockets.connect(ws_url(server_port, room_code, "p-1")) as p_ws:
-                await recv_until(p_ws, "JOINED_ROOM")
                 await send_json(p_ws, {"type": "JOIN", "nickname": "Alice"})
+                await recv_until(p_ws, "JOINED_ROOM")
                 await recv_until(org_ws, "PLAYER_JOINED")
                 await recv_until(p_ws, "PLAYER_JOINED")
 
@@ -274,8 +274,8 @@ class TestSpectatorBroadcasts:
             await recv_until(org_ws, "ROOM_CREATED")
 
             async with websockets.connect(ws_url(server_port, room_code, "p-1")) as p_ws:
-                await recv_until(p_ws, "JOINED_ROOM")
                 await send_json(p_ws, {"type": "JOIN", "nickname": "Alice"})
+                await recv_until(p_ws, "JOINED_ROOM")
                 await recv_until(org_ws, "PLAYER_JOINED")
                 await recv_until(p_ws, "PLAYER_JOINED")
 
@@ -313,8 +313,8 @@ class TestSpectatorBroadcasts:
             await recv_until(org_ws, "ROOM_CREATED")
 
             async with websockets.connect(ws_url(server_port, room_code, "p-1")) as p_ws:
-                await recv_until(p_ws, "JOINED_ROOM")
                 await send_json(p_ws, {"type": "JOIN", "nickname": "Alice"})
+                await recv_until(p_ws, "JOINED_ROOM")
                 await recv_until(org_ws, "PLAYER_JOINED")
                 await recv_until(p_ws, "PLAYER_JOINED")
 
@@ -361,8 +361,8 @@ class TestBonusSplashDelay:
             await recv_until(org_ws, "ROOM_CREATED")
 
             async with websockets.connect(ws_url(server_port, room_code, "p-1")) as p_ws:
-                await recv_until(p_ws, "JOINED_ROOM")
                 await send_json(p_ws, {"type": "JOIN", "nickname": "Alice"})
+                await recv_until(p_ws, "JOINED_ROOM")
                 await recv_until(org_ws, "PLAYER_JOINED")
                 await recv_until(p_ws, "PLAYER_JOINED")
 

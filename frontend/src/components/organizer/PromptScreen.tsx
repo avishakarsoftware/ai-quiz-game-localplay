@@ -347,7 +347,6 @@ export default function PromptScreen({
                 >
                     Generate Quiz
                 </button>
-
             </div>
         </div>
     );
