@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Share } from '@capacitor/share';
 import { QRCodeSVG } from 'qrcode.react';
 import CastButton from '../CastButton';
 import { type PlayerInfo } from '../../types';
@@ -32,7 +34,17 @@ export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, l
     }, [playerCount]);
 
     const shareLink = async () => {
-        if (navigator.share) {
+        if (Capacitor.isNativePlatform()) {
+            try {
+                await Share.share({
+                    title: 'Join my Revelry Quiz!',
+                    text: `Join my quiz game! Room code: ${roomCode}`,
+                    url: joinUrl,
+                    dialogTitle: 'Invite players',
+                });
+                return;
+            } catch { /* user cancelled */ }
+        } else if (navigator.share) {
             try {
                 await navigator.share({ title: 'Join my quiz!', url: joinUrl });
                 return;

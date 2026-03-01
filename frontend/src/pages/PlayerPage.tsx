@@ -177,10 +177,10 @@ export default function PlayerPage() {
                 setState('WAITING');
                 if (msg.correct) {
                     soundManager.play('correct');
-                    soundManager.vibrate(100);
+                    soundManager.hapticsCorrect();
                 } else {
                     soundManager.play('wrong');
-                    soundManager.vibrate([100, 50, 100]);
+                    soundManager.hapticsWrong();
                 }
             }
             if (msg.type === 'POWER_UP_ACTIVATED') {
@@ -262,11 +262,13 @@ export default function PlayerPage() {
 
     const submitAnswer = (index: number) => {
         if (selectedAnswer !== null) return;
+        soundManager.hapticsSelect();
         setSelectedAnswer(index);
         wsRef.current?.send(JSON.stringify({ type: 'ANSWER', answer_index: index }));
     };
 
     const activatePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
+        soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'USE_POWER_UP', power_up: powerUp }));
     };
 

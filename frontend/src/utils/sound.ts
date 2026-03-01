@@ -1,3 +1,6 @@
+import { Capacitor } from '@capacitor/core';
+import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
+
 type SoundName = 'playerJoin' | 'correct' | 'wrong' | 'timerTick' | 'gameStart' | 'podium' | 'lobbyAmbient' | 'streakBonus' | 'fanfare' | 'fireworkPop' | 'bonusRound';
 
 const MUTE_KEY = 'localplay_muted';
@@ -13,6 +16,15 @@ class SoundManager {
     constructor() {
         this._muted = localStorage.getItem(MUTE_KEY) === 'true';
         this._vibrationEnabled = localStorage.getItem(VIBRATE_KEY) !== 'false'; // on by default
+
+        // Resume AudioContext when app returns to foreground (iOS WebView suspends it)
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible' && this.ctx?.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            });
+        }
     }
 
     get muted() { return this._muted; }
@@ -159,7 +171,38 @@ class SoundManager {
 
     vibrate(pattern: number | number[]) {
         if (!this._vibrationEnabled) return;
-        navigator.vibrate?.(pattern);
+        if (Capacitor.isNativePlatform()) {
+            Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {});
+        } else {
+            navigator.vibrate?.(pattern);
+        }
+    }
+
+    hapticsCorrect() {
+        if (!this._vibrationEnabled) return;
+        if (Capacitor.isNativePlatform()) {
+            Haptics.notification({ type: NotificationType.Success }).catch(() => {});
+        } else {
+            navigator.vibrate?.(100);
+        }
+    }
+
+    hapticsWrong() {
+        if (!this._vibrationEnabled) return;
+        if (Capacitor.isNativePlatform()) {
+            Haptics.notification({ type: NotificationType.Error }).catch(() => {});
+        } else {
+            navigator.vibrate?.([100, 50, 100]);
+        }
+    }
+
+    hapticsSelect() {
+        if (!this._vibrationEnabled) return;
+        if (Capacitor.isNativePlatform()) {
+            Haptics.impact({ style: ImpactStyle.Light }).catch(() => {});
+        } else {
+            navigator.vibrate?.(30);
+        }
     }
 }
 
