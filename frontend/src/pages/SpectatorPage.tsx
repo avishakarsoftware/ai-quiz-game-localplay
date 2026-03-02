@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
-import { WS_URL } from '../config';
+import { WS_URL, API_URL } from '../config';
 import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
@@ -16,6 +16,7 @@ interface SpectatorQuestion {
     id: number;
     text: string;
     options: string[];
+    image_url?: string;
 }
 
 export default function SpectatorPage() {
@@ -40,6 +41,11 @@ export default function SpectatorPage() {
     const [podiumReveal, setPodiumReveal] = useState(0);
     const [isBonus, setIsBonus] = useState(false);
     const [showBonusSplash, setShowBonusSplash] = useState(false);
+    const [showFullscreenPrompt, setShowFullscreenPrompt] = useState(true);
+    const wsRef = useRef<WebSocket | null>(null);
+    const reconnectDelayRef = useRef(2000);
+    const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const roomClosedRef = useRef(false);
 
     // In Capacitor, window.location.origin is capacitor://localhost — use the web URL
     const isCapacitor = window.location.protocol === 'capacitor:' || (window.location.hostname === 'localhost' && !window.location.port);
@@ -99,14 +105,21 @@ export default function SpectatorPage() {
         document.head.appendChild(script);
     }, [setSearchParams]);
 
-    useEffect(() => {
+    const connectWs = useRef<() => void>(() => {});
+    connectWs.current = () => {
         if (!joined || !roomCode) return;
         const clientId = `spectator-${Date.now()}`;
         const ws = new WebSocket(`${WS_URL}/ws/${roomCode}/${clientId}?spectator=true`);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+            reconnectDelayRef.current = 2000; // Reset backoff on success
+        };
 
         ws.onmessage = (event) => {
             let msg: Record<string, unknown>;
             try { msg = JSON.parse(event.data); } catch { return; }
+            if (msg.type === 'PING') return; // heartbeat — no action needed
             if (msg.type === 'SPECTATOR_SYNC') {
                 setPlayers(msg.players || []);
                 setPlayerCount(msg.player_count);
@@ -168,6 +181,8 @@ export default function SpectatorPage() {
                 setGameState(preDisconnectRef.current || 'LOBBY');
             }
             else if (msg.type === 'ROOM_CLOSED') {
+                roomClosedRef.current = true;
+                if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                 setGameState('DISCONNECTED');
             }
             else if (msg.type === 'ROOM_RESET') {
@@ -180,16 +195,29 @@ export default function SpectatorPage() {
         };
 
         ws.onerror = () => setGameState('ERROR');
-        ws.onclose = () => setGameState('DISCONNECTED');
+        ws.onclose = () => {
+            wsRef.current = null;
+            if (roomClosedRef.current) return; // Room explicitly closed — don't reconnect
+            setGameState('DISCONNECTED');
+            // Exponential backoff: 2s, 4s, 8s, 16s, capped at 30s
+            const delay = reconnectDelayRef.current;
+            reconnectDelayRef.current = Math.min(delay * 2, 30000);
+            reconnectTimerRef.current = setTimeout(() => connectWs.current(), delay);
+        };
+    };
 
-        return () => ws.close();
+    useEffect(() => {
+        if (!joined || !roomCode) return;
+        roomClosedRef.current = false;
+        reconnectDelayRef.current = 2000;
+        connectWs.current();
+        return () => {
+            if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+            wsRef.current?.close();
+        };
     }, [joined, roomCode]);
 
-    // Auto-fullscreen for spectator/TV view
-    useEffect(() => {
-        if (document.fullscreenElement) return;
-        document.documentElement.requestFullscreen?.().catch(() => {});
-    }, []);
+    // Fullscreen is triggered by user gesture (see overlay below)
 
     // Staggered podium reveal
     useEffect(() => {
@@ -264,16 +292,46 @@ export default function SpectatorPage() {
             <div className="content-wrapper">
                 <div className="spectator-layout" style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 60px' }}>
 
+                    {showFullscreenPrompt && (
+                        <div style={{
+                            position: 'fixed', inset: 0, zIndex: 100,
+                            background: 'rgba(0,0,0,0.85)',
+                            display: 'flex', flexDirection: 'column',
+                            alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer',
+                        }}
+                        onClick={() => {
+                            document.documentElement.requestFullscreen?.().catch(() => {});
+                            setShowFullscreenPrompt(false);
+                        }}>
+                            <div style={{ fontSize: '5rem', marginBottom: 24 }}>📺</div>
+                            <h1 className="hero-title" style={{ fontSize: '2.5rem', marginBottom: 12 }}>Spectator Mode</h1>
+                            <p style={{ fontSize: '1.25rem', color: 'var(--text-secondary)', marginBottom: 32 }}>
+                                Tap anywhere to enter fullscreen
+                            </p>
+                            <button className="btn btn-primary btn-glow" style={{ fontSize: '1.25rem', padding: '16px 48px' }}>
+                                Enter Fullscreen
+                            </button>
+                            <button
+                                className="btn btn-secondary mt-4"
+                                onClick={(e) => { e.stopPropagation(); setShowFullscreenPrompt(false); }}
+                                style={{ fontSize: '1rem' }}
+                            >
+                                Skip
+                            </button>
+                        </div>
+                    )}
+
                     {(gameState === 'CONNECTING' || gameState === 'ERROR' || gameState === 'DISCONNECTED') && (
                         <div className="flex-1 flex flex-col items-center justify-center animate-in">
                             <div className="status-screen-icon mb-4" style={{ width: 80, height: 80, fontSize: 36 }}>
                                 {gameState === 'CONNECTING' ? '📡' : gameState === 'ERROR' ? '⚠️' : '🔌'}
                             </div>
                             <h1 className="hero-title mb-2">
-                                {gameState === 'CONNECTING' ? 'Connecting...' : gameState === 'ERROR' ? 'Connection Error' : 'Disconnected'}
+                                {gameState === 'CONNECTING' ? 'Connecting...' : gameState === 'ERROR' ? 'Connection Error' : roomClosedRef.current ? 'Disconnected' : 'Reconnecting...'}
                             </h1>
                             <p className="text-[--text-tertiary] text-lg">Room: {roomCode}</p>
-                            {gameState === 'CONNECTING' && (
+                            {(gameState === 'CONNECTING' || (gameState === 'DISCONNECTED' && !roomClosedRef.current)) && (
                                 <div className="flex gap-1.5 mt-6">
                                     {[0, 1, 2].map((i) => (
                                         <div key={i} className="w-2.5 h-2.5 bg-[--accent-primary] rounded-full animate-bounce"
@@ -283,7 +341,7 @@ export default function SpectatorPage() {
                             )}
                             {(gameState === 'ERROR' || gameState === 'DISCONNECTED') && (
                                 <button
-                                    onClick={() => { setJoined(false); setRoomInput(''); setSearchParams({}); }}
+                                    onClick={() => { if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current); setJoined(false); setRoomInput(''); setSearchParams({}); }}
                                     className="btn btn-secondary mt-6"
                                     style={{ fontSize: '1.125rem' }}
                                 >
@@ -359,7 +417,8 @@ export default function SpectatorPage() {
                                     />
                                 </div>
                             </div>
-                            <div className="question-card mb-8" style={{ padding: '48px', fontSize: '24px' }}>
+                            <div className={`question-card mb-8 ${question.image_url ? 'has-image' : ''}`}
+                                style={{ padding: '48px', fontSize: '24px', ...(question.image_url ? { backgroundImage: `url(${API_URL}${question.image_url})` } : {}) }}>
                                 <p className="question-text" style={{ fontSize: '32px', fontWeight: 700 }}>{question.text}</p>
                             </div>
                             <div className={question.options.length === 2 ? 'answer-grid-tf' : 'answer-grid'} style={{ gap: '16px' }}>
@@ -395,10 +454,11 @@ export default function SpectatorPage() {
 
                             {podiumReveal >= 4 && leaderboard[0] && (
                                 (() => {
-                                    const isTied = leaderboard[1] && leaderboard[0].score === leaderboard[1].score;
-                                    return isTied ? (
+                                    const topScore = leaderboard[0].score;
+                                    const tiedCount = leaderboard.filter(p => p.score === topScore).length;
+                                    return tiedCount > 1 ? (
                                         <div className="champion-label" style={{ position: 'relative', zIndex: 11, fontSize: 28 }}>
-                                            <span className="gold-shimmer">It's a Tie!</span>
+                                            <span className="gold-shimmer">{tiedCount === 2 ? "It's a Tie!" : `${tiedCount}-Way Tie!`}</span>
                                         </div>
                                     ) : (
                                         <div className="champion-label" style={{ position: 'relative', zIndex: 11, fontSize: 28 }}>
@@ -421,8 +481,8 @@ export default function SpectatorPage() {
                                     </div>
                                 )}
                                 {leaderboard[0] && (
-                                    <div className={`podium-place podium-1 ${podiumReveal >= 3 ? '' : 'podium-hidden'} ${podiumReveal >= 4 && !(leaderboard[1] && leaderboard[0].score === leaderboard[1].score) ? 'victory-glow' : ''}`}>
-                                        {podiumReveal >= 4 && !(leaderboard[1] && leaderboard[0].score === leaderboard[1].score) && <span className="crown-bounce" style={{ fontSize: 40, marginBottom: 4 }}>&#x1F451;</span>}
+                                    <div className={`podium-place podium-1 ${podiumReveal >= 3 ? '' : 'podium-hidden'} ${podiumReveal >= 4 && leaderboard.filter(p => p.score === leaderboard[0].score).length === 1 ? 'victory-glow' : ''}`}>
+                                        {podiumReveal >= 4 && leaderboard.filter(p => p.score === leaderboard[0].score).length === 1 && <span className="crown-bounce" style={{ fontSize: 40, marginBottom: 4 }}>&#x1F451;</span>}
                                         <div className="w-16 h-16 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: '#FFD700' }}>
                                             <span style={{ fontSize: '2.5rem', lineHeight: 1 }}>{leaderboard[0].avatar || leaderboard[0].nickname.slice(0, 2).toUpperCase()}</span>
                                         </div>

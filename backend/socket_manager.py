@@ -2,6 +2,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from typing import Dict, List, Optional
 import json
 import hmac
+import secrets
 import time
 import asyncio
 import logging
@@ -43,6 +44,8 @@ class Room:
         self.teams: Dict[str, str] = {}  # nickname -> team_name
         # Power-ups
         self.power_ups: Dict[str, dict] = {}  # nickname -> {double_points: bool, fifty_fifty: bool}
+        # Session tokens for nickname ownership
+        self.player_tokens: Dict[str, str] = {}  # nickname -> session_token
         # Bonus rounds
         self.bonus_questions: set = set()  # indices of bonus round questions (2x points)
         self.locked: bool = False  # True = no new players can join
@@ -70,6 +73,7 @@ class Room:
             nickname = self.players[cid]["nickname"]
             self.teams.pop(nickname, None)
             self.power_ups.pop(nickname, None)
+            self.player_tokens.pop(nickname, None)
             del self.players[cid]
 
         for client_id in self.players:
@@ -262,7 +266,14 @@ class SocketManager:
                     sync["is_bonus"] = room.current_question_index in room.bonus_questions
                 await websocket.send_json(sync)
                 while True:
-                    await websocket.receive_text()  # spectators are read-only
+                    try:
+                        await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
+                    except asyncio.TimeoutError:
+                        # No message in 60s — ping to check liveness
+                        try:
+                            await websocket.send_json({"type": "PING"})
+                        except Exception:
+                            break  # connection is dead
             except (WebSocketDisconnect, Exception):
                 pass
             finally:
@@ -488,6 +499,14 @@ class SocketManager:
 
                 # Check for reconnection (disconnected mid-game)
                 if nickname in room.disconnected_players:
+                    # Verify session token to prevent nickname hijacking
+                    provided_token = message.get("session_token", "")
+                    expected_token = room.player_tokens.get(nickname, "")
+                    if expected_token and not hmac.compare_digest(str(provided_token), expected_token):
+                        ws = room.connections.get(client_id)
+                        if ws:
+                            await ws.send_json({"type": "ERROR", "message": "Nickname is taken"})
+                        return
                     saved = room.disconnected_players.pop(nickname)
                     room.players[client_id] = {
                         "nickname": nickname,
@@ -518,6 +537,15 @@ class SocketManager:
                             state_info["question"] = player_question
                             state_info["time_limit"] = room.time_limit
                             state_info["is_bonus"] = room.current_question_index in room.bonus_questions
+                            # Include fifty-fifty state if it was used
+                            pups = room.power_ups.get(nickname, {})
+                            if "fifty_fifty_remove_indices" in pups:
+                                state_info["remove_indices"] = pups["fifty_fifty_remove_indices"]
+                        state_info["session_token"] = room.player_tokens.get(nickname, "")
+                        state_info["power_ups"] = {
+                            "double_points": room.power_ups.get(nickname, {}).get("double_points", False),
+                            "fifty_fifty": room.power_ups.get(nickname, {}).get("fifty_fifty", False),
+                        }
                         await ws.send_json(state_info)
                     await room.broadcast({
                         "type": "PLAYER_RECONNECTED",
@@ -535,6 +563,14 @@ class SocketManager:
                         break
 
                 if existing_id:
+                    # Verify session token to prevent nickname hijacking
+                    provided_token = message.get("session_token", "")
+                    expected_token = room.player_tokens.get(nickname, "")
+                    if expected_token and not hmac.compare_digest(str(provided_token), expected_token):
+                        ws = room.connections.get(client_id)
+                        if ws:
+                            await ws.send_json({"type": "ERROR", "message": "Nickname is taken"})
+                        return
                     # Kick the old connection and let the new one take over
                     old_ws = room.connections.pop(existing_id, None)
                     if old_ws:
@@ -567,6 +603,15 @@ class SocketManager:
                             state_info["question"] = player_question
                             state_info["time_limit"] = room.time_limit
                             state_info["is_bonus"] = room.current_question_index in room.bonus_questions
+                            # Include fifty-fifty state if it was used
+                            pups = room.power_ups.get(nickname, {})
+                            if "fifty_fifty_remove_indices" in pups:
+                                state_info["remove_indices"] = pups["fifty_fifty_remove_indices"]
+                        state_info["session_token"] = room.player_tokens.get(nickname, "")
+                        state_info["power_ups"] = {
+                            "double_points": room.power_ups.get(nickname, {}).get("double_points", False),
+                            "fifty_fifty": room.power_ups.get(nickname, {}).get("fifty_fifty", False),
+                        }
                         await ws.send_json(state_info)
                     return
 
@@ -600,10 +645,13 @@ class SocketManager:
                     room.teams[nickname] = team
                 # Initialize power-ups
                 room.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
+                # Generate session token for nickname ownership
+                player_session_token = secrets.token_urlsafe(16)
+                room.player_tokens[nickname] = player_session_token
                 # Confirm join to the player (after validation succeeded)
                 ws = room.connections.get(client_id)
                 if ws:
-                    await ws.send_json({"type": "JOINED_ROOM", "room_code": room.room_code})
+                    await ws.send_json({"type": "JOINED_ROOM", "room_code": room.room_code, "session_token": player_session_token})
                 await room.broadcast({
                     "type": "PLAYER_JOINED",
                     "nickname": nickname,
@@ -730,6 +778,7 @@ class SocketManager:
                         wrong_indices = [i for i in range(len(question["options"])) if i != correct_idx]
                         import random
                         remove = random.sample(wrong_indices, min(2, len(wrong_indices)))
+                        pups["fifty_fifty_remove_indices"] = remove
                         await ws.send_json({
                             "type": "POWER_UP_ACTIVATED",
                             "power_up": "fifty_fifty",
@@ -809,6 +858,11 @@ class SocketManager:
         room.previous_leaderboard = self.get_leaderboard(room)
 
         room.answered_players = set()
+
+        # Clear per-question power-up state from previous question
+        for pups in room.power_ups.values():
+            pups.pop("fifty_fifty_remove_indices", None)
+            pups.pop("double_points_active", None)
 
         question = room.quiz["questions"][room.current_question_index]
         player_question = {k: v for k, v in question.items() if k != "answer_index"}

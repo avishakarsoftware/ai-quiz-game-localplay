@@ -22,7 +22,7 @@ interface PlayerQuestion {
 function getSavedSession() {
     try {
         const raw = sessionStorage.getItem('localplay_session');
-        if (raw) return JSON.parse(raw) as { roomCode: string; nickname: string; team: string; avatar: string };
+        if (raw) return JSON.parse(raw) as { roomCode: string; nickname: string; team: string; avatar: string; sessionToken?: string };
     } catch { /* corrupted session data */ }
     return null;
 }
@@ -84,7 +84,8 @@ export default function PlayerPage() {
 
         ws.onopen = () => {
             track('player_joined', { room_code: roomCode, nickname, has_team: !!team });
-            ws.send(JSON.stringify({ type: 'JOIN', nickname, team: team || undefined, avatar }));
+            const savedSession = getSavedSession();
+            ws.send(JSON.stringify({ type: 'JOIN', nickname, team: team || undefined, avatar, session_token: savedSession?.sessionToken || '' }));
         };
 
         ws.onmessage = (event) => {
@@ -93,7 +94,7 @@ export default function PlayerPage() {
             if (msg.type === 'ERROR') {
                 setError(msg.message as string);
                 // If room doesn't exist, stop reconnection attempts
-                if (msg.message === 'Room not found' || msg.message === 'Room is full' || msg.message === 'Room is locked by the host') {
+                if (msg.message === 'Room not found' || msg.message === 'Room is full' || msg.message === 'Room is locked by the host' || msg.message === 'Nickname is taken') {
                     kickedRef.current = true;
                     wsRef.current?.close();
                     wsRef.current = null;
@@ -117,13 +118,15 @@ export default function PlayerPage() {
                 return;
             }
             if (msg.type === 'JOINED_ROOM') {
-                sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode, nickname, team, avatar }));
+                sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode, nickname, team, avatar, sessionToken: msg.session_token || '' }));
                 setState('LOBBY');
             }
             if (msg.type === 'RECONNECTED') {
-                sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode, nickname, team, avatar }));
+                const token = (msg.session_token as string) || getSavedSession()?.sessionToken || '';
+                sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode, nickname, team, avatar, sessionToken: token }));
                 setQuestionNumber(msg.question_number);
                 setTotalQuestions(msg.total_questions);
+                if (msg.power_ups) setPowerUps(msg.power_ups as PowerUps);
                 if (msg.state === 'LOBBY') {
                     setState('LOBBY');
                 } else if (msg.state === 'QUESTION' && msg.question) {
@@ -134,7 +137,7 @@ export default function PlayerPage() {
                     setIsCorrect(null);
                     setPointsEarned(0);
                     setCorrectAnswer(null);
-                    setHiddenOptions([]);
+                    setHiddenOptions(msg.remove_indices ? (msg.remove_indices as number[]) : []);
                     setIsBonus(msg.is_bonus || false);
                     setState('QUESTION');
                 } else {
