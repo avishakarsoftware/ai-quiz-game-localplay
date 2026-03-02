@@ -8,20 +8,29 @@ interface CastButtonProps {
   roomCode: string;
 }
 
+function isIOS(): boolean {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
 export default function CastButton({ roomCode }: CastButtonProps) {
   const [castSdkReady, setCastSdkReady] = useState(false);
   const [casting, setCasting] = useState(false);
-  const [showFallback, setShowFallback] = useState(false);
+  const [showTvTip, setShowTvTip] = useState(false);
   const sdkLoaded = useRef(false);
+  const onApple = isIOS();
 
   // In Capacitor, window.location.origin is capacitor://localhost — use the web URL
   const isCapacitor = window.location.protocol === 'capacitor:' || (window.location.hostname === 'localhost' && !window.location.port);
-  const tvUrl = isCapacitor
-    ? `${import.meta.env.VITE_WEB_URL || 'https://games.revelryapp.me/quiz/'}spectator`
-    : `${window.location.origin}${import.meta.env.BASE_URL}spectator`;
+  const baseUrl = isCapacitor
+    ? (import.meta.env.VITE_WEB_URL || 'https://games.revelryapp.me/quiz/')
+    : `${window.location.origin}${import.meta.env.BASE_URL}`;
+  const tvUrl = `${baseUrl}tv/${roomCode}`;
 
+  // Skip Cast SDK entirely on iOS — it will never work
   // Dynamically load Cast Sender SDK (not in index.html to avoid conflict with receiver on spectator page)
   useEffect(() => {
+    if (onApple) return;
     let listener: ((event: cast.framework.CastStateEvent) => void) | null = null;
 
     // If the Cast framework is already loaded (e.g. component remount after game reset),
@@ -117,6 +126,10 @@ export default function CastButton({ roomCode }: CastButtonProps) {
   }, [casting, roomCode]);
 
   const handleCast = useCallback(async () => {
+    if (onApple) {
+      setShowTvTip(prev => !prev);
+      return;
+    }
     if (castSdkReady) {
       try {
         const context = cast.framework.CastContext.getInstance();
@@ -129,9 +142,9 @@ export default function CastButton({ roomCode }: CastButtonProps) {
         }
       }
     } else {
-      setShowFallback(prev => !prev);
+      setShowTvTip(prev => !prev);
     }
-  }, [castSdkReady]);
+  }, [castSdkReady, onApple]);
 
   return (
     <div>
@@ -141,15 +154,26 @@ export default function CastButton({ roomCode }: CastButtonProps) {
         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
       >
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style={{ flexShrink: 0 }}>
-          <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+          <path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z"/>
         </svg>
-        {casting ? 'Casting to TV' : 'Cast to TV'}
+        {casting ? 'Casting to TV' : 'Display on TV'}
       </button>
-      {showFallback && !castSdkReady && (
+      {showTvTip && !casting && (
         <div className="text-center mt-3" style={{ padding: '12px 16px', borderRadius: 12, background: 'var(--bg-secondary)' }}>
-          <p className="text-[--text-secondary] text-sm mb-1">Casting not available on this browser</p>
-          <p className="text-[--text-tertiary] text-xs mb-2">Open this URL on your TV:</p>
-          <p className="font-bold text-lg" style={{ color: 'var(--accent-primary)', letterSpacing: '0.02em' }}>{tvUrl}</p>
+          {onApple ? (
+            <>
+              <p className="text-[--text-secondary] text-sm mb-2">Two ways to display on TV:</p>
+              <p className="text-[--text-tertiary] text-xs mb-1"><strong>1. AirPlay Mirror</strong> — swipe into Control Center and tap Screen Mirroring</p>
+              <p className="text-[--text-tertiary] text-xs mb-3"><strong>2. Open on TV</strong> — type this URL in your TV browser:</p>
+              <p className="font-bold text-lg" style={{ color: 'var(--accent-primary)', letterSpacing: '0.02em' }}>{tvUrl}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-[--text-secondary] text-sm mb-1">Casting not available on this browser</p>
+              <p className="text-[--text-tertiary] text-xs mb-1"><strong>Mirror your screen</strong> or type this URL on your TV:</p>
+              <p className="font-bold text-lg" style={{ color: 'var(--accent-primary)', letterSpacing: '0.02em' }}>{tvUrl}</p>
+            </>
+          )}
         </div>
       )}
     </div>

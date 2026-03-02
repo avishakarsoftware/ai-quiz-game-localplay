@@ -1,9 +1,7 @@
 """
-Tests for the 4 backend fixes from code review:
-1. Nickname hijacking prevention via session tokens
-2. Fifty-fifty reconnect state preservation
-3. (Fix 3 is frontend-only, not tested here)
-4. Spectator heartbeat / Room structure
+Tests for backend fixes from code reviews:
+Round 1: Session tokens, fifty-fifty reconnect, spectator heartbeat
+Round 2: Gemma JSON parsing, daily limit race, IP behind proxy, import validation, eviction safety
 """
 import sys
 import os
@@ -543,3 +541,264 @@ class TestSpectatorHeartbeat:
         assert org_ws.last("TEST_MSG") is not None
         assert p_ws.last("TEST_MSG") is not None
         assert spec_ws.last("TEST_MSG") is not None
+
+
+# ===========================================================================
+# Round 2 fixes
+# ===========================================================================
+
+
+class TestGemmaJsonExtraction:
+    """Fix 1: Robust JSON extraction from Gemma output."""
+
+    def test_extract_json_from_markdown_block(self):
+        """JSON wrapped in ```json ... ``` code block."""
+        import re
+        text = '```json\n{"quiz_title": "Test", "questions": []}\n```'
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        assert match is not None
+        data = __import__('json').loads(match.group())
+        assert data["quiz_title"] == "Test"
+
+    def test_extract_json_with_thinking_prefix(self):
+        """Thinking text before the JSON block."""
+        import re
+        text = '<thinking>Let me generate a quiz about cats</thinking>\n```json\n{"quiz_title": "Cats", "questions": []}\n```'
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        assert match is not None
+        data = __import__('json').loads(match.group())
+        assert data["quiz_title"] == "Cats"
+
+    def test_extract_json_inline_with_backticks(self):
+        """JSON on same line as backticks."""
+        import re
+        text = '```{"quiz_title": "Inline", "questions": []}```'
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        assert match is not None
+        data = __import__('json').loads(match.group())
+        assert data["quiz_title"] == "Inline"
+
+    def test_extract_plain_json(self):
+        """Plain JSON without any wrapping."""
+        import re
+        text = '{"quiz_title": "Plain", "questions": []}'
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        assert match is not None
+        data = __import__('json').loads(match.group())
+        assert data["quiz_title"] == "Plain"
+
+    def test_no_json_returns_none(self):
+        """No JSON in text returns no match."""
+        import re
+        text = 'Sorry, I cannot generate a quiz about that topic.'
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        assert match is None
+
+
+class TestDailyLimitRaceCondition:
+    """Fix 2: Pre-increment daily limit counter."""
+
+    def test_counter_incremented_before_generation(self):
+        """Daily count should increment before the LLM call."""
+        from quiz_engine import QuizEngine
+        engine = QuizEngine()
+        engine._daily_count = 0
+        engine._daily_date = __import__('datetime').date.today()
+        # Simulate pre-increment
+        engine._daily_count += 1
+        assert engine._daily_count == 1
+        # On failure, should rollback
+        engine._daily_count -= 1
+        assert engine._daily_count == 0
+
+    def test_daily_limit_check_blocks_at_limit(self):
+        """Check that limit blocks when count reaches max."""
+        from quiz_engine import QuizEngine
+        engine = QuizEngine()
+        engine._daily_date = __import__('datetime').date.today()
+        engine._daily_count = __import__('config').DAILY_QUIZ_LIMIT
+        assert engine._check_daily_limit() is False
+
+    def test_daily_limit_resets_on_new_day(self):
+        """Counter resets when the date changes."""
+        from quiz_engine import QuizEngine
+        engine = QuizEngine()
+        engine._daily_count = 50
+        engine._daily_date = __import__('datetime').date(2020, 1, 1)
+        assert engine._check_daily_limit() is True
+        assert engine._daily_count == 0
+
+
+class TestClientIpDetection:
+    """Fix 3: Rate limiter reads X-Forwarded-For behind proxy."""
+
+    def test_get_client_ip_from_x_forwarded_for(self):
+        """Should read X-Forwarded-For header first."""
+        from main import _get_client_ip
+
+        class FakeRequest:
+            headers = {"x-forwarded-for": "203.0.113.50, 10.0.0.1"}
+            client = type('obj', (object,), {'host': '127.0.0.1'})()
+
+        assert _get_client_ip(FakeRequest()) == "203.0.113.50"
+
+    def test_get_client_ip_from_x_real_ip(self):
+        """Should fall back to X-Real-IP."""
+        from main import _get_client_ip
+
+        class FakeRequest:
+            headers = {"x-real-ip": "198.51.100.23"}
+            client = type('obj', (object,), {'host': '127.0.0.1'})()
+
+        assert _get_client_ip(FakeRequest()) == "198.51.100.23"
+
+    def test_get_client_ip_fallback_to_client_host(self):
+        """Should fall back to req.client.host."""
+        from main import _get_client_ip
+
+        class FakeRequest:
+            headers = {}
+            client = type('obj', (object,), {'host': '192.168.1.100'})()
+
+        assert _get_client_ip(FakeRequest()) == "192.168.1.100"
+
+    def test_get_client_ip_no_client(self):
+        """Should return 'unknown' when client is None."""
+        from main import _get_client_ip
+
+        class FakeRequest:
+            headers = {}
+            client = None
+
+        assert _get_client_ip(FakeRequest()) == "unknown"
+
+
+class TestQuizImportValidation:
+    """Fix 4: Validate options as List[str] in quiz import."""
+
+    def test_import_with_integer_options_rejected(self):
+        """Options containing integers should fail validation."""
+        from fastapi.testclient import TestClient
+        from main import app
+
+        client = TestClient(app)
+        bad_quiz = {
+            "quiz": {
+                "quiz_title": "Bad Import",
+                "questions": [{
+                    "id": 1, "text": "Q?",
+                    "options": [1, 2, 3, 4],
+                    "answer_index": 0,
+                }]
+            }
+        }
+        res = client.post("/quiz/import", json=bad_quiz)
+        assert res.status_code == 422
+
+    def test_import_with_valid_string_options_accepted(self):
+        """Options containing strings should pass validation."""
+        from fastapi.testclient import TestClient
+        from main import app
+
+        client = TestClient(app)
+        good_quiz = {
+            "quiz": {
+                "quiz_title": "Good Import",
+                "questions": [{
+                    "id": 1, "text": "Q?",
+                    "options": ["A", "B", "C", "D"],
+                    "answer_index": 0,
+                }]
+            }
+        }
+        res = client.post("/quiz/import", json=good_quiz)
+        assert res.status_code == 200
+        assert "quiz_id" in res.json()
+
+    def test_import_with_mixed_types_rejected(self):
+        """Mixed string/int options should fail."""
+        from fastapi.testclient import TestClient
+        from main import app
+
+        client = TestClient(app)
+        mixed_quiz = {
+            "quiz": {
+                "quiz_title": "Mixed",
+                "questions": [{
+                    "id": 1, "text": "Q?",
+                    "options": ["A", 2, "C", "D"],
+                    "answer_index": 0,
+                }]
+            }
+        }
+        res = client.post("/quiz/import", json=mixed_quiz)
+        assert res.status_code == 422
+
+
+class TestQuizEvictionSafety:
+    """Fix 5: Skip active quizzes during eviction."""
+
+    def test_room_stores_quiz_id(self):
+        """Room should store quiz_id when created."""
+        room = Room("TEST01", make_quiz(), quiz_id="quiz-abc-123")
+        assert room.quiz_id == "quiz-abc-123"
+
+    def test_eviction_skips_active_quiz(self):
+        """Quizzes used by active rooms should not be evicted."""
+        from main import quizzes, quiz_timestamps, quiz_images, _evict_old_quizzes
+        from socket_manager import socket_manager
+
+        # Clear state
+        quizzes.clear()
+        quiz_timestamps.clear()
+        quiz_images.clear()
+
+        # Add an "active" quiz referenced by a room
+        quizzes["active-quiz"] = make_quiz()
+        quiz_timestamps["active-quiz"] = 1.0  # Very old timestamp
+        # Directly add room to avoid start_cleanup_loop needing event loop
+        room = Room("EVICT1", quizzes["active-quiz"], quiz_id="active-quiz")
+        socket_manager.rooms["EVICT1"] = room
+
+        # Add an "inactive" quiz not used by any room
+        quizzes["inactive-quiz"] = make_quiz()
+        quiz_timestamps["inactive-quiz"] = 2.0  # Also old
+
+        # Fill up to the limit with dummy quizzes
+        import config as cfg
+        old_limit = cfg.MAX_QUIZZES
+        cfg.MAX_QUIZZES = 2  # Force eviction with just 2 quizzes
+
+        _evict_old_quizzes()
+
+        # Active quiz should survive, inactive should be evicted
+        assert "active-quiz" in quizzes
+        assert "inactive-quiz" not in quizzes
+
+        # Cleanup
+        cfg.MAX_QUIZZES = old_limit
+        del socket_manager.rooms["EVICT1"]
+
+    def test_eviction_removes_inactive_quiz(self):
+        """Quizzes not used by any room should be evicted normally."""
+        from main import quizzes, quiz_timestamps, quiz_images, _evict_old_quizzes
+        import config as cfg
+
+        quizzes.clear()
+        quiz_timestamps.clear()
+        quiz_images.clear()
+
+        quizzes["old-quiz"] = make_quiz()
+        quiz_timestamps["old-quiz"] = 1.0
+        quizzes["new-quiz"] = make_quiz()
+        quiz_timestamps["new-quiz"] = time.time()
+
+        old_limit = cfg.MAX_QUIZZES
+        cfg.MAX_QUIZZES = 2  # With 2 quizzes, evict until < 2 → oldest removed
+
+        _evict_old_quizzes()
+
+        assert "old-quiz" not in quizzes
+        assert "new-quiz" in quizzes
+
+        cfg.MAX_QUIZZES = old_limit

@@ -1909,6 +1909,7 @@ body {
 .spectator-layout {
     height: 100%;
     max-height: 100dvh;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     justify-content: center;

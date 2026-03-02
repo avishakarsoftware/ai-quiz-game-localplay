@@ -173,9 +173,10 @@ async def _generate_gemini(prompt: str, difficulty: str, num_questions: int) -> 
             response.raise_for_status()
             result = response.json()
             text = result["candidates"][0]["content"]["parts"][0]["text"]
-            # Gemma may wrap JSON in markdown code blocks
-            if text.strip().startswith("```"):
-                text = text.strip().split("\n", 1)[1].rsplit("```", 1)[0]
+            # Extract first JSON object — handles thinking text, markdown blocks, etc.
+            json_match = re.search(r'\{.*\}', text, re.DOTALL)
+            if json_match:
+                text = json_match.group()
             quiz_data = json.loads(text)
             if _validate_quiz(quiz_data, attempt):
                 quiz_data = _sanitize_quiz(quiz_data)
@@ -287,11 +288,16 @@ class QuizEngine:
             return None
 
         logger.info("Generating quiz with provider '%s' for prompt: '%s'", provider, prompt[:100])
-        result = await gen_fn(prompt, difficulty, num_questions)
-        if result:
-            self._daily_count += 1
-            logger.info("Daily quiz count: %d/%d", self._daily_count, config.DAILY_QUIZ_LIMIT)
-        else:
+        # Pre-increment to prevent race condition with concurrent requests
+        self._daily_count += 1
+        logger.info("Daily quiz count: %d/%d", self._daily_count, config.DAILY_QUIZ_LIMIT)
+        try:
+            result = await gen_fn(prompt, difficulty, num_questions)
+        except Exception:
+            self._daily_count -= 1  # Roll back on failure
+            raise
+        if not result:
+            self._daily_count -= 1  # Roll back if provider returned None
             logger.error("Provider '%s' failed to generate quiz for: '%s'", provider, prompt[:100])
         return result
 

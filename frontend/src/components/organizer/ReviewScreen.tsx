@@ -31,6 +31,7 @@ export default function ReviewScreen({
     const swipeProgress = useSwipeBack(onBack);
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editQuestion, setEditQuestion] = useState<Question | null>(null);
+    const [showAnswers, setShowAnswers] = useState(false);
 
     const startEdit = (q: Question) => {
         setEditingId(q.id);
@@ -76,7 +77,17 @@ export default function ReviewScreen({
             <div className="review-header mb-4">
                 <div className="review-header-accent" />
                 <h1 className="hero-title" style={{ textAlign: 'center', marginBottom: 8 }}>{quiz.quiz_title}</h1>
-                <p className="text-center text-[--text-tertiary] text-base">{quiz.questions.length} questions ready to go</p>
+                <div className="flex items-center justify-center gap-3">
+                    <p className="text-[--text-tertiary] text-base">{quiz.questions.length} questions ready to go</p>
+                    <button
+                        onClick={() => setShowAnswers(!showAnswers)}
+                        className="btn btn-secondary"
+                        style={{ padding: '4px 12px', fontSize: 13, minWidth: 0 }}
+                        title={showAnswers ? 'Hide answers (safe for screen mirroring)' : 'Show correct answers'}
+                    >
+                        {showAnswers ? '👁 Hide' : '👁‍🗨 Show'} Answers
+                    </button>
+                </div>
             </div>
 
             {/* Time per question */}
@@ -175,7 +186,7 @@ export default function ReviewScreen({
                                     <div className={`grid gap-2 ${q.options.length === 2 ? 'grid-cols-1' : 'grid-cols-2'}`}>
                                         {q.options.map((opt, j) => {
                                             const style = ANSWER_STYLES[j];
-                                            const isCorrect = j === q.answer_index;
+                                            const isCorrect = showAnswers && j === q.answer_index;
                                             return (
                                                 <div
                                                     key={j}

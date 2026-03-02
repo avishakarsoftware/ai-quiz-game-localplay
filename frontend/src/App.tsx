@@ -17,6 +17,8 @@ function App() {
           <Route path="/join" element={<PlayerPage />} />
           <Route path="/join/:code" element={<PlayerPage />} />
           <Route path="/spectator" element={<SpectatorPage />} />
+          <Route path="/tv" element={<SpectatorPage />} />
+          <Route path="/tv/:code" element={<SpectatorPage />} />
         </Routes>
       </Router>
     </ErrorBoundary>

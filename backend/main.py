@@ -56,6 +56,17 @@ async def get_system_info():
 _rate_limit_store: Dict[str, list] = defaultdict(list)
 
 
+def _get_client_ip(req: Request) -> str:
+    """Get real client IP, accounting for reverse proxy headers."""
+    forwarded = req.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = req.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    return req.client.host if req.client else "unknown"
+
+
 def _check_rate_limit(client_ip: str) -> bool:
     """Return True if the request is allowed, False if rate-limited."""
     now = time.time()
@@ -78,17 +89,21 @@ quiz_images: Dict[str, Dict[int, str]] = {}  # quiz_id -> {question_id: base64_i
 
 def _evict_old_quizzes():
     """Evict oldest quizzes if storage limit exceeded, and expire stale ones."""
+    # Quiz IDs currently in use by active rooms — never evict these
+    active_quiz_ids = {room.quiz_id for room in socket_manager.rooms.values() if room.quiz_id}
     now = time.time()
-    # Remove expired quizzes
+    # Remove expired quizzes (skip active ones)
     expired = [qid for qid, ts in quiz_timestamps.items()
-               if now - ts > config.QUIZ_TTL_SECONDS]
+               if now - ts > config.QUIZ_TTL_SECONDS and qid not in active_quiz_ids]
     for qid in expired:
         quizzes.pop(qid, None)
         quiz_timestamps.pop(qid, None)
         quiz_images.pop(qid, None)
-    # If still over limit, evict oldest
+    # If still over limit, evict oldest (skip active ones)
     while len(quizzes) >= config.MAX_QUIZZES and quiz_timestamps:
         oldest_id = min(quiz_timestamps, key=quiz_timestamps.get)
+        if oldest_id in active_quiz_ids:
+            break  # All remaining quizzes are active — stop evicting
         quizzes.pop(oldest_id, None)
         quiz_timestamps.pop(oldest_id, None)
         quiz_images.pop(oldest_id, None)
@@ -175,7 +190,7 @@ async def get_providers():
 
 @app.post("/quiz/generate")
 async def generate_quiz(request: QuizRequest, req: Request):
-    client_ip = req.client.host if req.client else "unknown"
+    client_ip = _get_client_ip(req)
     if not _check_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating another quiz.")
     try:
@@ -314,7 +329,7 @@ async def create_room(request: RoomCreateRequest):
                 question["image_url"] = f"/quiz/{request.quiz_id}/image/{question['id']}"
 
     socket_manager.create_room(room_code, quiz_data, request.time_limit,
-                               organizer_token=organizer_token)
+                               organizer_token=organizer_token, quiz_id=request.quiz_id)
     logger.info("Room created: %s", room_code)
     return {"room_code": room_code, "organizer_token": organizer_token}
 
@@ -351,8 +366,10 @@ class QuizImportRequest(BaseModel):
         for q in v["questions"]:
             if not all(k in q for k in ("id", "text", "options", "answer_index")):
                 raise ValueError("Question missing required fields")
-            if len(q["options"]) not in (2, 4):
+            if not isinstance(q["options"], list) or len(q["options"]) not in (2, 4):
                 raise ValueError("Question must have 2 or 4 options")
+            if not all(isinstance(opt, str) for opt in q["options"]):
+                raise ValueError("Each option must be a string")
         return v
 
 

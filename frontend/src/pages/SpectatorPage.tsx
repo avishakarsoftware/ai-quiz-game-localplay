@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL, API_URL } from '../config';
 import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, ANSWER_STYLES } from '../types';
@@ -21,7 +21,8 @@ interface SpectatorQuestion {
 
 export default function SpectatorPage() {
     const [searchParams, setSearchParams] = useSearchParams();
-    const roomFromUrl = searchParams.get('room') || '';
+    const { code: routeCode } = useParams<{ code?: string }>();
+    const roomFromUrl = routeCode || searchParams.get('room') || '';
     const [roomCode, setRoomCode] = useState(roomFromUrl);
     const [roomInput, setRoomInput] = useState('');
     const [joined, setJoined] = useState(!!roomFromUrl);
@@ -290,7 +291,7 @@ export default function SpectatorPage() {
         <div className="spectator-root">
         <div className="app-container">
             <div className="content-wrapper">
-                <div className="spectator-layout" style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 60px' }}>
+                <div className="spectator-layout" style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 60px 16px' }}>
 
                     {showFullscreenPrompt && (
                         <div style={{
@@ -417,8 +418,8 @@ export default function SpectatorPage() {
                                     />
                                 </div>
                             </div>
-                            <div className={`question-card mb-8 ${question.image_url ? 'has-image' : ''}`}
-                                style={{ padding: '48px', fontSize: '24px', ...(question.image_url ? { backgroundImage: `url(${API_URL}${question.image_url})` } : {}) }}>
+                            <div className={`question-card mb-4 ${question.image_url ? 'has-image' : ''}`}
+                                style={{ padding: '32px 48px', fontSize: '24px', ...(question.image_url ? { backgroundImage: `url(${API_URL}${question.image_url})` } : {}) }}>
                                 <p className="question-text" style={{ fontSize: '32px', fontWeight: 700 }}>{question.text}</p>
                             </div>
                             <div className={question.options.length === 2 ? 'answer-grid-tf' : 'answer-grid'} style={{ gap: '16px' }}>

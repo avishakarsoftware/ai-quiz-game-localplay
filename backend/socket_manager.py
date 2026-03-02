@@ -15,9 +15,10 @@ logger = logging.getLogger(__name__)
 
 class Room:
     def __init__(self, room_code: str, quiz_data: dict, time_limit: int = 15,
-                 organizer_token: str = ""):
+                 organizer_token: str = "", quiz_id: str = ""):
         self.room_code = room_code
         self.quiz = quiz_data
+        self.quiz_id = quiz_id
         self.time_limit = time_limit
         self.organizer_token = organizer_token  # secret token for organizer auth
         self.players: Dict[str, dict] = {}  # socket_id -> {nickname, score, prev_rank, streak, ...}
@@ -208,8 +209,8 @@ class SocketManager:
             pass
 
     def create_room(self, room_code: str, quiz_data: dict, time_limit: int = 15,
-                    organizer_token: str = "") -> Room:
-        room = Room(room_code, quiz_data, time_limit, organizer_token=organizer_token)
+                    organizer_token: str = "", quiz_id: str = "") -> Room:
+        room = Room(room_code, quiz_data, time_limit, organizer_token=organizer_token, quiz_id=quiz_id)
         self.rooms[room_code] = room
         self.start_cleanup_loop()
         return room
