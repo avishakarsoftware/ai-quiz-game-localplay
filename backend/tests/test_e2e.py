@@ -320,7 +320,7 @@ class TestEndToEnd:
             games = res.json()["games"]
             assert len(games) == 1
             assert games[0]["room_code"] == room_code
-            print(f"Game history: {games[0]['quiz_title']}, {games[0]['player_count']} players")
+            print(f"Game history: {games[0]['game_title']}, {games[0]['player_count']} players")
 
             res = client.get(f"/history/{room_code}")
             assert res.status_code == 200

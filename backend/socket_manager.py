@@ -14,11 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 class Room:
-    def __init__(self, room_code: str, quiz_data: dict, time_limit: int = 15,
-                 organizer_token: str = "", quiz_id: str = ""):
+    def __init__(self, room_code: str, game_data: dict, time_limit: int = 15,
+                 organizer_token: str = "", content_id: str = "",
+                 game_type: str = "quiz"):
         self.room_code = room_code
-        self.quiz = quiz_data
-        self.quiz_id = quiz_id
+        self.quiz = game_data  # generic game content (quiz or WMLT)
+        self.content_id = content_id
+        self.game_type = game_type  # "quiz" or "wmlt"
         self.time_limit = time_limit
         self.organizer_token = organizer_token  # secret token for organizer auth
         self.players: Dict[str, dict] = {}  # socket_id -> {nickname, score, prev_rank, streak, ...}
@@ -50,11 +52,19 @@ class Room:
         # Bonus rounds
         self.bonus_questions: set = set()  # indices of bonus round questions (2x points)
         self.locked: bool = False  # True = no new players can join
+        # WMLT voting state
+        self.votes: Dict[str, str] = {}  # nickname -> voted_for_nickname (per-round)
 
-    def reset_for_new_game(self, new_quiz_data: dict, new_time_limit: int):
+    def reset_for_new_game(self, new_game_data: dict, new_time_limit: int,
+                           game_type: Optional[str] = None,
+                           content_id: Optional[str] = None):
         """Reset room for a new game round, keeping players connected."""
-        self.quiz = new_quiz_data
+        self.quiz = new_game_data
         self.time_limit = new_time_limit
+        if game_type:
+            self.game_type = game_type
+        if content_id:
+            self.content_id = content_id
 
         self.state = "LOBBY"
         self.locked = False
@@ -63,6 +73,7 @@ class Room:
         self.answered_players = set()
         self.previous_leaderboard = []
         self.answer_log = []
+        self.votes = {}
 
         if self.timer_task:
             self.timer_task.cancel()
@@ -96,6 +107,29 @@ class Room:
 
     def is_expired(self) -> bool:
         return time.time() - self.last_activity > config.ROOM_TTL_SECONDS
+
+    def total_rounds(self) -> int:
+        """Total number of rounds (questions for quiz, statements for WMLT)."""
+        if self.game_type == "wmlt":
+            return len(self.quiz.get("statements", []))
+        return len(self.quiz.get("questions", []))
+
+    def current_round_data(self) -> Optional[dict]:
+        """Current round item (question or statement)."""
+        idx = self.current_question_index
+        if idx < 0 or idx >= self.total_rounds():
+            return None
+        if self.game_type == "wmlt":
+            return self.quiz["statements"][idx]
+        return self.quiz["questions"][idx]
+
+    def game_title(self) -> str:
+        """Title of the game content."""
+        return self.quiz.get("game_title", self.quiz.get("quiz_title", "Untitled"))
+
+    def player_nicknames(self) -> List[str]:
+        """List of active player nicknames."""
+        return [p["nickname"] for p in self.players.values()]
 
     def _remove_connection(self, client_id: str):
         """Remove a connection. During active game, preserve player data for reconnection."""
@@ -131,14 +165,14 @@ class Room:
 
     async def broadcast(self, message: dict):
         disconnected = []
-        for client_id, ws in self.connections.items():
+        for client_id, ws in list(self.connections.items()):
             try:
                 await ws.send_json(message)
             except Exception:
                 disconnected.append(client_id)
         # Also broadcast to spectators
         spec_disconnected = []
-        for client_id, ws in self.spectators.items():
+        for client_id, ws in list(self.spectators.items()):
             try:
                 await ws.send_json(message)
             except Exception:
@@ -149,7 +183,7 @@ class Room:
     async def broadcast_to_players(self, message: dict):
         """Broadcast to players only, not organizer."""
         disconnected = []
-        for client_id, ws in self.connections.items():
+        for client_id, ws in list(self.connections.items()):
             if client_id in self.players:
                 try:
                     await ws.send_json(message)
@@ -208,9 +242,11 @@ class SocketManager:
         except asyncio.CancelledError:
             pass
 
-    def create_room(self, room_code: str, quiz_data: dict, time_limit: int = 15,
-                    organizer_token: str = "", quiz_id: str = "") -> Room:
-        room = Room(room_code, quiz_data, time_limit, organizer_token=organizer_token, quiz_id=quiz_id)
+    def create_room(self, room_code: str, game_data: dict, time_limit: int = 15,
+                    organizer_token: str = "", content_id: str = "",
+                    game_type: str = "quiz") -> Room:
+        room = Room(room_code, game_data, time_limit, organizer_token=organizer_token,
+                    content_id=content_id, game_type=game_type)
         self.rooms[room_code] = room
         self.start_cleanup_loop()
         return room
@@ -250,17 +286,22 @@ class SocketManager:
                     "type": "SPECTATOR_SYNC",
                     "room_code": room_code,
                     "state": room.state,
+                    "game_type": room.game_type,
                     "player_count": len(room.players),
                     "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
                     "question_number": room.current_question_index + 1,
-                    "total_questions": len(room.quiz["questions"]),
+                    "total_questions": room.total_rounds(),
                     "leaderboard": self.get_leaderboard(room),
                     "team_leaderboard": self.get_team_leaderboard(room),
                 }
-                # Include question data if game is in progress
-                if room.state == "QUESTION" and 0 <= room.current_question_index < len(room.quiz["questions"]):
-                    question = room.quiz["questions"][room.current_question_index]
-                    sync["question"] = {k: v for k, v in question.items() if k != "answer_index"}
+                # Include round data if game is in progress
+                if room.state == "QUESTION" and room.current_round_data() is not None:
+                    round_data = room.current_round_data()
+                    if room.game_type == "wmlt":
+                        sync["statement"] = round_data
+                        sync["vote_count"] = len(room.votes)
+                    else:
+                        sync["question"] = {k: v for k, v in round_data.items() if k != "answer_index"}
                     sync["time_limit"] = room.time_limit
                     elapsed = time.time() - room.question_start_time
                     sync["time_remaining"] = max(0, room.time_limit - int(elapsed))
@@ -370,13 +411,14 @@ class SocketManager:
             "type": "ORGANIZER_RECONNECTED",
             "room_code": room.room_code,
             "state": room.state,
+            "game_type": room.game_type,
             "player_count": len(room.players),
             "players": [
                 {"nickname": p["nickname"], "avatar": p.get("avatar", "")}
                 for p in room.players.values()
             ],
             "question_number": room.current_question_index + 1,
-            "total_questions": len(room.quiz["questions"]),
+            "total_questions": room.total_rounds(),
             "leaderboard": self.get_leaderboard(room),
             "team_leaderboard": self.get_team_leaderboard(room),
             "time_limit": room.time_limit,
@@ -385,9 +427,14 @@ class SocketManager:
         }
 
         if room.state == "QUESTION":
-            question = room.quiz["questions"][room.current_question_index]
-            sync["question"] = question
-            sync["answered_count"] = len(room.answered_players)
+            round_data = room.current_round_data()
+            if room.game_type == "wmlt":
+                sync["statement"] = round_data
+                sync["vote_count"] = len(room.votes)
+                sync["voted_count"] = len(room.votes)
+            else:
+                sync["question"] = round_data
+                sync["answered_count"] = len(room.answered_players)
             sync["is_bonus"] = room.current_question_index in room.bonus_questions
             elapsed = time.time() - room.question_start_time
             sync["time_remaining"] = max(0, room.time_limit - int(elapsed))
@@ -443,21 +490,41 @@ class SocketManager:
             elif msg_type == "RESET_ROOM":
                 if room.state != "PODIUM":
                     return
-                new_quiz_data = message.get("quiz_data")
-                new_time_limit = message.get("time_limit", room.time_limit)
-                if not new_quiz_data:
+                new_content_id = message.get("content_id", "")
+                new_game_type = message.get("game_type", room.game_type)
+                raw_time_limit = message.get("time_limit", room.time_limit)
+
+                # Validate time_limit
+                try:
+                    new_time_limit = int(raw_time_limit)
+                except (TypeError, ValueError):
+                    new_time_limit = room.time_limit
+                new_time_limit = max(5, min(60, new_time_limit))
+
+                # Resolve game data from content store by ID
+                from main import quizzes, mlt_scenarios
+                if new_game_type == "wmlt":
+                    new_game_data = mlt_scenarios.get(new_content_id)
+                else:
+                    new_game_data = quizzes.get(new_content_id)
+
+                if not new_game_data:
+                    logger.warning("RESET_ROOM rejected: content_id %s not found for room %s",
+                                   new_content_id, room.room_code)
+                    ws = room.connections.get(client_id)
+                    if ws:
+                        await ws.send_json({"type": "ERROR", "message": "Game content not found. Please generate a new game."})
                     return
-                # Validate and sanitize quiz data from WebSocket
-                from quiz_engine import _validate_quiz, _sanitize_quiz
-                if not _validate_quiz(new_quiz_data, 1):
-                    logger.warning("RESET_ROOM rejected: invalid quiz data for room %s", room.room_code)
-                    return
-                new_quiz_data = _sanitize_quiz(new_quiz_data)
-                room.reset_for_new_game(new_quiz_data, new_time_limit)
-                logger.info("Room %s reset for new game", room.room_code)
+
+                room.reset_for_new_game(new_game_data, new_time_limit,
+                                        game_type=new_game_type,
+                                        content_id=new_content_id)
+                logger.info("Room %s reset for new game (type=%s, content=%s)",
+                            room.room_code, new_game_type, new_content_id)
                 await room.broadcast({
                     "type": "ROOM_RESET",
                     "room_code": room.room_code,
+                    "game_type": new_game_type,
                     "player_count": len(room.players),
                     "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
                 })
@@ -528,20 +595,30 @@ class SocketManager:
                             "type": "RECONNECTED",
                             "score": saved["score"],
                             "state": room.state,
+                            "game_type": room.game_type,
                             "question_number": room.current_question_index + 1,
-                            "total_questions": len(room.quiz["questions"]),
+                            "total_questions": room.total_rounds(),
                             "avatar": saved.get("avatar", avatar),
                         }
                         if room.state == "QUESTION":
-                            question = room.quiz["questions"][room.current_question_index]
-                            player_question = {k: v for k, v in question.items() if k != "answer_index"}
-                            state_info["question"] = player_question
+                            round_data = room.current_round_data()
+                            if room.game_type == "wmlt":
+                                state_info["statement"] = round_data
+                                state_info["players"] = [
+                                    {"nickname": p["nickname"], "avatar": p.get("avatar", "")}
+                                    for p in room.players.values()
+                                ]
+                            else:
+                                player_question = {k: v for k, v in round_data.items() if k != "answer_index"}
+                                state_info["question"] = player_question
+                                # Include fifty-fifty state if it was used
+                                pups = room.power_ups.get(nickname, {})
+                                if "fifty_fifty_remove_indices" in pups:
+                                    state_info["remove_indices"] = pups["fifty_fifty_remove_indices"]
                             state_info["time_limit"] = room.time_limit
+                            elapsed = time.time() - room.question_start_time
+                            state_info["time_remaining"] = max(0, room.time_limit - int(elapsed))
                             state_info["is_bonus"] = room.current_question_index in room.bonus_questions
-                            # Include fifty-fifty state if it was used
-                            pups = room.power_ups.get(nickname, {})
-                            if "fifty_fifty_remove_indices" in pups:
-                                state_info["remove_indices"] = pups["fifty_fifty_remove_indices"]
                         state_info["session_token"] = room.player_tokens.get(nickname, "")
                         state_info["power_ups"] = {
                             "double_points": room.power_ups.get(nickname, {}).get("double_points", False),
@@ -594,20 +671,30 @@ class SocketManager:
                             "type": "RECONNECTED",
                             "score": player_data["score"],
                             "state": room.state,
+                            "game_type": room.game_type,
                             "question_number": room.current_question_index + 1,
-                            "total_questions": len(room.quiz["questions"]),
+                            "total_questions": room.total_rounds(),
                             "avatar": player_data.get("avatar", ""),
                         }
                         if room.state == "QUESTION":
-                            question = room.quiz["questions"][room.current_question_index]
-                            player_question = {k: v for k, v in question.items() if k != "answer_index"}
-                            state_info["question"] = player_question
+                            round_data = room.current_round_data()
+                            if room.game_type == "wmlt":
+                                state_info["statement"] = round_data
+                                state_info["players"] = [
+                                    {"nickname": p["nickname"], "avatar": p.get("avatar", "")}
+                                    for p in room.players.values()
+                                ]
+                            else:
+                                player_question = {k: v for k, v in round_data.items() if k != "answer_index"}
+                                state_info["question"] = player_question
+                                # Include fifty-fifty state if it was used
+                                pups = room.power_ups.get(nickname, {})
+                                if "fifty_fifty_remove_indices" in pups:
+                                    state_info["remove_indices"] = pups["fifty_fifty_remove_indices"]
                             state_info["time_limit"] = room.time_limit
+                            elapsed = time.time() - room.question_start_time
+                            state_info["time_remaining"] = max(0, room.time_limit - int(elapsed))
                             state_info["is_bonus"] = room.current_question_index in room.bonus_questions
-                            # Include fifty-fifty state if it was used
-                            pups = room.power_ups.get(nickname, {})
-                            if "fifty_fifty_remove_indices" in pups:
-                                state_info["remove_indices"] = pups["fifty_fifty_remove_indices"]
                         state_info["session_token"] = room.player_tokens.get(nickname, "")
                         state_info["power_ups"] = {
                             "double_points": room.power_ups.get(nickname, {}).get("double_points", False),
@@ -630,7 +717,7 @@ class SocketManager:
                         await conn.send_json({
                             "type": "GAME_IN_PROGRESS",
                             "question_number": room.current_question_index + 1,
-                            "total_questions": len(room.quiz["questions"]),
+                            "total_questions": room.total_rounds(),
                         })
                     return
 
@@ -660,12 +747,53 @@ class SocketManager:
                     "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()]
                 })
 
+            elif msg_type == "VOTE" and room.game_type == "wmlt":
+                if client_id not in room.players:
+                    return
+                if room.state != "QUESTION":
+                    return
+                voted_for = message.get("voted_for", "").strip()
+                nickname = room.players[client_id]["nickname"]
+                # Validate voted_for is a player in the room
+                valid_nicknames = room.player_nicknames()
+                if voted_for not in valid_nicknames:
+                    ws = room.connections.get(client_id)
+                    if ws:
+                        await ws.send_json({"type": "ERROR", "message": "Invalid vote target"})
+                    return
+
+                async with room.lock:
+                    if nickname in room.votes:
+                        return  # Already voted
+                    room.votes[nickname] = voted_for
+                    room.answered_players.add(client_id)
+                    all_voted = len(room.votes) >= len(room.players)
+
+                ws = room.connections.get(client_id)
+                if ws:
+                    await ws.send_json({
+                        "type": "VOTE_CONFIRMED",
+                        "voted_for": voted_for,
+                    })
+
+                # Notify organizer about vote progress
+                await room.send_to_organizer({
+                    "type": "VOTE_COUNT",
+                    "voted": len(room.votes),
+                    "total": len(room.players),
+                })
+
+                if all_voted:
+                    await self.end_question(room)
+
             elif msg_type == "ANSWER":
+                if room.game_type == "wmlt":
+                    return  # WMLT uses VOTE, not ANSWER
                 if client_id not in room.players:
                     return
                 answer_index = message.get("answer_index")
                 # Bounds check to prevent IndexError
-                if room.current_question_index < 0 or room.current_question_index >= len(room.quiz["questions"]):
+                if room.current_question_index < 0 or room.current_question_index >= room.total_rounds():
                     return
                 question = room.quiz["questions"][room.current_question_index]
                 num_options = len(question.get("options", []))
@@ -750,8 +878,8 @@ class SocketManager:
                     await self.end_question(room)
 
             elif msg_type == "USE_POWER_UP":
-                if room.state != "QUESTION":
-                    return
+                if room.state != "QUESTION" or room.game_type == "wmlt":
+                    return  # Power-ups are quiz-only
                 power_up = message.get("power_up")
                 nickname = room.players.get(client_id, {}).get("nickname")
                 if not nickname or power_up not in ("double_points", "fifty_fifty"):
@@ -806,8 +934,9 @@ class SocketManager:
         all_player_count = len(room.players) + len(room.disconnected_players)
         return {
             "room_code": room.room_code,
-            "quiz_title": room.quiz.get("quiz_title", "Untitled"),
-            "total_questions": len(room.quiz["questions"]),
+            "game_type": room.game_type,
+            "game_title": room.game_title(),
+            "total_questions": room.total_rounds(),
             "player_count": all_player_count,
             "leaderboard": self.get_leaderboard(room),
             "team_leaderboard": self.get_team_leaderboard(room),
@@ -816,9 +945,9 @@ class SocketManager:
         }
 
     def _select_bonus_questions(self, room: Room):
-        """Pre-select which questions will be bonus rounds (2x points)."""
+        """Pre-select which rounds will be bonus rounds (2x points)."""
         import random
-        total = len(room.quiz["questions"])
+        total = room.total_rounds()
         if total < 4:
             room.bonus_questions = set()
             return
@@ -835,7 +964,7 @@ class SocketManager:
 
         room.current_question_index += 1
 
-        if room.current_question_index >= len(room.quiz["questions"]):
+        if room.current_question_index >= room.total_rounds():
             room.state = "PODIUM"
             leaderboard = self.get_leaderboard(room)
             team_leaderboard = self.get_team_leaderboard(room)
@@ -859,31 +988,44 @@ class SocketManager:
         room.previous_leaderboard = self.get_leaderboard(room)
 
         room.answered_players = set()
+        room.votes = {}  # Clear WMLT votes for new round
 
         # Clear per-question power-up state from previous question
         for pups in room.power_ups.values():
             pups.pop("fifty_fifty_remove_indices", None)
             pups.pop("double_points_active", None)
 
-        question = room.quiz["questions"][room.current_question_index]
-        player_question = {k: v for k, v in question.items() if k != "answer_index"}
-
         is_bonus = room.current_question_index in room.bonus_questions
 
-        # Set state to QUESTION before broadcast so answers are accepted
-        # immediately. The organizer's handler coroutine is blocked during
-        # the bonus sleep (same coroutine), so duplicate NEXT_QUESTION
-        # cannot arrive until the sleep completes.
+        # Set state to QUESTION before broadcast so answers/votes are accepted immediately
         room.state = "QUESTION"
 
-        await room.broadcast({
-            "type": "QUESTION",
-            "question": player_question,
-            "question_number": room.current_question_index + 1,
-            "total_questions": len(room.quiz["questions"]),
-            "time_limit": room.time_limit,
-            "is_bonus": is_bonus,
-        })
+        if room.game_type == "wmlt":
+            statement = room.current_round_data()
+            await room.broadcast({
+                "type": "QUESTION",
+                "statement": statement,
+                "question_number": room.current_question_index + 1,
+                "total_questions": room.total_rounds(),
+                "time_limit": room.time_limit,
+                "is_bonus": is_bonus,
+                "game_type": "wmlt",
+                "players": [
+                    {"nickname": p["nickname"], "avatar": p.get("avatar", "")}
+                    for p in room.players.values()
+                ],
+            })
+        else:
+            question = room.quiz["questions"][room.current_question_index]
+            player_question = {k: v for k, v in question.items() if k != "answer_index"}
+            await room.broadcast({
+                "type": "QUESTION",
+                "question": player_question,
+                "question_number": room.current_question_index + 1,
+                "total_questions": room.total_rounds(),
+                "time_limit": room.time_limit,
+                "is_bonus": is_bonus,
+            })
 
         # Delay timer start for bonus rounds so the splash animation plays first
         if is_bonus:
@@ -920,6 +1062,10 @@ class SocketManager:
             room.timer_task.cancel()
             room.timer_task = None
 
+        if room.game_type == "wmlt":
+            await self._end_wmlt_round(room)
+            return
+
         # Reset streak for players who didn't answer
         for cid, player in room.players.items():
             if cid not in room.answered_players:
@@ -927,7 +1073,7 @@ class SocketManager:
 
         question = room.quiz["questions"][room.current_question_index]
         current_leaderboard = self.get_leaderboard_with_changes(room)
-        is_final = room.current_question_index >= len(room.quiz["questions"]) - 1
+        is_final = room.current_question_index >= room.total_rounds() - 1
 
         await room.broadcast({
             "type": "QUESTION_OVER",
@@ -935,6 +1081,95 @@ class SocketManager:
             "leaderboard": current_leaderboard,
             "previous_leaderboard": room.previous_leaderboard,
             "is_final": is_final
+        })
+
+    async def _end_wmlt_round(self, room: Room):
+        """Handle end-of-round scoring and results for Who's Most Likely To."""
+        statement = room.current_round_data()
+
+        # Tally votes: voted_for_nickname -> list of voter nicknames
+        vote_tally: Dict[str, List[str]] = {}
+        for voter, voted_for in room.votes.items():
+            vote_tally.setdefault(voted_for, []).append(voter)
+
+        # Find the winner (most votes). On tie, first alphabetically.
+        winner = None
+        winner_votes = 0
+        if vote_tally:
+            winner = max(vote_tally, key=lambda n: (len(vote_tally[n]), -ord(n[0]) if n else 0))
+            # Among those with max votes, pick alphabetically first
+            max_votes = len(vote_tally[winner])
+            tied = [n for n, voters in vote_tally.items() if len(voters) == max_votes]
+            winner = min(tied)
+            winner_votes = max_votes
+
+        is_bonus = room.current_question_index in room.bonus_questions
+        is_unanimous = winner_votes == len(room.votes) and winner_votes > 1
+
+        # Score players
+        for cid, player in room.players.items():
+            nickname = player["nickname"]
+            voted_for = room.votes.get(nickname)
+
+            if voted_for is None:
+                # Didn't vote — break streak
+                player["streak"] = 0
+                continue
+
+            if voted_for == winner:
+                # Voted with majority
+                base_points = 500
+                if is_bonus:
+                    base_points *= 2
+                if is_unanimous:
+                    base_points += 200
+
+                # Streak bonus
+                player["streak"] = player.get("streak", 0) + 1
+                streak = player["streak"]
+                multiplier = 1.0
+                for threshold, mult in sorted(config.STREAK_THRESHOLDS.items()):
+                    if streak >= threshold:
+                        multiplier = mult
+                points = int(base_points * multiplier)
+                player["score"] += points
+            else:
+                # Voted for someone else — break streak
+                player["streak"] = 0
+
+        # Bonus for the "winner" (most-voted person) if they're a player
+        if winner:
+            for cid, player in room.players.items():
+                if player["nickname"] == winner:
+                    player["score"] += 100
+                    break
+
+        # Log for game history
+        room.answer_log.append({
+            "question_index": room.current_question_index,
+            "game_type": "wmlt",
+            "statement": statement.get("text", "") if statement else "",
+            "votes": dict(room.votes),
+            "winner": winner,
+            "winner_votes": winner_votes,
+            "unanimous": is_unanimous,
+        })
+
+        current_leaderboard = self.get_leaderboard_with_changes(room)
+        is_final = room.current_question_index >= room.total_rounds() - 1
+
+        await room.broadcast({
+            "type": "QUESTION_OVER",
+            "game_type": "wmlt",
+            "statement": statement.get("text", "") if statement else "",
+            "votes": vote_tally,
+            "winner": winner,
+            "winner_votes": winner_votes,
+            "unanimous": is_unanimous,
+            "leaderboard": current_leaderboard,
+            "previous_leaderboard": room.previous_leaderboard,
+            "is_final": is_final,
+            "is_bonus": is_bonus,
         })
 
     def _all_players_for_leaderboard(self, room: Room) -> List[dict]:

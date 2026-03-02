@@ -480,20 +480,27 @@ class TestStateGuardResetRoom:
         add_player(room, "p1", "Alice")
         room.state = "PODIUM"
         new_quiz = make_quiz(3)
-        await sm.handle_message(room, "org-1", {
-            "type": "RESET_ROOM", "quiz_data": new_quiz, "time_limit": 20
-        }, is_organizer=True)
-        assert room.state == "LOBBY"
-        assert len(room.quiz["questions"]) == 3
+        # Register quiz in content store so RESET_ROOM can find it
+        from main import quizzes
+        quizzes["test-reset-quiz"] = new_quiz
+        try:
+            await sm.handle_message(room, "org-1", {
+                "type": "RESET_ROOM", "content_id": "test-reset-quiz", "time_limit": 20
+            }, is_organizer=True)
+            assert room.state == "LOBBY"
+            assert len(room.quiz["questions"]) == 3
+            assert room.content_id == "test-reset-quiz"
+        finally:
+            quizzes.pop("test-reset-quiz", None)
 
     @pytest.mark.asyncio
-    async def test_reset_room_rejects_invalid_quiz(self):
+    async def test_reset_room_rejects_missing_content(self):
         room = make_room()
         sm = SocketManager()
         add_organizer(room, "org-1")
         room.state = "PODIUM"
         await sm.handle_message(room, "org-1", {
-            "type": "RESET_ROOM", "quiz_data": {"bad": "data"}, "time_limit": 20
+            "type": "RESET_ROOM", "content_id": "nonexistent-id", "time_limit": 20
         }, is_organizer=True)
         assert room.state == "PODIUM"  # unchanged, rejected
 

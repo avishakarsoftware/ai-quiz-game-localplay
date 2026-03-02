@@ -33,12 +33,25 @@ export interface TeamLeaderboardEntry {
 
 export interface GameHistoryEntry {
     room_code: string;
-    quiz_title: string;
+    game_title: string;
+    game_type?: GameType;
     total_questions: number;
     player_count: number;
     leaderboard: LeaderboardEntry[];
     team_leaderboard: TeamLeaderboardEntry[];
     completed_at: number;
+}
+
+export type GameType = 'quiz' | 'wmlt';
+
+export interface MLTStatement {
+    id: number;
+    text: string;
+}
+
+export interface MLTGame {
+    game_title: string;
+    statements: MLTStatement[];
 }
 
 export interface PowerUps {

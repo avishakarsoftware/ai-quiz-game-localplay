@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL, API_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
@@ -32,6 +32,9 @@ export default function SpectatorPage() {
     useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
     const [players, setPlayers] = useState<PlayerInfo[]>([]);
     const [playerCount, setPlayerCount] = useState(0);
+    const [gameType, setGameType] = useState<GameType>('quiz');
+    const [currentStatement, setCurrentStatement] = useState<{ id: number; text: string } | null>(null);
+    const [votePlayers, setVotePlayers] = useState<PlayerInfo[]>([]);
     const [question, setQuestion] = useState<SpectatorQuestion | null>(null);
     const [questionNumber, setQuestionNumber] = useState(0);
     const [totalQuestions, setTotalQuestions] = useState(0);
@@ -127,9 +130,15 @@ export default function SpectatorPage() {
                 setQuestionNumber(msg.question_number);
                 setTotalQuestions(msg.total_questions);
                 setLeaderboard(msg.leaderboard || []);
+                if (msg.game_type) setGameType(msg.game_type);
                 // Handle mid-question sync
-                if (msg.state === 'QUESTION' && msg.question) {
-                    setQuestion(msg.question);
+                if (msg.state === 'QUESTION') {
+                    if (msg.game_type === 'wmlt' && msg.statement) {
+                        setCurrentStatement(msg.statement);
+                        setVotePlayers(msg.players || []);
+                    } else if (msg.question) {
+                        setQuestion(msg.question);
+                    }
                     setTimeLimit(msg.time_limit);
                     setTimeRemaining(msg.time_remaining ?? msg.time_limit);
                     setIsBonus(msg.is_bonus || false);
@@ -150,12 +159,18 @@ export default function SpectatorPage() {
             }
             else if (msg.type === 'GAME_STARTING') { /* stay on LOBBY until first QUESTION arrives */ }
             else if (msg.type === 'QUESTION') {
-                setQuestion(msg.question);
+                if (msg.game_type) setGameType(msg.game_type);
                 setQuestionNumber(msg.question_number);
                 setTotalQuestions(msg.total_questions);
                 setTimeLimit(msg.time_limit);
                 setTimeRemaining(msg.time_limit);
                 setIsBonus(msg.is_bonus || false);
+                if (msg.game_type === 'wmlt' || msg.statement) {
+                    setCurrentStatement(msg.statement);
+                    setVotePlayers(msg.players || []);
+                } else {
+                    setQuestion(msg.question);
+                }
                 if (msg.is_bonus) setShowBonusSplash(true);
                 setGameState('QUESTION');
             }
@@ -191,6 +206,9 @@ export default function SpectatorPage() {
                 setPlayerCount(msg.player_count);
                 setIsBonus(false);
                 setShowBonusSplash(false);
+                setCurrentStatement(null);
+                setVotePlayers([]);
+                if (msg.game_type) setGameType(msg.game_type);
                 setGameState('LOBBY');
             }
         };
@@ -354,7 +372,9 @@ export default function SpectatorPage() {
 
                     {gameState === 'LOBBY' && (
                         <div className="flex-1 flex flex-col items-center justify-center animate-in">
-                            <h1 className="hero-title mb-8" style={{ fontSize: '3.5rem' }}>Join the Quiz!</h1>
+                            <h1 className="hero-title mb-8" style={{ fontSize: '3.5rem' }}>
+                                {gameType === 'wmlt' ? 'Join the Game!' : 'Join the Quiz!'}
+                            </h1>
 
                             <div className="flex items-center justify-center gap-12 mb-8">
                                 <div className="flex flex-col items-center">
@@ -392,14 +412,16 @@ export default function SpectatorPage() {
                         </div>
                     )}
 
-                    {gameState === 'QUESTION' && question && (
+                    {gameState === 'QUESTION' && (question || currentStatement) && (
                         showBonusSplash ? (
                             <BonusSplash onComplete={() => setShowBonusSplash(false)} />
                         ) : (
                             <div className="flex-1 flex flex-col justify-center" style={{ minHeight: 0, overflow: 'hidden' }}>
                             <div className="py-4" style={{ flexShrink: 0 }}>
                                 <div className="flex items-center justify-between mb-2">
-                                    <span className="text-2xl font-bold text-[--text-tertiary]">Q{questionNumber}/{totalQuestions}</span>
+                                    <span className="text-2xl font-bold text-[--text-tertiary]">
+                                        {gameType === 'wmlt' ? 'Round' : 'Q'}{questionNumber}/{totalQuestions}
+                                    </span>
                                     <div className="flex items-center gap-3">
                                         {isBonus && <span className="bonus-badge" style={{ fontSize: 16 }}>2X BONUS</span>}
                                         <span className={`font-extrabold tabular-nums text-3xl ${timeRemaining <= 5 ? 'timer-number-pulse' : ''}`}
@@ -418,18 +440,53 @@ export default function SpectatorPage() {
                                     />
                                 </div>
                             </div>
-                            <div className={`question-card mb-4 ${question.image_url ? 'has-image' : ''}`}
-                                style={{ padding: '32px 48px', fontSize: '24px', ...(question.image_url ? { backgroundImage: `url(${API_URL}${question.image_url})` } : {}) }}>
-                                <p className="question-text" style={{ fontSize: '32px', fontWeight: 700 }}>{question.text}</p>
-                            </div>
-                            <div className={question.options.length === 2 ? 'answer-grid-tf' : 'answer-grid'} style={{ gap: '16px' }}>
-                                {question.options.map((opt, i) => (
-                                    <div key={i} className={`answer-btn ${ANSWER_STYLES[i].className}`} style={{ height: 100, fontSize: 20, overflow: 'hidden' }}>
-                                        <span className="text-5xl opacity-50 mr-4" style={{ flexShrink: 0 }}>{ANSWER_STYLES[i].shape}</span>
-                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt}</span>
+
+                            {gameType === 'wmlt' && currentStatement ? (
+                                <>
+                                    <div className="question-card mb-4" style={{ padding: '48px', fontSize: '24px' }}>
+                                        <p className="question-text" style={{ fontSize: '36px', fontWeight: 700, textAlign: 'center' }}>
+                                            {currentStatement.text}
+                                        </p>
                                     </div>
-                                ))}
-                            </div>
+                                    {votePlayers.length > 0 && (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12, marginTop: 8 }}>
+                                            {votePlayers.map((p, i) => (
+                                                <div key={p.nickname} style={{
+                                                    display: 'inline-flex', alignItems: 'center', gap: 10,
+                                                    padding: '10px 20px', borderRadius: 9999,
+                                                    background: 'var(--bg-secondary)',
+                                                }}>
+                                                    <div style={{
+                                                        width: 40, height: 40, minWidth: 40, borderRadius: '50%',
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length],
+                                                    }}>
+                                                        <span style={{ fontSize: '1.5rem', lineHeight: 1 }}>
+                                                            {p.avatar || p.nickname.slice(0, 2).toUpperCase()}
+                                                        </span>
+                                                    </div>
+                                                    <span style={{ fontSize: '1.125rem', fontWeight: 500 }}>{p.nickname}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
+                            ) : question ? (
+                                <>
+                                    <div className={`question-card mb-4 ${question.image_url ? 'has-image' : ''}`}
+                                        style={{ padding: '32px 48px', fontSize: '24px', ...(question.image_url ? { backgroundImage: `url(${API_URL}${question.image_url})` } : {}) }}>
+                                        <p className="question-text" style={{ fontSize: '32px', fontWeight: 700 }}>{question.text}</p>
+                                    </div>
+                                    <div className={question.options.length === 2 ? 'answer-grid-tf' : 'answer-grid'} style={{ gap: '16px' }}>
+                                        {question.options.map((opt, i) => (
+                                            <div key={i} className={`answer-btn ${ANSWER_STYLES[i].className}`} style={{ height: 100, fontSize: 20, overflow: 'hidden' }}>
+                                                <span className="text-5xl opacity-50 mr-4" style={{ flexShrink: 0 }}>{ANSWER_STYLES[i].shape}</span>
+                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            ) : null}
                             </div>
                         )
                     )}
@@ -438,7 +495,7 @@ export default function SpectatorPage() {
                         <div className="flex-1 flex flex-col justify-center animate-in" style={{ minHeight: 0, overflow: 'hidden' }}>
                             <div className="text-center" style={{ flexShrink: 0, padding: '16px 0' }}>
                                 <h1 className="hero-title mb-2" style={{ fontSize: '2.5rem' }}>Leaderboard</h1>
-                                <p className="text-[--text-tertiary] text-xl">After question {questionNumber} of {totalQuestions}</p>
+                                <p className="text-[--text-tertiary] text-xl">After {gameType === 'wmlt' ? 'round' : 'question'} {questionNumber} of {totalQuestions}</p>
                             </div>
                             <div className="w-full max-w-3xl mx-auto" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
                                 <LeaderboardBarChart leaderboard={leaderboard} maxEntries={8} size="large" />

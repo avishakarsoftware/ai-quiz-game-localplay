@@ -652,7 +652,7 @@ class TestGameHistoryWS:
         assert len(game_history) == 1
         game = game_history[0]
         assert game["room_code"] == room_code
-        assert game["quiz_title"] == "Integration Test Quiz"
+        assert game["game_title"] == "Integration Test Quiz"
         assert game["player_count"] == 1
         assert len(game["leaderboard"]) == 1
         assert game["leaderboard"][0]["nickname"] == "Alice"

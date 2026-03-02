@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { API_URL, WS_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -56,6 +56,12 @@ export default function PlayerPage() {
     const [hiddenOptions, setHiddenOptions] = useState<number[]>([]);
     const [isBonus, setIsBonus] = useState(false);
     const [showBonusSplash, setShowBonusSplash] = useState(false);
+    // WMLT state
+    const [gameType, setGameType] = useState<GameType>('quiz');
+    const [currentStatement, setCurrentStatement] = useState('');
+    const [votePlayers, setVotePlayers] = useState<PlayerInfo[]>([]);
+    const [selectedVote, setSelectedVote] = useState<string | null>(null);
+    const [voteResult, setVoteResult] = useState<{ winner: string; winner_votes: number; votes: Record<string, string[]>; unanimous: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const kickedRef = useRef(false);
@@ -124,21 +130,29 @@ export default function PlayerPage() {
             if (msg.type === 'RECONNECTED') {
                 const token = (msg.session_token as string) || getSavedSession()?.sessionToken || '';
                 sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode, nickname, team, avatar, sessionToken: token }));
-                setQuestionNumber(msg.question_number);
-                setTotalQuestions(msg.total_questions);
+                setQuestionNumber(msg.question_number as number);
+                setTotalQuestions(msg.total_questions as number);
+                if (msg.game_type) setGameType(msg.game_type as GameType);
                 if (msg.power_ups) setPowerUps(msg.power_ups as PowerUps);
                 if (msg.state === 'LOBBY') {
                     setState('LOBBY');
-                } else if (msg.state === 'QUESTION' && msg.question) {
-                    setCurrentQuestion(msg.question);
-                    setTimeLimit(msg.time_limit);
-                    setTimeRemaining(msg.time_limit);
+                } else if (msg.state === 'QUESTION') {
+                    if (msg.statement) {
+                        // WMLT reconnection
+                        setCurrentStatement((msg.statement as { text: string }).text);
+                        setVotePlayers(msg.players as PlayerInfo[] || []);
+                        setSelectedVote(null);
+                    } else if (msg.question) {
+                        setCurrentQuestion(msg.question as PlayerQuestion);
+                        setHiddenOptions(msg.remove_indices ? (msg.remove_indices as number[]) : []);
+                    }
+                    setTimeLimit(msg.time_limit as number);
+                    setTimeRemaining((msg.time_remaining ?? msg.time_limit) as number);
                     setSelectedAnswer(null);
                     setIsCorrect(null);
                     setPointsEarned(0);
                     setCorrectAnswer(null);
-                    setHiddenOptions(msg.remove_indices ? (msg.remove_indices as number[]) : []);
-                    setIsBonus(msg.is_bonus || false);
+                    setIsBonus(msg.is_bonus as boolean || false);
                     setState('QUESTION');
                 } else {
                     setState('WAITING');
@@ -154,17 +168,26 @@ export default function PlayerPage() {
             }
             if (msg.type === 'GAME_STARTING') setState('LOBBY');
             if (msg.type === 'QUESTION') {
-                setCurrentQuestion(msg.question);
-                setQuestionNumber(msg.question_number);
-                setTotalQuestions(msg.total_questions);
-                setTimeLimit(msg.time_limit);
-                setTimeRemaining(msg.time_limit);
+                if (msg.game_type === 'wmlt' || msg.statement) {
+                    setGameType('wmlt');
+                    setCurrentStatement((msg.statement as { text: string }).text);
+                    setVotePlayers(msg.players as PlayerInfo[] || []);
+                    setSelectedVote(null);
+                    setVoteResult(null);
+                } else {
+                    setGameType('quiz');
+                    setCurrentQuestion(msg.question as PlayerQuestion);
+                }
+                setQuestionNumber(msg.question_number as number);
+                setTotalQuestions(msg.total_questions as number);
+                setTimeLimit(msg.time_limit as number);
+                setTimeRemaining(msg.time_limit as number);
                 setSelectedAnswer(null);
                 setIsCorrect(null);
                 setPointsEarned(0);
                 setCorrectAnswer(null);
                 setHiddenOptions([]);
-                setIsBonus(msg.is_bonus || false);
+                setIsBonus(msg.is_bonus as boolean || false);
                 if (msg.is_bonus) setShowBonusSplash(true);
                 setState('QUESTION');
             }
@@ -186,6 +209,10 @@ export default function PlayerPage() {
                     soundManager.hapticsWrong();
                 }
             }
+            if (msg.type === 'VOTE_CONFIRMED') {
+                setSelectedVote(msg.voted_for as string);
+                setState('WAITING');
+            }
             if (msg.type === 'POWER_UP_ACTIVATED') {
                 if (msg.power_up === 'double_points') {
                     setPowerUps(prev => ({ ...prev, double_points: false }));
@@ -195,9 +222,18 @@ export default function PlayerPage() {
                 }
             }
             if (msg.type === 'QUESTION_OVER') {
-                setCorrectAnswer(msg.answer);
-                setLeaderboard(msg.leaderboard);
-                setMyRank(msg.leaderboard.findIndex((p: LeaderboardEntry) => p.nickname === nickname) + 1);
+                if (msg.game_type === 'wmlt') {
+                    setVoteResult({
+                        winner: msg.winner as string,
+                        winner_votes: msg.winner_votes as number,
+                        votes: msg.votes as Record<string, string[]>,
+                        unanimous: msg.unanimous as boolean,
+                    });
+                } else {
+                    setCorrectAnswer(msg.answer as number);
+                }
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[]);
+                setMyRank((msg.leaderboard as LeaderboardEntry[]).findIndex((p) => p.nickname === nickname) + 1);
                 setState('RESULT');
             }
             if (msg.type === 'PODIUM') {
@@ -242,7 +278,11 @@ export default function PlayerPage() {
                 setPowerUps({ double_points: true, fifty_fifty: true });
                 setIsBonus(false);
                 setShowBonusSplash(false);
-                if (msg.players) setLobbyPlayers(msg.players);
+                setSelectedVote(null);
+                setVoteResult(null);
+                setCurrentStatement('');
+                if (msg.game_type) setGameType(msg.game_type as GameType);
+                if (msg.players) setLobbyPlayers(msg.players as PlayerInfo[]);
                 setState('LOBBY');
                 soundManager.play('playerJoin');
             }
@@ -268,6 +308,13 @@ export default function PlayerPage() {
         soundManager.hapticsSelect();
         setSelectedAnswer(index);
         wsRef.current?.send(JSON.stringify({ type: 'ANSWER', answer_index: index }));
+    };
+
+    const submitVote = (votedFor: string) => {
+        if (selectedVote !== null) return;
+        soundManager.hapticsSelect();
+        setSelectedVote(votedFor);
+        wsRef.current?.send(JSON.stringify({ type: 'VOTE', voted_for: votedFor }));
     };
 
     const activatePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
@@ -432,10 +479,84 @@ export default function PlayerPage() {
                 )}
 
                 {/* QUESTION */}
-                {state === 'QUESTION' && currentQuestion && (
+                {state === 'QUESTION' && (
                     showBonusSplash ? (
                         <BonusSplash onComplete={() => setShowBonusSplash(false)} />
-                    ) : (
+                    ) : gameType === 'wmlt' ? (
+                    /* WMLT Voting UI */
+                    <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom">
+                        <div className="py-4 stagger-in" style={{ animationDelay: '0s' }}>
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-[--text-tertiary] text-sm">Round {questionNumber}/{totalQuestions}</span>
+                                <div className="flex items-center gap-2">
+                                    {isBonus && <span className="bonus-badge">2X BONUS</span>}
+                                    <span className={`font-bold tabular-nums ${timeRemaining <= 5 ? 'timer-number-pulse' : ''}`}
+                                        style={{ color: timeRemaining <= 5 ? 'var(--accent-danger)' : timeRemaining <= 10 ? 'var(--accent-warning)' : 'var(--accent-primary)' }}>
+                                        {timeRemaining}s
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="question-timer-bar">
+                                <div
+                                    className="question-timer-fill"
+                                    style={{
+                                        width: `${(timeRemaining / timeLimit) * 100}%`,
+                                        background: timeRemaining <= 5 ? 'var(--accent-danger)' : timeRemaining <= 10 ? 'var(--accent-warning)' : 'var(--accent-primary)',
+                                    }}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="question-card mb-4 question-enter">
+                            <p className="question-text">{currentStatement}</p>
+                        </div>
+
+                        {/* Player voting grid */}
+                        <div className="flex-1" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, alignContent: 'start' }}>
+                            {votePlayers.map((player, i) => {
+                                const isSelf = player.nickname === nickname;
+                                const isSelected = selectedVote === player.nickname;
+                                return (
+                                    <button
+                                        key={player.nickname}
+                                        onClick={() => submitVote(player.nickname)}
+                                        disabled={selectedVote !== null}
+                                        className={`answer-stagger ${isSelected ? 'vote-selected' : ''} ${selectedVote !== null && !isSelected ? 'dimmed' : ''}`}
+                                        style={{
+                                            animationDelay: `${0.15 + i * 0.06}s`,
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            gap: 8,
+                                            padding: '16px 12px',
+                                            borderRadius: 16,
+                                            border: isSelected ? '2px solid var(--accent-primary)' : '1px solid var(--border-primary)',
+                                            background: isSelected ? 'rgba(var(--accent-primary-rgb, 99,102,241), 0.15)' : 'var(--bg-secondary)',
+                                            cursor: selectedVote !== null ? 'default' : 'pointer',
+                                            opacity: selectedVote !== null && !isSelected ? 0.4 : 1,
+                                            transition: 'all 0.2s ease',
+                                        }}
+                                    >
+                                        <div
+                                            style={{
+                                                width: 48, height: 48, borderRadius: '50%',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length],
+                                                fontSize: '1.5rem',
+                                            }}
+                                        >
+                                            {player.avatar || player.nickname.slice(0, 2).toUpperCase()}
+                                        </div>
+                                        <span style={{ fontSize: '0.875rem', fontWeight: 600, color: isSelf ? 'var(--accent-primary)' : 'var(--text-primary)' }}>
+                                            {player.nickname}{isSelf ? ' (you)' : ''}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    ) : currentQuestion ? (
+                    /* Quiz answer UI */
                     <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom">
                         <div className="py-4 stagger-in" style={{ animationDelay: '0s' }}>
                             <div className="flex items-center justify-between mb-2">
@@ -498,15 +619,20 @@ export default function PlayerPage() {
                             ))}
                         </div>
                     </div>
-                    )
+                    ) : null
                 )}
 
                 {/* WAITING */}
                 {state === 'WAITING' && (
                     <div className="min-h-dvh flex flex-col items-center justify-center container-responsive animate-in">
-                        {isCorrect ? (
+                        {gameType === 'wmlt' && selectedVote ? (
+                            <>
+                                <div className="hero-icon mb-4">🗳️</div>
+                                <h2 className="hero-title mb-2">Vote Cast!</h2>
+                                <p className="text-[--text-secondary] text-lg">You voted for <strong>{selectedVote}</strong></p>
+                            </>
+                        ) : isCorrect ? (
                             <div className="celebration-container">
-                                {/* Particle burst */}
                                 <div className="celebration-burst">
                                     {Array.from({ length: 12 }).map((_, i) => (
                                         <span key={i} className="burst-particle" style={{
@@ -587,16 +713,36 @@ export default function PlayerPage() {
                 {state === 'RESULT' && (
                     <div className="min-h-dvh flex flex-col items-center container-responsive safe-top safe-bottom animate-in">
                         <div className="text-center py-6">
-                            {isCorrect ? (
-                                <div className="result-icon result-icon-correct mb-2" style={{ width: 56, height: 56, fontSize: 28 }}>✓</div>
+                            {gameType === 'wmlt' && voteResult ? (
+                                <>
+                                    <div className="hero-icon mb-2" style={{ fontSize: '2.5rem' }}>🎯</div>
+                                    <h2 className="text-2xl font-extrabold">{voteResult.winner}</h2>
+                                    <p className="text-[--text-secondary] mt-1">
+                                        {voteResult.winner_votes} vote{voteResult.winner_votes !== 1 ? 's' : ''}
+                                        {voteResult.unanimous ? ' — Unanimous!' : ''}
+                                    </p>
+                                    {selectedVote === voteResult.winner ? (
+                                        <p className="text-[--accent-success] font-bold mt-2">You voted with the majority!</p>
+                                    ) : selectedVote ? (
+                                        <p className="text-[--text-tertiary] mt-2">You voted for {selectedVote}</p>
+                                    ) : (
+                                        <p className="text-[--accent-danger] mt-2">You didn't vote</p>
+                                    )}
+                                </>
                             ) : (
-                                <div className="result-icon result-icon-wrong mb-2" style={{ width: 56, height: 56, fontSize: 28 }}>✗</div>
-                            )}
-                            <h2 className="text-2xl font-extrabold" style={{ color: isCorrect ? 'var(--accent-success)' : 'var(--accent-danger)' }}>
-                                {isCorrect ? 'Correct!' : 'Wrong'}
-                            </h2>
-                            {pointsEarned > 0 && (
-                                <p className="text-xl font-bold text-[--accent-success] mt-2">+{pointsEarned}</p>
+                                <>
+                                    {isCorrect ? (
+                                        <div className="result-icon result-icon-correct mb-2" style={{ width: 56, height: 56, fontSize: 28 }}>✓</div>
+                                    ) : (
+                                        <div className="result-icon result-icon-wrong mb-2" style={{ width: 56, height: 56, fontSize: 28 }}>✗</div>
+                                    )}
+                                    <h2 className="text-2xl font-extrabold" style={{ color: isCorrect ? 'var(--accent-success)' : 'var(--accent-danger)' }}>
+                                        {isCorrect ? 'Correct!' : 'Wrong'}
+                                    </h2>
+                                    {pointsEarned > 0 && (
+                                        <p className="text-xl font-bold text-[--accent-success] mt-2">+{pointsEarned}</p>
+                                    )}
+                                </>
                             )}
                         </div>
 
