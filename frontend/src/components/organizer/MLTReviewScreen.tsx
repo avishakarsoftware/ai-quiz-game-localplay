@@ -66,51 +66,58 @@ export default function MLTReviewScreen({
                 <div className="text-center mb-6">
                     <h1 className="text-2xl font-bold">{game.game_title}</h1>
                     <p className="text-[--text-secondary] mt-1">
-                        {game.statements.length} statements — tap to edit
+                        {game.statements.length} statements ready to go
                     </p>
                 </div>
 
                 {/* Statements list */}
                 <div className="space-y-3 mb-6">
                     {game.statements.map((statement, i) => (
-                        <div key={statement.id} className="review-card">
-                            {editingId === statement.id ? (
-                                <div className="p-4 space-y-3">
-                                    <textarea
-                                        value={editText}
-                                        onChange={(e) => setEditText(e.target.value)}
-                                        className="input-field"
-                                        rows={2}
-                                    />
-                                    <div className="flex gap-2">
-                                        <button onClick={saveEdit} className="btn btn-primary" style={{ flex: 1 }}>
-                                            Save
-                                        </button>
-                                        <button onClick={cancelEdit} className="btn btn-secondary" style={{ flex: 1 }}>
-                                            Cancel
-                                        </button>
+                        <div key={statement.id} className="review-question-card">
+                            <div className="p-4">
+                                {editingId === statement.id ? (
+                                    <div className="space-y-3">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="review-q-number">{i + 1}</span>
+                                        </div>
+                                        <textarea
+                                            value={editText}
+                                            onChange={(e) => setEditText(e.target.value)}
+                                            className="input-field text-sm"
+                                            rows={2}
+                                        />
+                                        <div className="flex gap-2">
+                                            <button onClick={cancelEdit} className="btn btn-secondary flex-1" style={{ height: 36, fontSize: 13 }}>Cancel</button>
+                                            <button onClick={saveEdit} className="btn btn-primary flex-1" style={{ height: 36, fontSize: 13 }}>Save</button>
+                                        </div>
                                     </div>
-                                </div>
-                            ) : (
-                                <div
-                                    className="p-4 flex items-start gap-3 cursor-pointer"
-                                    onClick={() => startEdit(statement)}
-                                >
-                                    <span className="text-[--text-tertiary] font-mono text-sm mt-0.5">
-                                        {i + 1}
-                                    </span>
-                                    <p className="flex-1 text-[--text-primary]">{statement.text}</p>
-                                    {game.statements.length > 3 && (
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); deleteStatement(statement.id); }}
-                                            className="text-[--text-tertiary] hover:text-[--color-error] text-lg"
-                                            title="Delete statement"
-                                        >
-                                            ×
-                                        </button>
-                                    )}
-                                </div>
-                            )}
+                                ) : (
+                                    <>
+                                        <div className="review-card-actions">
+                                            <button
+                                                onClick={() => startEdit(statement)}
+                                                className="review-action-btn"
+                                                title="Edit"
+                                            >
+                                                ✎
+                                            </button>
+                                            {game.statements.length > 3 && (
+                                                <button
+                                                    onClick={() => deleteStatement(statement.id)}
+                                                    className="review-action-btn review-action-delete"
+                                                    title="Delete"
+                                                >
+                                                    ✕
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span className="review-q-number">{i + 1}</span>
+                                        </div>
+                                        <p className="text-sm font-medium">{statement.text}</p>
+                                    </>
+                                )}
+                            </div>
                         </div>
                     ))}
                 </div>
