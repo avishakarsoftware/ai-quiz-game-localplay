@@ -15,6 +15,7 @@ import GameQuestionScreen from '../components/organizer/GameQuestionScreen';
 import LeaderboardScreen from '../components/organizer/LeaderboardScreen';
 import PodiumScreen from '../components/organizer/PodiumScreen';
 import BonusSplash from '../components/BonusSplash';
+import ErrorModal from '../components/ErrorModal';
 
 type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'MLT_PROMPT' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
 
@@ -47,6 +48,7 @@ export default function OrganizerPage() {
     const [roomLocked, setRoomLocked] = useState(false);
     // WMLT-specific state for organizer question screen
     const [currentStatement, setCurrentStatement] = useState('');
+    const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const stateRef = useRef<OrganizerState>('SELECT_GAME');
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -59,6 +61,9 @@ export default function OrganizerPage() {
     useEffect(() => { stateRef.current = state; }, [state]);
     useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
     useEffect(() => { gameTypeRef.current = gameType; }, [gameType]);
+    useEffect(() => {
+        if (errorModal?.upgradeAvailable) track('paywall_shown', { source: 'error_modal' });
+    }, [errorModal]);
 
     useEffect(() => {
         fetch(`${API_URL}/sd/status`)
@@ -188,8 +193,16 @@ export default function OrganizerPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt, difficulty, num_questions: numQuestions, provider }),
             });
+            if (res.status === 503) {
+                const err = await res.json().catch(() => ({ detail: 'Free tier limit reached. Upgrade for unlimited games.' }));
+                track('quota_error', { source: 'quiz' });
+                setErrorModal({ title: 'Free Tier Limit', message: err.detail || 'Free tier limit reached.', upgradeAvailable: true });
+                setState('PROMPT');
+                return;
+            }
             if (res.status === 429) {
-                alert('Too many requests. Please wait a minute before generating another quiz.');
+                const err = await res.json().catch(() => ({ detail: 'Too many requests. Please wait a minute.' }));
+                setErrorModal({ title: 'Rate Limited', message: err.detail || 'Too many requests.' });
                 setState('PROMPT');
                 return;
             }
@@ -201,11 +214,11 @@ export default function OrganizerPage() {
                 track('quiz_generated', { topic: prompt, difficulty, num_questions: numQuestions, provider });
                 setState('REVIEW');
             } else {
-                alert('Failed to generate quiz');
+                setErrorModal({ title: 'Generation Failed', message: 'Failed to generate quiz. Please try a different topic.' });
                 setState('PROMPT');
             }
         } catch {
-            alert('Connection error');
+            setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
             setState('PROMPT');
         }
     };
@@ -218,8 +231,16 @@ export default function OrganizerPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt, difficulty, num_rounds: numQuestions, provider }),
             });
+            if (res.status === 503) {
+                const err = await res.json().catch(() => ({ detail: 'Free tier limit reached. Upgrade for unlimited games.' }));
+                track('quota_error', { source: 'mlt' });
+                setErrorModal({ title: 'Free Tier Limit', message: err.detail || 'Free tier limit reached.', upgradeAvailable: true });
+                setState('MLT_PROMPT');
+                return;
+            }
             if (res.status === 429) {
-                alert('Too many requests. Please wait a minute.');
+                const err = await res.json().catch(() => ({ detail: 'Too many requests. Please wait a minute.' }));
+                setErrorModal({ title: 'Rate Limited', message: err.detail || 'Too many requests.' });
                 setState('MLT_PROMPT');
                 return;
             }
@@ -231,11 +252,11 @@ export default function OrganizerPage() {
                 track('mlt_generated', { topic: prompt, difficulty, num_rounds: numQuestions, provider });
                 setState('MLT_REVIEW');
             } else {
-                alert('Failed to generate statements');
+                setErrorModal({ title: 'Generation Failed', message: 'Failed to generate statements. Please try a different topic.' });
                 setState('MLT_PROMPT');
             }
         } catch {
-            alert('Connection error');
+            setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
             setState('MLT_PROMPT');
         }
     };
@@ -245,18 +266,30 @@ export default function OrganizerPage() {
         setState('GENERATING_IMAGES');
         setImageProgress(0);
 
+        let failures = 0;
         for (let i = 0; i < (quiz?.questions.length || 0); i++) {
             const question = quiz!.questions[i];
-            await fetch(`${API_URL}/quiz/generate-images`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ quiz_id: contentId, question_id: question.id }),
-            });
+            try {
+                const res = await fetch(`${API_URL}/quiz/generate-images`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ quiz_id: contentId, question_id: question.id }),
+                });
+                if (res.ok) {
+                    setQuestionImages(prev => ({
+                        ...prev,
+                        [question.id]: `${API_URL}/quiz/${contentId}/image/${question.id}`
+                    }));
+                } else {
+                    failures++;
+                }
+            } catch {
+                failures++;
+            }
             setImageProgress(i + 1);
-            setQuestionImages(prev => ({
-                ...prev,
-                [question.id]: `${API_URL}/quiz/${contentId}/image/${question.id}`
-            }));
+        }
+        if (failures > 0) {
+            setErrorModal({ title: 'Image Generation', message: `${failures} image(s) failed to generate. You can still play without them.` });
         }
         setState('REVIEW');
     };
@@ -316,6 +349,8 @@ export default function OrganizerPage() {
         return () => {
             mountedRef.current = false;
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+            wsRef.current?.close();
+            wsRef.current = null;
         };
     }, []);
 
@@ -352,7 +387,7 @@ export default function OrganizerPage() {
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ detail: 'Failed to create room' }));
-                alert(err.detail || `Server error (${res.status})`);
+                setErrorModal({ title: 'Room Error', message: err.detail || `Server error (${res.status})` });
                 return;
             }
             const data = await res.json();
@@ -362,7 +397,7 @@ export default function OrganizerPage() {
             setState('ROOM');
             connectWs(data.room_code);
         } catch {
-            alert('Connection error — could not create room');
+            setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
         }
     };
 
@@ -530,6 +565,20 @@ export default function OrganizerPage() {
                     />
                 )}
             </div>
+
+            {errorModal && (
+                <ErrorModal
+                    title={errorModal.title}
+                    message={errorModal.message}
+                    upgradeAvailable={errorModal.upgradeAvailable}
+                    onDismiss={() => setErrorModal(null)}
+                    onUpgrade={() => {
+                        track('upgrade_clicked', { source: 'error_modal' });
+                        setErrorModal(null);
+                        // Phase 3: open UpgradeModal here
+                    }}
+                />
+            )}
         </div>
     );
 }

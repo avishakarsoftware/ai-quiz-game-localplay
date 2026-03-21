@@ -34,19 +34,32 @@ from main import app, quizzes, quiz_images, game_history
 from socket_manager import socket_manager
 
 
+def _teardown_rooms():
+    """Cancel all background tasks and clear rooms to prevent state leaks between tests."""
+    for room in socket_manager.rooms.values():
+        if room.timer_task:
+            room.timer_task.cancel()
+            room.timer_task = None
+        if room._organizer_cleanup_task:
+            room._organizer_cleanup_task.cancel()
+            room._organizer_cleanup_task = None
+    socket_manager.rooms.clear()
+    socket_manager.stop_cleanup_loop()
+
+
 @pytest.fixture(autouse=True)
 def clear_state():
+    _teardown_rooms()
     quizzes.clear()
     quiz_images.clear()
     game_history.clear()
-    socket_manager.rooms.clear()
     saved_origins = socket_manager.allowed_origins
     socket_manager.allowed_origins = []
     yield
+    _teardown_rooms()
     quizzes.clear()
     quiz_images.clear()
     game_history.clear()
-    socket_manager.rooms.clear()
     socket_manager.allowed_origins = saved_origins
 
 
@@ -55,8 +68,11 @@ client = TestClient(app)
 
 def recv_until(ws, msg_type, max_messages=50):
     """Receive WS messages until we get the expected type."""
-    for _ in range(max_messages):
-        data = ws.receive_json()
+    for i in range(max_messages):
+        try:
+            data = ws.receive_json()
+        except Exception as e:
+            raise TimeoutError(f"Connection closed while waiting for {msg_type} (after {i} messages): {e}")
         if data.get("type") == msg_type:
             return data
     raise TimeoutError(f"Never received {msg_type} after {max_messages} messages")
@@ -366,7 +382,8 @@ class TestReconnectionE2E:
             # Player joins
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
-                recv_until(p_ws, "JOINED_ROOM")
+                joined = recv_until(p_ws, "JOINED_ROOM")
+                session_token = joined.get("session_token", "")
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -396,7 +413,7 @@ class TestReconnectionE2E:
 
             # Player reconnects (no JOINED_ROOM for reconnecting players)
             with client.websocket_connect(f"/ws/{room_code}/player-2") as p_ws2:
-                p_ws2.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws2.send_json({"type": "JOIN", "nickname": "Alice", "session_token": session_token})
 
                 # Should get RECONNECTED instead of PLAYER_JOINED
                 recon = recv_until(p_ws2, "RECONNECTED")

@@ -633,24 +633,52 @@ class TestClientIpDetection:
     """Fix 3: Rate limiter reads X-Forwarded-For behind proxy."""
 
     def test_get_client_ip_from_x_forwarded_for(self):
-        """Should read X-Forwarded-For header first."""
+        """Should read X-Forwarded-For header when proxy headers are trusted."""
         from main import _get_client_ip
+        import config
 
         class FakeRequest:
             headers = {"x-forwarded-for": "203.0.113.50, 10.0.0.1"}
             client = type('obj', (object,), {'host': '127.0.0.1'})()
 
-        assert _get_client_ip(FakeRequest()) == "203.0.113.50"
+        original = config.TRUST_PROXY_HEADERS
+        config.TRUST_PROXY_HEADERS = True
+        try:
+            assert _get_client_ip(FakeRequest()) == "203.0.113.50"
+        finally:
+            config.TRUST_PROXY_HEADERS = original
+
+    def test_get_client_ip_ignores_forwarded_when_untrusted(self):
+        """Should ignore X-Forwarded-For when proxy headers are not trusted."""
+        from main import _get_client_ip
+        import config
+
+        class FakeRequest:
+            headers = {"x-forwarded-for": "203.0.113.50"}
+            client = type('obj', (object,), {'host': '127.0.0.1'})()
+
+        original = config.TRUST_PROXY_HEADERS
+        config.TRUST_PROXY_HEADERS = False
+        try:
+            assert _get_client_ip(FakeRequest()) == "127.0.0.1"
+        finally:
+            config.TRUST_PROXY_HEADERS = original
 
     def test_get_client_ip_from_x_real_ip(self):
-        """Should fall back to X-Real-IP."""
+        """Should fall back to X-Real-IP when proxy headers are trusted."""
         from main import _get_client_ip
+        import config
 
         class FakeRequest:
             headers = {"x-real-ip": "198.51.100.23"}
             client = type('obj', (object,), {'host': '127.0.0.1'})()
 
-        assert _get_client_ip(FakeRequest()) == "198.51.100.23"
+        original = config.TRUST_PROXY_HEADERS
+        config.TRUST_PROXY_HEADERS = True
+        try:
+            assert _get_client_ip(FakeRequest()) == "198.51.100.23"
+        finally:
+            config.TRUST_PROXY_HEADERS = original
 
     def test_get_client_ip_fallback_to_client_host(self):
         """Should fall back to req.client.host."""

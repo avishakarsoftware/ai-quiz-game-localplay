@@ -133,8 +133,12 @@ class Room:
 
     def _remove_connection(self, client_id: str):
         """Remove a connection. During active game, preserve player data for reconnection."""
+        # Spectator cleanup: only touch spectator dict, never player/organizer state
+        if client_id in self.spectators:
+            self.spectators.pop(client_id, None)
+            self.msg_timestamps.pop(client_id, None)
+            return
         self.connections.pop(client_id, None)
-        self.spectators.pop(client_id, None)
         self.msg_timestamps.pop(client_id, None)
         if client_id in self.players:
             nickname = self.players[client_id]["nickname"]
@@ -162,6 +166,19 @@ class Room:
             self.organizer_id = None
             self._organizer_just_disconnected = True
             logger.info("Organizer disconnected from room %s", self.room_code)
+
+    async def close_all_connections(self):
+        """Close all player, organizer, and spectator websockets."""
+        for ws in list(self.connections.values()):
+            try:
+                await ws.close()
+            except Exception:
+                pass
+        for ws in list(self.spectators.values()):
+            try:
+                await ws.close()
+            except Exception:
+                pass
 
     async def broadcast(self, message: dict):
         disconnected = []
@@ -212,6 +229,12 @@ class SocketManager:
         if self._cleanup_task is None:
             self._cleanup_task = asyncio.create_task(self._cleanup_expired_rooms())
 
+    def stop_cleanup_loop(self):
+        """Cancel the background room cleanup task."""
+        if self._cleanup_task is not None:
+            self._cleanup_task.cancel()
+            self._cleanup_task = None
+
     async def _cleanup_expired_rooms(self):
         """Periodically remove expired rooms."""
         while True:
@@ -220,8 +243,10 @@ class SocketManager:
                 expired = [code for code, room in self.rooms.items() if room.is_expired()]
                 for code in expired:
                     room = self.rooms.pop(code, None)
-                    if room and room.timer_task:
-                        room.timer_task.cancel()
+                    if room:
+                        if room.timer_task:
+                            room.timer_task.cancel()
+                        await room.close_all_connections()
                     logger.info("Cleaned up expired room %s", code)
             except asyncio.CancelledError:
                 break
@@ -238,6 +263,7 @@ class SocketManager:
                 self.rooms.pop(room_code, None)
                 if room.timer_task:
                     room.timer_task.cancel()
+                await room.close_all_connections()
                 logger.info("Room %s deleted (organizer did not reconnect within %ds)", room_code, delay)
         except asyncio.CancelledError:
             pass
@@ -331,9 +357,14 @@ class SocketManager:
                 room._organizer_cleanup_task.cancel()
                 room._organizer_cleanup_task = None
                 logger.info("Organizer reconnected to room %s, cleanup cancelled", room_code)
-            # Clean up stale organizer connection if a different client_id
+            # Close and clean up stale organizer connection if a different client_id
             if room.organizer_id and room.organizer_id != client_id:
-                room.connections.pop(room.organizer_id, None)
+                old_org_ws = room.connections.pop(room.organizer_id, None)
+                if old_org_ws:
+                    try:
+                        await old_org_ws.close()
+                    except Exception:
+                        pass
             room.organizer = websocket
             room.organizer_id = client_id
             # Notify players and spectators that host is back (only on actual reconnect, not first connect)
@@ -375,7 +406,9 @@ class SocketManager:
                     continue
 
                 room.touch()
-                await self.handle_message(room, client_id, message, is_organizer)
+                # Revoke organizer privileges if this socket was replaced by a newer organizer
+                effective_organizer = is_organizer and client_id == room.organizer_id
+                await self.handle_message(room, client_id, message, effective_organizer)
         except WebSocketDisconnect:
             logger.info("Client %s disconnected from room %s", client_id, room_code)
         except Exception:
@@ -384,11 +417,13 @@ class SocketManager:
             room._remove_connection(client_id)
             if room._organizer_just_disconnected:
                 room._organizer_just_disconnected = False
-                await room.broadcast({"type": "ORGANIZER_DISCONNECTED"})
-                # Start grace period — delete room if organizer doesn't reconnect
-                room._organizer_cleanup_task = asyncio.create_task(
-                    self._delayed_room_cleanup(room_code, delay=5)
-                )
+                # Re-check: organizer may have already reconnected via a new socket
+                if room.organizer is None:
+                    await room.broadcast({"type": "ORGANIZER_DISCONNECTED"})
+                    # Start grace period — delete room if organizer doesn't reconnect
+                    room._organizer_cleanup_task = asyncio.create_task(
+                        self._delayed_room_cleanup(room_code, delay=5)
+                    )
             if room._player_event:
                 event_type, nickname = room._player_event
                 room._player_event = None
@@ -443,7 +478,11 @@ class SocketManager:
         logger.info("Organizer reconnected to room %s (state: %s)", room.room_code, room.state)
 
     async def handle_message(self, room: Room, client_id: str, message: dict, is_organizer: bool):
+        if not isinstance(message, dict):
+            return
         msg_type = message.get("type")
+        if not isinstance(msg_type, str):
+            return
 
         if is_organizer:
             if msg_type == "START_GAME":
@@ -536,8 +575,10 @@ class SocketManager:
 
         else:
             if msg_type == "JOIN":
-                nickname = message.get("nickname", "").strip()
-                team = message.get("team", "").strip() or None
+                raw_nick = message.get("nickname", "")
+                raw_team = message.get("team", "")
+                nickname = (raw_nick if isinstance(raw_nick, str) else "").strip()
+                team = (raw_team if isinstance(raw_team, str) else "").strip() or None
                 # Sanitize: strip HTML tags and control characters
                 nickname = re.sub(r'<[^>]+>', '', nickname)
                 nickname = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', nickname).strip()
@@ -548,6 +589,7 @@ class SocketManager:
                             "type": "ERROR",
                             "message": f"Nickname must be 1-{config.MAX_NICKNAME_LENGTH} characters"
                         })
+                        await ws.close()
                     return
 
                 # Sanitize team name
@@ -574,6 +616,7 @@ class SocketManager:
                         ws = room.connections.get(client_id)
                         if ws:
                             await ws.send_json({"type": "ERROR", "message": "Nickname is taken"})
+                            await ws.close()
                         return
                     saved = room.disconnected_players.pop(nickname)
                     room.players[client_id] = {
@@ -648,6 +691,7 @@ class SocketManager:
                         ws = room.connections.get(client_id)
                         if ws:
                             await ws.send_json({"type": "ERROR", "message": "Nickname is taken"})
+                            await ws.close()
                         return
                     # Kick the old connection and let the new one take over
                     old_ws = room.connections.pop(existing_id, None)
@@ -708,6 +752,7 @@ class SocketManager:
                     conn = room.connections.get(client_id)
                     if conn:
                         await conn.send_json({"type": "ERROR", "message": "Room is locked by the host"})
+                        await conn.close()
                     return
 
                 # Block new players if game is in progress
@@ -719,12 +764,14 @@ class SocketManager:
                             "question_number": room.current_question_index + 1,
                             "total_questions": room.total_rounds(),
                         })
+                        await conn.close()
                     return
 
                 if len(room.players) >= config.MAX_PLAYERS_PER_ROOM:
                     conn = room.connections.get(client_id)
                     if conn:
                         await conn.send_json({"type": "ERROR", "message": "Room is full"})
+                        await conn.close()
                     return
 
                 room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
@@ -752,7 +799,8 @@ class SocketManager:
                     return
                 if room.state != "QUESTION":
                     return
-                voted_for = message.get("voted_for", "").strip()
+                raw_vote = message.get("voted_for", "")
+                voted_for = (raw_vote if isinstance(raw_vote, str) else "").strip()
                 nickname = room.players[client_id]["nickname"]
                 # Validate voted_for is a player in the room
                 valid_nicknames = room.player_nicknames()

@@ -18,7 +18,7 @@ import socket as socketlib
 import config
 config.setup_logging()
 
-from quiz_engine import quiz_engine, _sanitize_quiz, DailyLimitExceeded
+from quiz_engine import quiz_engine, _sanitize_quiz, DailyLimitExceeded, AIQuotaExceeded
 from mlt_engine import mlt_engine, _sanitize_mlt
 from socket_manager import socket_manager
 from image_engine import image_engine
@@ -32,6 +32,7 @@ async def lifespan(app: FastAPI):
     socket_manager.start_cleanup_loop()
     yield
     logger.info("Shutting down LocalPlay backend")
+    socket_manager.stop_cleanup_loop()
 
 
 app = FastAPI(title="AI Quiz Game Backend", lifespan=lifespan)
@@ -58,13 +59,18 @@ _rate_limit_store: Dict[str, list] = defaultdict(list)
 
 
 def _get_client_ip(req: Request) -> str:
-    """Get real client IP, accounting for reverse proxy headers."""
-    forwarded = req.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    real_ip = req.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip.strip()
+    """Get real client IP, accounting for reverse proxy headers.
+
+    Only trusts X-Forwarded-For / X-Real-IP when TRUST_PROXY_HEADERS is enabled,
+    preventing attackers from spoofing their IP to bypass rate limits.
+    """
+    if config.TRUST_PROXY_HEADERS:
+        forwarded = req.headers.get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        real_ip = req.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
     return req.client.host if req.client else "unknown"
 
 
@@ -105,13 +111,15 @@ def _evict_old_content():
         quizzes.pop(qid, None)
         quiz_timestamps.pop(qid, None)
         quiz_images.pop(qid, None)
-    while len(quizzes) >= config.MAX_QUIZZES and quiz_timestamps:
-        oldest_id = min(quiz_timestamps, key=quiz_timestamps.get)
-        if oldest_id in active_content_ids:
-            break
-        quizzes.pop(oldest_id, None)
-        quiz_timestamps.pop(oldest_id, None)
-        quiz_images.pop(oldest_id, None)
+    # Evict oldest non-active quizzes until under limit
+    if len(quizzes) >= config.MAX_QUIZZES:
+        for qid in sorted(quiz_timestamps, key=quiz_timestamps.get):
+            if len(quizzes) < config.MAX_QUIZZES:
+                break
+            if qid not in active_content_ids:
+                quizzes.pop(qid, None)
+                quiz_timestamps.pop(qid, None)
+                quiz_images.pop(qid, None)
 
     # Evict MLT scenarios
     expired_mlt = [sid for sid, ts in mlt_timestamps.items()
@@ -119,12 +127,13 @@ def _evict_old_content():
     for sid in expired_mlt:
         mlt_scenarios.pop(sid, None)
         mlt_timestamps.pop(sid, None)
-    while len(mlt_scenarios) >= config.MAX_QUIZZES and mlt_timestamps:
-        oldest_id = min(mlt_timestamps, key=mlt_timestamps.get)
-        if oldest_id in active_content_ids:
-            break
-        mlt_scenarios.pop(oldest_id, None)
-        mlt_timestamps.pop(oldest_id, None)
+    if len(mlt_scenarios) >= config.MAX_QUIZZES:
+        for sid in sorted(mlt_timestamps, key=mlt_timestamps.get):
+            if len(mlt_scenarios) < config.MAX_QUIZZES:
+                break
+            if sid not in active_content_ids:
+                mlt_scenarios.pop(sid, None)
+                mlt_timestamps.pop(sid, None)
 
 def generate_room_code() -> str:
     """Generate a unique 6-character room code, checking for collisions."""
@@ -212,7 +221,7 @@ class ImageGenerateRequest(BaseModel):
 
 @app.get("/providers")
 async def get_providers():
-    return {"providers": quiz_engine.get_available_providers()}
+    return {"providers": await quiz_engine.get_available_providers()}
 
 
 @app.post("/quiz/generate")
@@ -224,6 +233,8 @@ async def generate_quiz(request: QuizRequest, req: Request):
         quiz_data = await quiz_engine.generate_quiz(request.prompt, request.difficulty, request.num_questions, request.provider)
     except DailyLimitExceeded:
         raise HTTPException(status_code=429, detail="Daily quiz limit reached. Please try again tomorrow!")
+    except AIQuotaExceeded:
+        raise HTTPException(status_code=503, detail="Free tier limit reached. Upgrade for unlimited games.")
     if not quiz_data:
         raise HTTPException(status_code=500, detail="Failed to generate quiz")
 
@@ -280,12 +291,12 @@ async def delete_question(quiz_id: str, question_id: int):
     if quiz_id not in quizzes:
         raise HTTPException(status_code=404, detail="Quiz not found")
     quiz = quizzes[quiz_id]
-    original_len = len(quiz["questions"])
-    quiz["questions"] = [q for q in quiz["questions"] if q["id"] != question_id]
-    if len(quiz["questions"]) == original_len:
+    remaining = [q for q in quiz["questions"] if q["id"] != question_id]
+    if len(remaining) == len(quiz["questions"]):
         raise HTTPException(status_code=404, detail="Question not found")
-    if len(quiz["questions"]) == 0:
+    if len(remaining) == 0:
         raise HTTPException(status_code=400, detail="Cannot delete the last question")
+    quiz["questions"] = remaining
     logger.info("Question %d deleted from quiz %s", question_id, quiz_id)
     return {"quiz_id": quiz_id, "quiz": quiz}
 
@@ -296,7 +307,7 @@ async def generate_quiz_images(request: ImageGenerateRequest):
     if request.quiz_id not in quizzes:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
-    if not image_engine.is_available():
+    if not await image_engine.is_available():
         raise HTTPException(status_code=503, detail="Stable Diffusion not available. Start the SD WebUI server.")
 
     quiz = quizzes[request.quiz_id]
@@ -333,7 +344,7 @@ async def get_question_image(quiz_id: str, question_id: int):
 @app.get("/sd/status")
 async def sd_status():
     """Check if Stable Diffusion is available"""
-    return {"available": image_engine.is_available()}
+    return {"available": await image_engine.is_available()}
 
 
 @app.post("/room/create")
@@ -478,6 +489,8 @@ async def generate_mlt(request: MLTRequest, req: Request):
         mlt_data = await mlt_engine.generate_statements(request.prompt, request.difficulty, request.num_rounds, request.provider)
     except DailyLimitExceeded:
         raise HTTPException(status_code=429, detail="Daily generation limit reached. Please try again tomorrow!")
+    except AIQuotaExceeded:
+        raise HTTPException(status_code=503, detail="Free tier limit reached. Upgrade for unlimited games.")
     if not mlt_data:
         raise HTTPException(status_code=500, detail="Failed to generate statements")
 
@@ -529,12 +542,12 @@ async def delete_mlt_statement(scenario_id: str, statement_id: int):
     if scenario_id not in mlt_scenarios:
         raise HTTPException(status_code=404, detail="MLT scenario not found")
     game = mlt_scenarios[scenario_id]
-    original_len = len(game["statements"])
-    game["statements"] = [s for s in game["statements"] if s["id"] != statement_id]
-    if len(game["statements"]) == original_len:
+    remaining = [s for s in game["statements"] if s["id"] != statement_id]
+    if len(remaining) == len(game["statements"]):
         raise HTTPException(status_code=404, detail="Statement not found")
-    if len(game["statements"]) == 0:
+    if len(remaining) == 0:
         raise HTTPException(status_code=400, detail="Cannot delete the last statement")
+    game["statements"] = remaining
     return {"scenario_id": scenario_id, "game": game}
 
 
@@ -617,7 +630,7 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Authorization", "X-Device-Id"],
 )
 
 # Share allowed origins with WebSocket manager for origin validation

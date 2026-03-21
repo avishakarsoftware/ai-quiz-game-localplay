@@ -66,7 +66,13 @@ export default function PlayerPage() {
     const autoJoinedRef = useRef(false);
     const kickedRef = useRef(false);
     const mountedRef = useRef(true);
-    useEffect(() => () => { mountedRef.current = false; }, []);
+    const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => () => {
+        mountedRef.current = false;
+        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+        wsRef.current?.close();
+        wsRef.current = null;
+    }, []);
 
     // Auto-rejoin if we have a saved session (e.g. page refresh)
     useEffect(() => {
@@ -154,6 +160,10 @@ export default function PlayerPage() {
                     setCorrectAnswer(null);
                     setIsBonus(msg.is_bonus as boolean || false);
                     setState('QUESTION');
+                } else if (msg.state === 'LEADERBOARD') {
+                    setState('RESULT');
+                } else if (msg.state === 'PODIUM') {
+                    setState('PODIUM');
                 } else {
                     setState('WAITING');
                 }
@@ -294,7 +304,7 @@ export default function PlayerPage() {
             if (!mountedRef.current) return;
             setState((current) => {
                 if (current !== 'JOIN' && current !== 'PODIUM') {
-                    setTimeout(() => joinRoom(), 2000);
+                    reconnectTimerRef.current = setTimeout(() => joinRoom(), 2000);
                     return 'RECONNECTING';
                 }
                 if (current === 'JOIN') setError('Unable to connect. Check your internet and try again.');

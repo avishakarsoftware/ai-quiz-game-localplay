@@ -50,6 +50,7 @@ export default function SpectatorPage() {
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const roomClosedRef = useRef(false);
+    const mountedRef = useRef(true);
 
     // In Capacitor, window.location.origin is capacitor://localhost — use the web URL
     const isCapacitor = window.location.protocol === 'capacitor:' || (window.location.hostname === 'localhost' && !window.location.port);
@@ -216,7 +217,7 @@ export default function SpectatorPage() {
         ws.onerror = () => setGameState('ERROR');
         ws.onclose = () => {
             wsRef.current = null;
-            if (roomClosedRef.current) return; // Room explicitly closed — don't reconnect
+            if (roomClosedRef.current || !mountedRef.current) return;
             setGameState('DISCONNECTED');
             // Exponential backoff: 2s, 4s, 8s, 16s, capped at 30s
             const delay = reconnectDelayRef.current;
@@ -231,8 +232,10 @@ export default function SpectatorPage() {
         reconnectDelayRef.current = 2000;
         connectWs.current();
         return () => {
+            mountedRef.current = false;
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
             wsRef.current?.close();
+            wsRef.current = null;
         };
     }, [joined, roomCode]);
 
