@@ -17,21 +17,44 @@ from socket_manager import socket_manager
 import config
 
 
+def _teardown_rooms():
+    """Cancel all background tasks and clear rooms to prevent state leaks between tests."""
+    for room in socket_manager.rooms.values():
+        if room.timer_task:
+            room.timer_task.cancel()
+            room.timer_task = None
+        if room._organizer_cleanup_task:
+            room._organizer_cleanup_task.cancel()
+            room._organizer_cleanup_task = None
+    socket_manager.rooms.clear()
+    socket_manager.stop_cleanup_loop()
+
+
 @pytest.fixture(autouse=True)
 def clear_state():
+    _teardown_rooms()
     quizzes.clear()
     game_history.clear()
-    socket_manager.rooms.clear()
     saved_origins = socket_manager.allowed_origins
     socket_manager.allowed_origins = []
     yield
+    _teardown_rooms()
     quizzes.clear()
     game_history.clear()
-    socket_manager.rooms.clear()
     socket_manager.allowed_origins = saved_origins
 
 
-client = TestClient(app)
+@pytest.fixture(autouse=True)
+def fresh_client():
+    """Fresh TestClient per test prevents ASGI event loop exhaustion from accumulated WS connections."""
+    global client
+    c = TestClient(app)
+    client = c
+    with c:
+        yield
+
+
+client: TestClient = TestClient(app)
 
 
 def seed_quiz(num_questions=3):
@@ -77,9 +100,15 @@ def create_room(quiz_id, time_limit=30):
 
 
 def recv_until(ws, msg_type, max_messages=50):
-    """Receive WS messages until we get the expected type."""
-    for _ in range(max_messages):
-        data = ws.receive_json()
+    """Receive WS messages until we get the expected type.
+
+    Uses max_messages as a safety bound to prevent infinite blocking.
+    """
+    for i in range(max_messages):
+        try:
+            data = ws.receive_json()
+        except Exception as e:
+            raise TimeoutError(f"Connection closed while waiting for {msg_type} (after {i} messages): {e}")
         if data.get("type") == msg_type:
             return data
     raise TimeoutError(f"Never received {msg_type} after {max_messages} messages")
@@ -652,7 +681,7 @@ class TestGameHistoryWS:
         assert len(game_history) == 1
         game = game_history[0]
         assert game["room_code"] == room_code
-        assert game["quiz_title"] == "Integration Test Quiz"
+        assert game["game_title"] == "Integration Test Quiz"
         assert game["player_count"] == 1
         assert len(game["leaderboard"]) == 1
         assert game["leaderboard"][0]["nickname"] == "Alice"
@@ -890,6 +919,7 @@ class TestMixedQuestionTypesWS:
                 p_ws.send_json({"type": "ANSWER", "answer_index": 2})  # correct
                 r3 = recv_until(p_ws, "ANSWER_RESULT")
                 assert r3["correct"] is True
+                recv_until(org_ws, "QUESTION_OVER")
 
     def test_fifty_fifty_on_tf_question(self):
         """50/50 on a True/False question: only 1 wrong option to remove (not 2)."""
@@ -942,7 +972,8 @@ class TestReconnectionWS:
             # Player joins and answers Q1
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
-                p_ws.receive_json()  # JOINED_ROOM
+                joined = p_ws.receive_json()  # JOINED_ROOM
+                session_token = joined.get("session_token", "")
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -961,9 +992,9 @@ class TestReconnectionWS:
             assert "Alice" in room.disconnected_players
             assert room.disconnected_players["Alice"]["streak"] == 1
 
-            # Player reconnects
+            # Player reconnects with session token
             with client.websocket_connect(f"/ws/{room_code}/p-2") as p_ws2:
-                p_ws2.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws2.send_json({"type": "JOIN", "nickname": "Alice", "session_token": session_token})
                 recon = recv_until(p_ws2, "RECONNECTED")
                 assert recon["score"] == r1["points"]
 
@@ -978,7 +1009,8 @@ class TestReconnectionWS:
             # Player joins and answers Q1
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
-                p_ws.receive_json()  # JOINED_ROOM
+                joined = p_ws.receive_json()  # JOINED_ROOM
+                session_token = joined.get("session_token", "")
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -995,9 +1027,9 @@ class TestReconnectionWS:
             # Player disconnects
             time.sleep(0.3)
 
-            # Reconnect
+            # Reconnect with session token
             with client.websocket_connect(f"/ws/{room_code}/p-2") as p_ws2:
-                p_ws2.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws2.send_json({"type": "JOIN", "nickname": "Alice", "session_token": session_token})
                 recv_until(p_ws2, "RECONNECTED")
 
                 # Q2
@@ -1480,7 +1512,8 @@ class TestBonusReconnectionWS:
             # Join player
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
-                p_ws.receive_json()  # JOINED_ROOM
+                joined = p_ws.receive_json()  # JOINED_ROOM
+                session_token = joined.get("session_token", "")
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -1511,9 +1544,9 @@ class TestBonusReconnectionWS:
                 room = socket_manager.rooms[room_code]
                 assert "Alice" in room.disconnected_players
 
-                # Reconnect
+                # Reconnect with session token
                 with client.websocket_connect(f"/ws/{room_code}/p-2") as p_ws2:
-                    p_ws2.send_json({"type": "JOIN", "nickname": "Alice"})
+                    p_ws2.send_json({"type": "JOIN", "nickname": "Alice", "session_token": session_token})
                     recon = recv_until(p_ws2, "RECONNECTED")
                     assert recon.get("is_bonus") is True
 
@@ -1602,7 +1635,8 @@ class TestOrganizerReconnectionWS:
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
-                p_ws.receive_json()  # JOINED_ROOM
+                joined = p_ws.receive_json()  # JOINED_ROOM
+                session_token = joined.get("session_token", "")
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
@@ -1625,7 +1659,7 @@ class TestOrganizerReconnectionWS:
 
             # Send NEXT_QUESTION to advance
             with client.websocket_connect(f"/ws/{room_code}/p-2") as p_ws2:
-                p_ws2.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws2.send_json({"type": "JOIN", "nickname": "Alice", "session_token": session_token})
                 recv_until(p_ws2, "RECONNECTED")
 
                 org_ws2.send_json({"type": "NEXT_QUESTION"})

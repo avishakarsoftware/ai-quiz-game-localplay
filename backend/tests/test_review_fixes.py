@@ -633,24 +633,52 @@ class TestClientIpDetection:
     """Fix 3: Rate limiter reads X-Forwarded-For behind proxy."""
 
     def test_get_client_ip_from_x_forwarded_for(self):
-        """Should read X-Forwarded-For header first."""
+        """Should read X-Forwarded-For header when proxy headers are trusted."""
         from main import _get_client_ip
+        import config
 
         class FakeRequest:
             headers = {"x-forwarded-for": "203.0.113.50, 10.0.0.1"}
             client = type('obj', (object,), {'host': '127.0.0.1'})()
 
-        assert _get_client_ip(FakeRequest()) == "203.0.113.50"
+        original = config.TRUST_PROXY_HEADERS
+        config.TRUST_PROXY_HEADERS = True
+        try:
+            assert _get_client_ip(FakeRequest()) == "203.0.113.50"
+        finally:
+            config.TRUST_PROXY_HEADERS = original
+
+    def test_get_client_ip_ignores_forwarded_when_untrusted(self):
+        """Should ignore X-Forwarded-For when proxy headers are not trusted."""
+        from main import _get_client_ip
+        import config
+
+        class FakeRequest:
+            headers = {"x-forwarded-for": "203.0.113.50"}
+            client = type('obj', (object,), {'host': '127.0.0.1'})()
+
+        original = config.TRUST_PROXY_HEADERS
+        config.TRUST_PROXY_HEADERS = False
+        try:
+            assert _get_client_ip(FakeRequest()) == "127.0.0.1"
+        finally:
+            config.TRUST_PROXY_HEADERS = original
 
     def test_get_client_ip_from_x_real_ip(self):
-        """Should fall back to X-Real-IP."""
+        """Should fall back to X-Real-IP when proxy headers are trusted."""
         from main import _get_client_ip
+        import config
 
         class FakeRequest:
             headers = {"x-real-ip": "198.51.100.23"}
             client = type('obj', (object,), {'host': '127.0.0.1'})()
 
-        assert _get_client_ip(FakeRequest()) == "198.51.100.23"
+        original = config.TRUST_PROXY_HEADERS
+        config.TRUST_PROXY_HEADERS = True
+        try:
+            assert _get_client_ip(FakeRequest()) == "198.51.100.23"
+        finally:
+            config.TRUST_PROXY_HEADERS = original
 
     def test_get_client_ip_fallback_to_client_host(self):
         """Should fall back to req.client.host."""
@@ -738,14 +766,14 @@ class TestQuizImportValidation:
 class TestQuizEvictionSafety:
     """Fix 5: Skip active quizzes during eviction."""
 
-    def test_room_stores_quiz_id(self):
-        """Room should store quiz_id when created."""
-        room = Room("TEST01", make_quiz(), quiz_id="quiz-abc-123")
-        assert room.quiz_id == "quiz-abc-123"
+    def test_room_stores_content_id(self):
+        """Room should store content_id when created."""
+        room = Room("TEST01", make_quiz(), content_id="quiz-abc-123")
+        assert room.content_id == "quiz-abc-123"
 
     def test_eviction_skips_active_quiz(self):
         """Quizzes used by active rooms should not be evicted."""
-        from main import quizzes, quiz_timestamps, quiz_images, _evict_old_quizzes
+        from main import quizzes, quiz_timestamps, quiz_images, _evict_old_content
         from socket_manager import socket_manager
 
         # Clear state
@@ -757,7 +785,7 @@ class TestQuizEvictionSafety:
         quizzes["active-quiz"] = make_quiz()
         quiz_timestamps["active-quiz"] = 1.0  # Very old timestamp
         # Directly add room to avoid start_cleanup_loop needing event loop
-        room = Room("EVICT1", quizzes["active-quiz"], quiz_id="active-quiz")
+        room = Room("EVICT1", quizzes["active-quiz"], content_id="active-quiz")
         socket_manager.rooms["EVICT1"] = room
 
         # Add an "inactive" quiz not used by any room
@@ -769,7 +797,7 @@ class TestQuizEvictionSafety:
         old_limit = cfg.MAX_QUIZZES
         cfg.MAX_QUIZZES = 2  # Force eviction with just 2 quizzes
 
-        _evict_old_quizzes()
+        _evict_old_content()
 
         # Active quiz should survive, inactive should be evicted
         assert "active-quiz" in quizzes
@@ -781,7 +809,7 @@ class TestQuizEvictionSafety:
 
     def test_eviction_removes_inactive_quiz(self):
         """Quizzes not used by any room should be evicted normally."""
-        from main import quizzes, quiz_timestamps, quiz_images, _evict_old_quizzes
+        from main import quizzes, quiz_timestamps, quiz_images, _evict_old_content
         import config as cfg
 
         quizzes.clear()
@@ -796,7 +824,7 @@ class TestQuizEvictionSafety:
         old_limit = cfg.MAX_QUIZZES
         cfg.MAX_QUIZZES = 2  # With 2 quizzes, evict until < 2 → oldest removed
 
-        _evict_old_quizzes()
+        _evict_old_content()
 
         assert "old-quiz" not in quizzes
         assert "new-quiz" in quizzes

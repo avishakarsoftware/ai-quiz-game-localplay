@@ -30,6 +30,7 @@ ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "")
 RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX_REQUESTS = 5  # max quiz generations per window per IP
 DAILY_QUIZ_LIMIT = int(os.getenv("DAILY_QUIZ_LIMIT", "100"))  # max quiz generations per day (0 = unlimited)
+TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "false").lower() == "true"  # trust X-Forwarded-For
 
 # --- WebSocket Security ---
 WS_RATE_LIMIT_PER_SEC = 10  # max messages per second per client

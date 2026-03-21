@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "welcome_message": "",
+  "operations": {
+    "maintenance": false,
+    "maintenance_message": "We're upgrading the party! Back soon.",
+    "maintenance_until": null
+  },
+  "pricing": {
+    "pass_price": "$0.99",
+    "duration_hours": 12,
+    "label": "12-Hour Party Pass"
+  },
+  "feature_flags": {
+    "show_upgrade_button": false,
+    "enable_image_generation": true
+  },
+  "announcements": []
+}

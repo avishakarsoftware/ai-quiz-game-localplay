@@ -1785,6 +1785,61 @@ body {
     transform: rotate(180deg) scale(0.95);
 }
 
+/* ===== Game Select Cards ===== */
+.game-select-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    padding: 20px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: left;
+}
+
+.game-select-card:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--accent-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.game-select-card:active {
+    transform: translateY(0);
+}
+
+.game-select-icon {
+    font-size: 2.5rem;
+    flex-shrink: 0;
+}
+
+.game-select-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.game-select-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.game-select-desc {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.game-select-arrow {
+    font-size: 1.5rem;
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+}
+
 /* ===== Professional-Grade Screen Styles ===== */
 
 /* Game control buttons (organizer next/end) */

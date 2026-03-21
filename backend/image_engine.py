@@ -1,4 +1,4 @@
-import requests
+import httpx
 import base64
 import logging
 from typing import Optional
@@ -19,11 +19,12 @@ class ImageEngine:
             "negative_prompt": "text, watermark, logo, low quality, blurry, distorted, ugly"
         }
 
-    def is_available(self) -> bool:
+    async def is_available(self) -> bool:
         """Check if local Image Gen server is running"""
         try:
-            response = requests.get(f"{self.api_url}/health", timeout=2)
-            return response.status_code == 200 and response.json().get("model_loaded", False)
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"{self.api_url}/health", timeout=2)
+                return response.status_code == 200 and response.json().get("model_loaded", False)
         except Exception:
             return False
 
@@ -50,11 +51,12 @@ class ImageEngine:
         }
 
         try:
-            response = requests.post(
-                f"{self.api_url}/generate",
-                json=payload,
-                timeout=120  # Image gen can take time on M1
-            )
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.api_url}/generate",
+                    json=payload,
+                    timeout=120  # Image gen can take time on M1
+                )
 
             if response.status_code == 200:
                 result = response.json()
@@ -84,7 +86,7 @@ class ImageEngine:
         """
         images = {}
 
-        if not self.is_available():
+        if not await self.is_available():
             logger.warning("Image Gen server not available")
             return images
 

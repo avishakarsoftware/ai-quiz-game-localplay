@@ -1,8 +1,8 @@
 import re
-import requests
+import asyncio
+import httpx
 import json
 import logging
-import time
 from datetime import date
 from typing import Optional
 
@@ -118,8 +118,9 @@ async def _generate_ollama(prompt: str, difficulty: str, num_questions: int) -> 
     for attempt in range(1, config.LLM_MAX_RETRIES + 1):
         try:
             logger.info("Ollama attempt %d/%d for: '%s'", attempt, config.LLM_MAX_RETRIES, prompt[:100])
-            response = requests.post(config.OLLAMA_URL, json=payload, timeout=config.OLLAMA_TIMEOUT)
-            response.raise_for_status()
+            async with httpx.AsyncClient() as client:
+                response = await client.post(config.OLLAMA_URL, json=payload, timeout=config.OLLAMA_TIMEOUT)
+                response.raise_for_status()
             result = response.json()
             quiz_data = json.loads(result['response'])
             if _validate_quiz(quiz_data, attempt):
@@ -127,16 +128,16 @@ async def _generate_ollama(prompt: str, difficulty: str, num_questions: int) -> 
                 logger.info("Quiz generated via Ollama: '%s' with %d questions",
                             quiz_data.get("quiz_title", "Untitled"), len(quiz_data["questions"]))
                 return quiz_data
-        except requests.Timeout:
+        except httpx.TimeoutException:
             logger.warning("Attempt %d: Ollama timed out after %ds", attempt, config.OLLAMA_TIMEOUT)
         except json.JSONDecodeError as e:
             logger.warning("Attempt %d: Failed to parse Ollama response as JSON: %s", attempt, e)
-        except requests.RequestException as e:
+        except httpx.HTTPError as e:
             logger.error("Attempt %d: HTTP error calling Ollama: %s", attempt, e)
         except Exception as e:
             logger.error("Attempt %d: Unexpected error (Ollama): %s", attempt, e)
         if attempt < config.LLM_MAX_RETRIES:
-            time.sleep(2 ** attempt)
+            await asyncio.sleep(2 ** attempt)
 
     return None
 
@@ -169,8 +170,9 @@ async def _generate_gemini(prompt: str, difficulty: str, num_questions: int) -> 
     for attempt in range(1, config.LLM_MAX_RETRIES + 1):
         try:
             logger.info("Gemini attempt %d/%d for: '%s'", attempt, config.LLM_MAX_RETRIES, prompt[:100])
-            response = requests.post(url, json=payload, headers=headers, timeout=60)
-            response.raise_for_status()
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=payload, headers=headers, timeout=60)
+                response.raise_for_status()
             result = response.json()
             text = result["candidates"][0]["content"]["parts"][0]["text"]
             # Extract first JSON object — handles thinking text, markdown blocks, etc.
@@ -185,14 +187,19 @@ async def _generate_gemini(prompt: str, difficulty: str, num_questions: int) -> 
                 return quiz_data
         except json.JSONDecodeError as e:
             logger.warning("Attempt %d: Failed to parse Gemini response as JSON: %s", attempt, e)
-        except requests.RequestException as e:
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (429, 403):
+                logger.warning("Gemini quota exceeded (HTTP %d)", e.response.status_code)
+                raise AIQuotaExceeded(f"AI provider quota exceeded: {e.response.status_code}")
+            logger.error("Attempt %d: HTTP error calling Gemini: %s", attempt, e)
+        except httpx.HTTPError as e:
             logger.error("Attempt %d: HTTP error calling Gemini: %s", attempt, e)
         except (KeyError, IndexError) as e:
             logger.error("Attempt %d: Unexpected Gemini response structure: %s", attempt, e)
         except Exception as e:
             logger.error("Attempt %d: Unexpected error (Gemini): %s", attempt, e)
         if attempt < config.LLM_MAX_RETRIES:
-            time.sleep(2 ** attempt)
+            await asyncio.sleep(2 ** attempt)
 
     return None
 
@@ -219,8 +226,9 @@ async def _generate_claude(prompt: str, difficulty: str, num_questions: int) -> 
     for attempt in range(1, config.LLM_MAX_RETRIES + 1):
         try:
             logger.info("Claude attempt %d/%d for: '%s'", attempt, config.LLM_MAX_RETRIES, prompt[:100])
-            response = requests.post(url, json=payload, headers=headers, timeout=60)
-            response.raise_for_status()
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=payload, headers=headers, timeout=60)
+                response.raise_for_status()
             result = response.json()
             text = result["content"][0]["text"]
             # Claude may wrap JSON in markdown code blocks
@@ -234,14 +242,14 @@ async def _generate_claude(prompt: str, difficulty: str, num_questions: int) -> 
                 return quiz_data
         except json.JSONDecodeError as e:
             logger.warning("Attempt %d: Failed to parse Claude response as JSON: %s", attempt, e)
-        except requests.RequestException as e:
+        except httpx.HTTPError as e:
             logger.error("Attempt %d: HTTP error calling Claude: %s", attempt, e)
         except (KeyError, IndexError) as e:
             logger.error("Attempt %d: Unexpected Claude response structure: %s", attempt, e)
         except Exception as e:
             logger.error("Attempt %d: Unexpected error (Claude): %s", attempt, e)
         if attempt < config.LLM_MAX_RETRIES:
-            time.sleep(2 ** attempt)
+            await asyncio.sleep(2 ** attempt)
 
     return None
 
@@ -255,6 +263,11 @@ PROVIDERS = {
 
 class DailyLimitExceeded(Exception):
     """Raised when the daily quiz generation limit is reached."""
+    pass
+
+
+class AIQuotaExceeded(Exception):
+    """Raised when the AI provider returns a quota/billing error (429/403)."""
     pass
 
 
@@ -301,14 +314,14 @@ class QuizEngine:
             logger.error("Provider '%s' failed to generate quiz for: '%s'", provider, prompt[:100])
         return result
 
-    def get_available_providers(self) -> list[dict]:
+    async def get_available_providers(self) -> list[dict]:
         providers = []
         # Check if Ollama is actually reachable
         ollama_available = False
         try:
-            # Ollama API base is the generate URL minus the /api/generate path
             base_url = config.OLLAMA_URL.rsplit("/api/", 1)[0]
-            r = requests.get(base_url, timeout=2)
+            async with httpx.AsyncClient() as client:
+                r = await client.get(base_url, timeout=2)
             ollama_available = r.status_code == 200
         except Exception:
             pass

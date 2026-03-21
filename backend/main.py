@@ -18,7 +18,8 @@ import socket as socketlib
 import config
 config.setup_logging()
 
-from quiz_engine import quiz_engine, _sanitize_quiz, DailyLimitExceeded
+from quiz_engine import quiz_engine, _sanitize_quiz, DailyLimitExceeded, AIQuotaExceeded
+from mlt_engine import mlt_engine, _sanitize_mlt
 from socket_manager import socket_manager
 from image_engine import image_engine
 
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
     socket_manager.start_cleanup_loop()
     yield
     logger.info("Shutting down LocalPlay backend")
+    socket_manager.stop_cleanup_loop()
 
 
 app = FastAPI(title="AI Quiz Game Backend", lifespan=lifespan)
@@ -57,13 +59,18 @@ _rate_limit_store: Dict[str, list] = defaultdict(list)
 
 
 def _get_client_ip(req: Request) -> str:
-    """Get real client IP, accounting for reverse proxy headers."""
-    forwarded = req.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    real_ip = req.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip.strip()
+    """Get real client IP, accounting for reverse proxy headers.
+
+    Only trusts X-Forwarded-For / X-Real-IP when TRUST_PROXY_HEADERS is enabled,
+    preventing attackers from spoofing their IP to bypass rate limits.
+    """
+    if config.TRUST_PROXY_HEADERS:
+        forwarded = req.headers.get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        real_ip = req.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip()
     return req.client.host if req.client else "unknown"
 
 
@@ -86,27 +93,47 @@ quizzes: Dict[str, dict] = {}  # quiz_id -> quiz_data
 quiz_timestamps: Dict[str, float] = {}  # quiz_id -> creation time
 quiz_images: Dict[str, Dict[int, str]] = {}  # quiz_id -> {question_id: base64_image}
 
+# MLT (Most Likely To) storage
+mlt_scenarios: Dict[str, dict] = {}  # scenario_id -> {game_title, statements}
+mlt_timestamps: Dict[str, float] = {}  # scenario_id -> creation time
 
-def _evict_old_quizzes():
-    """Evict oldest quizzes if storage limit exceeded, and expire stale ones."""
-    # Quiz IDs currently in use by active rooms — never evict these
-    active_quiz_ids = {room.quiz_id for room in socket_manager.rooms.values() if room.quiz_id}
+
+def _evict_old_content():
+    """Evict oldest quizzes/MLT scenarios if storage limit exceeded, and expire stale ones."""
+    # Content IDs currently in use by active rooms — never evict these
+    active_content_ids = {room.content_id for room in socket_manager.rooms.values() if room.content_id}
     now = time.time()
-    # Remove expired quizzes (skip active ones)
+
+    # Evict quizzes
     expired = [qid for qid, ts in quiz_timestamps.items()
-               if now - ts > config.QUIZ_TTL_SECONDS and qid not in active_quiz_ids]
+               if now - ts > config.QUIZ_TTL_SECONDS and qid not in active_content_ids]
     for qid in expired:
         quizzes.pop(qid, None)
         quiz_timestamps.pop(qid, None)
         quiz_images.pop(qid, None)
-    # If still over limit, evict oldest (skip active ones)
-    while len(quizzes) >= config.MAX_QUIZZES and quiz_timestamps:
-        oldest_id = min(quiz_timestamps, key=quiz_timestamps.get)
-        if oldest_id in active_quiz_ids:
-            break  # All remaining quizzes are active — stop evicting
-        quizzes.pop(oldest_id, None)
-        quiz_timestamps.pop(oldest_id, None)
-        quiz_images.pop(oldest_id, None)
+    # Evict oldest non-active quizzes until under limit
+    if len(quizzes) >= config.MAX_QUIZZES:
+        for qid in sorted(quiz_timestamps, key=quiz_timestamps.get):
+            if len(quizzes) < config.MAX_QUIZZES:
+                break
+            if qid not in active_content_ids:
+                quizzes.pop(qid, None)
+                quiz_timestamps.pop(qid, None)
+                quiz_images.pop(qid, None)
+
+    # Evict MLT scenarios
+    expired_mlt = [sid for sid, ts in mlt_timestamps.items()
+                   if now - ts > config.QUIZ_TTL_SECONDS and sid not in active_content_ids]
+    for sid in expired_mlt:
+        mlt_scenarios.pop(sid, None)
+        mlt_timestamps.pop(sid, None)
+    if len(mlt_scenarios) >= config.MAX_QUIZZES:
+        for sid in sorted(mlt_timestamps, key=mlt_timestamps.get):
+            if len(mlt_scenarios) < config.MAX_QUIZZES:
+                break
+            if sid not in active_content_ids:
+                mlt_scenarios.pop(sid, None)
+                mlt_timestamps.pop(sid, None)
 
 def generate_room_code() -> str:
     """Generate a unique 6-character room code, checking for collisions."""
@@ -167,7 +194,9 @@ class QuizRequest(BaseModel):
 
 
 class RoomCreateRequest(BaseModel):
-    quiz_id: str
+    quiz_id: str = ""      # For quiz game
+    mlt_id: str = ""       # For MLT game
+    game_type: str = "quiz"
     time_limit: int = 15
 
     @field_validator('time_limit')
@@ -175,6 +204,13 @@ class RoomCreateRequest(BaseModel):
     def validate_time_limit(cls, v: int) -> int:
         if v < 5 or v > 60:
             raise ValueError('Time limit must be between 5 and 60 seconds')
+        return v
+
+    @field_validator('game_type')
+    @classmethod
+    def validate_game_type(cls, v: str) -> str:
+        if v not in ("quiz", "wmlt"):
+            raise ValueError('game_type must be "quiz" or "wmlt"')
         return v
 
 
@@ -185,7 +221,7 @@ class ImageGenerateRequest(BaseModel):
 
 @app.get("/providers")
 async def get_providers():
-    return {"providers": quiz_engine.get_available_providers()}
+    return {"providers": await quiz_engine.get_available_providers()}
 
 
 @app.post("/quiz/generate")
@@ -197,10 +233,12 @@ async def generate_quiz(request: QuizRequest, req: Request):
         quiz_data = await quiz_engine.generate_quiz(request.prompt, request.difficulty, request.num_questions, request.provider)
     except DailyLimitExceeded:
         raise HTTPException(status_code=429, detail="Daily quiz limit reached. Please try again tomorrow!")
+    except AIQuotaExceeded:
+        raise HTTPException(status_code=503, detail="Free tier limit reached. Upgrade for unlimited games.")
     if not quiz_data:
         raise HTTPException(status_code=500, detail="Failed to generate quiz")
 
-    _evict_old_quizzes()
+    _evict_old_content()
     quiz_id = str(uuid.uuid4())
     quizzes[quiz_id] = quiz_data
     quiz_timestamps[quiz_id] = time.time()
@@ -253,12 +291,12 @@ async def delete_question(quiz_id: str, question_id: int):
     if quiz_id not in quizzes:
         raise HTTPException(status_code=404, detail="Quiz not found")
     quiz = quizzes[quiz_id]
-    original_len = len(quiz["questions"])
-    quiz["questions"] = [q for q in quiz["questions"] if q["id"] != question_id]
-    if len(quiz["questions"]) == original_len:
+    remaining = [q for q in quiz["questions"] if q["id"] != question_id]
+    if len(remaining) == len(quiz["questions"]):
         raise HTTPException(status_code=404, detail="Question not found")
-    if len(quiz["questions"]) == 0:
+    if len(remaining) == 0:
         raise HTTPException(status_code=400, detail="Cannot delete the last question")
+    quiz["questions"] = remaining
     logger.info("Question %d deleted from quiz %s", question_id, quiz_id)
     return {"quiz_id": quiz_id, "quiz": quiz}
 
@@ -269,7 +307,7 @@ async def generate_quiz_images(request: ImageGenerateRequest):
     if request.quiz_id not in quizzes:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
-    if not image_engine.is_available():
+    if not await image_engine.is_available():
         raise HTTPException(status_code=503, detail="Stable Diffusion not available. Start the SD WebUI server.")
 
     quiz = quizzes[request.quiz_id]
@@ -306,31 +344,40 @@ async def get_question_image(quiz_id: str, question_id: int):
 @app.get("/sd/status")
 async def sd_status():
     """Check if Stable Diffusion is available"""
-    return {"available": image_engine.is_available()}
+    return {"available": await image_engine.is_available()}
 
 
 @app.post("/room/create")
 async def create_room(request: RoomCreateRequest):
-    if request.quiz_id not in quizzes:
-        raise HTTPException(status_code=404, detail="Quiz not found")
+    # Resolve content based on game type
+    if request.game_type == "wmlt":
+        if request.mlt_id not in mlt_scenarios:
+            raise HTTPException(status_code=404, detail="MLT scenario not found")
+        game_data = mlt_scenarios[request.mlt_id]
+        content_id = request.mlt_id
+    else:
+        if request.quiz_id not in quizzes:
+            raise HTTPException(status_code=404, detail="Quiz not found")
+        game_data = quizzes[request.quiz_id]
+        content_id = request.quiz_id
 
     # Enforce max rooms limit
     if len(socket_manager.rooms) >= config.MAX_ROOMS:
         raise HTTPException(status_code=429, detail="Too many active rooms. Please try again later.")
 
     room_code = generate_room_code()
-    quiz_data = quizzes[request.quiz_id]
     organizer_token = secrets.token_urlsafe(32)
 
-    # Attach image URLs to quiz data if available
-    if request.quiz_id in quiz_images:
-        for question in quiz_data["questions"]:
-            if question["id"] in quiz_images[request.quiz_id]:
-                question["image_url"] = f"/quiz/{request.quiz_id}/image/{question['id']}"
+    # Attach image URLs to quiz data if available (quiz only)
+    if request.game_type == "quiz" and content_id in quiz_images:
+        for question in game_data["questions"]:
+            if question["id"] in quiz_images[content_id]:
+                question["image_url"] = f"/quiz/{content_id}/image/{question['id']}"
 
-    socket_manager.create_room(room_code, quiz_data, request.time_limit,
-                               organizer_token=organizer_token, quiz_id=request.quiz_id)
-    logger.info("Room created: %s", room_code)
+    socket_manager.create_room(room_code, game_data, request.time_limit,
+                               organizer_token=organizer_token, content_id=content_id,
+                               game_type=request.game_type)
+    logger.info("Room created: %s (type=%s)", room_code, request.game_type)
     return {"room_code": room_code, "organizer_token": organizer_token}
 
 
@@ -376,13 +423,168 @@ class QuizImportRequest(BaseModel):
 @app.post("/quiz/import")
 async def import_quiz(request: QuizImportRequest):
     """Import a previously exported quiz."""
-    _evict_old_quizzes()
+    _evict_old_content()
     quiz_id = str(uuid.uuid4())
     quiz_data = _sanitize_quiz(request.quiz)
     quizzes[quiz_id] = quiz_data
     quiz_timestamps[quiz_id] = time.time()
     logger.info("Quiz imported: %s ('%s')", quiz_id, quiz_data.get("quiz_title", "Untitled"))
     return {"quiz_id": quiz_id, "quiz": quizzes[quiz_id]}
+
+
+# --- MLT (Most Likely To) Endpoints ---
+
+class MLTRequest(BaseModel):
+    prompt: str
+    difficulty: str = "medium"
+    num_rounds: int = 10
+    provider: str = ""
+
+    @field_validator('prompt')
+    @classmethod
+    def validate_prompt(cls, v: str) -> str:
+        v = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', v)
+        v = re.sub(r'<[^>]+>', '', v)
+        v = v.strip()
+        if not v or len(v) > config.MAX_PROMPT_LENGTH:
+            raise ValueError(f'Prompt must be 1-{config.MAX_PROMPT_LENGTH} characters')
+        lower_v = v.lower()
+        injection_patterns = [
+            r'ignore\s+(all\s+)?previous\s+instructions',
+            r'ignore\s+(all\s+)?above',
+            r'disregard\s+(all\s+)?previous',
+            r'you\s+are\s+now\s+(?:a|an|in)',
+            r'new\s+instructions?\s*:',
+            r'system\s*:\s*',
+            r'<\s*/?script',
+            r'javascript\s*:',
+        ]
+        for pattern in injection_patterns:
+            if re.search(pattern, lower_v):
+                raise ValueError('Prompt contains disallowed content')
+        return v
+
+    @field_validator('difficulty')
+    @classmethod
+    def validate_difficulty(cls, v: str) -> str:
+        v = v.lower().strip()
+        if v not in config.VALID_DIFFICULTIES:
+            raise ValueError(f'Difficulty must be one of: {", ".join(config.VALID_DIFFICULTIES)}')
+        return v
+
+    @field_validator('num_rounds')
+    @classmethod
+    def validate_num_rounds(cls, v: int) -> int:
+        if v < 3 or v > 25:
+            raise ValueError('Number of rounds must be 3-25')
+        return v
+
+
+@app.post("/mlt/generate")
+async def generate_mlt(request: MLTRequest, req: Request):
+    client_ip = _get_client_ip(req)
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating.")
+    try:
+        mlt_data = await mlt_engine.generate_statements(request.prompt, request.difficulty, request.num_rounds, request.provider)
+    except DailyLimitExceeded:
+        raise HTTPException(status_code=429, detail="Daily generation limit reached. Please try again tomorrow!")
+    except AIQuotaExceeded:
+        raise HTTPException(status_code=503, detail="Free tier limit reached. Upgrade for unlimited games.")
+    if not mlt_data:
+        raise HTTPException(status_code=500, detail="Failed to generate statements")
+
+    _evict_old_content()
+    scenario_id = str(uuid.uuid4())
+    mlt_scenarios[scenario_id] = mlt_data
+    mlt_timestamps[scenario_id] = time.time()
+    logger.info("MLT created: %s ('%s')", scenario_id, mlt_data.get("game_title", "Untitled"))
+    return {"scenario_id": scenario_id, "game": mlt_data}
+
+
+@app.get("/mlt/{scenario_id}")
+async def get_mlt(scenario_id: str):
+    if scenario_id not in mlt_scenarios:
+        raise HTTPException(status_code=404, detail="MLT scenario not found")
+    return mlt_scenarios[scenario_id]
+
+
+class MLTUpdateRequest(BaseModel):
+    game_title: str
+    statements: list
+
+    @field_validator('statements')
+    @classmethod
+    def validate_statements(cls, v: list) -> list:
+        if len(v) == 0:
+            raise ValueError('Must have at least 1 statement')
+        for s in v:
+            if not isinstance(s, dict) or "id" not in s or "text" not in s:
+                raise ValueError('Each statement must have id and text')
+            if not isinstance(s["text"], str) or not s["text"].strip():
+                raise ValueError('Statement text must be a non-empty string')
+        return v
+
+
+@app.put("/mlt/{scenario_id}")
+async def update_mlt(scenario_id: str, request: MLTUpdateRequest):
+    if scenario_id not in mlt_scenarios:
+        raise HTTPException(status_code=404, detail="MLT scenario not found")
+    mlt_data = {"game_title": request.game_title, "statements": request.statements}
+    mlt_data = _sanitize_mlt(mlt_data)
+    mlt_scenarios[scenario_id] = mlt_data
+    logger.info("MLT updated: %s ('%s'), %d statements", scenario_id, mlt_data["game_title"], len(mlt_data["statements"]))
+    return {"scenario_id": scenario_id, "game": mlt_scenarios[scenario_id]}
+
+
+@app.delete("/mlt/{scenario_id}/statement/{statement_id}")
+async def delete_mlt_statement(scenario_id: str, statement_id: int):
+    if scenario_id not in mlt_scenarios:
+        raise HTTPException(status_code=404, detail="MLT scenario not found")
+    game = mlt_scenarios[scenario_id]
+    remaining = [s for s in game["statements"] if s["id"] != statement_id]
+    if len(remaining) == len(game["statements"]):
+        raise HTTPException(status_code=404, detail="Statement not found")
+    if len(remaining) == 0:
+        raise HTTPException(status_code=400, detail="Cannot delete the last statement")
+    game["statements"] = remaining
+    return {"scenario_id": scenario_id, "game": game}
+
+
+@app.get("/mlt/{scenario_id}/export")
+async def export_mlt(scenario_id: str):
+    if scenario_id not in mlt_scenarios:
+        raise HTTPException(status_code=404, detail="MLT scenario not found")
+    return {"game": mlt_scenarios[scenario_id]}
+
+
+class MLTImportRequest(BaseModel):
+    game: dict
+
+    @field_validator('game')
+    @classmethod
+    def validate_game(cls, v: dict) -> dict:
+        if "game_title" not in v or "statements" not in v:
+            raise ValueError("Game must have game_title and statements")
+        if not isinstance(v["statements"], list) or len(v["statements"]) == 0:
+            raise ValueError("Game must have at least 1 statement")
+        for s in v["statements"]:
+            if not isinstance(s, dict) or "id" not in s or "text" not in s:
+                raise ValueError("Statement missing required fields")
+            if not isinstance(s["text"], str):
+                raise ValueError("Statement text must be a string")
+        return v
+
+
+@app.post("/mlt/import")
+async def import_mlt(request: MLTImportRequest):
+    _evict_old_content()
+    scenario_id = str(uuid.uuid4())
+    mlt_data = _sanitize_mlt(request.game)
+    mlt_scenarios[scenario_id] = mlt_data
+    mlt_timestamps[scenario_id] = time.time()
+    logger.info("MLT imported: %s ('%s')", scenario_id, mlt_data.get("game_title", "Untitled"))
+    return {"scenario_id": scenario_id, "game": mlt_scenarios[scenario_id]}
 
 
 # --- Game History ---
@@ -428,7 +630,7 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Authorization", "X-Device-Id"],
 )
 
 # Share allowed origins with WebSocket manager for origin validation

@@ -19,17 +19,30 @@ from socket_manager import socket_manager
 import config
 
 
+def _teardown_rooms():
+    """Cancel all background tasks and clear rooms to prevent state leaks between tests."""
+    for room in socket_manager.rooms.values():
+        if room.timer_task:
+            room.timer_task.cancel()
+            room.timer_task = None
+        if room._organizer_cleanup_task:
+            room._organizer_cleanup_task.cancel()
+            room._organizer_cleanup_task = None
+    socket_manager.rooms.clear()
+    socket_manager.stop_cleanup_loop()
+
+
 @pytest.fixture(autouse=True)
 def clear_state():
+    _teardown_rooms()
     quizzes.clear()
     game_history.clear()
-    socket_manager.rooms.clear()
     saved_origins = socket_manager.allowed_origins
     socket_manager.allowed_origins = []  # disable origin check for tests
     yield
+    _teardown_rooms()
     quizzes.clear()
     game_history.clear()
-    socket_manager.rooms.clear()
     socket_manager.allowed_origins = saved_origins
 
 
@@ -81,8 +94,11 @@ def spectator_url(room_code, client_id="spec-1"):
 
 def recv_until(ws, msg_type, max_messages=50):
     """Receive messages until we get the expected type. Returns that message."""
-    for _ in range(max_messages):
-        data = ws.receive_json()
+    for i in range(max_messages):
+        try:
+            data = ws.receive_json()
+        except Exception as e:
+            raise TimeoutError(f"Connection closed while waiting for {msg_type} (after {i} messages): {e}")
         if data.get("type") == msg_type:
             return data
     raise TimeoutError(f"Never received {msg_type} after {max_messages} messages")
@@ -452,29 +468,6 @@ class TestSpectatorFlow:
                     sync = spec_ws.receive_json()
                     assert "team_leaderboard" in sync
 
-    @pytest.mark.skip(reason="TestClient cannot handle spectator broadcast loop (spectator uses while True: receive_text())")
-    def test_spectator_receives_game_events(self):
-        quiz_id = seed_quiz()
-        room_code, token = create_room(quiz_id)
-
-        with client.websocket_connect(org_url(room_code, token)) as org_ws:
-            org_ws.receive_json()
-            with client.websocket_connect(player_url(room_code, "p1")) as p1_ws:
-                p1_ws.send_json({"type": "JOIN", "nickname": "Alice"})
-                p1_ws.receive_json()  # JOINED_ROOM
-                recv_until(org_ws, "PLAYER_JOINED")
-
-                with client.websocket_connect(spectator_url(room_code)) as spec_ws:
-                    spec_ws.receive_json()  # SPECTATOR_SYNC
-
-                    org_ws.send_json({"type": "START_GAME"})
-                    gs = recv_until(spec_ws, "GAME_STARTING")
-                    assert gs["type"] == "GAME_STARTING"
-
-                    org_ws.send_json({"type": "NEXT_QUESTION"})
-                    q = recv_until(spec_ws, "QUESTION")
-                    assert "question" in q
-
     def test_spectator_mid_game_join_gets_question_data(self):
         quiz_id = seed_quiz()
         room_code, token = create_room(quiz_id)
@@ -526,15 +519,9 @@ class TestRoomResetFlow:
                 org_ws.send_json({"type": "NEXT_QUESTION"})
                 recv_until(org_ws, "PODIUM")
 
-                # Reset with new quiz
-                new_quiz = {
-                    "quiz_title": "Round 2",
-                    "questions": [
-                        {"id": 1, "text": "New Q1?", "options": ["A", "B", "C", "D"], "answer_index": 1},
-                        {"id": 2, "text": "New Q2?", "options": ["A", "B", "C", "D"], "answer_index": 2},
-                    ]
-                }
-                org_ws.send_json({"type": "RESET_ROOM", "quiz_data": new_quiz, "time_limit": 20})
+                # Reset with new quiz (must be seeded in store for content_id lookup)
+                new_quiz_id = seed_quiz(num_questions=2)
+                org_ws.send_json({"type": "RESET_ROOM", "content_id": new_quiz_id, "time_limit": 20})
                 reset = recv_until(org_ws, "ROOM_RESET")
                 assert reset["player_count"] == 1  # Alice still in
 
@@ -543,7 +530,7 @@ class TestRoomResetFlow:
                 recv_until(org_ws, "GAME_STARTING")
                 org_ws.send_json({"type": "NEXT_QUESTION"})
                 q = recv_until(org_ws, "QUESTION")
-                assert q["question"]["text"] == "New Q1?"
+                assert q["question"]["text"] == "Question 1?"
 
 
 # ===========================================================================
@@ -611,7 +598,8 @@ class TestPlayerReconnection:
             # Player joins and plays a question
             with client.websocket_connect(player_url(room_code, "p1")) as p1_ws:
                 p1_ws.send_json({"type": "JOIN", "nickname": "Alice"})
-                p1_ws.receive_json()  # JOINED_ROOM
+                joined = p1_ws.receive_json()  # JOINED_ROOM
+                session_token = joined.get("session_token", "")
                 recv_until(org_ws, "PLAYER_JOINED")
 
                 org_ws.send_json({"type": "START_GAME"})
@@ -625,7 +613,7 @@ class TestPlayerReconnection:
 
             # p1 disconnected — reconnect with new client_id
             with client.websocket_connect(player_url(room_code, "p1-new")) as p1_new:
-                p1_new.send_json({"type": "JOIN", "nickname": "Alice"})
+                p1_new.send_json({"type": "JOIN", "nickname": "Alice", "session_token": session_token})
                 reconnected = recv_until(p1_new, "RECONNECTED")
                 assert reconnected["score"] == score_before
                 assert reconnected["state"] == "LEADERBOARD"
@@ -639,12 +627,13 @@ class TestPlayerReconnection:
 
             with client.websocket_connect(player_url(room_code, "p1")) as p1_ws:
                 p1_ws.send_json({"type": "JOIN", "nickname": "Alice"})
-                p1_ws.receive_json()  # JOINED_ROOM
+                joined = p1_ws.receive_json()  # JOINED_ROOM
+                session_token = joined.get("session_token", "")
                 recv_until(org_ws, "PLAYER_JOINED")
 
-                # Same nickname from different client
+                # Same nickname from different client (with valid session token)
                 with client.websocket_connect(player_url(room_code, "p2")) as p2_ws:
-                    p2_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                    p2_ws.send_json({"type": "JOIN", "nickname": "Alice", "session_token": session_token})
 
                     # Old connection should receive KICKED
                     kicked = recv_until(p1_ws, "KICKED")

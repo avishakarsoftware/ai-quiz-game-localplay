@@ -1,27 +1,33 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry } from '../types';
+import { type Quiz, type MLTGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
+import GameSelectScreen from '../components/organizer/GameSelectScreen';
 import PromptScreen, { type AIProvider } from '../components/organizer/PromptScreen';
+import MLTPromptScreen from '../components/organizer/MLTPromptScreen';
 import LoadingScreen from '../components/organizer/LoadingScreen';
 import ReviewScreen from '../components/organizer/ReviewScreen';
+import MLTReviewScreen from '../components/organizer/MLTReviewScreen';
 import ImageGenerationScreen from '../components/organizer/ImageGenerationScreen';
 import LobbyScreen from '../components/organizer/LobbyScreen';
 import GameQuestionScreen from '../components/organizer/GameQuestionScreen';
 import LeaderboardScreen from '../components/organizer/LeaderboardScreen';
 import PodiumScreen from '../components/organizer/PodiumScreen';
 import BonusSplash from '../components/BonusSplash';
+import ErrorModal from '../components/ErrorModal';
 
-type OrganizerState = 'PROMPT' | 'LOADING' | 'REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'MLT_PROMPT' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
 
 export default function OrganizerPage() {
-    const [state, setState] = useState<OrganizerState>('PROMPT');
+    const [state, setState] = useState<OrganizerState>('SELECT_GAME');
+    const [gameType, setGameType] = useState<GameType>('quiz');
     const [prompt, setPrompt] = useState('');
     const [difficulty, setDifficulty] = useState('medium');
     const [numQuestions, setNumQuestions] = useState(10);
     const [quiz, setQuiz] = useState<Quiz | null>(null);
-    const [quizId, setQuizId] = useState('');
+    const [mltGame, setMltGame] = useState<MLTGame | null>(null);
+    const [contentId, setContentId] = useState('');
     const [roomCode, setRoomCode] = useState('');
     const [timeLimit, setTimeLimit] = useState(15);
     const [playerCount, setPlayerCount] = useState(0);
@@ -40,16 +46,24 @@ export default function OrganizerPage() {
     const [isBonus, setIsBonus] = useState(false);
     const [showBonusSplash, setShowBonusSplash] = useState(false);
     const [roomLocked, setRoomLocked] = useState(false);
+    // WMLT-specific state for organizer question screen
+    const [currentStatement, setCurrentStatement] = useState('');
+    const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
-    const stateRef = useRef<OrganizerState>('PROMPT');
+    const stateRef = useRef<OrganizerState>('SELECT_GAME');
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const roomCodeRef = useRef('');
     const organizerTokenRef = useRef('');
     const mountedRef = useRef(true);
     const connectWsRef = useRef<(code: string) => void>(() => {});
+    const gameTypeRef = useRef<GameType>('quiz');
 
     useEffect(() => { stateRef.current = state; }, [state]);
     useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
+    useEffect(() => { gameTypeRef.current = gameType; }, [gameType]);
+    useEffect(() => {
+        if (errorModal?.upgradeAvailable) track('paywall_shown', { source: 'error_modal' });
+    }, [errorModal]);
 
     useEffect(() => {
         fetch(`${API_URL}/sd/status`)
@@ -72,44 +86,48 @@ export default function OrganizerPage() {
         let msg: Record<string, unknown>;
         try { msg = JSON.parse(event.data); } catch { return; }
         if (msg.type === 'PLAYER_JOINED') {
-            console.log('PLAYER_JOINED', msg);
-            setPlayerCount(msg.player_count);
-            setPlayers(msg.players || []);
+            setPlayerCount(msg.player_count as number);
+            setPlayers(msg.players as PlayerInfo[] || []);
             soundManager.play('playerJoin');
         }
         else if (msg.type === 'QUESTION') {
-            setCurrentQuestion(msg.question_number);
-            setTotalQuestions(msg.total_questions);
-            setTimeRemaining(msg.time_limit);
+            setCurrentQuestion(msg.question_number as number);
+            setTotalQuestions(msg.total_questions as number);
+            setTimeRemaining(msg.time_limit as number);
             setAnsweredCount(0);
-            setIsBonus(msg.is_bonus || false);
+            setIsBonus(msg.is_bonus as boolean || false);
             if (msg.is_bonus) setShowBonusSplash(true);
+            // For WMLT, store the statement text
+            if (msg.statement) {
+                setCurrentStatement((msg.statement as { text: string }).text);
+            }
             setState('QUESTION');
         }
-        else if (msg.type === 'TIMER') setTimeRemaining(msg.remaining);
-        else if (msg.type === 'ANSWER_COUNT') setAnsweredCount(msg.answered);
+        else if (msg.type === 'TIMER') setTimeRemaining(msg.remaining as number);
+        else if (msg.type === 'ANSWER_COUNT') setAnsweredCount(msg.answered as number);
+        else if (msg.type === 'VOTE_COUNT') setAnsweredCount(msg.voted as number);
         else if (msg.type === 'QUESTION_OVER') {
-            setLeaderboard(msg.leaderboard);
+            setLeaderboard(msg.leaderboard as LeaderboardEntry[]);
             setState('LEADERBOARD');
         }
         else if (msg.type === 'PODIUM') {
-            setLeaderboard(msg.leaderboard);
-            setTeamLeaderboard(msg.team_leaderboard || []);
-            track('game_completed', { room_code: roomCodeRef.current, player_count: (msg.leaderboard as LeaderboardEntry[])?.length || 0, winner: (msg.leaderboard as LeaderboardEntry[])?.[0]?.nickname });
+            setLeaderboard(msg.leaderboard as LeaderboardEntry[]);
+            setTeamLeaderboard(msg.team_leaderboard as TeamLeaderboardEntry[] || []);
+            track('game_completed', { room_code: roomCodeRef.current, game_type: gameTypeRef.current, player_count: (msg.leaderboard as LeaderboardEntry[])?.length || 0, winner: (msg.leaderboard as LeaderboardEntry[])?.[0]?.nickname });
             setState('PODIUM');
             soundManager.play('fanfare');
         }
         else if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED') {
-            setPlayerCount(msg.player_count);
-            setPlayers(msg.players || []);
+            setPlayerCount(msg.player_count as number);
+            setPlayers(msg.players as PlayerInfo[] || []);
         }
         else if (msg.type === 'PLAYER_RECONNECTED') {
-            setPlayerCount(msg.player_count);
-            setPlayers(msg.players || []);
+            setPlayerCount(msg.player_count as number);
+            setPlayers(msg.players as PlayerInfo[] || []);
         }
         else if (msg.type === 'ROOM_RESET') {
-            setPlayerCount(msg.player_count);
-            setPlayers(msg.players || []);
+            setPlayerCount(msg.player_count as number);
+            setPlayers(msg.players as PlayerInfo[] || []);
             setRoomLocked(false);
             setState('ROOM');
         }
@@ -117,28 +135,38 @@ export default function OrganizerPage() {
             setRoomLocked(msg.locked as boolean);
         }
         else if (msg.type === 'ORGANIZER_RECONNECTED') {
-            setRoomCode(msg.room_code);
-            setPlayerCount(msg.player_count);
-            setPlayers(msg.players || []);
-            setTotalQuestions(msg.total_questions);
-            setLeaderboard(msg.leaderboard || []);
-            setTeamLeaderboard(msg.team_leaderboard || []);
-            setTimeLimit(msg.time_limit);
-            setRoomLocked(msg.locked ?? false);
+            setRoomCode(msg.room_code as string);
+            setPlayerCount(msg.player_count as number);
+            setPlayers(msg.players as PlayerInfo[] || []);
+            setTotalQuestions(msg.total_questions as number);
+            setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+            setTeamLeaderboard(msg.team_leaderboard as TeamLeaderboardEntry[] || []);
+            setTimeLimit(msg.time_limit as number);
+            setRoomLocked(msg.locked as boolean ?? false);
+            if (msg.game_type) setGameType(msg.game_type as GameType);
             if (msg.quiz) {
-                setQuiz(msg.quiz);
-                setTotalQuestions(msg.quiz.questions.length);
+                const quizData = msg.quiz as Record<string, unknown>;
+                if (quizData.questions) {
+                    setQuiz(quizData as unknown as Quiz);
+                    setTotalQuestions((quizData.questions as unknown[]).length);
+                } else if (quizData.statements) {
+                    setMltGame(quizData as unknown as MLTGame);
+                    setTotalQuestions((quizData.statements as unknown[]).length);
+                }
             }
             if (msg.state === 'LOBBY' || msg.state === 'INTRO') {
                 setState('ROOM');
             } else if (msg.state === 'QUESTION') {
-                setCurrentQuestion(msg.question_number);
-                setTimeRemaining(msg.time_remaining ?? msg.time_limit);
-                setAnsweredCount(msg.answered_count ?? 0);
-                setIsBonus(msg.is_bonus || false);
+                setCurrentQuestion(msg.question_number as number);
+                setTimeRemaining((msg.time_remaining ?? msg.time_limit) as number);
+                setAnsweredCount((msg.answered_count ?? msg.voted_count ?? 0) as number);
+                setIsBonus(msg.is_bonus as boolean || false);
+                if (msg.statement) {
+                    setCurrentStatement((msg.statement as { text: string }).text);
+                }
                 setState('QUESTION');
             } else if (msg.state === 'LEADERBOARD') {
-                setCurrentQuestion(msg.question_number);
+                setCurrentQuestion(msg.question_number as number);
                 setState('LEADERBOARD');
             } else if (msg.state === 'PODIUM') {
                 setState('PODIUM');
@@ -148,9 +176,14 @@ export default function OrganizerPage() {
         else if (msg.type === 'ERROR') {
             console.error('Organizer error:', msg.message);
             setRoomCode('');
-            setState('PROMPT');
+            setState('SELECT_GAME');
         }
     }, []);
+
+    const handleGameSelect = (type: GameType) => {
+        setGameType(type);
+        setState(type === 'wmlt' ? 'MLT_PROMPT' : 'PROMPT');
+    };
 
     const generateQuiz = async () => {
         setState('LOADING');
@@ -160,45 +193,103 @@ export default function OrganizerPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt, difficulty, num_questions: numQuestions, provider }),
             });
+            if (res.status === 503) {
+                const err = await res.json().catch(() => ({ detail: 'Free tier limit reached. Upgrade for unlimited games.' }));
+                track('quota_error', { source: 'quiz' });
+                setErrorModal({ title: 'Free Tier Limit', message: err.detail || 'Free tier limit reached.', upgradeAvailable: true });
+                setState('PROMPT');
+                return;
+            }
             if (res.status === 429) {
-                alert('Too many requests. Please wait a minute before generating another quiz.');
+                const err = await res.json().catch(() => ({ detail: 'Too many requests. Please wait a minute.' }));
+                setErrorModal({ title: 'Rate Limited', message: err.detail || 'Too many requests.' });
                 setState('PROMPT');
                 return;
             }
             const data = await res.json();
             if (data.quiz) {
                 setQuiz(data.quiz);
-                setQuizId(data.quiz_id);
+                setContentId(data.quiz_id);
                 setTotalQuestions(data.quiz.questions.length);
                 track('quiz_generated', { topic: prompt, difficulty, num_questions: numQuestions, provider });
                 setState('REVIEW');
             } else {
-                alert('Failed to generate quiz');
+                setErrorModal({ title: 'Generation Failed', message: 'Failed to generate quiz. Please try a different topic.' });
                 setState('PROMPT');
             }
         } catch {
-            alert('Connection error');
+            setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
             setState('PROMPT');
         }
     };
 
+    const generateMLT = async () => {
+        setState('LOADING');
+        try {
+            const res = await fetch(`${API_URL}/mlt/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt, difficulty, num_rounds: numQuestions, provider }),
+            });
+            if (res.status === 503) {
+                const err = await res.json().catch(() => ({ detail: 'Free tier limit reached. Upgrade for unlimited games.' }));
+                track('quota_error', { source: 'mlt' });
+                setErrorModal({ title: 'Free Tier Limit', message: err.detail || 'Free tier limit reached.', upgradeAvailable: true });
+                setState('MLT_PROMPT');
+                return;
+            }
+            if (res.status === 429) {
+                const err = await res.json().catch(() => ({ detail: 'Too many requests. Please wait a minute.' }));
+                setErrorModal({ title: 'Rate Limited', message: err.detail || 'Too many requests.' });
+                setState('MLT_PROMPT');
+                return;
+            }
+            const data = await res.json();
+            if (data.game) {
+                setMltGame(data.game);
+                setContentId(data.scenario_id);
+                setTotalQuestions(data.game.statements.length);
+                track('mlt_generated', { topic: prompt, difficulty, num_rounds: numQuestions, provider });
+                setState('MLT_REVIEW');
+            } else {
+                setErrorModal({ title: 'Generation Failed', message: 'Failed to generate statements. Please try a different topic.' });
+                setState('MLT_PROMPT');
+            }
+        } catch {
+            setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
+            setState('MLT_PROMPT');
+        }
+    };
+
     const generateImages = async () => {
-        if (!sdAvailable || !quizId) return;
+        if (!sdAvailable || !contentId) return;
         setState('GENERATING_IMAGES');
         setImageProgress(0);
 
+        let failures = 0;
         for (let i = 0; i < (quiz?.questions.length || 0); i++) {
             const question = quiz!.questions[i];
-            await fetch(`${API_URL}/quiz/generate-images`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ quiz_id: quizId, question_id: question.id }),
-            });
+            try {
+                const res = await fetch(`${API_URL}/quiz/generate-images`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ quiz_id: contentId, question_id: question.id }),
+                });
+                if (res.ok) {
+                    setQuestionImages(prev => ({
+                        ...prev,
+                        [question.id]: `${API_URL}/quiz/${contentId}/image/${question.id}`
+                    }));
+                } else {
+                    failures++;
+                }
+            } catch {
+                failures++;
+            }
             setImageProgress(i + 1);
-            setQuestionImages(prev => ({
-                ...prev,
-                [question.id]: `${API_URL}/quiz/${quizId}/image/${question.id}`
-            }));
+        }
+        if (failures > 0) {
+            setErrorModal({ title: 'Image Generation', message: `${failures} image(s) failed to generate. You can still play without them.` });
         }
         setState('REVIEW');
     };
@@ -207,7 +298,7 @@ export default function OrganizerPage() {
         setQuiz(updated);
         setTotalQuestions(updated.questions.length);
         try {
-            const res = await fetch(`${API_URL}/quiz/${quizId}`, {
+            const res = await fetch(`${API_URL}/quiz/${contentId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(updated),
@@ -215,6 +306,21 @@ export default function OrganizerPage() {
             if (!res.ok) console.error('Failed to save quiz update:', res.status);
         } catch (err) {
             console.error('Failed to save quiz update:', err);
+        }
+    };
+
+    const updateMLTGame = async (updated: MLTGame) => {
+        setMltGame(updated);
+        setTotalQuestions(updated.statements.length);
+        try {
+            const res = await fetch(`${API_URL}/mlt/${contentId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updated),
+            });
+            if (!res.ok) console.error('Failed to save MLT update:', res.status);
+        } catch (err) {
+            console.error('Failed to save MLT update:', err);
         }
     };
 
@@ -243,47 +349,61 @@ export default function OrganizerPage() {
         return () => {
             mountedRef.current = false;
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+            wsRef.current?.close();
+            wsRef.current = null;
         };
     }, []);
 
     const createRoom = async () => {
         // Play Again path: reuse existing room via RESET_ROOM
-        if (roomCode && wsRef.current && wsRef.current.readyState === WebSocket.OPEN && quiz) {
-            wsRef.current.send(JSON.stringify({
-                type: 'RESET_ROOM',
-                quiz_data: quiz,
-                time_limit: timeLimit,
-            }));
-            // State will transition to ROOM when ROOM_RESET message comes back
-            return;
+        if (roomCode && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            if (contentId) {
+                wsRef.current.send(JSON.stringify({
+                    type: 'RESET_ROOM',
+                    content_id: contentId,
+                    time_limit: timeLimit,
+                    game_type: gameType,
+                }));
+                return;
+            }
         }
 
         // First-time room creation
         try {
+            const body: Record<string, unknown> = {
+                time_limit: timeLimit,
+                game_type: gameType,
+            };
+            if (gameType === 'wmlt') {
+                body.mlt_id = contentId;
+            } else {
+                body.quiz_id = contentId;
+            }
+
             const res = await fetch(`${API_URL}/room/create`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ quiz_id: quizId, time_limit: timeLimit }),
+                body: JSON.stringify(body),
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ detail: 'Failed to create room' }));
-                alert(err.detail || `Server error (${res.status})`);
+                setErrorModal({ title: 'Room Error', message: err.detail || `Server error (${res.status})` });
                 return;
             }
             const data = await res.json();
             setRoomCode(data.room_code);
             organizerTokenRef.current = data.organizer_token || '';
-            track('room_created', { room_code: data.room_code, time_limit: timeLimit });
+            track('room_created', { room_code: data.room_code, game_type: gameType, time_limit: timeLimit });
             setState('ROOM');
             connectWs(data.room_code);
         } catch {
-            alert('Connection error — could not create room');
+            setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
         }
     };
 
     const startGame = () => {
         soundManager.play('gameStart');
-        track('game_started', { room_code: roomCode, player_count: playerCount, num_questions: totalQuestions });
+        track('game_started', { room_code: roomCode, game_type: gameType, player_count: playerCount, num_questions: totalQuestions });
         wsRef.current?.send(JSON.stringify({ type: 'START_GAME' }));
         wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
     };
@@ -292,7 +412,6 @@ export default function OrganizerPage() {
     const endQuiz = () => wsRef.current?.send(JSON.stringify({ type: 'END_QUIZ' }));
 
     const playAgain = () => {
-        // Go back to PROMPT but keep the WebSocket connection and room alive
         setCurrentQuestion(0);
         setLeaderboard([]);
         setTeamLeaderboard([]);
@@ -300,7 +419,8 @@ export default function OrganizerPage() {
         setQuestionImages({});
         setAnsweredCount(0);
         setPrompt('');
-        setState('PROMPT');
+        setCurrentStatement('');
+        setState('SELECT_GAME');
     };
 
     // In Capacitor, window.location.origin is capacitor://localhost — use the web URL instead
@@ -315,6 +435,10 @@ export default function OrganizerPage() {
     return (
         <div className="app-container">
             <div className="content-wrapper">
+                {state === 'SELECT_GAME' && (
+                    <GameSelectScreen onSelect={handleGameSelect} />
+                )}
+
                 {state === 'PROMPT' && (
                     <PromptScreen
                         prompt={prompt}
@@ -327,6 +451,22 @@ export default function OrganizerPage() {
                         setProvider={setProvider}
                         providers={providers}
                         onGenerate={generateQuiz}
+                    />
+                )}
+
+                {state === 'MLT_PROMPT' && (
+                    <MLTPromptScreen
+                        prompt={prompt}
+                        setPrompt={setPrompt}
+                        difficulty={difficulty}
+                        setDifficulty={setDifficulty}
+                        numRounds={numQuestions}
+                        setNumRounds={setNumQuestions}
+                        provider={provider}
+                        setProvider={setProvider}
+                        providers={providers}
+                        onGenerate={generateMLT}
+                        onBack={() => setState('SELECT_GAME')}
                     />
                 )}
 
@@ -346,6 +486,17 @@ export default function OrganizerPage() {
                     />
                 )}
 
+                {state === 'MLT_REVIEW' && mltGame && (
+                    <MLTReviewScreen
+                        game={mltGame}
+                        timeLimit={timeLimit}
+                        setTimeLimit={setTimeLimit}
+                        onCreateRoom={createRoom}
+                        onUpdateGame={updateMLTGame}
+                        onBack={() => setState('MLT_PROMPT')}
+                    />
+                )}
+
                 {state === 'GENERATING_IMAGES' && quiz && (
                     <ImageGenerationScreen quiz={quiz} imageProgress={imageProgress} />
                 )}
@@ -362,10 +513,24 @@ export default function OrganizerPage() {
                     />
                 )}
 
-                {state === 'QUESTION' && quiz && currentQ && (
+                {state === 'QUESTION' && (
                     showBonusSplash ? (
                         <BonusSplash onComplete={() => setShowBonusSplash(false)} />
-                    ) : (
+                    ) : gameType === 'wmlt' ? (
+                        <GameQuestionScreen
+                            questionNumber={currentQuestion}
+                            totalQuestions={totalQuestions}
+                            timeRemaining={timeRemaining}
+                            timeLimit={timeLimit}
+                            answeredCount={answeredCount}
+                            playerCount={playerCount}
+                            isBonus={isBonus}
+                            onNextQuestion={nextQuestion}
+                            onEndQuiz={endQuiz}
+                            gameType="wmlt"
+                            statementText={currentStatement}
+                        />
+                    ) : currentQ ? (
                         <GameQuestionScreen
                             question={currentQ}
                             questionNumber={currentQuestion}
@@ -379,7 +544,7 @@ export default function OrganizerPage() {
                             onNextQuestion={nextQuestion}
                             onEndQuiz={endQuiz}
                         />
-                    )
+                    ) : null
                 )}
 
                 {state === 'LEADERBOARD' && (
@@ -400,6 +565,20 @@ export default function OrganizerPage() {
                     />
                 )}
             </div>
+
+            {errorModal && (
+                <ErrorModal
+                    title={errorModal.title}
+                    message={errorModal.message}
+                    upgradeAvailable={errorModal.upgradeAvailable}
+                    onDismiss={() => setErrorModal(null)}
+                    onUpgrade={() => {
+                        track('upgrade_clicked', { source: 'error_modal' });
+                        setErrorModal(null);
+                        // Phase 3: open UpgradeModal here
+                    }}
+                />
+            )}
         </div>
     );
 }
