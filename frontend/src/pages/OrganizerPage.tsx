@@ -249,13 +249,13 @@ export default function OrganizerPage() {
             });
             if (res.status === 402) {
                 track('paywall_hit', { source: 'quiz' });
-                setErrorModal({ title: 'Free Games Used Up', message: 'You\'ve used your free games! Get a Party Pass for 50 games with premium AI. Works on this device only — sign in to use across devices.', upgradeAvailable: true });
+                setErrorModal({ title: 'Free Games Used Up', message: 'You\'ve used your free games! Grab a 10-Game Pack for just $0.99 and keep the fun going.', upgradeAvailable: true });
                 setState('PROMPT');
                 return;
             }
             if (res.status === 503) {
                 track('quota_error', { source: 'quiz' });
-                setErrorModal({ title: 'Free Tier Sold Out', message: 'Free games for today are all claimed! Get a Party Pass for 50 games with premium AI. Works on this device only — sign in to use across devices.', upgradeAvailable: true });
+                setErrorModal({ title: 'Free Tier Sold Out', message: 'Free games for today are all claimed! Grab a 10-Game Pack for just $0.99 and keep the fun going.', upgradeAvailable: true });
                 setState('PROMPT');
                 return;
             }
@@ -297,13 +297,13 @@ export default function OrganizerPage() {
             if (res.status === 402) {
                 const err = await res.json().catch(() => ({ detail: 'Free game limit reached. Get a Party Pass for unlimited games!' }));
                 track('paywall_hit', { source: 'mlt' });
-                setErrorModal({ title: 'Free Games Used Up', message: 'You\'ve used your free games! Get a Party Pass for 50 games with premium AI. Works on this device only — sign in to use across devices.', upgradeAvailable: true });
+                setErrorModal({ title: 'Free Games Used Up', message: 'You\'ve used your free games! Grab a 10-Game Pack for just $0.99 and keep the fun going.', upgradeAvailable: true });
                 setState('MLT_PROMPT');
                 return;
             }
             if (res.status === 503) {
                 track('quota_error', { source: 'mlt' });
-                setErrorModal({ title: 'Free Tier Sold Out', message: 'Free games for today are all claimed! Get a Party Pass for 50 games with premium AI. Works on this device only — sign in to use across devices.', upgradeAvailable: true });
+                setErrorModal({ title: 'Free Tier Sold Out', message: 'Free games for today are all claimed! Grab a 10-Game Pack for just $0.99 and keep the fun going.', upgradeAvailable: true });
                 setState('MLT_PROMPT');
                 return;
             }
@@ -728,7 +728,7 @@ export default function OrganizerPage() {
                                         clearCheckoutPending();
                                         clearInterval(poll);
                                         track('premium_activated', { source: 'stripe' });
-                                        setErrorModal({ title: 'Party Pass Activated!', message: `You now have 50 games for ${remoteConfig.pricing.duration_hours} hours on this device. Enjoy!` });
+                                        setErrorModal({ title: 'Game Pack Activated!', message: `You now have ${remoteConfig.pricing.games} games. Enjoy!` });
                                     }
                                 } catch { /* keep polling */ }
                             }, 2000);

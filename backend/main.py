@@ -1035,7 +1035,7 @@ async def admin_revoke(req: Request, entitlement_id: str):
 
 
 @app.post("/admin/grant")
-async def admin_grant(req: Request, device_id: str = "", user_id: str = "", games: int = 50, hours: int = 12):
+async def admin_grant(req: Request, device_id: str = "", user_id: str = "", games: int = 10, hours: int = 720):
     _check_admin(req)
     if not device_id and not user_id:
         raise HTTPException(status_code=400, detail="Provide device_id or user_id (or both)")

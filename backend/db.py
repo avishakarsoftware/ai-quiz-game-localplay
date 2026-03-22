@@ -93,7 +93,7 @@ def create_entitlement(
     apple_transaction_id: Optional[str] = None,
     google_order_id: Optional[str] = None,
     user_id: Optional[str] = None,
-    games: int = 50,
+    games: int = 10,
     status: str = "active",
 ) -> bool:
     """Create a new entitlement. Returns False if payment ID already exists (idempotent)."""
@@ -576,7 +576,7 @@ def find_restorable_entitlement(device_id: str, user_id: Optional[str] = None) -
     return dict(row) if row else None
 
 
-def admin_grant(device_id: str, games: int = 50, hours: int = 12, user_id: Optional[str] = None) -> str:
+def admin_grant(device_id: str, games: int = 10, hours: int = 720, user_id: Optional[str] = None) -> str:
     """Admin: manually grant an entitlement. Returns entitlement ID."""
     import uuid
     eid = str(uuid.uuid4())

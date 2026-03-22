@@ -18,5 +18,8 @@ logs/
 # IDE
 .vscode/
 
+# Dev environment
+.dev-pids/
+
 # OS
 .DS_Store

@@ -36,7 +36,7 @@ def get_idempotency_key(req: Request) -> str:
     return ""
 
 
-def create_premium_token(device_id: str, entitlement_id: str = "", games_remaining: int = 50) -> str:
+def create_premium_token(device_id: str, entitlement_id: str = "", games_remaining: int = 10) -> str:
     """Create a signed JWT premium token for the given device."""
     exp = datetime.now(timezone.utc) + timedelta(hours=config.PREMIUM_DURATION_HOURS)
     payload = {

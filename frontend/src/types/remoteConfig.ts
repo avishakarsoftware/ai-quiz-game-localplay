@@ -19,6 +19,7 @@ export interface RemoteConfig {
   };
   pricing: {
     pass_price: string;
+    games: number;
     duration_hours: number;
     label: string;
   };
@@ -42,12 +43,13 @@ export const DEFAULT_CONFIG: RemoteConfig = {
     force_config_refresh: false,
   },
   pricing: {
-    pass_price: '$2.99',
-    duration_hours: 12,
-    label: '12-Hour Party Pass',
+    pass_price: '$0.99',
+    games: 10,
+    duration_hours: 720,
+    label: '10-Game Pack',
   },
   feature_flags: {
-    show_upgrade_button: false,
+    show_upgrade_button: true,
     enable_image_generation: true,
   },
   announcements: [],

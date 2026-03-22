@@ -181,7 +181,7 @@ export default function MLTPromptScreen({
                     disabled={!prompt.trim()}
                     className="btn btn-primary btn-glow w-full"
                 >
-                    Generate Statements
+                    Generate Questions
                 </button>
                 <button onClick={onBack} className="btn btn-secondary w-full">
                     Back
