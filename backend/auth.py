@@ -92,12 +92,17 @@ def verify_id_token(provider: str, id_token: str) -> Optional[dict]:
 
 # --- Session JWTs ---
 
-def create_session_token(user_id: str, device_id: str) -> str:
-    """Create a signed session JWT (30-day expiry)."""
-    exp = datetime.now(timezone.utc) + timedelta(days=config.SESSION_JWT_EXPIRY_DAYS)
+def create_session_token(user_id: str, device_id: str) -> Optional[str]:
+    """Create a signed session JWT (30-day expiry). Returns None if JWT_SECRET is not configured."""
+    if not config.JWT_SECRET:
+        logger.error("Cannot create session token: JWT_SECRET not configured")
+        return None
+    now = datetime.now(timezone.utc)
+    exp = now + timedelta(days=config.SESSION_JWT_EXPIRY_DAYS)
     payload = {
         "user_id": user_id,
         "device_id": device_id,
+        "iat": int(now.timestamp()),
         "exp": exp,
         "type": "session",
     }
@@ -151,6 +156,8 @@ def signin(provider: str, id_token: str, device_id: str) -> Optional[dict]:
 
     # 4. Create session JWT
     session_token = create_session_token(user["id"], device_id)
+    if not session_token:
+        return None
 
     logger.info("User signed in: %s (provider=%s, device=%s)", user["id"][:8], provider, device_id[:8])
 

@@ -849,6 +849,10 @@ async def create_checkout(request: CheckoutRequest, req: Request):
     # Create a pending entitlement in DB so we can track it
     entitlement_id = str(uuid.uuid4())
 
+    # Link to user if signed in (so entitlement is available cross-device)
+    user_session = auth.get_session_from_request(req)
+    user_id = user_session["user_id"] if user_session else None
+
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
@@ -857,11 +861,12 @@ async def create_checkout(request: CheckoutRequest, req: Request):
             success_url=f"{origins[0]}?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{origins[0]}?checkout=cancel",
         )
-        # Create pending entitlement linked to Stripe session
+        # Create pending entitlement linked to Stripe session and user (if signed in)
         db.create_entitlement(
             entitlement_id=entitlement_id,
             device_id=request.device_id,
             stripe_session_id=session.id,
+            user_id=user_id,
             status="pending_payment",
         )
         return {"checkout_url": session.url, "session_id": session.id}
@@ -978,7 +983,7 @@ async def restore_purchases(req: Request):
 
     # Only re-issue token for active entitlements
     if ent["status"] != "active":
-        return {"restored": False}
+        return {"restored": False, "reason": "expired"}
 
     token = premium.create_premium_token(
         device_id, entitlement_id=ent["id"],
@@ -996,13 +1001,13 @@ def _check_admin(req: Request):
     """Verify admin API key from Authorization header."""
     if not ADMIN_API_KEY:
         raise HTTPException(status_code=503, detail="Admin API not configured")
-    auth = req.headers.get("Authorization", "")
-    if auth != f"Bearer {ADMIN_API_KEY}":
+    auth_header = req.headers.get("Authorization", "")
+    if auth_header != f"Bearer {ADMIN_API_KEY}":
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
 @app.get("/admin/lookup")
-async def admin_lookup(req: Request, device_id: str = "", entitlement_id: str = ""):
+async def admin_lookup(req: Request, device_id: str = "", entitlement_id: str = "", user_id: str = "", email: str = ""):
     _check_admin(req)
     if device_id:
         return db.lookup_by_device(device_id)
@@ -1011,7 +1016,14 @@ async def admin_lookup(req: Request, device_id: str = "", entitlement_id: str = 
         if not ent:
             raise HTTPException(status_code=404, detail="Entitlement not found")
         return ent
-    raise HTTPException(status_code=400, detail="Provide device_id or entitlement_id")
+    if user_id:
+        return db.lookup_by_user(user_id)
+    if email:
+        users = db.lookup_user_by_email(email)
+        if not users:
+            raise HTTPException(status_code=404, detail="No users found")
+        return {"results": users}
+    raise HTTPException(status_code=400, detail="Provide device_id, entitlement_id, user_id, or email")
 
 
 @app.post("/admin/revoke")
@@ -1023,10 +1035,16 @@ async def admin_revoke(req: Request, entitlement_id: str):
 
 
 @app.post("/admin/grant")
-async def admin_grant(req: Request, device_id: str, games: int = 50, hours: int = 12):
+async def admin_grant(req: Request, device_id: str = "", user_id: str = "", games: int = 50, hours: int = 12):
     _check_admin(req)
-    eid = db.admin_grant(device_id, games=games, hours=hours)
-    return {"status": "granted", "entitlement_id": eid, "games": games, "hours": hours}
+    if not device_id and not user_id:
+        raise HTTPException(status_code=400, detail="Provide device_id or user_id (or both)")
+    if user_id:
+        user = db.get_user(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+    eid = db.admin_grant(device_id=device_id or "admin-grant", games=games, hours=hours, user_id=user_id or None)
+    return {"status": "granted", "entitlement_id": eid, "device_id": device_id or "admin-grant", "user_id": user_id, "games": games, "hours": hours}
 
 
 @app.get("/")

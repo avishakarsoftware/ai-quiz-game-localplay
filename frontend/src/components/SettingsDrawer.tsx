@@ -42,6 +42,11 @@ export default function SettingsDrawer() {
     const googleBtnRef = useRef<HTMLDivElement>(null);
     const { user, signIn, signOut } = useAuth();
 
+    // Clear errors when drawer reopens
+    useEffect(() => {
+        if (open) setSignInError('');
+    }, [open]);
+
     // Close on outside click
     useEffect(() => {
         if (!open) return;
@@ -206,14 +211,16 @@ export default function SettingsDrawer() {
                 const data = await res.json().catch(() => ({ detail: 'Restore failed' }));
                 setSignInError(data.detail || 'No purchases found to restore');
             } else {
-                const data = await res.json();
+                const data = await res.json().catch(() => ({ restored: false }));
                 if (data.restored) {
                     // Store the premium token
                     const { setPremiumToken } = await import('../utils/storage');
                     if (data.token) setPremiumToken(data.token);
                     track('purchases_restored', { source: 'settings' });
                 } else {
-                    setSignInError('No active purchases found');
+                    setSignInError(data.reason === 'expired'
+                        ? 'Your Party Pass has expired'
+                        : 'No active purchases found');
                 }
             }
         } catch {

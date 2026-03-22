@@ -116,8 +116,9 @@ def create_entitlement(
         return False
 
 
-def get_active_entitlement(device_id: str, user_id: Optional[str] = None) -> Optional[dict]:
-    """Find an active entitlement for this device or user."""
+def get_active_entitlement(device_id: str) -> Optional[dict]:
+    """Find an active entitlement for this device (guest/device-scoped only).
+    For signed-in users, use get_active_entitlement_for_user() instead."""
     conn = _get_conn()
     now = int(time.time())
 
@@ -129,20 +130,11 @@ def get_active_entitlement(device_id: str, user_id: Optional[str] = None) -> Opt
     )
     conn.commit()
 
-    if user_id:
-        row = conn.execute(
-            "SELECT * FROM entitlements WHERE user_id = ? AND status = 'active' "
-            "ORDER BY expires_at ASC LIMIT 1",
-            (user_id,),
-        ).fetchone()
-        if row:
-            return dict(row)
-
     row = conn.execute(
         "SELECT * FROM entitlements WHERE device_id = ? AND status = 'active' "
-        "AND (user_id IS NULL OR user_id = ?) "
+        "AND user_id IS NULL "
         "ORDER BY expires_at ASC LIMIT 1",
-        (device_id, user_id or ""),
+        (device_id,),
     ).fetchone()
     return dict(row) if row else None
 
@@ -381,6 +373,10 @@ def find_or_create_user(provider: str, provider_subject_id: str, email: Optional
                 (email, row["id"]),
             )
             conn.commit()
+            # Return dict with updated email
+            user_dict = dict(row)
+            user_dict["email"] = email
+            return user_dict
         return dict(row)
 
     # Create new user
@@ -541,10 +537,11 @@ def lookup_entitlement(entitlement_id: str) -> Optional[dict]:
 
 
 def admin_revoke(entitlement_id: str) -> bool:
-    """Admin: manually revoke an entitlement."""
+    """Admin: manually revoke an entitlement. Only revokes active/expired/exhausted."""
     conn = _get_conn()
     cursor = conn.execute(
-        "UPDATE entitlements SET status = 'revoked_refunded' WHERE id = ?",
+        "UPDATE entitlements SET status = 'revoked_refunded' "
+        "WHERE id = ? AND status IN ('active', 'expired_time', 'exhausted_games')",
         (entitlement_id,),
     )
     conn.commit()
@@ -579,16 +576,49 @@ def find_restorable_entitlement(device_id: str, user_id: Optional[str] = None) -
     return dict(row) if row else None
 
 
-def admin_grant(device_id: str, games: int = 50, hours: int = 12) -> str:
+def admin_grant(device_id: str, games: int = 50, hours: int = 12, user_id: Optional[str] = None) -> str:
     """Admin: manually grant an entitlement. Returns entitlement ID."""
     import uuid
     eid = str(uuid.uuid4())
     now = int(time.time())
     conn = _get_conn()
     conn.execute(
-        "INSERT INTO entitlements (id, device_id, status, games_remaining, expires_at, created_at) "
-        "VALUES (?, ?, 'active', ?, ?, ?)",
-        (eid, device_id, games, now + hours * 3600, now),
+        "INSERT INTO entitlements (id, device_id, user_id, status, games_remaining, expires_at, created_at) "
+        "VALUES (?, ?, ?, 'active', ?, ?, ?)",
+        (eid, device_id, user_id, games, now + hours * 3600, now),
     )
     conn.commit()
     return eid
+
+
+def lookup_by_user(user_id: str) -> dict:
+    """Admin: look up all data for a user across all devices."""
+    conn = _get_conn()
+    user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not user:
+        return {"user_id": user_id, "user": None, "entitlements": [], "usage": [], "devices": []}
+    user_dict = dict(user)
+    entitlements = [dict(r) for r in conn.execute(
+        "SELECT * FROM entitlements WHERE user_id = ? ORDER BY created_at DESC", (user_id,),
+    ).fetchall()]
+    usage = [dict(r) for r in conn.execute(
+        "SELECT * FROM device_usage WHERE user_id = ?", (user_id,),
+    ).fetchall()]
+    devices = [r["device_id"] for r in conn.execute(
+        "SELECT DISTINCT device_id FROM entitlements WHERE user_id = ? "
+        "UNION SELECT DISTINCT device_id FROM device_usage WHERE user_id = ?",
+        (user_id, user_id),
+    ).fetchall()]
+    return {"user_id": user_id, "user": user_dict, "entitlements": entitlements, "usage": usage, "devices": devices}
+
+
+def lookup_user_by_email(email: str) -> list[dict]:
+    """Admin: find users by email (partial match). Returns list of user dicts."""
+    conn = _get_conn()
+    # Escape LIKE wildcards to prevent unintended broad matches
+    escaped = email.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    rows = conn.execute(
+        "SELECT * FROM users WHERE email LIKE ? ESCAPE '\\' LIMIT 20",
+        (f"%{escaped}%",),
+    ).fetchall()
+    return [dict(r) for r in rows]
