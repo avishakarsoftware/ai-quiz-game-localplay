@@ -66,6 +66,15 @@ STREAK_THRESHOLDS = {3: 1.5, 5: 2.0}  # streak_count -> multiplier
 # --- Bonus rounds ---
 BONUS_ROUND_FRACTION = 0.3  # ~30% of questions will be bonus rounds (2x points)
 
+# --- Premium / Monetization ---
+FREE_TIER_LIMIT = int(os.getenv("FREE_TIER_LIMIT", "3"))  # max games per device per 24h
+JWT_SECRET = os.getenv("JWT_SECRET", "")
+PREMIUM_DURATION_HOURS = int(os.getenv("PREMIUM_DURATION_HOURS", "12"))
+GEMINI_PREMIUM_MODEL = os.getenv("GEMINI_PREMIUM_MODEL", "gemini-2.5-flash")
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")
+
 # --- Logging ---
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_FILE = os.getenv("LOG_FILE", "")  # empty = stdout only

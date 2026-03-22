@@ -3,6 +3,7 @@ import { API_URL, WS_URL } from '../config';
 import { type Quiz, type MLTGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
+import { getDeviceId, getPremiumToken, setPremiumToken } from '../utils/deviceId';
 import GameSelectScreen from '../components/organizer/GameSelectScreen';
 import PromptScreen, { type AIProvider } from '../components/organizer/PromptScreen';
 import MLTPromptScreen from '../components/organizer/MLTPromptScreen';
@@ -17,10 +18,12 @@ import LeaderboardBarChart from '../components/LeaderboardBarChart';
 import PodiumScreen from '../components/organizer/PodiumScreen';
 import BonusSplash from '../components/BonusSplash';
 import ErrorModal from '../components/ErrorModal';
+import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 
 type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'MLT_PROMPT' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
 
 export default function OrganizerPage() {
+    const { config: remoteConfig } = useRemoteConfigContext();
     const [state, setState] = useState<OrganizerState>('SELECT_GAME');
     const [gameType, setGameType] = useState<GameType>('quiz');
     const [prompt, setPrompt] = useState('');
@@ -215,13 +218,22 @@ export default function OrganizerPage() {
         try {
             const res = await fetch(`${API_URL}/quiz/generate`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Device-Id': getDeviceId(),
+                    ...(getPremiumToken() ? { 'Authorization': `Bearer ${getPremiumToken()}` } : {}),
+                },
                 body: JSON.stringify({ prompt, difficulty, num_questions: numQuestions, provider }),
             });
+            if (res.status === 402) {
+                track('paywall_hit', { source: 'quiz' });
+                setErrorModal({ title: 'Free Games Used Up', message: 'You\'ve used your free games! Get a Party Pass for 50 games with premium AI. Works on this device only — sign in to use across devices.', upgradeAvailable: true });
+                setState('PROMPT');
+                return;
+            }
             if (res.status === 503) {
-                const err = await res.json().catch(() => ({ detail: 'Free tier limit reached. Upgrade for unlimited games.' }));
                 track('quota_error', { source: 'quiz' });
-                setErrorModal({ title: 'Free Tier Limit', message: err.detail || 'Free tier limit reached.', upgradeAvailable: true });
+                setErrorModal({ title: 'Free Tier Sold Out', message: 'Free games for today are all claimed! Get a Party Pass for 50 games with premium AI. Works on this device only — sign in to use across devices.', upgradeAvailable: true });
                 setState('PROMPT');
                 return;
             }
@@ -253,13 +265,23 @@ export default function OrganizerPage() {
         try {
             const res = await fetch(`${API_URL}/mlt/generate`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Device-Id': getDeviceId(),
+                    ...(getPremiumToken() ? { 'Authorization': `Bearer ${getPremiumToken()}` } : {}),
+                },
                 body: JSON.stringify({ prompt, difficulty, num_rounds: numQuestions, provider }),
             });
+            if (res.status === 402) {
+                const err = await res.json().catch(() => ({ detail: 'Free game limit reached. Get a Party Pass for unlimited games!' }));
+                track('paywall_hit', { source: 'mlt' });
+                setErrorModal({ title: 'Free Games Used Up', message: 'You\'ve used your free games! Get a Party Pass for 50 games with premium AI. Works on this device only — sign in to use across devices.', upgradeAvailable: true });
+                setState('MLT_PROMPT');
+                return;
+            }
             if (res.status === 503) {
-                const err = await res.json().catch(() => ({ detail: 'Free tier limit reached. Upgrade for unlimited games.' }));
                 track('quota_error', { source: 'mlt' });
-                setErrorModal({ title: 'Free Tier Limit', message: err.detail || 'Free tier limit reached.', upgradeAvailable: true });
+                setErrorModal({ title: 'Free Tier Sold Out', message: 'Free games for today are all claimed! Get a Party Pass for 50 games with premium AI. Works on this device only — sign in to use across devices.', upgradeAvailable: true });
                 setState('MLT_PROMPT');
                 return;
             }
@@ -647,10 +669,40 @@ export default function OrganizerPage() {
                     message={errorModal.message}
                     upgradeAvailable={errorModal.upgradeAvailable}
                     onDismiss={() => setErrorModal(null)}
-                    onUpgrade={() => {
+                    onUpgrade={async () => {
                         track('upgrade_clicked', { source: 'error_modal' });
                         setErrorModal(null);
-                        // Phase 3: open UpgradeModal here
+                        try {
+                            const res = await fetch(`${API_URL}/checkout/create`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ device_id: getDeviceId() }),
+                            });
+                            if (!res.ok) {
+                                setErrorModal({ title: 'Oops', message: 'Payments are not available yet. Try again later!' });
+                                return;
+                            }
+                            const { checkout_url } = await res.json();
+                            window.open(checkout_url, '_blank');
+                            // Poll for token after Stripe redirect
+                            let attempts = 0;
+                            const poll = setInterval(async () => {
+                                attempts++;
+                                if (attempts > 30) { clearInterval(poll); return; }
+                                try {
+                                    const tokenRes = await fetch(`${API_URL}/checkout/token?device_id=${getDeviceId()}`);
+                                    if (tokenRes.ok) {
+                                        const { token } = await tokenRes.json();
+                                        setPremiumToken(token);
+                                        clearInterval(poll);
+                                        track('premium_activated', { source: 'stripe' });
+                                        setErrorModal({ title: 'Party Pass Activated!', message: `You now have 50 games for ${remoteConfig.pricing.duration_hours} hours on this device. Enjoy!` });
+                                    }
+                                } catch { /* keep polling */ }
+                            }, 2000);
+                        } catch {
+                            setErrorModal({ title: 'Connection Error', message: 'Could not reach the server.' });
+                        }
                     }}
                 />
             )}

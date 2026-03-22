@@ -40,7 +40,7 @@ export default function ErrorModal({ title, message, upgradeAvailable, onDismiss
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           {showUpgrade && (
             <button className="btn btn-primary btn-glow" onClick={onUpgrade}>
-              Upgrade — {config.pricing.pass_price}
+              Get {config.pricing.label} — {config.pricing.pass_price}
             </button>
           )}
           <button className="btn btn-secondary" onClick={onDismiss}>

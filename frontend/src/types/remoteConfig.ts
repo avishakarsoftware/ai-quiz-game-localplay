@@ -34,7 +34,7 @@ export const DEFAULT_CONFIG: RemoteConfig = {
     maintenance_until: null,
   },
   pricing: {
-    pass_price: '$0.99',
+    pass_price: '$2.99',
     duration_hours: 12,
     label: '12-Hour Party Pass',
   },

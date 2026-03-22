@@ -22,6 +22,7 @@ from quiz_engine import quiz_engine, _sanitize_quiz, DailyLimitExceeded, AIQuota
 from mlt_engine import mlt_engine, _sanitize_mlt
 from socket_manager import socket_manager
 from image_engine import image_engine
+import premium
 
 logger = logging.getLogger(__name__)
 
@@ -229,8 +230,14 @@ async def generate_quiz(request: QuizRequest, req: Request):
     client_ip = _get_client_ip(req)
     if not _check_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating another quiz.")
+    device_id = premium.get_device_id(req)
+    is_paid = premium.is_premium(req)
+    if not is_paid and device_id and not premium.check_device_limit(device_id):
+        used = premium.get_device_usage_count(device_id)
+        raise HTTPException(status_code=402, detail=f"You've used all {used} free games. Get a Party Pass for 50 games with premium AI!")
+    model_override = config.GEMINI_PREMIUM_MODEL if is_paid and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
     try:
-        quiz_data = await quiz_engine.generate_quiz(request.prompt, request.difficulty, request.num_questions, request.provider)
+        quiz_data = await quiz_engine.generate_quiz(request.prompt, request.difficulty, request.num_questions, request.provider, model_override=model_override)
     except DailyLimitExceeded:
         raise HTTPException(status_code=429, detail="Daily quiz limit reached. Please try again tomorrow!")
     except AIQuotaExceeded:
@@ -238,6 +245,8 @@ async def generate_quiz(request: QuizRequest, req: Request):
     if not quiz_data:
         raise HTTPException(status_code=500, detail="Failed to generate quiz")
 
+    if device_id:
+        premium.record_device_usage(device_id)
     _evict_old_content()
     quiz_id = str(uuid.uuid4())
     quizzes[quiz_id] = quiz_data
@@ -489,8 +498,14 @@ async def generate_mlt(request: MLTRequest, req: Request):
     client_ip = _get_client_ip(req)
     if not _check_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating.")
+    device_id = premium.get_device_id(req)
+    is_paid = premium.is_premium(req)
+    if not is_paid and device_id and not premium.check_device_limit(device_id):
+        used = premium.get_device_usage_count(device_id)
+        raise HTTPException(status_code=402, detail=f"You've used all {used} free games. Get a Party Pass for 50 games with premium AI!")
+    model_override = config.GEMINI_PREMIUM_MODEL if is_paid and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
     try:
-        mlt_data = await mlt_engine.generate_statements(request.prompt, request.difficulty, request.num_rounds, request.provider)
+        mlt_data = await mlt_engine.generate_statements(request.prompt, request.difficulty, request.num_rounds, request.provider, model_override=model_override)
     except DailyLimitExceeded:
         raise HTTPException(status_code=429, detail="Daily generation limit reached. Please try again tomorrow!")
     except AIQuotaExceeded:
@@ -498,6 +513,8 @@ async def generate_mlt(request: MLTRequest, req: Request):
     if not mlt_data:
         raise HTTPException(status_code=500, detail="Failed to generate statements")
 
+    if device_id:
+        premium.record_device_usage(device_id)
     _evict_old_content()
     scenario_id = str(uuid.uuid4())
     mlt_scenarios[scenario_id] = mlt_data
@@ -639,6 +656,74 @@ app.add_middleware(
 
 # Share allowed origins with WebSocket manager for origin validation
 socket_manager.allowed_origins = origins
+
+
+# --- Premium / Checkout ---
+
+class CheckoutRequest(BaseModel):
+    device_id: str
+
+@app.post("/checkout/create")
+async def create_checkout(request: CheckoutRequest):
+    if not config.STRIPE_SECRET_KEY or not config.STRIPE_PRICE_ID:
+        raise HTTPException(status_code=503, detail="Payments not configured")
+    import stripe
+    stripe.api_key = config.STRIPE_SECRET_KEY
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[{"price": config.STRIPE_PRICE_ID, "quantity": 1}],
+            metadata={"device_id": request.device_id},
+            success_url=f"{origins[0]}?checkout=success",
+            cancel_url=f"{origins[0]}?checkout=cancel",
+        )
+        return {"checkout_url": session.url}
+    except Exception as e:
+        logger.error("Stripe checkout error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to create checkout session")
+
+@app.post("/webhook/stripe")
+async def stripe_webhook(req: Request):
+    if not config.STRIPE_SECRET_KEY or not config.STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(status_code=503, detail="Payments not configured")
+    import stripe
+    stripe.api_key = config.STRIPE_SECRET_KEY
+    payload = await req.body()
+    sig = req.headers.get("stripe-signature", "")
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, config.STRIPE_WEBHOOK_SECRET)
+    except (ValueError, stripe.SignatureVerificationError) as e:
+        logger.warning("Stripe webhook signature failed: %s", e)
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        device_id = session.get("metadata", {}).get("device_id", "")
+        if device_id:
+            token = premium.create_premium_token(device_id)
+            premium.store_pending_token(device_id, token)
+            logger.info("Premium token created for device %s", device_id[:8])
+
+    return {"status": "ok"}
+
+@app.get("/checkout/token")
+async def get_checkout_token(device_id: str):
+    token = premium.pop_pending_token(device_id)
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not ready")
+    return {"token": token}
+
+@app.get("/premium/status")
+async def premium_status(req: Request):
+    device_id = premium.get_device_id(req)
+    is_paid = premium.is_premium(req)
+    used = premium.get_device_usage_count(device_id) if device_id else 0
+    return {
+        "premium": is_paid,
+        "games_used": used,
+        "games_limit": config.FREE_TIER_LIMIT,
+        "games_remaining": max(0, config.FREE_TIER_LIMIT - used) if not is_paid else -1,
+    }
 
 
 @app.get("/")

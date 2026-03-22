@@ -47,7 +47,7 @@ describe('ErrorModal', () => {
         onUpgrade={onUpgrade}
       />
     );
-    const upgradeBtn = screen.getByText(/Upgrade/);
+    const upgradeBtn = screen.getByText(/Party Pass/);
     expect(upgradeBtn).toBeInTheDocument();
     expect(screen.getByText('Maybe Later')).toBeInTheDocument();
     fireEvent.click(upgradeBtn);
@@ -58,7 +58,7 @@ describe('ErrorModal', () => {
     renderWithProvider(
       <ErrorModal title="Error" message="msg" upgradeAvailable={false} onDismiss={() => {}} />
     );
-    expect(screen.queryByText(/Upgrade/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Party Pass/)).not.toBeInTheDocument();
     expect(screen.getByText('OK')).toBeInTheDocument();
   });
 

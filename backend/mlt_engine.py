@@ -147,18 +147,19 @@ async def _generate_ollama(prompt: str, difficulty: str, num_rounds: int) -> Opt
     return None
 
 
-async def _generate_gemini(prompt: str, difficulty: str, num_rounds: int) -> Optional[dict]:
+async def _generate_gemini(prompt: str, difficulty: str, num_rounds: int, model_override: Optional[str] = None) -> Optional[dict]:
     if not config.GEMINI_API_KEY:
         logger.error("Gemini API key not configured")
         return None
 
+    model = model_override or config.GEMINI_MODEL
     system_prompt = _build_system_prompt(difficulty, num_rounds)
-    is_gemma = config.GEMINI_MODEL.startswith("gemma")
+    is_gemma = model.startswith("gemma")
     if is_gemma:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent?key={config.GEMINI_API_KEY}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={config.GEMINI_API_KEY}"
         headers = {}
     else:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         headers = {"x-goog-api-key": config.GEMINI_API_KEY}
 
     wrapped_topic = _wrap_user_topic(prompt)
@@ -279,7 +280,7 @@ class MLTEngine:
 
     async def generate_statements(self, prompt: str, difficulty: str = "party",
                                   num_rounds: int = 10,
-                                  provider: str = "") -> Optional[dict]:
+                                  provider: str = "", model_override: Optional[str] = None) -> Optional[dict]:
         if not self._check_daily_limit():
             logger.warning("Daily MLT limit reached (%d/%d)",
                            self._daily_count, config.DAILY_QUIZ_LIMIT)
@@ -295,7 +296,10 @@ class MLTEngine:
         self._daily_count += 1
         logger.info("Daily MLT count: %d/%d", self._daily_count, config.DAILY_QUIZ_LIMIT)
         try:
-            result = await gen_fn(prompt, difficulty, num_rounds)
+            if model_override and provider == "gemini":
+                result = await gen_fn(prompt, difficulty, num_rounds, model_override=model_override)
+            else:
+                result = await gen_fn(prompt, difficulty, num_rounds)
         except Exception:
             self._daily_count -= 1
             raise
