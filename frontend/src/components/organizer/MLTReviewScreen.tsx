@@ -141,18 +141,27 @@ export default function MLTReviewScreen({
                     </div>
                 </div>
 
-                {/* Show votes toggle */}
+                {/* Anonymous votes toggle */}
                 <div className="settings-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                        <p className="font-medium">Show Vote Breakdown</p>
-                        <p className="text-xs text-[--text-tertiary]">Reveal who voted for whom after each round</p>
+                        <p className="font-medium">Anonymous Votes</p>
+                        <p className="text-xs text-[--text-tertiary]">{showVotes ? 'Everyone can see who voted for whom' : 'Votes are hidden — only totals shown'}</p>
                     </div>
                     <button
                         onClick={() => setShowVotes(!showVotes)}
-                        className={`btn ${showVotes ? 'btn-primary' : 'btn-secondary'}`}
-                        style={{ minWidth: 60, padding: '6px 12px', fontSize: '0.875rem' }}
+                        style={{
+                            minWidth: 60,
+                            padding: '6px 12px',
+                            fontSize: '0.875rem',
+                            fontWeight: 600,
+                            borderRadius: 8,
+                            border: 'none',
+                            color: '#fff',
+                            background: showVotes ? '#e74c3c' : '#2ecc71',
+                            cursor: 'pointer',
+                        }}
                     >
-                        {showVotes ? 'ON' : 'OFF'}
+                        {showVotes ? 'OFF' : 'ON'}
                     </button>
                 </div>
             </div>
