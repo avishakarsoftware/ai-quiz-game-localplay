@@ -158,6 +158,42 @@ build_ios() {
     echo -e "QR codes will point to http://$LAN_IP:$FRONTEND_PORT"
 }
 
+build_android() {
+    echo -e "${YELLOW}Building Android app for emulator...${NC}"
+    cd "$FRONTEND_DIR"
+
+    # Build frontend with local URLs
+    VITE_API_URL="http://$LAN_IP:$BACKEND_PORT" \
+    VITE_WEB_URL="http://$LAN_IP:$FRONTEND_PORT/" \
+    npx vite build 2>&1 | tail -2
+
+    # Sync to Capacitor
+    npx cap sync android 2>&1 | tail -3
+
+    # Build debug APK
+    cd "$FRONTEND_DIR/android"
+    ./gradlew assembleDebug 2>&1 | tail -3
+
+    # Check for connected device/emulator
+    ADB="$HOME/Library/Android/sdk/platform-tools/adb"
+    DEVICE=$($ADB devices 2>/dev/null | grep -w "device" | head -1 | awk '{print $1}')
+    if [ -z "$DEVICE" ]; then
+        echo -e "${YELLOW}No connected device/emulator found.${NC}"
+        echo "  Start one with: \$HOME/Library/Android/sdk/emulator/emulator -avd Pixel_8 &"
+        echo "  APK is at: frontend/android/app/build/outputs/apk/debug/app-debug.apk"
+        return 0
+    fi
+
+    # Install and launch
+    $ADB install -r "$FRONTEND_DIR/android/app/build/outputs/apk/debug/app-debug.apk" 2>&1
+    $ADB shell am force-stop me.revelryapp.quiz 2>/dev/null || true
+    $ADB shell am start -n me.revelryapp.quiz/.MainActivity 2>&1
+
+    echo ""
+    echo -e "${GREEN}Android app launched on emulator/device.${NC}"
+    echo -e "QR codes will point to http://$LAN_IP:$FRONTEND_PORT"
+}
+
 # --- Main ---
 case "${1:-start}" in
     stop)
@@ -169,11 +205,14 @@ case "${1:-start}" in
     ios)
         build_ios
         ;;
+    android)
+        build_android
+        ;;
     start|"")
         start_servers
         ;;
     *)
-        echo "Usage: $0 {start|stop|status|ios}"
+        echo "Usage: $0 {start|stop|status|ios|android}"
         exit 1
         ;;
 esac
