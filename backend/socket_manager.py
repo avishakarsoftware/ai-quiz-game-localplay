@@ -551,7 +551,8 @@ class SocketManager:
                 if room.state != "PODIUM":
                     return
                 new_content_id = message.get("content_id", "")
-                new_game_type = message.get("game_type", room.game_type)
+                raw_game_type = message.get("game_type", room.game_type)
+                new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt") else room.game_type
                 raw_time_limit = message.get("time_limit", room.time_limit)
 
                 # Validate time_limit
@@ -697,17 +698,18 @@ class SocketManager:
                     })
                     return
 
-                # Check for duplicate nickname among active players
+                # Check for duplicate nickname among active players (case-insensitive)
                 existing_id = None
                 for pid, pdata in room.players.items():
-                    if pdata["nickname"] == nickname:
+                    if pdata["nickname"].lower() == nickname.lower():
                         existing_id = pid
                         break
 
                 if existing_id:
                     # Verify session token to prevent nickname hijacking
+                    existing_nickname = room.players[existing_id]["nickname"]
                     provided_token = message.get("session_token", "")
-                    expected_token = room.player_tokens.get(nickname, "")
+                    expected_token = room.player_tokens.get(existing_nickname, "")
                     if expected_token and not hmac.compare_digest(str(provided_token), expected_token):
                         ws = room.connections.get(client_id)
                         if ws:
@@ -823,8 +825,8 @@ class SocketManager:
                 raw_vote = message.get("voted_for", "")
                 voted_for = (raw_vote if isinstance(raw_vote, str) else "").strip()
                 nickname = room.players[client_id]["nickname"]
-                # Validate voted_for is a player in the room
-                valid_nicknames = room.player_nicknames()
+                # Validate voted_for is a player in the room (including disconnected)
+                valid_nicknames = set(room.player_nicknames()) | set(room.disconnected_players.keys())
                 if voted_for not in valid_nicknames:
                     ws = room.connections.get(client_id)
                     if ws:

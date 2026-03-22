@@ -19,7 +19,7 @@ import socket as socketlib
 import config
 config.setup_logging()
 
-from quiz_engine import quiz_engine, _sanitize_quiz, DailyLimitExceeded, AIQuotaExceeded
+from quiz_engine import quiz_engine, _sanitize_quiz, _validate_quiz, DailyLimitExceeded, AIQuotaExceeded
 from mlt_engine import mlt_engine, _sanitize_mlt
 from socket_manager import socket_manager
 from image_engine import image_engine
@@ -480,6 +480,8 @@ async def import_quiz(request: QuizImportRequest):
     _evict_old_content()
     quiz_id = str(uuid.uuid4())
     quiz_data = _sanitize_quiz(request.quiz)
+    if not _validate_quiz(quiz_data, attempt=0):
+        raise HTTPException(status_code=422, detail="Invalid quiz data: check questions, options, and answer_index values")
     quizzes[quiz_id] = quiz_data
     quiz_timestamps[quiz_id] = time.time()
     logger.info("Quiz imported: %s ('%s')", quiz_id, quiz_data.get("quiz_title", "Untitled"))

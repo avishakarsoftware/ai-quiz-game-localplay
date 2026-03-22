@@ -90,24 +90,26 @@ export default function OrganizerPage() {
 
         // Resume pending checkout: if a previous checkout was interrupted, poll for token
         const pending = getCheckoutPending();
+        let poll: ReturnType<typeof setInterval> | null = null;
         if (pending.pending) {
             let attempts = 0;
-            const poll = setInterval(async () => {
+            poll = setInterval(async () => {
                 attempts++;
-                if (attempts > 30) { clearInterval(poll); clearCheckoutPending(); return; }
+                if (attempts > 30) { clearInterval(poll!); poll = null; clearCheckoutPending(); return; }
                 try {
                     const tokenRes = await fetch(apiUrl('/checkout/token'), { headers: apiHeaders() });
                     if (tokenRes.ok) {
                         const { token } = await tokenRes.json();
                         setPremiumToken(token);
                         clearCheckoutPending();
-                        clearInterval(poll);
+                        clearInterval(poll!); poll = null;
                         track('premium_activated', { source: 'resume' });
-                        setErrorModal({ title: 'Party Pass Activated!', message: `Your Party Pass is ready. Enjoy!` });
+                        setErrorModal({ title: 'Game Pack Activated!', message: `Your game pack is ready. Enjoy!` });
                     }
                 } catch { /* keep polling */ }
             }, 2000);
         }
+        return () => { if (poll) clearInterval(poll); };
     }, []);
 
 
@@ -408,6 +410,7 @@ export default function OrganizerPage() {
             if (!mountedRef.current) return;
             const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'LEADERBOARD', 'PODIUM'];
             if (roomCodeRef.current && activeStates.includes(stateRef.current)) {
+                if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                 reconnectTimerRef.current = setTimeout(() => connectWsRef.current(roomCodeRef.current), 2000);
             }
         };

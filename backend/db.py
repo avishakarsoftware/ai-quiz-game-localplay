@@ -143,14 +143,19 @@ def decrement_entitlement(entitlement_id: str) -> bool:
     """Atomically decrement games_remaining. Returns False if already exhausted/expired."""
     conn = _get_conn()
     now = int(time.time())
-    cursor = conn.execute(
-        "UPDATE entitlements SET "
-        "  games_remaining = games_remaining - 1, "
-        "  status = CASE WHEN games_remaining - 1 = 0 THEN 'exhausted_games' ELSE status END "
-        "WHERE id = ? AND status = 'active' AND games_remaining > 0 AND expires_at > ?",
-        (entitlement_id, now),
-    )
-    conn.commit()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        cursor = conn.execute(
+            "UPDATE entitlements SET "
+            "  games_remaining = games_remaining - 1, "
+            "  status = CASE WHEN games_remaining - 1 = 0 THEN 'exhausted_games' ELSE status END "
+            "WHERE id = ? AND status = 'active' AND games_remaining > 0 AND expires_at > ?",
+            (entitlement_id, now),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     return cursor.rowcount > 0
 
 

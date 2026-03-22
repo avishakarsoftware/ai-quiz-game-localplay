@@ -65,6 +65,7 @@ export default function PlayerPage() {
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
+    const submittedRef = useRef(false);
     const kickedRef = useRef(false);
     const mountedRef = useRef(true);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -156,6 +157,7 @@ export default function PlayerPage() {
                     setTimeLimit(msg.time_limit as number);
                     setTimeRemaining((msg.time_remaining ?? msg.time_limit) as number);
                     setSelectedAnswer(null);
+                    submittedRef.current = false;
                     setIsCorrect(null);
                     setPointsEarned(0);
                     setCorrectAnswer(null);
@@ -194,6 +196,8 @@ export default function PlayerPage() {
                 setTimeLimit(msg.time_limit as number);
                 setTimeRemaining(msg.time_limit as number);
                 setSelectedAnswer(null);
+                setSelectedVote(null);
+                submittedRef.current = false;
                 setIsCorrect(null);
                 setPointsEarned(0);
                 setCorrectAnswer(null);
@@ -318,14 +322,16 @@ export default function PlayerPage() {
     };
 
     const submitAnswer = (index: number) => {
-        if (selectedAnswer !== null) return;
+        if (selectedAnswer !== null || submittedRef.current) return;
+        submittedRef.current = true;
         soundManager.hapticsSelect();
         setSelectedAnswer(index);
         wsRef.current?.send(JSON.stringify({ type: 'ANSWER', answer_index: index }));
     };
 
     const submitVote = (votedFor: string) => {
-        if (selectedVote !== null) return;
+        if (selectedVote !== null || submittedRef.current) return;
+        submittedRef.current = true;
         soundManager.hapticsSelect();
         setSelectedVote(votedFor);
         wsRef.current?.send(JSON.stringify({ type: 'VOTE', voted_for: votedFor }));
