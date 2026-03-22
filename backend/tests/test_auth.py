@@ -517,7 +517,7 @@ class TestEntitlementStatus:
         res = test_app.get("/entitlements/current", headers=_DEVICE_HEADERS)
         data = res.json()
         assert data["premium"] is True
-        assert data["games_remaining"] == 50
+        assert data["games_remaining"] == 10
 
     def test_user_scoped_entitlement(self, test_app):
         user = db.find_or_create_user("google", "ent_sub", "ent@test.com")

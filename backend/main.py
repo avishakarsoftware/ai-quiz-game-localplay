@@ -261,7 +261,7 @@ async def generate_quiz(request: QuizRequest, req: Request):
         else:
             can_play, used = premium.peek_free_limit(device_id)
         if not can_play:
-            raise HTTPException(status_code=402, detail=f"You've used all {used} free games. Get a Party Pass for 50 games with premium AI!")
+            raise HTTPException(status_code=402, detail=f"You've used all {used} free games. Get a 10-Game Pack for just $0.99!")
 
     model_override = config.GEMINI_PREMIUM_MODEL if has_entitlement and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
     try:
@@ -281,7 +281,7 @@ async def generate_quiz(request: QuizRequest, req: Request):
             consumed, _ = premium.check_and_use_entitlement(device_id)
         if not consumed:
             # Entitlement expired/exhausted between peek and consume
-            raise HTTPException(status_code=402, detail="Entitlement expired or exhausted. Please purchase a new Party Pass.")
+            raise HTTPException(status_code=402, detail="Your game pack has expired. Get a new 10-Game Pack to continue!")
     else:
         if user_id:
             allowed, _ = premium.check_user_free_limit(user_id, device_id)
@@ -570,7 +570,7 @@ async def generate_mlt(request: MLTRequest, req: Request):
         else:
             can_play, used = premium.peek_free_limit(device_id)
         if not can_play:
-            raise HTTPException(status_code=402, detail=f"You've used all {used} free games. Get a Party Pass for 50 games with premium AI!")
+            raise HTTPException(status_code=402, detail=f"You've used all {used} free games. Get a 10-Game Pack for just $0.99!")
 
     model_override = config.GEMINI_PREMIUM_MODEL if has_entitlement and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
     try:
@@ -589,7 +589,7 @@ async def generate_mlt(request: MLTRequest, req: Request):
         else:
             consumed, _ = premium.check_and_use_entitlement(device_id)
         if not consumed:
-            raise HTTPException(status_code=402, detail="Entitlement expired or exhausted. Please purchase a new Party Pass.")
+            raise HTTPException(status_code=402, detail="Your game pack has expired. Get a new 10-Game Pack to continue!")
     else:
         if user_id:
             allowed, _ = premium.check_user_free_limit(user_id, device_id)
