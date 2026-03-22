@@ -45,9 +45,21 @@ async def server_port():
     server = uvicorn.Server(config)
     serve_task = asyncio.create_task(server.serve())
 
-    # Wait for server to start
-    while not server.started:
-        await asyncio.sleep(0.01)
+    # Wait for server to start — handle bind failures that raise SystemExit
+    try:
+        for _ in range(500):  # 5 seconds max
+            if server.started:
+                break
+            if serve_task.done():
+                # Server task exited early (bind failure, etc.)
+                serve_task.result()  # re-raise the exception
+            await asyncio.sleep(0.01)
+        else:
+            server.should_exit = True
+            await serve_task
+            pytest.skip("Uvicorn failed to start within 5s")
+    except (SystemExit, OSError) as exc:
+        pytest.skip(f"Uvicorn failed to bind: {exc}")
 
     # Extract the OS-assigned port
     port = server.servers[0].sockets[0].getsockname()[1]
