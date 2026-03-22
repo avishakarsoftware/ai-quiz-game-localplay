@@ -102,10 +102,45 @@ def check_free_limit(device_id: str) -> tuple[bool, int]:
     return db.check_and_increment_free_usage(device_id)
 
 
-def get_entitlement_status(device_id: str) -> dict:
-    """Get full entitlement status for the /entitlements/current endpoint."""
-    ent = db.get_active_entitlement(device_id)
-    free_used = db.get_free_usage_count(device_id)
+def has_active_entitlement_for_user(user_id: str) -> bool:
+    """Check if user has an active entitlement (peek only, no decrement)."""
+    if not user_id:
+        return False
+    ent = db.get_active_entitlement_for_user(user_id)
+    return ent is not None
+
+
+def check_and_use_entitlement_for_user(user_id: str) -> tuple[bool, Optional[dict]]:
+    """Check for user's active entitlement and decrement if found."""
+    ent = db.get_active_entitlement_for_user(user_id)
+    if not ent:
+        return False, None
+    if db.decrement_entitlement(ent["id"]):
+        ent["games_remaining"] -= 1
+        return True, ent
+    return False, None
+
+
+def peek_user_free_limit(user_id: str) -> tuple[bool, int]:
+    """Check user free usage without incrementing (cross-device)."""
+    return db.peek_user_free_usage(user_id)
+
+
+def check_user_free_limit(user_id: str, device_id: str) -> tuple[bool, int]:
+    """Check and increment user free usage (cross-device). Returns (allowed, count)."""
+    return db.check_and_increment_user_free_usage(user_id, device_id)
+
+
+def get_entitlement_status(device_id: str, user_id: str = "") -> dict:
+    """Get full entitlement status for the /entitlements/current endpoint.
+    If user_id is provided, checks user-scoped entitlements and cross-device free usage."""
+    # Signed-in user: check user-scoped entitlements first
+    if user_id:
+        ent = db.get_active_entitlement_for_user(user_id)
+        free_used = db.get_user_free_usage_count(user_id)
+    else:
+        ent = db.get_active_entitlement(device_id)
+        free_used = db.get_free_usage_count(device_id)
 
     if ent:
         return {

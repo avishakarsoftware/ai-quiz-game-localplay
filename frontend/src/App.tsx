@@ -6,6 +6,7 @@ import SpectatorPage from './pages/SpectatorPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import SettingsDrawer from './components/SettingsDrawer';
 import { RemoteConfigProvider } from './context/RemoteConfigContext';
+import { AuthProvider } from './context/AuthContext';
 import MaintenanceOverlay from './components/MaintenanceOverlay';
 import AnnouncementBanner from './components/AnnouncementBanner';
 
@@ -13,6 +14,7 @@ function App() {
   return (
     <ErrorBoundary>
       <RemoteConfigProvider>
+        <AuthProvider>
         <Router basename={import.meta.env.BASE_URL}>
           <MaintenanceOverlay />
           <AnnouncementBanner />
@@ -27,6 +29,7 @@ function App() {
             <Route path="/tv/:code" element={<SpectatorPage />} />
           </Routes>
         </Router>
+        </AuthProvider>
       </RemoteConfigProvider>
     </ErrorBoundary>
   );

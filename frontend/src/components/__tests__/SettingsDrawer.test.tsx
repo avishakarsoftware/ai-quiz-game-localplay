@@ -13,6 +13,19 @@ vi.mock('../../utils/sound', () => ({
     },
 }));
 
+vi.mock('../../context/AuthContext', () => ({
+    useAuth: () => ({
+        user: null,
+        loading: false,
+        signIn: vi.fn(),
+        signOut: vi.fn(),
+    }),
+}));
+
+vi.mock('../../utils/analytics', () => ({
+    track: vi.fn(),
+}));
+
 describe('SettingsDrawer', () => {
     it('renders the settings trigger button', () => {
         render(<SettingsDrawer />);
@@ -80,5 +93,14 @@ describe('SettingsDrawer', () => {
         await user.click(screen.getByTitle('Settings'));
 
         expect(screen.getByText('Revelry Quiz v1.0')).toBeInTheDocument();
+    });
+
+    it('shows sign-in prompt when not signed in', async () => {
+        const user = userEvent.setup();
+        render(<SettingsDrawer />);
+
+        await user.click(screen.getByTitle('Settings'));
+
+        expect(screen.getByText(/sign in to keep your party pass/i)).toBeInTheDocument();
     });
 });

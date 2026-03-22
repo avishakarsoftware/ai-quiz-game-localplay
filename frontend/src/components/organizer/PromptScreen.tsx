@@ -1,3 +1,7 @@
+import { useEntitlement } from '../../hooks/useEntitlement';
+import QuotaBadge from '../QuotaBadge';
+import SignInNudge from '../SignInNudge';
+
 export interface AIProvider {
     id: string;
     name: string;
@@ -237,6 +241,8 @@ export default function PromptScreen({
     numQuestions, setNumQuestions, provider, setProvider,
     providers, onGenerate,
 }: PromptScreenProps) {
+    const { entitlement, loading: entitlementLoading } = useEntitlement();
+
     const shuffleTopic = () => {
         let next: string;
         do {
@@ -253,6 +259,10 @@ export default function PromptScreen({
                     <div className="hero-icon mb-4">⚡</div>
                     <h1 className="hero-title">Create Quiz</h1>
                     <p className="text-[--text-tertiary] mt-2">What should your players be quizzed on?</p>
+                    <div className="mt-3" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                        <QuotaBadge entitlement={entitlement} loading={entitlementLoading} />
+                        <SignInNudge isPremium={entitlement.premium} />
+                    </div>
                 </div>
 
                 <div className="space-y-4">
@@ -273,8 +283,8 @@ export default function PromptScreen({
                         >
                             🎲
                         </button>
-                        <div className="text-xs text-right mt-1" style={{ color: prompt.length > 450 ? 'var(--color-error, #ef4444)' : 'var(--text-tertiary)' }}>
-                            {prompt.length}/500
+                        <div className="text-xs text-right mt-1" style={{ color: prompt.length > 120 ? 'var(--color-error, #ef4444)' : 'var(--text-tertiary)' }}>
+                            {prompt.length}/140
                         </div>
                     </div>
 

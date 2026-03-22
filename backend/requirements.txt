@@ -7,8 +7,9 @@ pydantic
 qrcode
 pillow
 python-dotenv
-PyJWT
+PyJWT[crypto]
 stripe
+google-auth
 pytest
 pytest-asyncio
 httpx

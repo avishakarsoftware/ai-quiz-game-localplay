@@ -2,7 +2,7 @@
  * Shared fetch wrapper that attaches device/platform headers to every API call.
  */
 import { API_URL } from '../config';
-import { getDeviceId, getPremiumToken } from './storage';
+import { getDeviceId, getPremiumToken, getSessionToken } from './storage';
 
 function getPlatform(): string {
     // Only report ios/android for native Capacitor apps.
@@ -32,6 +32,10 @@ export function apiHeaders(extra?: Record<string, string>): Record<string, strin
     const token = getPremiumToken();
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
+    }
+    const sessionToken = getSessionToken();
+    if (sessionToken) {
+        headers['X-Session-Token'] = sessionToken;
     }
     if (extra) {
         Object.assign(headers, extra);

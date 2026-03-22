@@ -25,6 +25,7 @@ from socket_manager import socket_manager
 from image_engine import image_engine
 import premium
 import db
+import auth
 
 logger = logging.getLogger(__name__)
 
@@ -245,10 +246,20 @@ async def generate_quiz(request: QuizRequest, req: Request):
         if cached_id and cached_id in quizzes:
             return {"quiz_id": cached_id, "quiz": quizzes[cached_id]}
 
+    # Check session for signed-in user
+    session = auth.get_session_from_request(req)
+    user_id = session["user_id"] if session else ""
+
     # Check entitlement (peek only — don't consume yet, consume after success)
-    has_entitlement = premium.has_active_entitlement(device_id)
+    if user_id:
+        has_entitlement = premium.has_active_entitlement_for_user(user_id)
+    else:
+        has_entitlement = premium.has_active_entitlement(device_id)
     if not has_entitlement:
-        can_play, used = premium.peek_free_limit(device_id)
+        if user_id:
+            can_play, used = premium.peek_user_free_limit(user_id)
+        else:
+            can_play, used = premium.peek_free_limit(device_id)
         if not can_play:
             raise HTTPException(status_code=402, detail=f"You've used all {used} free games. Get a Party Pass for 50 games with premium AI!")
 
@@ -264,9 +275,20 @@ async def generate_quiz(request: QuizRequest, req: Request):
 
     # Consume quota only after successful generation
     if has_entitlement:
-        premium.check_and_use_entitlement(device_id)
+        if user_id:
+            consumed, _ = premium.check_and_use_entitlement_for_user(user_id)
+        else:
+            consumed, _ = premium.check_and_use_entitlement(device_id)
+        if not consumed:
+            # Entitlement expired/exhausted between peek and consume
+            raise HTTPException(status_code=402, detail="Entitlement expired or exhausted. Please purchase a new Party Pass.")
     else:
-        premium.check_free_limit(device_id)
+        if user_id:
+            allowed, _ = premium.check_user_free_limit(user_id, device_id)
+        else:
+            allowed, _ = premium.check_free_limit(device_id)
+        if not allowed:
+            raise HTTPException(status_code=402, detail="Free game limit reached.")
 
     _evict_old_content()
     quiz_id = str(uuid.uuid4())
@@ -533,10 +555,20 @@ async def generate_mlt(request: MLTRequest, req: Request):
         if cached_id and cached_id in mlt_scenarios:
             return {"scenario_id": cached_id, "game": mlt_scenarios[cached_id]}
 
+    # Check session for signed-in user
+    session = auth.get_session_from_request(req)
+    user_id = session["user_id"] if session else ""
+
     # Check entitlement (peek only — don't consume yet, consume after success)
-    has_entitlement = premium.has_active_entitlement(device_id)
+    if user_id:
+        has_entitlement = premium.has_active_entitlement_for_user(user_id)
+    else:
+        has_entitlement = premium.has_active_entitlement(device_id)
     if not has_entitlement:
-        can_play, used = premium.peek_free_limit(device_id)
+        if user_id:
+            can_play, used = premium.peek_user_free_limit(user_id)
+        else:
+            can_play, used = premium.peek_free_limit(device_id)
         if not can_play:
             raise HTTPException(status_code=402, detail=f"You've used all {used} free games. Get a Party Pass for 50 games with premium AI!")
 
@@ -552,9 +584,19 @@ async def generate_mlt(request: MLTRequest, req: Request):
 
     # Consume quota only after successful generation
     if has_entitlement:
-        premium.check_and_use_entitlement(device_id)
+        if user_id:
+            consumed, _ = premium.check_and_use_entitlement_for_user(user_id)
+        else:
+            consumed, _ = premium.check_and_use_entitlement(device_id)
+        if not consumed:
+            raise HTTPException(status_code=402, detail="Entitlement expired or exhausted. Please purchase a new Party Pass.")
     else:
-        premium.check_free_limit(device_id)
+        if user_id:
+            allowed, _ = premium.check_user_free_limit(user_id, device_id)
+        else:
+            allowed, _ = premium.check_free_limit(device_id)
+        if not allowed:
+            raise HTTPException(status_code=402, detail="Free game limit reached.")
 
     _evict_old_content()
     scenario_id = str(uuid.uuid4())
@@ -694,11 +736,83 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Content-Type", "Authorization", "X-Device-Id", "X-Platform", "X-App-Version", "X-Build", "X-Idempotency-Key"],
+    allow_headers=["Content-Type", "Authorization", "X-Device-Id", "X-Platform", "X-App-Version", "X-Build", "X-Idempotency-Key", "X-Session-Token"],
 )
 
 # Share allowed origins with WebSocket manager for origin validation
 socket_manager.allowed_origins = origins
+
+
+# --- Auth (Phase 2) ---
+
+class SignInRequest(BaseModel):
+    provider: str
+    id_token: str
+    device_id: str
+
+    @field_validator('provider')
+    @classmethod
+    def validate_provider(cls, v: str) -> str:
+        v = v.lower().strip()
+        if v not in ("google", "apple"):
+            raise ValueError('Provider must be "google" or "apple"')
+        return v
+
+    @field_validator('id_token')
+    @classmethod
+    def validate_id_token(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError('id_token is required')
+        if len(v) > 10000:
+            raise ValueError('id_token is too long')
+        return v
+
+    @field_validator('device_id')
+    @classmethod
+    def validate_device_id(cls, v: str) -> str:
+        v = v.strip()
+        if not premium._UUID_RE.match(v):
+            raise ValueError('device_id must be a valid UUID')
+        return v
+
+
+@app.post("/auth/signin")
+async def auth_signin(request: SignInRequest):
+    result = auth.signin(request.provider, request.id_token, request.device_id)
+    if not result:
+        raise HTTPException(status_code=401, detail="Invalid or expired ID token")
+    return result
+
+
+@app.get("/auth/me")
+async def auth_me(req: Request):
+    session = auth.get_session_from_request(req)
+    if not session:
+        raise HTTPException(status_code=401, detail="Not signed in")
+    user = db.get_user(session["user_id"])
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    # Get entitlement status for this user
+    ent = db.get_active_entitlement_for_user(user["id"])
+    free_used = db.get_user_free_usage_count(user["id"])
+
+    return {
+        "user": {
+            "id": user["id"],
+            "provider": user["provider"],
+            "email": user.get("email"),
+        },
+        "entitlement": {
+            "premium": ent is not None,
+            "status": ent["status"] if ent else None,
+            "games_remaining": ent["games_remaining"] if ent else 0,
+            "expires_at": ent["expires_at"] if ent else None,
+            "free_games_used": free_used,
+            "free_games_limit": config.FREE_TIER_LIMIT,
+        },
+    }
 
 
 # --- Premium / Checkout ---
@@ -778,6 +892,9 @@ async def stripe_webhook(req: Request):
         session = event["data"]["object"]
         stripe_session_id = session.get("id", "")
         device_id = session.get("metadata", {}).get("device_id", "")
+        if not device_id or not premium._UUID_RE.match(device_id):
+            logger.error("Invalid device_id in webhook metadata: %s", device_id[:40] if device_id else "empty")
+            return {"status": "error", "detail": "Invalid device_id in metadata"}
 
         # Activate the pending entitlement
         ent = db.activate_pending_entitlement(stripe_session_id)
@@ -838,7 +955,10 @@ async def entitlement_status(req: Request):
             "free_games_limit": config.FREE_TIER_LIMIT,
             "pending_purchase": False,
         }
-    return premium.get_entitlement_status(device_id)
+    # If signed in, use user-scoped entitlements
+    session = auth.get_session_from_request(req)
+    user_id = session["user_id"] if session else ""
+    return premium.get_entitlement_status(device_id, user_id=user_id)
 
 
 # --- Admin Endpoints ---

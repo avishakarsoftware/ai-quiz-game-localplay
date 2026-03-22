@@ -77,3 +77,49 @@ export function clearCheckoutPending(): void {
     remove(CHECKOUT_PENDING_KEY);
     remove(CHECKOUT_SESSION_KEY);
 }
+
+// --- Session Token (Auth Phase 2) ---
+
+const SESSION_TOKEN_KEY = 'revelry_session_token';
+const USER_PROFILE_KEY = 'revelry_user_profile';
+
+export function getSessionToken(): string | null {
+    return get(SESSION_TOKEN_KEY);
+}
+
+export function setSessionToken(token: string): void {
+    set(SESSION_TOKEN_KEY, token);
+}
+
+export function clearSessionToken(): void {
+    remove(SESSION_TOKEN_KEY);
+}
+
+export interface UserProfile {
+    id: string;
+    provider: 'google' | 'apple';
+    email?: string | null;
+}
+
+export function getUserProfile(): UserProfile | null {
+    const raw = get(USER_PROFILE_KEY);
+    if (!raw) return null;
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+}
+
+export function setUserProfile(profile: UserProfile): void {
+    set(USER_PROFILE_KEY, JSON.stringify(profile));
+}
+
+export function clearUserProfile(): void {
+    remove(USER_PROFILE_KEY);
+}
+
+export function signOut(): void {
+    clearSessionToken();
+    clearUserProfile();
+}
