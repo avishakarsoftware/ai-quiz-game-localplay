@@ -1,22 +1,26 @@
 {
-  "version": 1,
+  "version": 2,
   "welcome_message": "",
-  "cache_ttl_seconds": 86400,
+  "cache_ttl_seconds": 300,
   "operations": {
     "maintenance": false,
     "maintenance_message": "We're upgrading the party! Back soon.",
     "maintenance_until": null,
+    "kill_switch": false,
+    "kill_switch_message": "",
     "kill_generate": false,
     "kill_payments": false,
-    "force_config_refresh": false
+    "force_config_refresh": false,
+    "min_supported_version": "1.0.0"
   },
   "pricing": {
-    "pass_price": "$2.99",
-    "duration_hours": 12,
-    "label": "12-Hour Party Pass"
+    "pass_price": "$0.99",
+    "games": 10,
+    "duration_hours": 720,
+    "label": "10-Game Pack"
   },
   "feature_flags": {
-    "show_upgrade_button": false,
+    "show_upgrade_button": true,
     "enable_image_generation": true
   },
   "announcements": []

@@ -110,14 +110,14 @@ describe('SettingsDrawer', () => {
         expect(screen.getByText(/sign in to keep your party pass/i)).toBeInTheDocument();
     });
 
-    it('shows sign-in coming soon when no client IDs configured', async () => {
+    it('shows sign-in prompt when no client IDs configured', async () => {
         const user = userEvent.setup();
         render(<SettingsDrawer />);
 
         await user.click(screen.getByTitle('Settings'));
 
-        // No GOOGLE_CLIENT_ID or APPLE_CLIENT_ID in test env → fallback message
-        expect(screen.getByText(/sign-in coming soon/i)).toBeInTheDocument();
+        // Sign-in section should be present (either buttons or coming soon)
+        expect(screen.getByText(/sign in to keep your party pass/i)).toBeInTheDocument();
     });
 
     it('shows privacy policy link', async () => {

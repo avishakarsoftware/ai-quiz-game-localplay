@@ -13,9 +13,12 @@ export interface RemoteConfig {
     maintenance: boolean;
     maintenance_message: string;
     maintenance_until: string | null;
+    kill_switch?: boolean;
+    kill_switch_message?: string;
     kill_generate?: boolean;
     kill_payments?: boolean;
     force_config_refresh?: boolean;
+    min_supported_version?: string;
   };
   pricing: {
     pass_price: string;
@@ -38,9 +41,12 @@ export const DEFAULT_CONFIG: RemoteConfig = {
     maintenance: false,
     maintenance_message: '',
     maintenance_until: null,
+    kill_switch: false,
+    kill_switch_message: '',
     kill_generate: false,
     kill_payments: false,
     force_config_refresh: false,
+    min_supported_version: '1.0.0',
   },
   pricing: {
     pass_price: '$0.99',
