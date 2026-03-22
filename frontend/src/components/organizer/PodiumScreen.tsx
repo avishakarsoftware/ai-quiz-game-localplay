@@ -4,13 +4,22 @@ import { soundManager } from '../../utils/sound';
 import AnimatedNumber from '../AnimatedNumber';
 import Fireworks from '../Fireworks';
 
+interface Superlative {
+    title: string;
+    icon: string;
+    winner: string;
+    avatar: string;
+    detail: string;
+}
+
 interface PodiumScreenProps {
     leaderboard: LeaderboardEntry[];
     teamLeaderboard?: TeamLeaderboardEntry[];
+    superlatives?: Superlative[];
     onPlayAgain: () => void;
 }
 
-export default function PodiumScreen({ leaderboard, teamLeaderboard, onPlayAgain }: PodiumScreenProps) {
+export default function PodiumScreen({ leaderboard, teamLeaderboard, superlatives, onPlayAgain }: PodiumScreenProps) {
     const [revealPhase, setRevealPhase] = useState(0);
 
     useEffect(() => {
@@ -168,10 +177,27 @@ export default function PodiumScreen({ leaderboard, teamLeaderboard, onPlayAgain
                 </div>
             )}
 
+            {revealPhase >= 4 && superlatives && superlatives.length > 0 && (
+                <div className="w-full mt-6" style={{ position: 'relative', zIndex: 11, maxWidth: 700 }}>
+                    <h3 className="text-2xl font-extrabold text-center mb-3">Awards</h3>
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: 20, flexWrap: 'wrap' }}>
+                        {superlatives.map((s) => (
+                            <div key={s.title} style={{ textAlign: 'center', padding: '12px 16px', background: 'var(--surface-secondary, rgba(255,255,255,0.05))', borderRadius: 12, minWidth: 130 }}>
+                                <div style={{ fontSize: '2rem' }}>{s.icon}</div>
+                                <div style={{ fontWeight: 700, fontSize: '0.85rem', marginTop: 4 }}>{s.title}</div>
+                                <div style={{ fontSize: '1.3rem', marginTop: 4 }}>{s.avatar || '👤'}</div>
+                                <div style={{ fontWeight: 600 }}>{s.winner}</div>
+                                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>{s.detail}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {revealPhase >= 4 && (
                 <button onClick={onPlayAgain} className="btn btn-primary w-full mt-8 stagger-in"
                         style={{ position: 'relative', zIndex: 11 }}>
-                    New Quiz
+                    Play Again
                 </button>
             )}
         </div>

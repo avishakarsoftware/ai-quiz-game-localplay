@@ -51,6 +51,7 @@ export default function OrganizerPage() {
     const [currentStatement, setCurrentStatement] = useState('');
     const [showVotes, setShowVotes] = useState(true);
     const [wmltRoundResult, setWmltRoundResult] = useState<{ winner: string; winners: string[]; round_podium: { nickname: string; avatar: string; vote_count: number; voters: string[] }[]; unanimous: boolean; show_votes: boolean; statement: string } | null>(null);
+    const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const stateRef = useRef<OrganizerState>('SELECT_GAME');
@@ -128,6 +129,7 @@ export default function OrganizerPage() {
         else if (msg.type === 'PODIUM') {
             setLeaderboard(msg.leaderboard as LeaderboardEntry[]);
             setTeamLeaderboard(msg.team_leaderboard as TeamLeaderboardEntry[] || []);
+            setSuperlatives((msg.superlatives as { title: string; icon: string; winner: string; avatar: string; detail: string }[]) || []);
             track('game_completed', { room_code: roomCodeRef.current, game_type: gameTypeRef.current, player_count: (msg.leaderboard as LeaderboardEntry[])?.length || 0, winner: (msg.leaderboard as LeaderboardEntry[])?.[0]?.nickname });
             setState('PODIUM');
             soundManager.play('fanfare');
@@ -633,6 +635,7 @@ export default function OrganizerPage() {
                     <PodiumScreen
                         leaderboard={leaderboard}
                         teamLeaderboard={teamLeaderboard}
+                        superlatives={superlatives}
                         onPlayAgain={playAgain}
                     />
                 )}

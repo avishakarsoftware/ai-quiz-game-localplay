@@ -500,7 +500,8 @@ class SocketManager:
                         })
                         return
                 room.locked = True
-                self._select_bonus_questions(room)
+                if room.game_type != "wmlt":
+                    self._select_bonus_questions(room)
                 room.state = "INTRO"
                 await room.broadcast({"type": "GAME_STARTING"})
 
