@@ -54,6 +54,8 @@ class Room:
         self.locked: bool = False  # True = no new players can join
         # WMLT voting state
         self.votes: Dict[str, str] = {}  # nickname -> voted_for_nickname (per-round)
+        self.show_votes: bool = True  # Show vote breakdown after each round
+        self.mlt_round_history: List[dict] = []  # per-round vote data for superlatives
 
     def reset_for_new_game(self, new_game_data: dict, new_time_limit: int,
                            game_type: Optional[str] = None,
@@ -488,6 +490,15 @@ class SocketManager:
             if msg_type == "START_GAME":
                 if room.state != "LOBBY":
                     return
+                # WMLT requires minimum players
+                if room.game_type == "wmlt":
+                    player_count = len([p for p in room.players.values() if p.get("nickname")])
+                    if player_count < config.MIN_WMLT_PLAYERS:
+                        await self._send_to_client(room, client_id, {
+                            "type": "ERROR",
+                            "message": f"Most Likely To needs at least {config.MIN_WMLT_PLAYERS} players to start",
+                        })
+                        return
                 room.locked = True
                 self._select_bonus_questions(room)
                 room.state = "INTRO"
@@ -505,6 +516,12 @@ class SocketManager:
                     if isinstance(new_limit, int) and 5 <= new_limit <= 60:
                         room.time_limit = new_limit
 
+            elif msg_type == "SET_SHOW_VOTES":
+                if room.game_type == "wmlt":
+                    val = message.get("show_votes")
+                    if isinstance(val, bool):
+                        room.show_votes = val
+
             elif msg_type == "END_QUIZ":
                 if room.state in ("QUESTION", "LEADERBOARD"):
                     if room.timer_task:
@@ -513,11 +530,14 @@ class SocketManager:
                     room.state = "PODIUM"
                     leaderboard = self.get_leaderboard(room)
                     team_leaderboard = self.get_team_leaderboard(room)
-                    await room.broadcast({
+                    podium_msg = {
                         "type": "PODIUM",
                         "leaderboard": leaderboard,
                         "team_leaderboard": team_leaderboard,
-                    })
+                    }
+                    if room.game_type == "wmlt":
+                        podium_msg["superlatives"] = self._calculate_wmlt_superlatives(room)
+                    await room.broadcast(podium_msg)
                     try:
                         from main import game_history
                         game_history.append(self.get_game_summary(room))
@@ -1016,11 +1036,14 @@ class SocketManager:
             room.state = "PODIUM"
             leaderboard = self.get_leaderboard(room)
             team_leaderboard = self.get_team_leaderboard(room)
-            await room.broadcast({
+            podium_msg: dict = {
                 "type": "PODIUM",
                 "leaderboard": leaderboard,
                 "team_leaderboard": team_leaderboard,
-            })
+            }
+            if room.game_type == "wmlt":
+                podium_msg["superlatives"] = self._calculate_wmlt_superlatives(room)
+            await room.broadcast(podium_msg)
             # Save game history — import here to avoid circular dependency
             try:
                 from main import game_history
@@ -1140,21 +1163,19 @@ class SocketManager:
         for voter, voted_for in room.votes.items():
             vote_tally.setdefault(voted_for, []).append(voter)
 
-        # Find the winner (most votes). On tie, first alphabetically.
-        winner = None
+        # Find winner(s) — all players tied for most votes are winners
+        winners: List[str] = []
         winner_votes = 0
         if vote_tally:
-            winner = max(vote_tally, key=lambda n: (len(vote_tally[n]), -ord(n[0]) if n else 0))
-            # Among those with max votes, pick alphabetically first
-            max_votes = len(vote_tally[winner])
-            tied = [n for n, voters in vote_tally.items() if len(voters) == max_votes]
-            winner = min(tied)
+            max_votes = max(len(voters) for voters in vote_tally.values())
+            winners = sorted(n for n, voters in vote_tally.items() if len(voters) == max_votes)
             winner_votes = max_votes
 
         is_bonus = room.current_question_index in room.bonus_questions
-        is_unanimous = winner_votes == len(room.votes) and winner_votes > 1
+        is_unanimous = winner_votes == len(room.votes) and winner_votes > 1 and len(winners) == 1
 
         # Score players
+        winners_set = set(winners)
         for cid, player in room.players.items():
             nickname = player["nickname"]
             voted_for = room.votes.get(nickname)
@@ -1164,8 +1185,8 @@ class SocketManager:
                 player["streak"] = 0
                 continue
 
-            if voted_for == winner:
-                # Voted with majority
+            if voted_for in winners_set:
+                # Voted for a winner
                 base_points = 500
                 if is_bonus:
                     base_points *= 2
@@ -1185,12 +1206,30 @@ class SocketManager:
                 # Voted for someone else — break streak
                 player["streak"] = 0
 
-        # Bonus for the "winner" (most-voted person) if they're a player
-        if winner:
-            for cid, player in room.players.items():
-                if player["nickname"] == winner:
-                    player["score"] += 100
-                    break
+        # Bonus for each winner (most-voted person) if they're a player
+        for cid, player in room.players.items():
+            if player["nickname"] in winners_set:
+                player["score"] += 100
+
+        # Build round podium: all voted-for players sorted by vote count
+        player_avatars = {p["nickname"]: p.get("avatar", "") for p in room.players.values()}
+        round_podium = []
+        for nickname, voters in sorted(vote_tally.items(), key=lambda x: len(x[1]), reverse=True):
+            round_podium.append({
+                "nickname": nickname,
+                "avatar": player_avatars.get(nickname, ""),
+                "vote_count": len(voters),
+                "voters": voters if room.show_votes else [],
+            })
+
+        # Store round data for superlatives
+        room.mlt_round_history.append({
+            "votes": dict(room.votes),  # voter -> target
+            "winner": winners[0] if winners else None,
+            "winners": winners,
+            "winner_votes": winner_votes,
+            "round_podium": round_podium,
+        })
 
         # Log for game history
         room.answer_log.append({
@@ -1198,7 +1237,7 @@ class SocketManager:
             "game_type": "wmlt",
             "statement": statement.get("text", "") if statement else "",
             "votes": dict(room.votes),
-            "winner": winner,
+            "winners": winners,
             "winner_votes": winner_votes,
             "unanimous": is_unanimous,
         })
@@ -1206,19 +1245,109 @@ class SocketManager:
         current_leaderboard = self.get_leaderboard_with_changes(room)
         is_final = room.current_question_index >= room.total_rounds() - 1
 
+        # winner = first for backward compat, winners = full list for tie display
         await room.broadcast({
             "type": "QUESTION_OVER",
             "game_type": "wmlt",
             "statement": statement.get("text", "") if statement else "",
-            "votes": vote_tally,
-            "winner": winner,
+            "votes": vote_tally if room.show_votes else {},
+            "round_podium": round_podium,
+            "winner": winners[0] if winners else None,
+            "winners": winners,
             "winner_votes": winner_votes,
             "unanimous": is_unanimous,
+            "show_votes": room.show_votes,
             "leaderboard": current_leaderboard,
             "previous_leaderboard": room.previous_leaderboard,
             "is_final": is_final,
             "is_bonus": is_bonus,
         })
+
+    def _calculate_wmlt_superlatives(self, room: Room) -> List[dict]:
+        """Calculate fun end-of-game superlatives for WMLT."""
+        from collections import Counter
+        superlatives = []
+        if not room.mlt_round_history:
+            return superlatives
+
+        player_avatars = {p["nickname"]: p.get("avatar", "") for p in room.players.values()}
+        for nickname, data in room.disconnected_players.items():
+            player_avatars[nickname] = data.get("avatar", "")
+
+        # "Most Likely To Everything" — most total votes received
+        total_votes_received: Counter = Counter()
+        for rnd in room.mlt_round_history:
+            for voter, target in rnd.get("votes", {}).items():
+                total_votes_received[target] += 1
+        if total_votes_received:
+            top = total_votes_received.most_common(1)[0]
+            superlatives.append({
+                "title": "Most Likely To Everything",
+                "icon": "🏆",
+                "winner": top[0],
+                "avatar": player_avatars.get(top[0], ""),
+                "detail": f"Received {top[1]} total votes",
+            })
+
+        # "Narcissist Award" — most self-votes
+        self_votes: Counter = Counter()
+        for rnd in room.mlt_round_history:
+            for voter, target in rnd.get("votes", {}).items():
+                if voter == target:
+                    self_votes[voter] += 1
+        if self_votes:
+            top = self_votes.most_common(1)[0]
+            if top[1] > 0:
+                superlatives.append({
+                    "title": "Narcissist Award",
+                    "icon": "🪞",
+                    "winner": top[0],
+                    "avatar": player_avatars.get(top[0], ""),
+                    "detail": f"Voted for themselves {top[1]} time{'s' if top[1] != 1 else ''}",
+                })
+
+        # "Mind Reader" — voted with the majority most often
+        majority_counts: Counter = Counter()
+        for rnd in room.mlt_round_history:
+            round_winners = set(rnd.get("winners", []))
+            if not round_winners and rnd.get("winner"):
+                round_winners = {rnd["winner"]}
+            if round_winners:
+                for voter, target in rnd.get("votes", {}).items():
+                    if target in round_winners:
+                        majority_counts[voter] += 1
+        if majority_counts:
+            top = majority_counts.most_common(1)[0]
+            if top[1] > 0:
+                superlatives.append({
+                    "title": "Mind Reader",
+                    "icon": "🔮",
+                    "winner": top[0],
+                    "avatar": player_avatars.get(top[0], ""),
+                    "detail": f"Voted with the majority {top[1]} time{'s' if top[1] != 1 else ''}",
+                })
+
+        # "Most Controversial" — involved in closest vote splits
+        controversial: Counter = Counter()
+        for rnd in room.mlt_round_history:
+            podium = rnd.get("round_podium", [])
+            if len(podium) >= 2:
+                top_two = sorted(podium, key=lambda x: x["vote_count"], reverse=True)[:2]
+                if top_two[0]["vote_count"] - top_two[1]["vote_count"] <= 1:
+                    controversial[top_two[0]["nickname"]] += 1
+                    controversial[top_two[1]["nickname"]] += 1
+        if controversial:
+            top = controversial.most_common(1)[0]
+            if top[1] > 0:
+                superlatives.append({
+                    "title": "Most Controversial",
+                    "icon": "🔥",
+                    "winner": top[0],
+                    "avatar": player_avatars.get(top[0], ""),
+                    "detail": f"Part of {top[1]} close vote{'s' if top[1] != 1 else ''}",
+                })
+
+        return superlatives
 
     def _all_players_for_leaderboard(self, room: Room) -> List[dict]:
         """Combine active and disconnected players for leaderboard inclusion."""

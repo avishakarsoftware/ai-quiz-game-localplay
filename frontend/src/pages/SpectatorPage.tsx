@@ -46,6 +46,8 @@ export default function SpectatorPage() {
     const [isBonus, setIsBonus] = useState(false);
     const [showBonusSplash, setShowBonusSplash] = useState(false);
     const [showFullscreenPrompt, setShowFullscreenPrompt] = useState(true);
+    const [wmltRoundResult, setWmltRoundResult] = useState<{ winner: string; winners: string[]; round_podium: { nickname: string; avatar: string; vote_count: number; voters: string[] }[]; unanimous: boolean; show_votes: boolean; statement: string } | null>(null);
+    const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -178,6 +180,18 @@ export default function SpectatorPage() {
             else if (msg.type === 'TIMER') setTimeRemaining(msg.remaining);
             else if (msg.type === 'QUESTION_OVER') {
                 setLeaderboard(msg.leaderboard);
+                if (msg.game_type === 'wmlt') {
+                    setWmltRoundResult({
+                        winner: msg.winner,
+                        winners: msg.winners || [msg.winner],
+                        round_podium: msg.round_podium || [],
+                        unanimous: msg.unanimous || false,
+                        show_votes: msg.show_votes ?? true,
+                        statement: msg.statement || '',
+                    });
+                } else {
+                    setWmltRoundResult(null);
+                }
                 if (!msg.is_final) {
                     setGameState('LEADERBOARD');
                 }
@@ -186,6 +200,7 @@ export default function SpectatorPage() {
             else if (msg.type === 'PODIUM') {
                 setLeaderboard(msg.leaderboard);
                 setTeamLeaderboard(msg.team_leaderboard || []);
+                setSuperlatives(msg.superlatives || []);
                 setPodiumReveal(0);
                 setGameState('PODIUM');
                 soundManager.play('fanfare');
@@ -495,15 +510,50 @@ export default function SpectatorPage() {
                     )}
 
                     {gameState === 'LEADERBOARD' && (
-                        <div className="flex-1 flex flex-col justify-center animate-in" style={{ minHeight: 0, overflow: 'hidden' }}>
-                            <div className="text-center" style={{ flexShrink: 0, padding: '16px 0' }}>
-                                <h1 className="hero-title mb-2" style={{ fontSize: '2.5rem' }}>Leaderboard</h1>
-                                <p className="text-[--text-tertiary] text-xl">After {gameType === 'wmlt' ? 'round' : 'question'} {questionNumber} of {totalQuestions}</p>
+                        wmltRoundResult ? (
+                            /* WMLT: show vote bar chart, no points leaderboard */
+                            <div className="flex-1 flex flex-col animate-in" style={{ minHeight: 0, overflow: 'hidden' }}>
+                                <div className="text-center" style={{ flexShrink: 0, padding: '16px 0' }}>
+                                    <p style={{ color: 'var(--text-tertiary)', fontSize: '1.2rem', marginBottom: 8 }}>Round {questionNumber} of {totalQuestions}</p>
+                                    <div style={{ fontSize: '3rem', marginBottom: 4 }}>👑</div>
+                                    {wmltRoundResult.winners.length > 1 ? (
+                                        <>
+                                            <h2 style={{ fontSize: '2.5rem', fontWeight: 800 }}>{wmltRoundResult.winners.join(' & ')}</h2>
+                                            <p style={{ color: 'var(--text-secondary)', fontSize: '1.2rem' }}>Tied with {wmltRoundResult.round_podium[0]?.vote_count || 0} votes each!</p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <h2 style={{ fontSize: '2.5rem', fontWeight: 800 }}>{wmltRoundResult.winner}</h2>
+                                            {wmltRoundResult.unanimous && <p style={{ color: 'var(--accent-success)', fontWeight: 600, fontSize: '1.2rem' }}>Unanimous!</p>}
+                                        </>
+                                    )}
+                                    <p style={{ color: 'var(--text-tertiary)', fontSize: '1.1rem', marginTop: 8, fontStyle: 'italic' }}>"{wmltRoundResult.statement}"</p>
+                                </div>
+                                <div className="w-full max-w-3xl mx-auto" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                                    <LeaderboardBarChart
+                                        leaderboard={wmltRoundResult.round_podium.map(p => ({
+                                            nickname: p.nickname,
+                                            score: p.vote_count,
+                                            avatar: p.avatar,
+                                        }))}
+                                        maxEntries={8}
+                                        size="large"
+                                    />
+                                </div>
+                                <p className="text-center" style={{ color: 'var(--text-tertiary)', fontSize: '1rem', padding: '12px 0' }}>Waiting for host...</p>
                             </div>
-                            <div className="w-full max-w-3xl mx-auto" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                                <LeaderboardBarChart leaderboard={leaderboard} maxEntries={8} size="large" />
+                        ) : (
+                            /* Quiz: show leaderboard bar chart */
+                            <div className="flex-1 flex flex-col justify-center animate-in" style={{ minHeight: 0, overflow: 'hidden' }}>
+                                <div className="text-center" style={{ flexShrink: 0, padding: '16px 0' }}>
+                                    <h1 className="hero-title mb-2" style={{ fontSize: '2.5rem' }}>Leaderboard</h1>
+                                    <p className="text-[--text-tertiary] text-xl">After question {questionNumber} of {totalQuestions}</p>
+                                </div>
+                                <div className="w-full max-w-3xl mx-auto" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                                    <LeaderboardBarChart leaderboard={leaderboard} maxEntries={8} size="large" />
+                                </div>
                             </div>
-                        </div>
+                        )
                     )}
 
                     {gameState === 'PODIUM' && (
@@ -563,6 +613,23 @@ export default function SpectatorPage() {
                                     </div>
                                 )}
                             </div>
+
+                            {podiumReveal >= 4 && superlatives.length > 0 && (
+                                <div className="w-full mt-6" style={{ position: 'relative', zIndex: 11, maxWidth: 700 }}>
+                                    <h3 className="text-2xl font-extrabold text-center mb-3">Awards</h3>
+                                    <div style={{ display: 'flex', justifyContent: 'center', gap: 20, flexWrap: 'wrap' }}>
+                                        {superlatives.map((s) => (
+                                            <div key={s.title} style={{ textAlign: 'center', padding: '12px 16px', background: 'var(--surface-secondary, rgba(255,255,255,0.05))', borderRadius: 12, minWidth: 130 }}>
+                                                <div style={{ fontSize: '2rem' }}>{s.icon}</div>
+                                                <div style={{ fontWeight: 700, fontSize: '0.85rem', marginTop: 4 }}>{s.title}</div>
+                                                <div style={{ fontSize: '1.3rem', marginTop: 4 }}>{s.avatar || '👤'}</div>
+                                                <div style={{ fontWeight: 600 }}>{s.winner}</div>
+                                                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>{s.detail}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             {podiumReveal >= 4 && teamLeaderboard.some(t => t.members > 1) && (
                                 <div className="w-full mt-4" style={{ position: 'relative', zIndex: 11, maxWidth: 600 }}>

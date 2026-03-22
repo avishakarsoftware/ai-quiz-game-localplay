@@ -57,6 +57,7 @@ VALID_DIFFICULTIES = ("easy", "medium", "hard")
 
 # --- Player / history limits ---
 MAX_PLAYERS_PER_ROOM = 100
+MIN_WMLT_PLAYERS = 3  # WMLT needs at least 3 players to be fun
 MAX_GAME_HISTORY = 1000
 
 # --- Streak bonus ---

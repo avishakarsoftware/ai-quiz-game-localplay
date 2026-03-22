@@ -434,9 +434,12 @@ async def import_quiz(request: QuizImportRequest):
 
 # --- MLT (Most Likely To) Endpoints ---
 
+VALID_MLT_VIBES = ("party", "spicy", "wholesome", "work", "custom")
+
+
 class MLTRequest(BaseModel):
     prompt: str
-    difficulty: str = "medium"
+    difficulty: str = "party"  # accepts vibe name or legacy difficulty
     num_rounds: int = 10
     provider: str = ""
 
@@ -468,8 +471,9 @@ class MLTRequest(BaseModel):
     @classmethod
     def validate_difficulty(cls, v: str) -> str:
         v = v.lower().strip()
-        if v not in config.VALID_DIFFICULTIES:
-            raise ValueError(f'Difficulty must be one of: {", ".join(config.VALID_DIFFICULTIES)}')
+        # Accept both vibe names and legacy difficulty values
+        if v not in VALID_MLT_VIBES and v not in config.VALID_DIFFICULTIES:
+            raise ValueError(f'Vibe must be one of: {", ".join(VALID_MLT_VIBES)}')
         return v
 
     @field_validator('num_rounds')

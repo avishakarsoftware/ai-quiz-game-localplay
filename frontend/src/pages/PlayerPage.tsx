@@ -61,7 +61,8 @@ export default function PlayerPage() {
     const [currentStatement, setCurrentStatement] = useState('');
     const [votePlayers, setVotePlayers] = useState<PlayerInfo[]>([]);
     const [selectedVote, setSelectedVote] = useState<string | null>(null);
-    const [voteResult, setVoteResult] = useState<{ winner: string; winner_votes: number; votes: Record<string, string[]>; unanimous: boolean } | null>(null);
+    const [voteResult, setVoteResult] = useState<{ winner: string; winners: string[]; winner_votes: number; votes: Record<string, string[]>; unanimous: boolean; round_podium: { nickname: string; avatar: string; vote_count: number; voters: string[] }[]; show_votes: boolean } | null>(null);
+    const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const kickedRef = useRef(false);
@@ -235,9 +236,12 @@ export default function PlayerPage() {
                 if (msg.game_type === 'wmlt') {
                     setVoteResult({
                         winner: msg.winner as string,
+                        winners: (msg.winners as string[]) || [msg.winner as string],
                         winner_votes: msg.winner_votes as number,
                         votes: msg.votes as Record<string, string[]>,
                         unanimous: msg.unanimous as boolean,
+                        round_podium: (msg.round_podium as { nickname: string; avatar: string; vote_count: number; voters: string[] }[]) || [],
+                        show_votes: msg.show_votes as boolean ?? true,
                     });
                 } else {
                     setCorrectAnswer(msg.answer as number);
@@ -250,7 +254,7 @@ export default function PlayerPage() {
                 const lb = msg.leaderboard as LeaderboardEntry[];
                 const rank = lb.findIndex((p) => p.nickname === nickname) + 1;
                 track('player_game_finished', { room_code: roomCode, nickname, rank, total_players: lb.length });
-                setLeaderboard(msg.leaderboard); setTeamLeaderboard(msg.team_leaderboard || []); setState('PODIUM'); soundManager.play('fanfare');
+                setLeaderboard(msg.leaderboard); setTeamLeaderboard(msg.team_leaderboard || []); setSuperlatives(msg.superlatives || []); setState('PODIUM'); soundManager.play('fanfare');
             }
             if (msg.type === 'ORGANIZER_DISCONNECTED') {
                 // Host disconnected — show warning but stay connected (they may reconnect)
@@ -725,19 +729,35 @@ export default function PlayerPage() {
                         <div className="text-center py-6">
                             {gameType === 'wmlt' && voteResult ? (
                                 <>
-                                    <div className="hero-icon mb-2" style={{ fontSize: '2.5rem' }}>🎯</div>
-                                    <h2 className="text-2xl font-extrabold">{voteResult.winner}</h2>
-                                    <p className="text-[--text-secondary] mt-1">
-                                        {voteResult.winner_votes} vote{voteResult.winner_votes !== 1 ? 's' : ''}
-                                        {voteResult.unanimous ? ' — Unanimous!' : ''}
-                                    </p>
-                                    {selectedVote === voteResult.winner ? (
-                                        <p className="text-[--accent-success] font-bold mt-2">You voted with the majority!</p>
-                                    ) : selectedVote ? (
-                                        <p className="text-[--text-tertiary] mt-2">You voted for {selectedVote}</p>
+                                    {/* Crown + winner(s) */}
+                                    <div style={{ fontSize: '2.5rem', marginBottom: 4 }}>👑</div>
+                                    {voteResult.winners.length > 1 ? (
+                                        <>
+                                            <h2 className="text-2xl font-extrabold">{voteResult.winners.join(' & ')}</h2>
+                                            <p className="text-[--text-secondary] text-sm mt-1">
+                                                Tied with {voteResult.winner_votes} vote{voteResult.winner_votes !== 1 ? 's' : ''} each!
+                                            </p>
+                                        </>
                                     ) : (
-                                        <p className="text-[--accent-danger] mt-2">You didn't vote</p>
+                                        <>
+                                            <h2 className="text-2xl font-extrabold">{voteResult.winner}</h2>
+                                            <p className="text-[--text-secondary] text-sm mt-1">
+                                                {voteResult.winner_votes} vote{voteResult.winner_votes !== 1 ? 's' : ''}
+                                                {voteResult.unanimous ? ' — Unanimous!' : ''}
+                                            </p>
+                                        </>
                                     )}
+
+                                    {/* Your vote feedback */}
+                                    <div style={{ marginTop: 8 }}>
+                                        {selectedVote && voteResult.winners.includes(selectedVote) ? (
+                                            <p className="text-[--accent-success] font-bold text-sm">You voted with the majority!</p>
+                                        ) : selectedVote ? (
+                                            <p className="text-[--text-tertiary] text-sm">You voted for {selectedVote}</p>
+                                        ) : (
+                                            <p className="text-[--accent-danger] text-sm">You didn't vote</p>
+                                        )}
+                                    </div>
                                 </>
                             ) : (
                                 <>
@@ -756,21 +776,38 @@ export default function PlayerPage() {
                             )}
                         </div>
 
-                        {myRank > 0 && (
-                            <div className="card text-center py-6 mb-4 w-full">
-                                <p className="text-[--text-tertiary] text-sm mb-1">Your position</p>
-                                <p className="text-4xl font-bold">#{myRank}</p>
+                        {/* WMLT: vote bar chart instead of points leaderboard */}
+                        {gameType === 'wmlt' && voteResult ? (
+                            <div className="flex-1 w-full">
+                                <LeaderboardBarChart
+                                    leaderboard={voteResult.round_podium.map(p => ({
+                                        nickname: p.nickname,
+                                        score: p.vote_count,
+                                        avatar: p.avatar,
+                                    }))}
+                                    maxEntries={8}
+                                    size="compact"
+                                    highlightNickname={nickname}
+                                />
                             </div>
+                        ) : (
+                            <>
+                                {myRank > 0 && (
+                                    <div className="card text-center py-6 mb-4 w-full">
+                                        <p className="text-[--text-tertiary] text-sm mb-1">Your position</p>
+                                        <p className="text-4xl font-bold">#{myRank}</p>
+                                    </div>
+                                )}
+                                <div className="flex-1 w-full">
+                                    <LeaderboardBarChart
+                                        leaderboard={leaderboard}
+                                        maxEntries={5}
+                                        size="compact"
+                                        highlightNickname={nickname}
+                                    />
+                                </div>
+                            </>
                         )}
-
-                        <div className="flex-1 w-full">
-                            <LeaderboardBarChart
-                                leaderboard={leaderboard}
-                                maxEntries={5}
-                                size="compact"
-                                highlightNickname={nickname}
-                            />
-                        </div>
                     </div>
                 )}
 
@@ -863,6 +900,23 @@ export default function PlayerPage() {
                                             <p className="podium-score"><AnimatedNumber value={teamLeaderboard[2].score} /></p>
                                         </div>
                                     )}
+                                </div>
+                            </div>
+                        )}
+
+                        {superlatives.length > 0 && (
+                            <div className="w-full mt-6" style={{ position: 'relative', zIndex: 11 }}>
+                                <h3 className="text-lg font-semibold text-center mb-3">Awards</h3>
+                                <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
+                                    {superlatives.map((s) => (
+                                        <div key={s.title} style={{ textAlign: 'center', padding: '10px 12px', background: 'var(--surface-secondary, rgba(255,255,255,0.05))', borderRadius: 10, minWidth: 100, maxWidth: 140 }}>
+                                            <div style={{ fontSize: '1.5rem' }}>{s.icon}</div>
+                                            <div style={{ fontWeight: 700, fontSize: '0.7rem', marginTop: 2 }}>{s.title}</div>
+                                            <div style={{ fontSize: '1.1rem', marginTop: 2 }}>{s.avatar || '👤'}</div>
+                                            <div style={{ fontWeight: 600, fontSize: '0.8rem' }}>{s.winner}</div>
+                                            <div style={{ color: 'var(--text-tertiary)', fontSize: '0.65rem' }}>{s.detail}</div>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         )}

@@ -15,10 +15,11 @@ interface MLTPromptScreenProps {
     onBack: () => void;
 }
 
-const DIFFICULTIES = [
-    { value: 'easy', label: 'Fun', icon: '😄' },
-    { value: 'medium', label: 'Spicy', icon: '🌶️' },
-    { value: 'hard', label: 'Wild', icon: '🔥' },
+const VIBES = [
+    { value: 'party', label: 'Party', icon: '🎉' },
+    { value: 'spicy', label: 'Spicy', icon: '🌶️' },
+    { value: 'wholesome', label: 'Wholesome', icon: '💛' },
+    { value: 'work', label: 'Work', icon: '💼' },
 ];
 
 const PROVIDER_ICONS: Record<string, string> = {
@@ -130,18 +131,18 @@ export default function MLTPromptScreen({
                         </div>
                     )}
 
-                    {/* Difficulty selector */}
+                    {/* Vibe selector */}
                     <div>
-                        <p className="section-header mb-2">Intensity</p>
+                        <p className="section-header mb-2">Vibe</p>
                         <div className="difficulty-selector">
-                            {DIFFICULTIES.map((d) => (
+                            {VIBES.map((v) => (
                                 <button
-                                    key={d.value}
-                                    onClick={() => setDifficulty(d.value)}
-                                    className={`difficulty-option ${difficulty === d.value ? 'active' : ''}`}
+                                    key={v.value}
+                                    onClick={() => setDifficulty(v.value)}
+                                    className={`difficulty-option ${difficulty === v.value ? 'active' : ''}`}
                                 >
-                                    <span className="text-lg">{d.icon}</span>
-                                    <span>{d.label}</span>
+                                    <span className="text-lg">{v.icon}</span>
+                                    <span>{v.label}</span>
                                 </button>
                             ))}
                         </div>

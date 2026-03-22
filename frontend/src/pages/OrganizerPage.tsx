@@ -13,6 +13,7 @@ import ImageGenerationScreen from '../components/organizer/ImageGenerationScreen
 import LobbyScreen from '../components/organizer/LobbyScreen';
 import GameQuestionScreen from '../components/organizer/GameQuestionScreen';
 import LeaderboardScreen from '../components/organizer/LeaderboardScreen';
+import LeaderboardBarChart from '../components/LeaderboardBarChart';
 import PodiumScreen from '../components/organizer/PodiumScreen';
 import BonusSplash from '../components/BonusSplash';
 import ErrorModal from '../components/ErrorModal';
@@ -48,6 +49,8 @@ export default function OrganizerPage() {
     const [roomLocked, setRoomLocked] = useState(false);
     // WMLT-specific state for organizer question screen
     const [currentStatement, setCurrentStatement] = useState('');
+    const [showVotes, setShowVotes] = useState(true);
+    const [wmltRoundResult, setWmltRoundResult] = useState<{ winner: string; winners: string[]; round_podium: { nickname: string; avatar: string; vote_count: number; voters: string[] }[]; unanimous: boolean; show_votes: boolean; statement: string } | null>(null);
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const stateRef = useRef<OrganizerState>('SELECT_GAME');
@@ -108,6 +111,18 @@ export default function OrganizerPage() {
         else if (msg.type === 'VOTE_COUNT') setAnsweredCount(msg.voted as number);
         else if (msg.type === 'QUESTION_OVER') {
             setLeaderboard(msg.leaderboard as LeaderboardEntry[]);
+            if (msg.game_type === 'wmlt') {
+                setWmltRoundResult({
+                    winner: msg.winner as string,
+                    winners: (msg.winners as string[]) || [msg.winner as string],
+                    round_podium: (msg.round_podium as { nickname: string; avatar: string; vote_count: number; voters: string[] }[]) || [],
+                    unanimous: msg.unanimous as boolean || false,
+                    show_votes: msg.show_votes as boolean ?? true,
+                    statement: msg.statement as string || '',
+                });
+            } else {
+                setWmltRoundResult(null);
+            }
             setState('LEADERBOARD');
         }
         else if (msg.type === 'PODIUM') {
@@ -174,14 +189,22 @@ export default function OrganizerPage() {
             }
         }
         else if (msg.type === 'ERROR') {
-            console.error('Organizer error:', msg.message);
-            setRoomCode('');
-            setState('SELECT_GAME');
+            const message = msg.message as string || 'Unknown error';
+            console.error('Organizer error:', message);
+            // Non-fatal errors (e.g. min players) — show alert, stay in current state
+            if (message.includes('players')) {
+                alert(message);
+            } else {
+                setRoomCode('');
+                setState('SELECT_GAME');
+            }
         }
     }, []);
 
     const handleGameSelect = (type: GameType) => {
         setGameType(type);
+        if (type === 'wmlt') setDifficulty('party');
+        else setDifficulty('medium');
         setState(type === 'wmlt' ? 'MLT_PROMPT' : 'PROMPT');
     };
 
@@ -404,6 +427,9 @@ export default function OrganizerPage() {
     const startGame = () => {
         soundManager.play('gameStart');
         track('game_started', { room_code: roomCode, game_type: gameType, player_count: playerCount, num_questions: totalQuestions });
+        if (gameType === 'wmlt') {
+            wsRef.current?.send(JSON.stringify({ type: 'SET_SHOW_VOTES', show_votes: showVotes }));
+        }
         wsRef.current?.send(JSON.stringify({ type: 'START_GAME' }));
         wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
     };
@@ -491,6 +517,8 @@ export default function OrganizerPage() {
                         game={mltGame}
                         timeLimit={timeLimit}
                         setTimeLimit={setTimeLimit}
+                        showVotes={showVotes}
+                        setShowVotes={setShowVotes}
                         onCreateRoom={createRoom}
                         onUpdateGame={updateMLTGame}
                         onBack={() => setState('MLT_PROMPT')}
@@ -548,13 +576,57 @@ export default function OrganizerPage() {
                 )}
 
                 {state === 'LEADERBOARD' && (
-                    <LeaderboardScreen
-                        leaderboard={leaderboard}
-                        questionNumber={currentQuestion}
-                        totalQuestions={totalQuestions}
-                        onNextQuestion={nextQuestion}
-                        onEndQuiz={endQuiz}
-                    />
+                    gameType === 'wmlt' && wmltRoundResult ? (
+                        <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
+                            <div className="flex-1 flex flex-col py-6">
+                                <div className="text-center mb-4">
+                                    <p className="text-[--text-tertiary] text-sm mb-2">Round {currentQuestion} of {totalQuestions}</p>
+                                    <div style={{ fontSize: '2.5rem', marginBottom: 4 }}>👑</div>
+                                    {wmltRoundResult.winners.length > 1 ? (
+                                        <>
+                                            <h2 className="text-2xl font-extrabold">{wmltRoundResult.winners.join(' & ')}</h2>
+                                            <p className="text-[--text-secondary] text-sm mt-1">Tied with {wmltRoundResult.round_podium[0]?.vote_count || 0} votes each!</p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <h2 className="text-2xl font-extrabold">{wmltRoundResult.winner}</h2>
+                                            {wmltRoundResult.unanimous && <p className="text-[--accent-success] font-semibold mt-1">Unanimous!</p>}
+                                        </>
+                                    )}
+                                    <p className="text-xs text-[--text-tertiary] mt-2 italic">"{wmltRoundResult.statement}"</p>
+                                </div>
+
+                                <div className="flex-1">
+                                    <LeaderboardBarChart
+                                        leaderboard={wmltRoundResult.round_podium.map(p => ({
+                                            nickname: p.nickname,
+                                            score: p.vote_count,
+                                            avatar: p.avatar,
+                                        }))}
+                                        maxEntries={8}
+                                        size="compact"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="pb-4 space-y-2">
+                                <button onClick={nextQuestion} className="btn btn-primary btn-glow w-full">
+                                    {currentQuestion >= totalQuestions ? 'Show Results' : 'Next Question'}
+                                </button>
+                                <button onClick={endQuiz} className="btn btn-secondary w-full">
+                                    End Game
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <LeaderboardScreen
+                            leaderboard={leaderboard}
+                            questionNumber={currentQuestion}
+                            totalQuestions={totalQuestions}
+                            onNextQuestion={nextQuestion}
+                            onEndQuiz={endQuiz}
+                        />
+                    )
                 )}
 
                 {state === 'PODIUM' && (

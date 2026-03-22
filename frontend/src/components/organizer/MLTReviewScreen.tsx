@@ -6,6 +6,8 @@ interface MLTReviewScreenProps {
     game: MLTGame;
     timeLimit: number;
     setTimeLimit: (v: number) => void;
+    showVotes: boolean;
+    setShowVotes: (v: boolean) => void;
     onCreateRoom: () => void;
     onUpdateGame: (game: MLTGame) => void;
     onBack: () => void;
@@ -19,7 +21,7 @@ const TIME_PRESETS = [
 ];
 
 export default function MLTReviewScreen({
-    game, timeLimit, setTimeLimit,
+    game, timeLimit, setTimeLimit, showVotes, setShowVotes,
     onCreateRoom, onUpdateGame, onBack,
 }: MLTReviewScreenProps) {
     const swipeProgress = useSwipeBack(onBack);
@@ -137,6 +139,21 @@ export default function MLTReviewScreen({
                             </button>
                         ))}
                     </div>
+                </div>
+
+                {/* Show votes toggle */}
+                <div className="settings-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                        <p className="font-medium">Show Vote Breakdown</p>
+                        <p className="text-xs text-[--text-tertiary]">Reveal who voted for whom after each round</p>
+                    </div>
+                    <button
+                        onClick={() => setShowVotes(!showVotes)}
+                        className={`btn ${showVotes ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{ minWidth: 60, padding: '6px 12px', fontSize: '0.875rem' }}
+                    >
+                        {showVotes ? 'ON' : 'OFF'}
+                    </button>
                 </div>
             </div>
 
