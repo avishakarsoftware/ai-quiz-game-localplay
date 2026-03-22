@@ -165,8 +165,11 @@ export default function SettingsDrawer() {
             await signIn('apple', response.authorization.id_token);
         } catch (err: unknown) {
             // User cancelled is not an error
-            const msg = err instanceof Error ? err.message : String(err);
-            if (!msg.includes('popup_closed') && !msg.includes('user_cancelled')) {
+            const errObj = err as Record<string, unknown> | null;
+            const msg = err instanceof Error ? err.message
+                : typeof errObj?.error === 'string' ? errObj.error
+                : typeof err === 'string' ? err : '';
+            if (!msg.includes('popup_closed') && !msg.includes('user_cancelled') && !msg.includes('user_cancelled_authorize')) {
                 setSignInError(msg || 'Apple sign-in failed');
             }
         } finally {
