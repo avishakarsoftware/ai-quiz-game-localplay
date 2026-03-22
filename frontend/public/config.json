@@ -1,10 +1,14 @@
 {
   "version": 1,
   "welcome_message": "",
+  "cache_ttl_seconds": 86400,
   "operations": {
     "maintenance": false,
     "maintenance_message": "We're upgrading the party! Back soon.",
-    "maintenance_until": null
+    "maintenance_until": null,
+    "kill_generate": false,
+    "kill_payments": false,
+    "force_config_refresh": false
   },
   "pricing": {
     "pass_price": "$2.99",

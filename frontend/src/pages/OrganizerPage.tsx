@@ -3,7 +3,8 @@ import { API_URL, WS_URL } from '../config';
 import { type Quiz, type MLTGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
-import { getDeviceId, getPremiumToken, setPremiumToken } from '../utils/deviceId';
+import { getDeviceId, getPremiumToken, setPremiumToken, setCheckoutPending, getCheckoutPending, clearCheckoutPending } from '../utils/storage';
+import { apiHeaders, apiUrl, generateIdempotencyKey } from '../utils/api';
 import GameSelectScreen from '../components/organizer/GameSelectScreen';
 import PromptScreen, { type AIProvider } from '../components/organizer/PromptScreen';
 import MLTPromptScreen from '../components/organizer/MLTPromptScreen';
@@ -86,6 +87,27 @@ export default function OrganizerPage() {
                 if (defaultProvider) setProvider(defaultProvider.id);
             })
             .catch(() => {});
+
+        // Resume pending checkout: if a previous checkout was interrupted, poll for token
+        const pending = getCheckoutPending();
+        if (pending.pending) {
+            let attempts = 0;
+            const poll = setInterval(async () => {
+                attempts++;
+                if (attempts > 30) { clearInterval(poll); clearCheckoutPending(); return; }
+                try {
+                    const tokenRes = await fetch(apiUrl('/checkout/token'), { headers: apiHeaders() });
+                    if (tokenRes.ok) {
+                        const { token } = await tokenRes.json();
+                        setPremiumToken(token);
+                        clearCheckoutPending();
+                        clearInterval(poll);
+                        track('premium_activated', { source: 'resume' });
+                        setErrorModal({ title: 'Party Pass Activated!', message: `Your Party Pass is ready. Enjoy!` });
+                    }
+                } catch { /* keep polling */ }
+            }, 2000);
+        }
     }, []);
 
 
@@ -214,15 +236,15 @@ export default function OrganizerPage() {
     };
 
     const generateQuiz = async () => {
+        if (remoteConfig.operations.kill_generate) {
+            setErrorModal({ title: 'Temporarily Unavailable', message: 'Game generation is temporarily disabled. Please try again later.' });
+            return;
+        }
         setState('LOADING');
         try {
-            const res = await fetch(`${API_URL}/quiz/generate`, {
+            const res = await fetch(apiUrl('/quiz/generate'), {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Device-Id': getDeviceId(),
-                    ...(getPremiumToken() ? { 'Authorization': `Bearer ${getPremiumToken()}` } : {}),
-                },
+                headers: apiHeaders({ 'X-Idempotency-Key': generateIdempotencyKey() }),
                 body: JSON.stringify({ prompt, difficulty, num_questions: numQuestions, provider }),
             });
             if (res.status === 402) {
@@ -261,15 +283,15 @@ export default function OrganizerPage() {
     };
 
     const generateMLT = async () => {
+        if (remoteConfig.operations.kill_generate) {
+            setErrorModal({ title: 'Temporarily Unavailable', message: 'Game generation is temporarily disabled. Please try again later.' });
+            return;
+        }
         setState('LOADING');
         try {
-            const res = await fetch(`${API_URL}/mlt/generate`, {
+            const res = await fetch(apiUrl('/mlt/generate'), {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Device-Id': getDeviceId(),
-                    ...(getPremiumToken() ? { 'Authorization': `Bearer ${getPremiumToken()}` } : {}),
-                },
+                headers: apiHeaders({ 'X-Idempotency-Key': generateIdempotencyKey() }),
                 body: JSON.stringify({ prompt, difficulty, num_rounds: numQuestions, provider }),
             });
             if (res.status === 402) {
@@ -345,9 +367,9 @@ export default function OrganizerPage() {
         setQuiz(updated);
         setTotalQuestions(updated.questions.length);
         try {
-            const res = await fetch(`${API_URL}/quiz/${contentId}`, {
+            const res = await fetch(apiUrl(`/quiz/${contentId}`), {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: apiHeaders(),
                 body: JSON.stringify(updated),
             });
             if (!res.ok) console.error('Failed to save quiz update:', res.status);
@@ -360,9 +382,9 @@ export default function OrganizerPage() {
         setMltGame(updated);
         setTotalQuestions(updated.statements.length);
         try {
-            const res = await fetch(`${API_URL}/mlt/${contentId}`, {
+            const res = await fetch(apiUrl(`/mlt/${contentId}`), {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: apiHeaders(),
                 body: JSON.stringify(updated),
             });
             if (!res.ok) console.error('Failed to save MLT update:', res.status);
@@ -427,9 +449,9 @@ export default function OrganizerPage() {
                 body.quiz_id = contentId;
             }
 
-            const res = await fetch(`${API_URL}/room/create`, {
+            const res = await fetch(apiUrl('/room/create'), {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: apiHeaders(),
                 body: JSON.stringify(body),
             });
             if (!res.ok) {
@@ -672,17 +694,26 @@ export default function OrganizerPage() {
                     onUpgrade={async () => {
                         track('upgrade_clicked', { source: 'error_modal' });
                         setErrorModal(null);
+                        if (remoteConfig.operations.kill_payments) {
+                            setErrorModal({ title: 'Payments Unavailable', message: 'Payments are temporarily disabled. Please try again later.' });
+                            return;
+                        }
                         try {
-                            const res = await fetch(`${API_URL}/checkout/create`, {
+                            const res = await fetch(apiUrl('/checkout/create'), {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
+                                headers: apiHeaders(),
                                 body: JSON.stringify({ device_id: getDeviceId() }),
                             });
+                            if (res.status === 403) {
+                                setErrorModal({ title: 'Use In-App Purchase', message: 'Please use the in-app purchase option on iOS.' });
+                                return;
+                            }
                             if (!res.ok) {
                                 setErrorModal({ title: 'Oops', message: 'Payments are not available yet. Try again later!' });
                                 return;
                             }
-                            const { checkout_url } = await res.json();
+                            const { checkout_url, session_id } = await res.json();
+                            setCheckoutPending(session_id);
                             window.open(checkout_url, '_blank');
                             // Poll for token after Stripe redirect
                             let attempts = 0;
@@ -690,10 +721,11 @@ export default function OrganizerPage() {
                                 attempts++;
                                 if (attempts > 30) { clearInterval(poll); return; }
                                 try {
-                                    const tokenRes = await fetch(`${API_URL}/checkout/token?device_id=${getDeviceId()}`);
+                                    const tokenRes = await fetch(apiUrl('/checkout/token'), { headers: apiHeaders() });
                                     if (tokenRes.ok) {
                                         const { token } = await tokenRes.json();
                                         setPremiumToken(token);
+                                        clearCheckoutPending();
                                         clearInterval(poll);
                                         track('premium_activated', { source: 'stripe' });
                                         setErrorModal({ title: 'Party Pass Activated!', message: `You now have 50 games for ${remoteConfig.pricing.duration_hours} hours on this device. Enjoy!` });

@@ -15,6 +15,9 @@ from mlt_engine import MLTEngine, PROVIDERS as MLT_PROVIDERS
 
 client = TestClient(app)
 
+# Valid device ID header for tests that require it
+_DEVICE_HEADERS = {"X-Device-Id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}
+
 
 def _make_httpx_status_error(status_code: int, body: bytes = b"{}") -> httpx.HTTPStatusError:
     """Create an httpx.HTTPStatusError with the given status code."""
@@ -51,7 +54,7 @@ class TestQuotaEndpoints:
                 "prompt": "test topic",
                 "difficulty": "medium",
                 "num_questions": 5,
-            })
+            }, headers=_DEVICE_HEADERS)
             assert res.status_code == 503
             assert "Free tier limit" in res.json()["detail"]
 
@@ -62,7 +65,7 @@ class TestQuotaEndpoints:
                 "prompt": "test theme",
                 "difficulty": "medium",
                 "num_rounds": 5,
-            })
+            }, headers=_DEVICE_HEADERS)
             assert res.status_code == 503
             assert "Free tier limit" in res.json()["detail"]
 
@@ -73,7 +76,7 @@ class TestQuotaEndpoints:
                 "prompt": "test topic",
                 "difficulty": "medium",
                 "num_questions": 5,
-            })
+            }, headers=_DEVICE_HEADERS)
             assert res.status_code == 429
             assert "Daily" in res.json()["detail"]
 
@@ -84,7 +87,7 @@ class TestQuotaEndpoints:
                 "prompt": "test topic",
                 "difficulty": "medium",
                 "num_questions": 5,
-            })
+            }, headers=_DEVICE_HEADERS)
             assert res.status_code == 500
             assert "Failed" in res.json()["detail"]
 
@@ -211,7 +214,7 @@ class TestMLTQuotaEndpoints:
                 "prompt": "test theme",
                 "difficulty": "medium",
                 "num_rounds": 5,
-            })
+            }, headers=_DEVICE_HEADERS)
             assert res.status_code == 429
             assert "Daily" in res.json()["detail"]
 
@@ -223,6 +226,6 @@ class TestMLTQuotaEndpoints:
                 "prompt": "test theme",
                 "difficulty": "medium",
                 "num_rounds": 5,
-            })
+            }, headers=_DEVICE_HEADERS)
             assert res.status_code == 500
             assert "Failed" in res.json()["detail"]

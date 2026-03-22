@@ -1,8 +1,6 @@
-"""Device-based usage tracking and JWT premium tokens."""
+"""Device-based usage tracking and JWT premium tokens — backed by SQLite."""
 import re
-import time
 import logging
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -10,17 +8,11 @@ import jwt
 from fastapi import Request
 
 import config
+import db
 
 logger = logging.getLogger(__name__)
 
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
-_USAGE_WINDOW = 24 * 60 * 60  # 24 hours in seconds
-
-# device_id -> list of generation timestamps
-_device_usage: dict[str, list[float]] = defaultdict(list)
-
-# device_id -> premium token (pending pickup after Stripe checkout)
-_pending_tokens: dict[str, str] = {}
 
 
 def get_device_id(req: Request) -> str:
@@ -31,37 +23,28 @@ def get_device_id(req: Request) -> str:
     return ""
 
 
-def check_device_limit(device_id: str) -> bool:
-    """Return True if device is under the free tier limit."""
-    now = time.time()
-    # Prune old entries
-    _device_usage[device_id] = [
-        t for t in _device_usage[device_id] if now - t < _USAGE_WINDOW
-    ]
-    return len(_device_usage[device_id]) < config.FREE_TIER_LIMIT
+def get_platform(req: Request) -> str:
+    """Extract platform from X-Platform header."""
+    return (req.headers.get("X-Platform") or "web").strip().lower()
 
 
-def record_device_usage(device_id: str) -> None:
-    """Record a successful generation for the device."""
-    _device_usage[device_id].append(time.time())
+def get_idempotency_key(req: Request) -> str:
+    """Extract idempotency key from header."""
+    key = (req.headers.get("X-Idempotency-Key") or "").strip()
+    if key and _UUID_RE.match(key):
+        return key
+    return ""
 
 
-def get_device_usage_count(device_id: str) -> int:
-    """Return the number of generations in the current 24h window."""
-    now = time.time()
-    _device_usage[device_id] = [
-        t for t in _device_usage[device_id] if now - t < _USAGE_WINDOW
-    ]
-    return len(_device_usage[device_id])
-
-
-def create_premium_token(device_id: str) -> str:
+def create_premium_token(device_id: str, entitlement_id: str = "", games_remaining: int = 50) -> str:
     """Create a signed JWT premium token for the given device."""
     exp = datetime.now(timezone.utc) + timedelta(hours=config.PREMIUM_DURATION_HOURS)
     payload = {
         "device_id": device_id,
+        "entitlement_id": entitlement_id,
         "exp": exp,
         "tier": "party_pass",
+        "games_remaining": games_remaining,
     }
     return jwt.encode(payload, config.JWT_SECRET, algorithm="HS256")
 
@@ -78,7 +61,7 @@ def verify_premium_token(token: str, device_id: str) -> bool:
 
 
 def is_premium(req: Request) -> bool:
-    """Check if the request has a valid premium token."""
+    """Check if the request has a valid premium token (fast path — DB is authoritative)."""
     auth = req.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return False
@@ -89,11 +72,57 @@ def is_premium(req: Request) -> bool:
     return verify_premium_token(token, device_id)
 
 
-def store_pending_token(device_id: str, token: str) -> None:
-    """Store a token for pickup after Stripe checkout redirect."""
-    _pending_tokens[device_id] = token
+def has_active_entitlement(device_id: str) -> bool:
+    """Check if device has an active entitlement (peek only, no decrement)."""
+    if not device_id:
+        return False
+    ent = db.get_active_entitlement(device_id)
+    return ent is not None
 
 
-def pop_pending_token(device_id: str) -> Optional[str]:
-    """Retrieve and remove a pending token for the device."""
-    return _pending_tokens.pop(device_id, None)
+def check_and_use_entitlement(device_id: str) -> tuple[bool, Optional[dict]]:
+    """Check for active entitlement and decrement if found.
+    Returns (has_entitlement, entitlement_dict_or_none)."""
+    ent = db.get_active_entitlement(device_id)
+    if not ent:
+        return False, None
+    if db.decrement_entitlement(ent["id"]):
+        ent["games_remaining"] -= 1
+        return True, ent
+    return False, None
+
+
+def peek_free_limit(device_id: str) -> tuple[bool, int]:
+    """Check free usage without incrementing. Returns (can_play, used_count)."""
+    return db.peek_free_usage(device_id)
+
+
+def check_free_limit(device_id: str) -> tuple[bool, int]:
+    """Check and increment free usage. Returns (allowed, count)."""
+    return db.check_and_increment_free_usage(device_id)
+
+
+def get_entitlement_status(device_id: str) -> dict:
+    """Get full entitlement status for the /entitlements/current endpoint."""
+    ent = db.get_active_entitlement(device_id)
+    free_used = db.get_free_usage_count(device_id)
+
+    if ent:
+        return {
+            "premium": True,
+            "status": ent["status"],
+            "games_remaining": ent["games_remaining"],
+            "expires_at": ent["expires_at"],
+            "free_games_used": free_used,
+            "free_games_limit": config.FREE_TIER_LIMIT,
+            "pending_purchase": False,
+        }
+    return {
+        "premium": False,
+        "status": None,
+        "games_remaining": 0,
+        "expires_at": None,
+        "free_games_used": free_used,
+        "free_games_limit": config.FREE_TIER_LIMIT,
+        "pending_purchase": False,
+    }

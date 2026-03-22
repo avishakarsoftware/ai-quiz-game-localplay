@@ -4,6 +4,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, field_validator
 from typing import List, Optional, Dict
 from collections import defaultdict
+import os
 import re
 import time
 from contextlib import asynccontextmanager
@@ -23,6 +24,7 @@ from mlt_engine import mlt_engine, _sanitize_mlt
 from socket_manager import socket_manager
 from image_engine import image_engine
 import premium
+import db
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting LocalPlay backend")
+    db.init_db()
     socket_manager.start_cleanup_loop()
     yield
     logger.info("Shutting down LocalPlay backend")
@@ -231,11 +234,25 @@ async def generate_quiz(request: QuizRequest, req: Request):
     if not _check_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating another quiz.")
     device_id = premium.get_device_id(req)
-    is_paid = premium.is_premium(req)
-    if not is_paid and device_id and not premium.check_device_limit(device_id):
-        used = premium.get_device_usage_count(device_id)
-        raise HTTPException(status_code=402, detail=f"You've used all {used} free games. Get a Party Pass for 50 games with premium AI!")
-    model_override = config.GEMINI_PREMIUM_MODEL if is_paid and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    idem_key = premium.get_idempotency_key(req)
+
+    # Idempotency: return cached result if this request was already processed
+    # Scoped to device — reject if key exists but for a different device
+    if idem_key:
+        cached_id = db.check_idempotency(idem_key, device_id)
+        if cached_id and cached_id in quizzes:
+            return {"quiz_id": cached_id, "quiz": quizzes[cached_id]}
+
+    # Check entitlement (peek only — don't consume yet, consume after success)
+    has_entitlement = premium.has_active_entitlement(device_id)
+    if not has_entitlement:
+        can_play, used = premium.peek_free_limit(device_id)
+        if not can_play:
+            raise HTTPException(status_code=402, detail=f"You've used all {used} free games. Get a Party Pass for 50 games with premium AI!")
+
+    model_override = config.GEMINI_PREMIUM_MODEL if has_entitlement and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
     try:
         quiz_data = await quiz_engine.generate_quiz(request.prompt, request.difficulty, request.num_questions, request.provider, model_override=model_override)
     except DailyLimitExceeded:
@@ -245,12 +262,18 @@ async def generate_quiz(request: QuizRequest, req: Request):
     if not quiz_data:
         raise HTTPException(status_code=500, detail="Failed to generate quiz")
 
-    if device_id:
-        premium.record_device_usage(device_id)
+    # Consume quota only after successful generation
+    if has_entitlement:
+        premium.check_and_use_entitlement(device_id)
+    else:
+        premium.check_free_limit(device_id)
+
     _evict_old_content()
     quiz_id = str(uuid.uuid4())
     quizzes[quiz_id] = quiz_data
     quiz_timestamps[quiz_id] = time.time()
+    if idem_key:
+        db.record_idempotency(idem_key, device_id, quiz_id)
     logger.info("Quiz created: %s ('%s')", quiz_id, quiz_data.get("quiz_title", "Untitled"))
     return {"quiz_id": quiz_id, "quiz": quiz_data}
 
@@ -499,11 +522,25 @@ async def generate_mlt(request: MLTRequest, req: Request):
     if not _check_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating.")
     device_id = premium.get_device_id(req)
-    is_paid = premium.is_premium(req)
-    if not is_paid and device_id and not premium.check_device_limit(device_id):
-        used = premium.get_device_usage_count(device_id)
-        raise HTTPException(status_code=402, detail=f"You've used all {used} free games. Get a Party Pass for 50 games with premium AI!")
-    model_override = config.GEMINI_PREMIUM_MODEL if is_paid and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    idem_key = premium.get_idempotency_key(req)
+
+    # Idempotency: return cached result if this request was already processed
+    # Scoped to device — reject if key exists but for a different device
+    if idem_key:
+        cached_id = db.check_idempotency(idem_key, device_id)
+        if cached_id and cached_id in mlt_scenarios:
+            return {"scenario_id": cached_id, "game": mlt_scenarios[cached_id]}
+
+    # Check entitlement (peek only — don't consume yet, consume after success)
+    has_entitlement = premium.has_active_entitlement(device_id)
+    if not has_entitlement:
+        can_play, used = premium.peek_free_limit(device_id)
+        if not can_play:
+            raise HTTPException(status_code=402, detail=f"You've used all {used} free games. Get a Party Pass for 50 games with premium AI!")
+
+    model_override = config.GEMINI_PREMIUM_MODEL if has_entitlement and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
     try:
         mlt_data = await mlt_engine.generate_statements(request.prompt, request.difficulty, request.num_rounds, request.provider, model_override=model_override)
     except DailyLimitExceeded:
@@ -513,12 +550,18 @@ async def generate_mlt(request: MLTRequest, req: Request):
     if not mlt_data:
         raise HTTPException(status_code=500, detail="Failed to generate statements")
 
-    if device_id:
-        premium.record_device_usage(device_id)
+    # Consume quota only after successful generation
+    if has_entitlement:
+        premium.check_and_use_entitlement(device_id)
+    else:
+        premium.check_free_limit(device_id)
+
     _evict_old_content()
     scenario_id = str(uuid.uuid4())
     mlt_scenarios[scenario_id] = mlt_data
     mlt_timestamps[scenario_id] = time.time()
+    if idem_key:
+        db.record_idempotency(idem_key, device_id, scenario_id)
     logger.info("MLT created: %s ('%s')", scenario_id, mlt_data.get("game_title", "Untitled"))
     return {"scenario_id": scenario_id, "game": mlt_data}
 
@@ -651,7 +694,7 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Content-Type", "Authorization", "X-Device-Id"],
+    allow_headers=["Content-Type", "Authorization", "X-Device-Id", "X-Platform", "X-App-Version", "X-Build", "X-Idempotency-Key"],
 )
 
 # Share allowed origins with WebSocket manager for origin validation
@@ -663,24 +706,55 @@ socket_manager.allowed_origins = origins
 class CheckoutRequest(BaseModel):
     device_id: str
 
+    @field_validator('device_id')
+    @classmethod
+    def validate_device_id(cls, v: str) -> str:
+        v = v.strip()
+        if not premium._UUID_RE.match(v):
+            raise ValueError('device_id must be a valid UUID')
+        return v
+
+
 @app.post("/checkout/create")
-async def create_checkout(request: CheckoutRequest):
+async def create_checkout(request: CheckoutRequest, req: Request):
+    # Enforce iOS IAP-only rule: block Stripe on native iOS
+    platform = premium.get_platform(req)
+    if platform == "ios":
+        raise HTTPException(status_code=403, detail="Use in-app purchase on iOS")
+
+    # Verify body device_id matches header device_id
+    header_device_id = premium.get_device_id(req)
+    if header_device_id and header_device_id != request.device_id:
+        raise HTTPException(status_code=400, detail="Device ID mismatch")
+
     if not config.STRIPE_SECRET_KEY or not config.STRIPE_PRICE_ID:
         raise HTTPException(status_code=503, detail="Payments not configured")
     import stripe
     stripe.api_key = config.STRIPE_SECRET_KEY
+
+    # Create a pending entitlement in DB so we can track it
+    entitlement_id = str(uuid.uuid4())
+
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
             line_items=[{"price": config.STRIPE_PRICE_ID, "quantity": 1}],
-            metadata={"device_id": request.device_id},
-            success_url=f"{origins[0]}?checkout=success",
+            metadata={"device_id": request.device_id, "entitlement_id": entitlement_id},
+            success_url=f"{origins[0]}?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{origins[0]}?checkout=cancel",
         )
-        return {"checkout_url": session.url}
+        # Create pending entitlement linked to Stripe session
+        db.create_entitlement(
+            entitlement_id=entitlement_id,
+            device_id=request.device_id,
+            stripe_session_id=session.id,
+            status="pending_payment",
+        )
+        return {"checkout_url": session.url, "session_id": session.id}
     except Exception as e:
         logger.error("Stripe checkout error: %s", e)
         raise HTTPException(status_code=500, detail="Failed to create checkout session")
+
 
 @app.post("/webhook/stripe")
 async def stripe_webhook(req: Request):
@@ -691,39 +765,122 @@ async def stripe_webhook(req: Request):
     payload = await req.body()
     sig = req.headers.get("stripe-signature", "")
     try:
+        # construct_event checks signature + enforces 300s timestamp tolerance
         event = stripe.Webhook.construct_event(payload, sig, config.STRIPE_WEBHOOK_SECRET)
     except (ValueError, stripe.SignatureVerificationError) as e:
         logger.warning("Stripe webhook signature failed: %s", e)
         raise HTTPException(status_code=400, detail="Invalid signature")
 
+    # Idempotency is enforced by UNIQUE index on stripe_session_id —
+    # duplicate events are no-ops via activate_pending_entitlement logic
+
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
+        stripe_session_id = session.get("id", "")
         device_id = session.get("metadata", {}).get("device_id", "")
-        if device_id:
-            token = premium.create_premium_token(device_id)
-            premium.store_pending_token(device_id, token)
-            logger.info("Premium token created for device %s", device_id[:8])
+
+        # Activate the pending entitlement
+        ent = db.activate_pending_entitlement(stripe_session_id)
+        if not ent:
+            # May already be active (duplicate webhook) — check for existing active entitlement
+            ent = db.get_entitlement_by_stripe_session(stripe_session_id)
+        if ent and device_id:
+            token = premium.create_premium_token(
+                device_id, entitlement_id=ent["id"],
+                games_remaining=ent["games_remaining"],
+            )
+            db.store_pending_token(device_id, token)
+            logger.info("Entitlement activated for device %s (session %s)", device_id[:8], stripe_session_id[:8])
+        else:
+            logger.warning("No entitlement found for session %s (device=%s)", stripe_session_id[:8], device_id[:8] if device_id else "none")
+
+    elif event["type"] in ("charge.refunded", "charge.dispute.created"):
+        # Revoke entitlement on refund/chargeback
+        charge = event["data"]["object"]
+        # Stripe charge has payment_intent; we need session_id — look up via metadata
+        payment_intent_id = charge.get("payment_intent", "")
+        if payment_intent_id:
+            try:
+                sessions = stripe.checkout.Session.list(payment_intent=payment_intent_id, limit=1)
+                if sessions.data:
+                    stripe_session_id = sessions.data[0].id
+                    revoked = db.revoke_entitlement_by_stripe(stripe_session_id)
+                    if revoked:
+                        logger.info("Entitlement revoked for session %s (refund/dispute)", stripe_session_id[:8])
+            except Exception as e:
+                logger.error("Failed to look up session for refund: %s", e)
 
     return {"status": "ok"}
 
+
 @app.get("/checkout/token")
-async def get_checkout_token(device_id: str):
-    token = premium.pop_pending_token(device_id)
+async def get_checkout_token(req: Request):
+    # Use X-Device-Id header (not query param) to bind token to authenticated device
+    device_id = premium.get_device_id(req)
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    token = db.pop_pending_token(device_id)
     if not token:
         raise HTTPException(status_code=404, detail="Token not ready")
     return {"token": token}
 
-@app.get("/premium/status")
-async def premium_status(req: Request):
+
+@app.get("/entitlements/current")
+async def entitlement_status(req: Request):
     device_id = premium.get_device_id(req)
-    is_paid = premium.is_premium(req)
-    used = premium.get_device_usage_count(device_id) if device_id else 0
-    return {
-        "premium": is_paid,
-        "games_used": used,
-        "games_limit": config.FREE_TIER_LIMIT,
-        "games_remaining": max(0, config.FREE_TIER_LIMIT - used) if not is_paid else -1,
-    }
+    if not device_id:
+        return {
+            "premium": False,
+            "status": None,
+            "games_remaining": 0,
+            "expires_at": None,
+            "free_games_used": 0,
+            "free_games_limit": config.FREE_TIER_LIMIT,
+            "pending_purchase": False,
+        }
+    return premium.get_entitlement_status(device_id)
+
+
+# --- Admin Endpoints ---
+
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
+
+
+def _check_admin(req: Request):
+    """Verify admin API key from Authorization header."""
+    if not ADMIN_API_KEY:
+        raise HTTPException(status_code=503, detail="Admin API not configured")
+    auth = req.headers.get("Authorization", "")
+    if auth != f"Bearer {ADMIN_API_KEY}":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+@app.get("/admin/lookup")
+async def admin_lookup(req: Request, device_id: str = "", entitlement_id: str = ""):
+    _check_admin(req)
+    if device_id:
+        return db.lookup_by_device(device_id)
+    if entitlement_id:
+        ent = db.lookup_entitlement(entitlement_id)
+        if not ent:
+            raise HTTPException(status_code=404, detail="Entitlement not found")
+        return ent
+    raise HTTPException(status_code=400, detail="Provide device_id or entitlement_id")
+
+
+@app.post("/admin/revoke")
+async def admin_revoke(req: Request, entitlement_id: str):
+    _check_admin(req)
+    if db.admin_revoke(entitlement_id):
+        return {"status": "revoked", "entitlement_id": entitlement_id}
+    raise HTTPException(status_code=404, detail="Entitlement not found or already revoked")
+
+
+@app.post("/admin/grant")
+async def admin_grant(req: Request, device_id: str, games: int = 50, hours: int = 12):
+    _check_admin(req)
+    eid = db.admin_grant(device_id, games=games, hours=hours)
+    return {"status": "granted", "entitlement_id": eid, "games": games, "hours": hours}
 
 
 @app.get("/")
