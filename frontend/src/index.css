@@ -195,6 +195,61 @@ body {
     color: var(--text-primary);
 }
 
+/* Social sign-in buttons */
+.settings-social-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+    border: none;
+}
+
+.settings-social-btn:hover {
+    opacity: 0.85;
+}
+
+.settings-social-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.settings-social-google {
+    background: #fff;
+    color: #3c4043;
+}
+
+.settings-social-apple {
+    background: #000;
+    color: #fff;
+}
+
+.settings-restore-btn {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 4px 8px;
+    transition: color 0.15s ease;
+}
+
+.settings-restore-btn:hover {
+    color: var(--text-secondary);
+}
+
+.settings-restore-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 /* Quota badge */
 .quota-badge {
     display: flex;

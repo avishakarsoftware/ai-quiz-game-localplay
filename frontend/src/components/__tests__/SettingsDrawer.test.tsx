@@ -26,6 +26,12 @@ vi.mock('../../utils/analytics', () => ({
     track: vi.fn(),
 }));
 
+vi.mock('@capgo/capacitor-social-login', () => ({
+    SocialLogin: {
+        login: vi.fn(),
+    },
+}));
+
 describe('SettingsDrawer', () => {
     it('renders the settings trigger button', () => {
         render(<SettingsDrawer />);
@@ -102,5 +108,50 @@ describe('SettingsDrawer', () => {
         await user.click(screen.getByTitle('Settings'));
 
         expect(screen.getByText(/sign in to keep your party pass/i)).toBeInTheDocument();
+    });
+
+    it('shows sign-in coming soon when no client IDs configured', async () => {
+        const user = userEvent.setup();
+        render(<SettingsDrawer />);
+
+        await user.click(screen.getByTitle('Settings'));
+
+        // No GOOGLE_CLIENT_ID or APPLE_CLIENT_ID in test env → fallback message
+        expect(screen.getByText(/sign-in coming soon/i)).toBeInTheDocument();
+    });
+
+    it('shows privacy policy link', async () => {
+        const user = userEvent.setup();
+        render(<SettingsDrawer />);
+
+        await user.click(screen.getByTitle('Settings'));
+
+        const link = screen.getByText('Privacy Policy');
+        expect(link).toBeInTheDocument();
+        expect(link).toHaveAttribute('href', 'privacy.html');
+    });
+});
+
+describe('SettingsDrawer (signed in)', () => {
+    beforeEach(() => {
+        vi.resetModules();
+    });
+
+    it('shows signed-in state with sign out button', async () => {
+        vi.mocked(await import('../../context/AuthContext')).useAuth = vi.fn(() => ({
+            user: { id: '1', provider: 'google', email: 'test@test.com' },
+            loading: false,
+            signIn: vi.fn(),
+            signOut: vi.fn(),
+        })) as ReturnType<typeof vi.fn>;
+
+        const user = userEvent.setup();
+        render(<SettingsDrawer />);
+
+        await user.click(screen.getByTitle('Settings'));
+
+        expect(screen.getByText('Signed in')).toBeInTheDocument();
+        expect(screen.getByText('test@test.com')).toBeInTheDocument();
+        expect(screen.getByText('Sign Out')).toBeInTheDocument();
     });
 });

@@ -961,6 +961,32 @@ async def entitlement_status(req: Request):
     return premium.get_entitlement_status(device_id, user_id=user_id)
 
 
+@app.post("/purchases/restore")
+async def restore_purchases(req: Request):
+    """Restore IAP purchases — finds active/expired Apple or Google entitlements
+    and returns a fresh premium token if found."""
+    device_id = premium.get_device_id(req)
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+
+    session = auth.get_session_from_request(req)
+    user_id = session["user_id"] if session else None
+
+    ent = db.find_restorable_entitlement(device_id, user_id=user_id)
+    if not ent:
+        return {"restored": False}
+
+    # Only re-issue token for active entitlements
+    if ent["status"] != "active":
+        return {"restored": False}
+
+    token = premium.create_premium_token(
+        device_id, entitlement_id=ent["id"],
+        games_remaining=ent["games_remaining"],
+    )
+    return {"restored": True, "token": token}
+
+
 # --- Admin Endpoints ---
 
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")

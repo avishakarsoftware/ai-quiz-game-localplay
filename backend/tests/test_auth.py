@@ -531,3 +531,72 @@ class TestEntitlementStatus:
         })
         data = res.json()
         assert data["premium"] is True
+
+
+class TestRestorePurchases:
+    """Test POST /purchases/restore endpoint."""
+
+    def test_no_device_id(self, test_app):
+        res = test_app.post("/purchases/restore")
+        assert res.status_code == 400
+
+    def test_no_purchases_to_restore(self, test_app):
+        res = test_app.post("/purchases/restore", headers=_DEVICE_HEADERS)
+        data = res.json()
+        assert data["restored"] is False
+
+    def test_restore_active_apple_purchase(self, test_app):
+        ent_id = str(uuid.uuid4())
+        db.create_entitlement(ent_id, _DEVICE_ID, apple_transaction_id="apple_txn_123")
+
+        res = test_app.post("/purchases/restore", headers=_DEVICE_HEADERS)
+        data = res.json()
+        assert data["restored"] is True
+        assert "token" in data
+
+    def test_restore_active_google_purchase(self, test_app):
+        ent_id = str(uuid.uuid4())
+        db.create_entitlement(ent_id, _DEVICE_ID, google_order_id="google_order_123")
+
+        res = test_app.post("/purchases/restore", headers=_DEVICE_HEADERS)
+        data = res.json()
+        assert data["restored"] is True
+        assert "token" in data
+
+    def test_no_restore_for_stripe_only(self, test_app):
+        """Stripe purchases are not restorable via this endpoint."""
+        ent_id = str(uuid.uuid4())
+        db.create_entitlement(ent_id, _DEVICE_ID, stripe_session_id="stripe_sess_123")
+
+        res = test_app.post("/purchases/restore", headers=_DEVICE_HEADERS)
+        data = res.json()
+        assert data["restored"] is False
+
+    def test_no_restore_for_expired_iap(self, test_app):
+        """Expired IAP entitlements are found but not restored (no active status)."""
+        ent_id = str(uuid.uuid4())
+        db.create_entitlement(ent_id, _DEVICE_ID, apple_transaction_id="apple_txn_456")
+        # Expire it
+        conn = db._get_conn()
+        conn.execute("UPDATE entitlements SET status = 'expired_time' WHERE id = ?", (ent_id,))
+        conn.commit()
+
+        res = test_app.post("/purchases/restore", headers=_DEVICE_HEADERS)
+        data = res.json()
+        assert data["restored"] is False
+
+    def test_restore_user_scoped_purchase(self, test_app):
+        """Signed-in user can restore a purchase linked to their account."""
+        user = db.find_or_create_user("apple", "restore_sub", "restore@test.com")
+        ent_id = str(uuid.uuid4())
+        db.create_entitlement(ent_id, _DEVICE_ID_2, apple_transaction_id="apple_txn_789",
+                              user_id=user["id"])
+
+        session_token = auth.create_session_token(user["id"], _DEVICE_ID)
+        res = test_app.post("/purchases/restore", headers={
+            **_DEVICE_HEADERS,
+            "X-Session-Token": session_token,
+        })
+        data = res.json()
+        assert data["restored"] is True
+        assert "token" in data

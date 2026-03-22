@@ -551,6 +551,34 @@ def admin_revoke(entitlement_id: str) -> bool:
     return cursor.rowcount > 0
 
 
+def find_restorable_entitlement(device_id: str, user_id: Optional[str] = None) -> Optional[dict]:
+    """Find an active or recently-expired IAP entitlement for restore.
+    Looks for entitlements with apple_transaction_id or google_order_id."""
+    conn = _get_conn()
+
+    # First check user-scoped if signed in
+    if user_id:
+        row = conn.execute(
+            "SELECT * FROM entitlements WHERE user_id = ? "
+            "AND (apple_transaction_id IS NOT NULL OR google_order_id IS NOT NULL) "
+            "AND status IN ('active', 'expired_time', 'exhausted_games') "
+            "ORDER BY created_at DESC LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        if row:
+            return dict(row)
+
+    # Then check device-scoped
+    row = conn.execute(
+        "SELECT * FROM entitlements WHERE device_id = ? "
+        "AND (apple_transaction_id IS NOT NULL OR google_order_id IS NOT NULL) "
+        "AND status IN ('active', 'expired_time', 'exhausted_games') "
+        "ORDER BY created_at DESC LIMIT 1",
+        (device_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def admin_grant(device_id: str, games: int = 50, hours: int = 12) -> str:
     """Admin: manually grant an entitlement. Returns entitlement ID."""
     import uuid
