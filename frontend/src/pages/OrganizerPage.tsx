@@ -722,7 +722,7 @@ export default function OrganizerPage() {
                             let attempts = 0;
                             const poll = setInterval(async () => {
                                 attempts++;
-                                if (attempts > 30) { clearInterval(poll); return; }
+                                if (attempts > 30 || !mountedRef.current) { clearInterval(poll); return; }
                                 try {
                                     const tokenRes = await fetch(apiUrl('/checkout/token'), { headers: apiHeaders() });
                                     if (tokenRes.ok) {

@@ -20,7 +20,7 @@ import config
 config.setup_logging()
 
 from quiz_engine import quiz_engine, _sanitize_quiz, _validate_quiz, DailyLimitExceeded, AIQuotaExceeded
-from mlt_engine import mlt_engine, _sanitize_mlt
+from mlt_engine import mlt_engine, _sanitize_mlt, _validate_mlt
 from socket_manager import socket_manager
 from image_engine import image_engine
 import premium
@@ -689,6 +689,8 @@ async def import_mlt(request: MLTImportRequest):
     _evict_old_content()
     scenario_id = str(uuid.uuid4())
     mlt_data = _sanitize_mlt(request.game)
+    if not _validate_mlt(mlt_data, attempt=0):
+        raise HTTPException(status_code=422, detail="Invalid MLT data: check statements have id and text fields")
     mlt_scenarios[scenario_id] = mlt_data
     mlt_timestamps[scenario_id] = time.time()
     logger.info("MLT imported: %s ('%s')", scenario_id, mlt_data.get("game_title", "Untitled"))
@@ -917,6 +919,21 @@ async def stripe_webhook(req: Request):
             logger.info("Entitlement activated for device %s (session %s)", device_id[:8], stripe_session_id[:8])
         else:
             logger.warning("No entitlement found for session %s (device=%s)", stripe_session_id[:8], device_id[:8] if device_id else "none")
+
+    elif event["type"] == "checkout.session.expired":
+        session = event["data"]["object"]
+        stripe_session_id = session.get("id", "")
+        if stripe_session_id:
+            # Clean up pending entitlement that was never completed
+            conn = db._get_conn()
+            cursor = conn.execute(
+                "UPDATE entitlements SET status = 'expired_checkout' "
+                "WHERE stripe_session_id = ? AND status = 'pending_payment'",
+                (stripe_session_id,),
+            )
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info("Expired checkout session cleaned up: %s", stripe_session_id[:8])
 
     elif event["type"] in ("charge.refunded", "charge.dispute.created"):
         # Revoke entitlement on refund/chargeback

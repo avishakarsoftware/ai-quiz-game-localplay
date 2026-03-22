@@ -274,3 +274,73 @@ class TestDecrementEntitlement:
         db.create_entitlement(ent_id, device_id, games=1)
         assert db.decrement_entitlement(ent_id) is True  # 1 -> 0
         assert db.decrement_entitlement(ent_id) is False  # already exhausted
+
+
+# ===========================================================================
+# Round 2: Session Token Type Validation
+# ===========================================================================
+
+class TestSessionTokenTypeValidation:
+    def test_session_token_rejects_non_string_user_id(self):
+        """Token with integer user_id should be rejected."""
+        import jwt as pyjwt
+        from datetime import datetime, timezone, timedelta
+        token = pyjwt.encode(
+            {"user_id": 12345, "device_id": "valid-device", "type": "session",
+             "exp": datetime.now(timezone.utc) + timedelta(days=1)},
+            config.JWT_SECRET, algorithm="HS256",
+        )
+        import auth
+        assert auth.verify_session_token(token) is None
+
+    def test_session_token_rejects_premium_token(self):
+        """A premium token should not pass session verification."""
+        import jwt as pyjwt
+        from datetime import datetime, timezone, timedelta
+        token = pyjwt.encode(
+            {"device_id": "some-device", "type": "party_pass",
+             "exp": datetime.now(timezone.utc) + timedelta(days=1)},
+            config.JWT_SECRET, algorithm="HS256",
+        )
+        import auth
+        assert auth.verify_session_token(token) is None
+
+    def test_valid_session_token_passes(self):
+        import auth
+        token = auth.create_session_token("user-123", "device-456")
+        result = auth.verify_session_token(token)
+        assert result is not None
+        assert result["user_id"] == "user-123"
+        assert result["device_id"] == "device-456"
+
+
+# ===========================================================================
+# Round 2: MLT Import Validation
+# ===========================================================================
+
+class TestMLTImportValidation:
+    def test_import_valid_mlt(self):
+        res = client.post("/mlt/import", json={
+            "game": {
+                "game_title": "Test MLT",
+                "statements": [
+                    {"id": 1, "text": "Who's most likely to do X?"}
+                ]
+            }
+        })
+        assert res.status_code == 200
+
+    def test_import_mlt_empty_statements_rejected(self):
+        res = client.post("/mlt/import", json={
+            "game": {"game_title": "Empty", "statements": []}
+        })
+        assert res.status_code == 422
+
+    def test_import_mlt_missing_text_rejected(self):
+        res = client.post("/mlt/import", json={
+            "game": {
+                "game_title": "Bad",
+                "statements": [{"id": 1}]
+            }
+        })
+        assert res.status_code == 422

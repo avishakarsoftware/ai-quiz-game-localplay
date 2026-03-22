@@ -121,6 +121,8 @@ def verify_session_token(token: str) -> Optional[dict]:
         device_id = payload.get("device_id")
         if not user_id or not device_id:
             return None
+        if not isinstance(user_id, str) or not isinstance(device_id, str):
+            return None
         return {"user_id": user_id, "device_id": device_id}
     except jwt.InvalidTokenError:
         return None
