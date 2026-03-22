@@ -169,8 +169,8 @@ class TestLeaderboardWithChanges:
         ]
         lb = sm.get_leaderboard_with_changes(room)
         charlie = next(e for e in lb if e["nickname"] == "Charlie")
-        # prev_rank defaults to len(prev_rankings)=2, current rank is 2 -> change=0
-        assert charlie["rank_change"] == 0
+        # prev_rank defaults to len(prev_rankings)+1=3, current rank is 2 -> change=1 (new player moved up)
+        assert charlie["rank_change"] == 1
 
     def test_empty_previous_leaderboard(self):
         """First question: previous leaderboard is empty."""

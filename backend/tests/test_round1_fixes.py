@@ -344,3 +344,103 @@ class TestMLTImportValidation:
             }
         })
         assert res.status_code == 422
+
+
+# ===========================================================================
+# Round 3: Team Leaderboard Division Safety
+# ===========================================================================
+
+class TestTeamLeaderboard:
+    def test_team_leaderboard_no_crash_empty_teams(self):
+        """get_team_leaderboard should not crash when teams dict is empty."""
+        quiz_id = seed_quiz(num_questions=2)
+        room_code, token = create_room(quiz_id)
+
+        with client.websocket_connect(org_url(room_code, token)) as org_ws:
+            org_ws.receive_json()  # ROOM_CREATED
+            with client.websocket_connect(player_url(room_code, "p1")) as p1_ws:
+                p1_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                recv_until(p1_ws, "JOINED_ROOM")
+                recv_until(org_ws, "PLAYER_JOINED")
+
+                org_ws.send_json({"type": "START_GAME"})
+                recv_until(org_ws, "GAME_STARTING")
+
+                # Play through 2 questions to reach podium
+                for _ in range(2):
+                    org_ws.send_json({"type": "NEXT_QUESTION"})
+                    recv_until(org_ws, "QUESTION")
+                    recv_until(p1_ws, "QUESTION")
+                    p1_ws.send_json({"type": "ANSWER", "answer_index": 0})
+                    recv_until(p1_ws, "ANSWER_RESULT")
+                    recv_until(org_ws, "QUESTION_OVER")
+
+                org_ws.send_json({"type": "NEXT_QUESTION"})
+                podium = recv_until(org_ws, "PODIUM")
+                # Team leaderboard should be present and not crash
+                assert "team_leaderboard" in podium
+
+
+# ===========================================================================
+# Round 3: Room Creation Content Validation
+# ===========================================================================
+
+class TestRoomCreationValidation:
+    def test_create_room_rejects_nonexistent_quiz(self):
+        """Room creation with non-existent quiz_id should fail."""
+        res = client.post("/room/create", json={
+            "quiz_id": "nonexistent-id",
+            "time_limit": 30,
+            "game_type": "quiz",
+        })
+        assert res.status_code in (400, 404)
+
+    def test_create_room_rejects_nonexistent_mlt(self):
+        """Room creation with non-existent mlt_id should fail."""
+        res = client.post("/room/create", json={
+            "mlt_id": "nonexistent-id",
+            "time_limit": 30,
+            "game_type": "wmlt",
+        })
+        assert res.status_code in (400, 404)
+
+    def test_create_quiz_room_succeeds(self):
+        """Room creation with valid quiz should succeed."""
+        quiz_id = seed_quiz()
+        res = client.post("/room/create", json={
+            "quiz_id": quiz_id,
+            "time_limit": 30,
+            "game_type": "quiz",
+        })
+        assert res.status_code == 200
+        assert "room_code" in res.json()
+
+    def test_create_wmlt_room_succeeds(self):
+        """Room creation with valid MLT should succeed."""
+        mlt_id = seed_mlt()
+        res = client.post("/room/create", json={
+            "mlt_id": mlt_id,
+            "time_limit": 30,
+            "game_type": "wmlt",
+        })
+        assert res.status_code == 200
+        assert "room_code" in res.json()
+
+
+# ===========================================================================
+# Round 3: Entitlement Selection Order
+# ===========================================================================
+
+class TestEntitlementSelectionOrder:
+    def test_picks_entitlement_with_most_games(self):
+        """Should pick the entitlement with the most games remaining."""
+        device_id = str(uuid.uuid4())
+        # Create two entitlements: one with 2 games, one with 8
+        ent1 = str(uuid.uuid4())
+        ent2 = str(uuid.uuid4())
+        db.create_entitlement(ent1, device_id, games=2)
+        db.create_entitlement(ent2, device_id, games=8)
+
+        ent = db.get_active_entitlement(device_id)
+        assert ent is not None
+        assert ent["games_remaining"] == 8

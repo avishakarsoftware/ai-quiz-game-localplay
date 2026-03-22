@@ -476,7 +476,8 @@ class SocketManager:
             elapsed = time.time() - room.question_start_time
             sync["time_remaining"] = max(0, room.time_limit - int(elapsed))
 
-        await room.organizer.send_json(sync)
+        if room.organizer:
+            await room.organizer.send_json(sync)
         logger.info("Organizer reconnected to room %s (state: %s)", room.room_code, room.state)
 
     async def handle_message(self, room: Room, client_id: str, message: dict, is_organizer: bool):
@@ -834,8 +835,8 @@ class SocketManager:
                     return
 
                 async with room.lock:
-                    if nickname in room.votes:
-                        return  # Already voted
+                    if room.state != "QUESTION" or nickname in room.votes:
+                        return  # State changed or already voted
                     room.votes[nickname] = voted_for
                     room.answered_players.add(client_id)
                     all_voted = len(room.votes) >= len(room.players)
@@ -864,9 +865,9 @@ class SocketManager:
                     return
                 answer_index = message.get("answer_index")
                 # Bounds check to prevent IndexError
-                if room.current_question_index < 0 or room.current_question_index >= room.total_rounds():
+                question = room.current_round_data()
+                if not question:
                     return
-                question = room.quiz["questions"][room.current_question_index]
                 num_options = len(question.get("options", []))
                 if not isinstance(answer_index, int) or not (0 <= answer_index < num_options):
                     return
@@ -969,11 +970,12 @@ class SocketManager:
                         pups["double_points_active"] = True
                         await ws.send_json({"type": "POWER_UP_ACTIVATED", "power_up": "double_points"})
                     elif power_up == "fifty_fifty":
+                        if room.game_type == "wmlt":
+                            return  # 50/50 not applicable to WMLT
                         pups["fifty_fifty"] = False
-                        # Bounds check before accessing question
-                        if room.current_question_index < 0 or room.current_question_index >= len(room.quiz["questions"]):
+                        question = room.current_round_data()
+                        if not question:
                             return
-                        question = room.quiz["questions"][room.current_question_index]
                         correct_idx = question["answer_index"]
                         wrong_indices = [i for i in range(len(question["options"])) if i != correct_idx]
                         import random
@@ -995,7 +997,7 @@ class SocketManager:
         for team_name, scores in team_scores.items():
             result.append({
                 "team": team_name,
-                "score": int(sum(scores) / len(scores)),  # average
+                "score": int(sum(scores) / len(scores)) if scores else 0,  # average
                 "members": len(scores),
             })
         return sorted(result, key=lambda x: x["score"], reverse=True)
@@ -1090,7 +1092,9 @@ class SocketManager:
                 ],
             })
         else:
-            question = room.quiz["questions"][room.current_question_index]
+            question = room.current_round_data()
+            if not question:
+                return
             player_question = {k: v for k, v in question.items() if k != "answer_index"}
             await room.broadcast({
                 "type": "QUESTION",
@@ -1145,7 +1149,9 @@ class SocketManager:
             if cid not in room.answered_players:
                 player["streak"] = 0
 
-        question = room.quiz["questions"][room.current_question_index]
+        question = room.current_round_data()
+        if not question:
+            return
         current_leaderboard = self.get_leaderboard_with_changes(room)
         is_final = room.current_question_index >= room.total_rounds() - 1
 
@@ -1282,7 +1288,7 @@ class SocketManager:
         for rnd in room.mlt_round_history:
             for voter, target in rnd.get("votes", {}).items():
                 total_votes_received[target] += 1
-        if total_votes_received:
+        if total_votes_received and total_votes_received.most_common(1):
             top = total_votes_received.most_common(1)[0]
             superlatives.append({
                 "title": "Most Likely To Everything",
@@ -1298,7 +1304,7 @@ class SocketManager:
             for voter, target in rnd.get("votes", {}).items():
                 if voter == target:
                     self_votes[voter] += 1
-        if self_votes:
+        if self_votes and self_votes.most_common(1):
             top = self_votes.most_common(1)[0]
             if top[1] > 0:
                 superlatives.append({
@@ -1319,7 +1325,7 @@ class SocketManager:
                 for voter, target in rnd.get("votes", {}).items():
                     if target in round_winners:
                         majority_counts[voter] += 1
-        if majority_counts:
+        if majority_counts and majority_counts.most_common(1):
             top = majority_counts.most_common(1)[0]
             if top[1] > 0:
                 superlatives.append({
@@ -1339,7 +1345,7 @@ class SocketManager:
                 if top_two[0]["vote_count"] - top_two[1]["vote_count"] <= 1:
                     controversial[top_two[0]["nickname"]] += 1
                     controversial[top_two[1]["nickname"]] += 1
-        if controversial:
+        if controversial and controversial.most_common(1):
             top = controversial.most_common(1)[0]
             if top[1] > 0:
                 superlatives.append({
@@ -1384,7 +1390,7 @@ class SocketManager:
 
         result = []
         for i, player in enumerate(sorted_players):
-            prev_rank = prev_rankings.get(player["nickname"], len(prev_rankings))
+            prev_rank = prev_rankings.get(player["nickname"], len(prev_rankings) + 1)
             result.append({
                 "nickname": player["nickname"],
                 "score": player["score"],

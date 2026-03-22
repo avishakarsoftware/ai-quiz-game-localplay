@@ -409,11 +409,15 @@ async def create_room(request: RoomCreateRequest):
             raise HTTPException(status_code=404, detail="MLT scenario not found")
         game_data = mlt_scenarios[request.mlt_id]
         content_id = request.mlt_id
+        if not game_data.get("statements"):
+            raise HTTPException(status_code=422, detail="Game has no statements")
     else:
         if request.quiz_id not in quizzes:
             raise HTTPException(status_code=404, detail="Quiz not found")
         game_data = quizzes[request.quiz_id]
         content_id = request.quiz_id
+        if not game_data.get("questions"):
+            raise HTTPException(status_code=422, detail="Quiz has no questions")
 
     # Enforce max rooms limit
     if len(socket_manager.rooms) >= config.MAX_ROOMS:

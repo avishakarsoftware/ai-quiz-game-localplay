@@ -133,7 +133,7 @@ def get_active_entitlement(device_id: str) -> Optional[dict]:
     row = conn.execute(
         "SELECT * FROM entitlements WHERE device_id = ? AND status = 'active' "
         "AND user_id IS NULL "
-        "ORDER BY expires_at ASC LIMIT 1",
+        "ORDER BY games_remaining DESC, expires_at DESC LIMIT 1",
         (device_id,),
     ).fetchone()
     return dict(row) if row else None
@@ -440,7 +440,7 @@ def get_active_entitlement_for_user(user_id: str) -> Optional[dict]:
     conn.commit()
     row = conn.execute(
         "SELECT * FROM entitlements WHERE user_id = ? AND status = 'active' "
-        "ORDER BY expires_at ASC LIMIT 1",
+        "ORDER BY games_remaining DESC, expires_at DESC LIMIT 1",
         (user_id,),
     ).fetchone()
     return dict(row) if row else None
