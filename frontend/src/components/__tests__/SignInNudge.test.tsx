@@ -30,9 +30,19 @@ describe('SignInNudge', () => {
         expect(screen.getByText(/sign in to keep your party pass/i)).toBeInTheDocument();
     });
 
-    it('does not show for non-premium users', () => {
-        const { container } = render(<SignInNudge isPremium={false} />);
-        expect(container.innerHTML).toBe('');
+    it('shows different message for non-premium users', () => {
+        render(<SignInNudge isPremium={false} />);
+        expect(screen.getByText(/sign in to save your progress/i)).toBeInTheDocument();
+    });
+
+    it('dispatches open-settings event on click', async () => {
+        const user = userEvent.setup();
+        const handler = vi.fn();
+        window.addEventListener('open-settings', handler);
+        render(<SignInNudge isPremium={false} />);
+        await user.click(screen.getByText(/sign in to save your progress/i));
+        expect(handler).toHaveBeenCalledTimes(1);
+        window.removeEventListener('open-settings', handler);
     });
 
     it('does not show for signed-in users', () => {

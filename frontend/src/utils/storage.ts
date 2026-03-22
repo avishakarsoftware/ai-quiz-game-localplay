@@ -122,4 +122,6 @@ export function clearUserProfile(): void {
 export function signOut(): void {
     clearSessionToken();
     clearUserProfile();
+    clearPremiumToken();
+    clearCheckoutPending();
 }

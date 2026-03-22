@@ -400,57 +400,76 @@ class TestAuthMeEndpoint:
 
 
 class TestConsumeReturnValues:
-    """Test that generate endpoints check consume return values (Critical #2-3 fix)."""
+    """Test that room creation consumes entitlement/free games (moved from generate)."""
 
-    def test_quiz_generate_402_on_expired_entitlement(self, test_app):
-        """If entitlement expires between peek and consume, return 402."""
-        from unittest.mock import AsyncMock
+    def test_room_create_402_on_expired_entitlement(self, test_app):
+        """If entitlement expires at room creation, return 402."""
+        from main import quizzes
+        quiz_id = "test-consume-quiz"
+        quizzes[quiz_id] = {"quiz_title": "Test", "questions": [{"id": 1, "text": "Q", "options": ["A", "B", "C", "D"], "answer_index": 0, "image_prompt": ""}]}
 
-        with patch("main._check_rate_limit", return_value=True), \
-             patch("main.quiz_engine.generate_quiz", new_callable=AsyncMock) as mock_gen, \
-             patch("main.premium.has_active_entitlement", return_value=True), \
+        with patch("main.premium.has_active_entitlement", return_value=True), \
              patch("main.premium.check_and_use_entitlement", return_value=(False, None)):
-            mock_gen.return_value = {"quiz_title": "Test", "questions": []}
-            res = test_app.post("/quiz/generate", json={
-                "prompt": "test topic",
-                "difficulty": "medium",
-                "num_questions": 5,
+            res = test_app.post("/room/create", json={
+                "quiz_id": quiz_id,
+                "game_type": "quiz",
+                "time_limit": 15,
             }, headers=_DEVICE_HEADERS)
             assert res.status_code == 402
-            assert "expired" in res.json()["detail"].lower() or "exhausted" in res.json()["detail"].lower()
+            assert "expired" in res.json()["detail"].lower()
+        quizzes.pop(quiz_id, None)
 
-    def test_mlt_generate_402_on_expired_entitlement(self, test_app):
-        """If entitlement expires between peek and consume, return 402."""
-        from unittest.mock import AsyncMock
+    def test_room_create_402_on_free_limit(self, test_app):
+        """If free limit reached at room creation, return 402."""
+        from main import quizzes
+        quiz_id = "test-free-limit-quiz"
+        quizzes[quiz_id] = {"quiz_title": "Test", "questions": [{"id": 1, "text": "Q", "options": ["A", "B", "C", "D"], "answer_index": 0, "image_prompt": ""}]}
 
-        with patch("main._check_rate_limit", return_value=True), \
-             patch("main.mlt_engine.generate_statements", new_callable=AsyncMock) as mock_gen, \
-             patch("main.premium.has_active_entitlement", return_value=True), \
-             patch("main.premium.check_and_use_entitlement", return_value=(False, None)):
-            mock_gen.return_value = {"game_title": "Test", "statements": []}
-            res = test_app.post("/mlt/generate", json={
-                "prompt": "test theme",
-                "difficulty": "party",
-                "num_rounds": 5,
-            }, headers=_DEVICE_HEADERS)
-            assert res.status_code == 402
-
-    def test_quiz_generate_402_on_free_limit_race(self, test_app):
-        """If free limit reached between peek and consume, return 402."""
-        from unittest.mock import AsyncMock
-
-        with patch("main._check_rate_limit", return_value=True), \
-             patch("main.quiz_engine.generate_quiz", new_callable=AsyncMock) as mock_gen, \
-             patch("main.premium.has_active_entitlement", return_value=False), \
-             patch("main.premium.peek_free_limit", return_value=(True, 2)), \
+        with patch("main.premium.has_active_entitlement", return_value=False), \
              patch("main.premium.check_free_limit", return_value=(False, 3)):
-            mock_gen.return_value = {"quiz_title": "Test", "questions": []}
+            res = test_app.post("/room/create", json={
+                "quiz_id": quiz_id,
+                "game_type": "quiz",
+                "time_limit": 15,
+            }, headers=_DEVICE_HEADERS)
+            assert res.status_code == 402
+        quizzes.pop(quiz_id, None)
+
+    def test_room_create_success_consumes_game(self, test_app):
+        """Successful room creation consumes a game."""
+        from main import quizzes
+        from socket_manager import socket_manager
+        quiz_id = "test-consume-success"
+        quizzes[quiz_id] = {"quiz_title": "Test", "questions": [{"id": 1, "text": "Q", "options": ["A", "B", "C", "D"], "answer_index": 0, "image_prompt": ""}]}
+
+        with patch("main.premium.has_active_entitlement", return_value=True), \
+             patch("main.premium.check_and_use_entitlement", return_value=(True, {"id": "ent-1", "games_remaining": 9})):
+            res = test_app.post("/room/create", json={
+                "quiz_id": quiz_id,
+                "game_type": "quiz",
+                "time_limit": 15,
+            }, headers=_DEVICE_HEADERS)
+            assert res.status_code == 200
+            room_code = res.json()["room_code"]
+            socket_manager.rooms.pop(room_code, None)
+        quizzes.pop(quiz_id, None)
+
+    def test_quiz_generate_does_not_consume(self, test_app):
+        """Generation should peek but NOT consume entitlement."""
+        from unittest.mock import AsyncMock
+
+        with patch("main._check_rate_limit", return_value=True), \
+             patch("main.quiz_engine.generate_quiz", new_callable=AsyncMock) as mock_gen, \
+             patch("main.premium.has_active_entitlement", return_value=True), \
+             patch("main.premium.check_and_use_entitlement") as mock_consume:
+            mock_gen.return_value = {"quiz_title": "Test", "questions": [{"id": 1}]}
             res = test_app.post("/quiz/generate", json={
                 "prompt": "test topic",
                 "difficulty": "medium",
                 "num_questions": 5,
             }, headers=_DEVICE_HEADERS)
-            assert res.status_code == 402
+            assert res.status_code == 200
+            mock_consume.assert_not_called()  # Should NOT consume at generation
 
 
 class TestPendingTokenTTL:

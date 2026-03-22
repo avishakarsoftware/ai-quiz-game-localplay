@@ -21,7 +21,7 @@ export default function GameQuestionScreen({
     answeredCount, playerCount, isBonus, onNextQuestion, onEndQuiz,
     gameType, statementText,
 }: GameQuestionScreenProps) {
-    const timerPct = (timeRemaining / timeLimit) * 100;
+    const timerPct = timeLimit > 0 ? (timeRemaining / timeLimit) * 100 : 0;
     const timerColor = timeRemaining <= 5 ? 'var(--accent-danger)'
         : timeRemaining <= 10 ? 'var(--accent-warning)'
         : 'var(--accent-primary)';

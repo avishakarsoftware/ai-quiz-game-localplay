@@ -50,6 +50,8 @@ def init_db():
             ON entitlements(apple_transaction_id) WHERE apple_transaction_id IS NOT NULL;
         CREATE UNIQUE INDEX IF NOT EXISTS idx_entitlements_google
             ON entitlements(google_order_id) WHERE google_order_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_entitlements_user
+            ON entitlements(user_id, status) WHERE user_id IS NOT NULL;
 
         CREATE TABLE IF NOT EXISTS device_usage (
             device_id TEXT PRIMARY KEY,
@@ -57,6 +59,8 @@ def init_db():
             games_used_free INTEGER NOT NULL DEFAULT 0,
             window_start INTEGER NOT NULL
         );
+        CREATE INDEX IF NOT EXISTS idx_device_usage_user
+            ON device_usage(user_id) WHERE user_id IS NOT NULL;
 
         CREATE TABLE IF NOT EXISTS request_log (
             idempotency_key TEXT PRIMARY KEY,

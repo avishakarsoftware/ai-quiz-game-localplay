@@ -57,9 +57,9 @@ class ImageEngine:
                     json=payload,
                     timeout=120  # Image gen can take time on M1
                 )
+                result = response.json() if response.status_code == 200 else None
 
-            if response.status_code == 200:
-                result = response.json()
+            if result:
                 if "image_base64" in result:
                     image_b64 = result["image_base64"]
                     # Validate image size to prevent memory abuse

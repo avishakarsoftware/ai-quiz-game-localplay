@@ -58,7 +58,7 @@ export default function MaintenanceOverlay() {
   if (!operations.maintenance) return null;
 
   const untilText = operations.maintenance_until
-    ? ` Back by ${new Date(operations.maintenance_until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`
+    ? ` Back by ${new Date(operations.maintenance_until).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}.`
     : '';
 
   return (

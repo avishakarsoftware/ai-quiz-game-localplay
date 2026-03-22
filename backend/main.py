@@ -46,10 +46,12 @@ app = FastAPI(title="AI Quiz Game Backend", lifespan=lifespan)
 def get_local_ip():
     try:
         s = socketlib.socket(socketlib.AF_INET, socketlib.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
+        try:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            return ip
+        finally:
+            s.close()
     except Exception:
         return "127.0.0.1"
 
@@ -250,7 +252,7 @@ async def generate_quiz(request: QuizRequest, req: Request):
     session = auth.get_session_from_request(req)
     user_id = session["user_id"] if session else ""
 
-    # Check entitlement (peek only — don't consume yet, consume after success)
+    # Check entitlement (peek only — consumption happens at room creation, not generation)
     if user_id:
         has_entitlement = premium.has_active_entitlement_for_user(user_id)
     else:
@@ -272,23 +274,6 @@ async def generate_quiz(request: QuizRequest, req: Request):
         raise HTTPException(status_code=503, detail="Free tier limit reached. Upgrade for unlimited games.")
     if not quiz_data:
         raise HTTPException(status_code=500, detail="Failed to generate quiz")
-
-    # Consume quota only after successful generation
-    if has_entitlement:
-        if user_id:
-            consumed, _ = premium.check_and_use_entitlement_for_user(user_id)
-        else:
-            consumed, _ = premium.check_and_use_entitlement(device_id)
-        if not consumed:
-            # Entitlement expired/exhausted between peek and consume
-            raise HTTPException(status_code=402, detail="Your game pack has expired. Get a new 10-Game Pack to continue!")
-    else:
-        if user_id:
-            allowed, _ = premium.check_user_free_limit(user_id, device_id)
-        else:
-            allowed, _ = premium.check_free_limit(device_id)
-        if not allowed:
-            raise HTTPException(status_code=402, detail="Free game limit reached.")
 
     _evict_old_content()
     quiz_id = str(uuid.uuid4())
@@ -324,6 +309,8 @@ class QuizUpdateRequest(BaseModel):
             opts = q['options']
             if not isinstance(opts, list) or len(opts) not in (2, 4):
                 raise ValueError('Question must have 2 or 4 options')
+            if not all(isinstance(opt, str) for opt in opts):
+                raise ValueError('Each option must be a string')
             if not isinstance(q['answer_index'], int) or not (0 <= q['answer_index'] < len(opts)):
                 raise ValueError('Invalid answer_index')
         return v
@@ -391,7 +378,10 @@ async def get_question_image(quiz_id: str, question_id: int):
         raise HTTPException(status_code=404, detail="Image not found")
 
     image_data = quiz_images[quiz_id][question_id]
-    image_bytes = base64.b64decode(image_data)
+    try:
+        image_bytes = base64.b64decode(image_data)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Corrupt image data")
     return Response(content=image_bytes, media_type="image/png")
 
 
@@ -402,7 +392,7 @@ async def sd_status():
 
 
 @app.post("/room/create")
-async def create_room(request: RoomCreateRequest):
+async def create_room(request: RoomCreateRequest, req: Request):
     # Resolve content based on game type
     if request.game_type == "wmlt":
         if request.mlt_id not in mlt_scenarios:
@@ -418,6 +408,31 @@ async def create_room(request: RoomCreateRequest):
         content_id = request.quiz_id
         if not game_data.get("questions"):
             raise HTTPException(status_code=422, detail="Quiz has no questions")
+
+    # Consume entitlement/free game at room creation (not generation)
+    device_id = premium.get_device_id(req)
+    session = auth.get_session_from_request(req)
+    user_id = session["user_id"] if session else ""
+
+    if user_id:
+        has_entitlement = premium.has_active_entitlement_for_user(user_id)
+    else:
+        has_entitlement = premium.has_active_entitlement(device_id) if device_id else False
+
+    if has_entitlement:
+        if user_id:
+            consumed, _ = premium.check_and_use_entitlement_for_user(user_id)
+        else:
+            consumed, _ = premium.check_and_use_entitlement(device_id)
+        if not consumed:
+            raise HTTPException(status_code=402, detail="Your game pack has expired. Get a new 10-Game Pack to continue!")
+    elif device_id:
+        if user_id:
+            allowed, _ = premium.check_user_free_limit(user_id, device_id)
+        else:
+            allowed, _ = premium.check_free_limit(device_id)
+        if not allowed:
+            raise HTTPException(status_code=402, detail="You've used all your free games. Get a 10-Game Pack for just $0.99!")
 
     # Enforce max rooms limit
     if len(socket_manager.rooms) >= config.MAX_ROOMS:
@@ -475,6 +490,8 @@ class QuizImportRequest(BaseModel):
                 raise ValueError("Question must have 2 or 4 options")
             if not all(isinstance(opt, str) for opt in q["options"]):
                 raise ValueError("Each option must be a string")
+            if not isinstance(q["answer_index"], int) or not (0 <= q["answer_index"] < len(q["options"])):
+                raise ValueError("Invalid answer_index")
         return v
 
 
@@ -565,7 +582,7 @@ async def generate_mlt(request: MLTRequest, req: Request):
     session = auth.get_session_from_request(req)
     user_id = session["user_id"] if session else ""
 
-    # Check entitlement (peek only — don't consume yet, consume after success)
+    # Check entitlement (peek only — consumption happens at room creation, not generation)
     if user_id:
         has_entitlement = premium.has_active_entitlement_for_user(user_id)
     else:
@@ -587,22 +604,6 @@ async def generate_mlt(request: MLTRequest, req: Request):
         raise HTTPException(status_code=503, detail="Free tier limit reached. Upgrade for unlimited games.")
     if not mlt_data:
         raise HTTPException(status_code=500, detail="Failed to generate statements")
-
-    # Consume quota only after successful generation
-    if has_entitlement:
-        if user_id:
-            consumed, _ = premium.check_and_use_entitlement_for_user(user_id)
-        else:
-            consumed, _ = premium.check_and_use_entitlement(device_id)
-        if not consumed:
-            raise HTTPException(status_code=402, detail="Your game pack has expired. Get a new 10-Game Pack to continue!")
-    else:
-        if user_id:
-            allowed, _ = premium.check_user_free_limit(user_id, device_id)
-        else:
-            allowed, _ = premium.check_free_limit(device_id)
-        if not allowed:
-            raise HTTPException(status_code=402, detail="Free game limit reached.")
 
     _evict_old_content()
     scenario_id = str(uuid.uuid4())
@@ -919,7 +920,10 @@ async def stripe_webhook(req: Request):
                 device_id, entitlement_id=ent["id"],
                 games_remaining=ent["games_remaining"],
             )
-            db.store_pending_token(device_id, token)
+            if not token:
+                logger.error("Failed to create premium token (JWT_SECRET not configured?) for device %s", device_id[:8])
+            else:
+                db.store_pending_token(device_id, token)
             logger.info("Entitlement activated for device %s (session %s)", device_id[:8], stripe_session_id[:8])
         else:
             logger.warning("No entitlement found for session %s (device=%s)", stripe_session_id[:8], device_id[:8] if device_id else "none")

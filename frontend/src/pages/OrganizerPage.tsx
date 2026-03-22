@@ -65,6 +65,7 @@ export default function OrganizerPage() {
     const mountedRef = useRef(true);
     const connectWsRef = useRef<(code: string) => void>(() => {});
     const gameTypeRef = useRef<GameType>('quiz');
+    const checkoutPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     useEffect(() => { stateRef.current = state; }, [state]);
     useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
@@ -421,6 +422,7 @@ export default function OrganizerPage() {
         return () => {
             mountedRef.current = false;
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+            if (checkoutPollRef.current) { clearInterval(checkoutPollRef.current); checkoutPollRef.current = null; }
             wsRef.current?.close();
             wsRef.current = null;
         };
@@ -457,6 +459,11 @@ export default function OrganizerPage() {
                 headers: apiHeaders(),
                 body: JSON.stringify(body),
             });
+            if (res.status === 402) {
+                track('paywall_hit', { source: 'room_create' });
+                setErrorModal({ title: 'Free Games Used Up', message: 'You\'ve used your free games! Grab a 10-Game Pack for just $0.99 and keep the fun going.', upgradeAvailable: true });
+                return;
+            }
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ detail: 'Failed to create room' }));
                 setErrorModal({ title: 'Room Error', message: err.detail || `Server error (${res.status})` });
@@ -697,6 +704,7 @@ export default function OrganizerPage() {
                     onUpgrade={async () => {
                         track('upgrade_clicked', { source: 'error_modal' });
                         setErrorModal(null);
+                        if (checkoutPollRef.current) return; // Prevent double-click
                         if (remoteConfig.operations.kill_payments) {
                             setErrorModal({ title: 'Payments Unavailable', message: 'Payments are temporarily disabled. Please try again later.' });
                             return;
@@ -720,16 +728,22 @@ export default function OrganizerPage() {
                             window.open(checkout_url, '_blank');
                             // Poll for token after Stripe redirect
                             let attempts = 0;
-                            const poll = setInterval(async () => {
+                            if (checkoutPollRef.current) clearInterval(checkoutPollRef.current);
+                            checkoutPollRef.current = setInterval(async () => {
                                 attempts++;
-                                if (attempts > 30 || !mountedRef.current) { clearInterval(poll); return; }
+                                if (attempts > 30 || !mountedRef.current) {
+                                    if (checkoutPollRef.current) clearInterval(checkoutPollRef.current);
+                                    checkoutPollRef.current = null;
+                                    return;
+                                }
                                 try {
                                     const tokenRes = await fetch(apiUrl('/checkout/token'), { headers: apiHeaders() });
                                     if (tokenRes.ok) {
                                         const { token } = await tokenRes.json();
                                         setPremiumToken(token);
                                         clearCheckoutPending();
-                                        clearInterval(poll);
+                                        if (checkoutPollRef.current) clearInterval(checkoutPollRef.current);
+                                        checkoutPollRef.current = null;
                                         track('premium_activated', { source: 'stripe' });
                                         setErrorModal({ title: 'Game Pack Activated!', message: `You now have ${remoteConfig.pricing.games} games. Enjoy!` });
                                     }

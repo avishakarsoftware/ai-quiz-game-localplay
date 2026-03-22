@@ -47,7 +47,7 @@ describe('ErrorModal', () => {
         onUpgrade={onUpgrade}
       />
     );
-    const upgradeBtn = screen.getByText(/Get 10 Games/);
+    const upgradeBtn = screen.getByText(/10 Games for 30 Days/);
     expect(upgradeBtn).toBeInTheDocument();
     expect(screen.getByText('Maybe Later')).toBeInTheDocument();
     fireEvent.click(upgradeBtn);

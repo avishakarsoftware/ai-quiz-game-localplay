@@ -1,5 +1,6 @@
 import re
 import asyncio
+import datetime
 import httpx
 import json
 import logging
@@ -267,10 +268,10 @@ PROVIDERS = {
 class MLTEngine:
     def __init__(self):
         self._daily_count = 0
-        self._daily_date = __import__('datetime').date.today()
+        self._daily_date = datetime.date.today()
 
     def _check_daily_limit(self) -> bool:
-        today = __import__('datetime').date.today()
+        today = datetime.date.today()
         if today != self._daily_date:
             self._daily_count = 0
             self._daily_date = today

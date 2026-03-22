@@ -34,9 +34,12 @@ function mergeWithDefaults(data: Partial<RemoteConfig>): RemoteConfig {
   };
 }
 
+const MAX_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // Cap at 24 hours
+
 function getCacheTtlMs(config: RemoteConfig): number {
   const ttl = config.cache_ttl_seconds;
-  return ttl && ttl > 0 ? ttl * 1000 : DEFAULT_CACHE_TTL_MS;
+  const ms = ttl && ttl > 0 ? ttl * 1000 : DEFAULT_CACHE_TTL_MS;
+  return Math.min(ms, MAX_CACHE_TTL_MS);
 }
 
 function getCachedConfig(forceFresh?: boolean): RemoteConfig | null {

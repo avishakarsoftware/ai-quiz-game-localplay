@@ -69,7 +69,7 @@ BONUS_ROUND_FRACTION = 0.3  # ~30% of questions will be bonus rounds (2x points)
 # --- Premium / Monetization ---
 FREE_TIER_LIMIT = int(os.getenv("FREE_TIER_LIMIT", "3"))  # max games per device per 24h
 JWT_SECRET = os.getenv("JWT_SECRET", "")
-PREMIUM_DURATION_HOURS = int(os.getenv("PREMIUM_DURATION_HOURS", "720"))  # 30 days
+PREMIUM_DURATION_HOURS = int(os.getenv("PREMIUM_DURATION_HOURS", "744"))  # 31 days (generous)
 GEMINI_PREMIUM_MODEL = os.getenv("GEMINI_PREMIUM_MODEL", "gemini-2.5-flash")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")

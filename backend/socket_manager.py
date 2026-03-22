@@ -97,6 +97,8 @@ class Room:
 
         self.disconnected_players.clear()
         self.bonus_questions = set()
+        self.mlt_round_history.clear()
+        self.msg_timestamps.clear()
 
         for nickname in self.power_ups:
             self.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
@@ -1078,6 +1080,8 @@ class SocketManager:
 
         if room.game_type == "wmlt":
             statement = room.current_round_data()
+            if not statement:
+                return
             await room.broadcast({
                 "type": "QUESTION",
                 "statement": statement,

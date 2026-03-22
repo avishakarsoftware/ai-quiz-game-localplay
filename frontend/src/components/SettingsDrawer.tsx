@@ -42,6 +42,13 @@ export default function SettingsDrawer() {
     const googleBtnRef = useRef<HTMLDivElement>(null);
     const { user, signIn, signOut } = useAuth();
 
+    // Listen for external open requests (e.g. from SignInNudge)
+    useEffect(() => {
+        const handler = () => setOpen(true);
+        window.addEventListener('open-settings', handler);
+        return () => window.removeEventListener('open-settings', handler);
+    }, []);
+
     // Clear errors when drawer reopens
     useEffect(() => {
         if (open) setSignInError('');
