@@ -87,15 +87,15 @@ export default function OrganizerPage() {
 
     useEffect(() => {
         fetch(`${API_URL}/sd/status`)
-            .then(res => res.json())
-            .then(data => setSdAvailable(data.available))
+            .then(res => res.ok ? res.json() : Promise.reject())
+            .then(data => setSdAvailable(data?.available ?? false))
             .catch(() => setSdAvailable(false));
 
         fetch(`${API_URL}/providers`)
-            .then(res => res.json())
+            .then(res => res.ok ? res.json() : Promise.reject())
             .then(data => {
-                setProviders(data.providers || []);
-                const defaultProvider = data.providers?.find((p: AIProvider) => p.available);
+                setProviders(data?.providers || []);
+                const defaultProvider = data?.providers?.find((p: AIProvider) => p.available);
                 if (defaultProvider) setProvider(defaultProvider.id);
             })
             .catch(() => {});
@@ -360,7 +360,8 @@ export default function OrganizerPage() {
 
         let failures = 0;
         for (let i = 0; i < (quiz?.questions.length || 0); i++) {
-            const question = quiz!.questions[i];
+            const question = quiz?.questions[i];
+            if (!question) continue;
             try {
                 const res = await fetch(`${API_URL}/quiz/generate-images`, {
                     method: 'POST',

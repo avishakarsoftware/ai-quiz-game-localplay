@@ -893,7 +893,10 @@ async def stripe_webhook(req: Request):
         # Cap to max allowed amount to prevent metadata tampering
         import json
         max_allowed = max(config.TOKEN_PACK_AMOUNT, config.PROMO_TOKEN_AMOUNT) if config.PROMO_TOKEN_AMOUNT > 0 else config.TOKEN_PACK_AMOUNT
-        raw_token_amount = int(metadata.get("token_amount", str(config.TOKEN_PACK_AMOUNT)))
+        try:
+            raw_token_amount = int(metadata.get("token_amount") or config.TOKEN_PACK_AMOUNT)
+        except (ValueError, TypeError):
+            raw_token_amount = config.TOKEN_PACK_AMOUNT
         token_amount = min(raw_token_amount, max_allowed) if raw_token_amount > 0 else config.TOKEN_PACK_AMOUNT
         promo_id = metadata.get("promo_id", "")
         txn_metadata = json.dumps({"promo_id": promo_id}) if promo_id else ""
@@ -919,7 +922,10 @@ async def stripe_webhook(req: Request):
                     stripe_session_id = sessions.data[0].id
                     refund_metadata = sessions.data[0].metadata
                     wallet_id = refund_metadata.get("wallet_id", "")
-                    raw_refund = int(refund_metadata.get("token_amount", str(config.TOKEN_PACK_AMOUNT)))
+                    try:
+                        raw_refund = int(refund_metadata.get("token_amount") or config.TOKEN_PACK_AMOUNT)
+                    except (ValueError, TypeError):
+                        raw_refund = config.TOKEN_PACK_AMOUNT
                     refund_max = max(config.TOKEN_PACK_AMOUNT, config.PROMO_TOKEN_AMOUNT) if config.PROMO_TOKEN_AMOUNT > 0 else config.TOKEN_PACK_AMOUNT
                     refund_amount = min(raw_refund, refund_max) if raw_refund > 0 else config.TOKEN_PACK_AMOUNT
                     if wallet_id:

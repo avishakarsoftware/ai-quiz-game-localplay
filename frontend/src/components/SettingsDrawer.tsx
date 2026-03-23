@@ -172,7 +172,9 @@ export default function SettingsDrawer() {
         setSignInError('');
         try {
             const response = await window.AppleID.auth.signIn();
-            await signIn('apple', response.authorization.id_token);
+            const idToken = response?.authorization?.id_token;
+            if (!idToken) throw new Error('No ID token from Apple');
+            await signIn('apple', idToken);
         } catch (err: unknown) {
             // User cancelled is not an error
             const errObj = err as Record<string, unknown> | null;
@@ -306,7 +308,7 @@ export default function SettingsDrawer() {
                     <div className="settings-drawer-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <div className="settings-avatar">
-                                {user.email?.[0]?.toUpperCase() || user.provider[0].toUpperCase()}
+                                {user.email?.[0]?.toUpperCase() || user.provider?.[0]?.toUpperCase() || '?'}
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
                                 <p style={{ fontWeight: 600, fontSize: 14 }}>Signed in</p>

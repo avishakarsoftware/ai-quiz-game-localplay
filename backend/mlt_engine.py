@@ -179,7 +179,11 @@ async def _generate_gemini(prompt: str, difficulty: str, num_rounds: int, model_
                 response = await client.post(url, json=payload, headers=headers, timeout=60)
                 response.raise_for_status()
             result = response.json()
-            text = result["candidates"][0]["content"]["parts"][0]["text"]
+            try:
+                text = result["candidates"][0]["content"]["parts"][0]["text"]
+            except (KeyError, IndexError, TypeError):
+                logger.warning("Gemini returned unexpected response structure: %s", str(result)[:200])
+                continue
             # Extract first JSON object — handles thinking text, markdown blocks, etc.
             json_match = re.search(r'\{.*\}', text, re.DOTALL)
             if json_match:
@@ -235,9 +239,14 @@ async def _generate_claude(prompt: str, difficulty: str, num_rounds: int) -> Opt
                 response = await client.post(url, json=payload, headers=headers, timeout=60)
                 response.raise_for_status()
             result = response.json()
-            text = result["content"][0]["text"]
+            try:
+                text = result["content"][0]["text"]
+            except (KeyError, IndexError, TypeError):
+                logger.warning("Claude returned unexpected response structure: %s", str(result)[:200])
+                continue
             if text.strip().startswith("```"):
-                text = text.strip().split("\n", 1)[1].rsplit("```", 1)[0]
+                parts = text.strip().split("\n", 1)
+                text = parts[1].rsplit("```", 1)[0] if len(parts) > 1 else parts[0]
             mlt_data = json.loads(text)
             if _validate_mlt(mlt_data, attempt):
                 mlt_data = _sanitize_mlt(mlt_data)

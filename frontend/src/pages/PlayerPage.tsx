@@ -616,7 +616,7 @@ export default function PlayerPage() {
                                         2x Points
                                     </button>
                                 )}
-                                {powerUps.fifty_fifty && currentQuestion.options.length === 4 && (
+                                {powerUps.fifty_fifty && currentQuestion?.options?.length === 4 && (
                                     <button onClick={() => activatePowerUp('fifty_fifty')} className="power-up-btn">
                                         50/50
                                     </button>
