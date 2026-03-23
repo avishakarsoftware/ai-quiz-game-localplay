@@ -36,10 +36,9 @@ class TestHealthEndpoints:
         assert res.status_code == 200
         assert res.json()["status"] == "healthy"
 
-    def test_system_info(self):
+    def test_system_info_requires_admin(self):
         res = client.get("/system/info")
-        assert res.status_code == 200
-        assert "ip" in res.json()
+        assert res.status_code in (403, 401)  # blocked without admin key
 
 
 # ---------------------------------------------------------------------------
@@ -299,15 +298,19 @@ class TestExportImport:
         res = client.post("/quiz/import", json={"quiz": {"title": "bad"}})
         assert res.status_code == 422
 
-    def test_roundtrip_export_import(self):
-        """Export a quiz and re-import it."""
+    def test_export_strips_answers(self):
+        """Exported quiz should not contain answer_index (anti-cheat)."""
+        qid = seed_quiz()
+        exported = client.get(f"/quiz/{qid}/export").json()["quiz"]
+        for q in exported["questions"]:
+            assert "answer_index" not in q
+
+    def test_roundtrip_export_import_fails_without_answers(self):
+        """Exported quiz (answers stripped) cannot be re-imported as-is."""
         qid = seed_quiz()
         exported = client.get(f"/quiz/{qid}/export").json()["quiz"]
         res = client.post("/quiz/import", json={"quiz": exported})
-        assert res.status_code == 200
-        new_qid = res.json()["quiz_id"]
-        assert new_qid != qid  # Different ID
-        assert res.json()["quiz"]["quiz_title"] == "Test Quiz"
+        assert res.status_code == 422  # Missing answer_index
 
 
 # ---------------------------------------------------------------------------

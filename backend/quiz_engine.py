@@ -105,11 +105,11 @@ def _validate_quiz(quiz_data: dict, attempt: int) -> bool:
     return True
 
 
-async def _generate_ollama(prompt: str, difficulty: str, num_questions: int) -> Optional[dict]:
+async def _generate_ollama(prompt: str, difficulty: str, num_questions: int, model_override: Optional[str] = None) -> Optional[dict]:
     system_prompt = _build_system_prompt(difficulty, num_questions)
     wrapped_topic = _wrap_user_topic(prompt)
     payload = {
-        "model": config.OLLAMA_MODEL,
+        "model": model_override or config.OLLAMA_MODEL,
         "prompt": f"{system_prompt}\n\n{wrapped_topic}",
         "stream": False,
         "format": "json"
@@ -209,7 +209,7 @@ async def _generate_gemini(prompt: str, difficulty: str, num_questions: int, mod
     return None
 
 
-async def _generate_claude(prompt: str, difficulty: str, num_questions: int) -> Optional[dict]:
+async def _generate_claude(prompt: str, difficulty: str, num_questions: int, model_override: Optional[str] = None) -> Optional[dict]:
     if not config.ANTHROPIC_API_KEY:
         logger.error("Anthropic API key not configured")
         return None
@@ -222,7 +222,7 @@ async def _generate_claude(prompt: str, difficulty: str, num_questions: int) -> 
         "content-type": "application/json",
     }
     payload = {
-        "model": config.ANTHROPIC_MODEL,
+        "model": model_override or config.ANTHROPIC_MODEL,
         "max_tokens": 4096,
         "system": system_prompt,
         "messages": [{"role": "user", "content": _wrap_user_topic(prompt)}],
@@ -315,7 +315,7 @@ class QuizEngine:
         self._daily_count += 1
         logger.info("Daily quiz count: %d/%d", self._daily_count, config.DAILY_QUIZ_LIMIT)
         try:
-            if model_override and provider == "gemini":
+            if model_override:
                 result = await gen_fn(prompt, difficulty, num_questions, model_override=model_override)
             else:
                 result = await gen_fn(prompt, difficulty, num_questions)

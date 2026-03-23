@@ -1,5 +1,6 @@
 from fastapi import WebSocket, WebSocketDisconnect
 from typing import Dict, List, Optional
+import copy
 import json
 import hmac
 import secrets
@@ -63,7 +64,7 @@ class Room:
                            game_type: Optional[str] = None,
                            content_id: Optional[str] = None):
         """Reset room for a new game round, keeping players connected."""
-        self.quiz = new_game_data
+        self.quiz = copy.deepcopy(new_game_data)
         self.time_limit = new_time_limit
         if game_type:
             self.game_type = game_type
@@ -293,8 +294,7 @@ class SocketManager:
         return room
 
     async def connect(self, websocket: WebSocket, room_code: str, client_id: str,
-                      is_organizer: bool = False, is_spectator: bool = False,
-                      token: str = ""):
+                      is_organizer: bool = False, is_spectator: bool = False):
         # Validate WebSocket origin
         origin = websocket.headers.get("origin", "")
         if self.allowed_origins and origin not in self.allowed_origins:
@@ -310,10 +310,17 @@ class SocketManager:
 
         room = self.rooms[room_code]
 
-        # Verify organizer token
+        # Organizer auth: first-frame AUTH message required
         if is_organizer:
-            if not token or not hmac.compare_digest(token, room.organizer_token):
-                await websocket.send_json({"type": "ERROR", "message": "Invalid organizer token"})
+            try:
+                auth_msg = await asyncio.wait_for(websocket.receive_json(), timeout=5.0)
+                auth_token = auth_msg.get("token", "") if isinstance(auth_msg, dict) and auth_msg.get("type") == "AUTH" else ""
+                if not auth_token or not hmac.compare_digest(auth_token, room.organizer_token):
+                    await websocket.send_json({"type": "ERROR", "message": "Invalid organizer token"})
+                    await websocket.close()
+                    return
+            except (asyncio.TimeoutError, Exception):
+                await websocket.send_json({"type": "ERROR", "message": "Organizer authentication required"})
                 await websocket.close()
                 return
 
@@ -580,20 +587,6 @@ class SocketManager:
                 async with room.lock:
                     if room.state != "PODIUM":
                         return
-                    # Charge sparks for new game
-                    if not room.wallet_id:
-                        await self._send_to_client(room, client_id, {
-                            "type": "ERROR",
-                            "message": "Internal error: wallet not configured.",
-                        })
-                        return
-                    spent, _ = token_module.spend_room(room.wallet_id)
-                    if not spent:
-                        await self._send_to_client(room, client_id, {
-                            "type": "INSUFFICIENT_SPARKS",
-                            "message": f"You need {config.COST_ROOM} sparks to start a new game.",
-                        })
-                        return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
                     new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt") else room.game_type
@@ -606,7 +599,7 @@ class SocketManager:
                         new_time_limit = room.time_limit
                     new_time_limit = max(5, min(60, new_time_limit))
 
-                    # Resolve game data from content store by ID
+                    # Validate content BEFORE charging
                     from main import quizzes, mlt_scenarios
                     if new_game_type == "wmlt":
                         new_game_data = mlt_scenarios.get(new_content_id)
@@ -616,9 +609,31 @@ class SocketManager:
                     if not new_game_data:
                         logger.warning("RESET_ROOM rejected: content_id %s not found for room %s",
                                        new_content_id, room.room_code)
-                        ws = room.connections.get(client_id)
-                        if ws:
-                            await ws.send_json({"type": "ERROR", "message": "Game content not found. Please generate a new game."})
+                        await self._send_to_client(room, client_id, {"type": "ERROR", "message": "Game content not found. Please generate a new game."})
+                        return
+
+                    # Check content ownership
+                    from main import content_owners
+                    owner = content_owners.get(new_content_id)
+                    if owner and room.wallet_id and owner != room.wallet_id:
+                        logger.warning("RESET_ROOM rejected: content %s owned by %s, room wallet %s",
+                                       new_content_id, owner[:8], room.wallet_id[:8])
+                        await self._send_to_client(room, client_id, {"type": "ERROR", "message": "You don't have permission to use this content."})
+                        return
+
+                    # Charge sparks only after content is validated
+                    if not room.wallet_id:
+                        await self._send_to_client(room, client_id, {
+                            "type": "ERROR",
+                            "message": "Internal error: wallet not configured.",
+                        })
+                        return
+                    spent, _ = token_module.spend_room(room.wallet_id)
+                    if not spent:
+                        await self._send_to_client(room, client_id, {
+                            "type": "INSUFFICIENT_SPARKS",
+                            "message": f"You need {config.COST_ROOM} sparks to start a new game.",
+                        })
                         return
 
                     room.reset_for_new_game(new_game_data, new_time_limit,
@@ -1058,6 +1073,7 @@ class SocketManager:
             "team_leaderboard": self.get_team_leaderboard(room),
             "answer_log": room.answer_log,
             "completed_at": time.time(),
+            "wallet_id": room.wallet_id or "",
         }
 
     def _select_bonus_questions(self, room: Room):

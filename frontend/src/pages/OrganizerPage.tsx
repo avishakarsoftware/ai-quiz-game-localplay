@@ -396,7 +396,11 @@ export default function OrganizerPage() {
                 headers: apiHeaders(),
                 body: JSON.stringify(updated),
             });
-            if (!res.ok) console.error('Failed to save quiz update:', res.status);
+            if (res.status === 403) {
+                setErrorModal({ title: 'Permission Denied', message: "You don't have permission to modify this content." });
+            } else if (!res.ok) {
+                console.error('Failed to save quiz update:', res.status);
+            }
         } catch (err) {
             console.error('Failed to save quiz update:', err);
         }
@@ -411,7 +415,11 @@ export default function OrganizerPage() {
                 headers: apiHeaders(),
                 body: JSON.stringify(updated),
             });
-            if (!res.ok) console.error('Failed to save MLT update:', res.status);
+            if (res.status === 403) {
+                setErrorModal({ title: 'Permission Denied', message: "You don't have permission to modify this content." });
+            } else if (!res.ok) {
+                console.error('Failed to save MLT update:', res.status);
+            }
         } catch (err) {
             console.error('Failed to save MLT update:', err);
         }
@@ -423,9 +431,12 @@ export default function OrganizerPage() {
             wsRef.current.close();
         }
         const clientId = `organizer-${Date.now()}`;
-        const token = encodeURIComponent(organizerTokenRef.current);
-        const ws = new WebSocket(`${WS_URL}/ws/${code}/${clientId}?organizer=true&token=${token}`);
+        const ws = new WebSocket(`${WS_URL}/ws/${code}/${clientId}?organizer=true`);
         wsRef.current = ws;
+        ws.onopen = () => {
+            // First-frame auth: send token as first message instead of query string
+            ws.send(JSON.stringify({ type: 'AUTH', token: organizerTokenRef.current }));
+        };
         ws.onmessage = handleWsMessage;
         ws.onclose = () => {
             wsRef.current = null;
@@ -762,8 +773,14 @@ export default function OrganizerPage() {
                                         track('tokens_purchased', { source: 'stripe', tokens_added: data.tokens_added });
                                         window.dispatchEvent(new CustomEvent('refresh-sparks'));
                                         setErrorModal({ title: 'Sparks Added!', message: `+${data.tokens_added} sparks added to your balance. Enjoy!` });
+                                    } else if (tokenRes.status >= 500) {
+                                        // Server error — stop polling, don't wait 60s
+                                        clearCheckoutPending();
+                                        if (checkoutPollRef.current) clearInterval(checkoutPollRef.current);
+                                        checkoutPollRef.current = null;
+                                        setErrorModal({ title: 'Checkout Issue', message: 'There was a server error processing your purchase. Your payment is safe — sparks will be added shortly.' });
                                     }
-                                } catch { /* keep polling */ }
+                                } catch { /* network error — keep polling */ }
                             }, 2000);
                         } catch {
                             setErrorModal({ title: 'Connection Error', message: 'Could not reach the server.' });

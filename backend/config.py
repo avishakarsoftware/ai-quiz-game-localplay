@@ -90,6 +90,7 @@ STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")
 CHECKOUT_RETURN_URL = os.getenv("CHECKOUT_RETURN_URL", "")  # explicit return URL for Stripe checkout
+REMOTE_CONFIG_URL = os.getenv("REMOTE_CONFIG_URL", "")  # e.g. https://games.revelryapp.me/quiz/config.json
 
 # --- Auth (Phase 2) ---
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")

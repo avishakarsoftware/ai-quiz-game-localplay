@@ -13,6 +13,7 @@ import uuid
 import string
 import secrets
 import base64
+import hmac
 import logging
 import socket as socketlib
 
@@ -26,14 +27,31 @@ from image_engine import image_engine
 import tokens
 import db
 import auth
+import remote_config
 
 logger = logging.getLogger(__name__)
+
+
+def _check_secret_strength():
+    """Warn on weak or missing secrets at startup."""
+    warnings = []
+    if config.JWT_SECRET and len(config.JWT_SECRET) < 32:
+        warnings.append("JWT_SECRET is too short (< 32 chars) — sessions may be forgeable")
+    if config.STRIPE_WEBHOOK_SECRET and not config.STRIPE_WEBHOOK_SECRET.startswith("whsec_"):
+        warnings.append("STRIPE_WEBHOOK_SECRET doesn't look like a Stripe webhook secret")
+    if ADMIN_API_KEY and len(ADMIN_API_KEY) < 16:
+        warnings.append("ADMIN_API_KEY is too short (< 16 chars) — easily guessable")
+    for w in warnings:
+        logger.warning("SECRET CHECK: %s", w)
+    return warnings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting LocalPlay backend")
+    _check_secret_strength()
     db.init_db()
+    await remote_config.init()
     socket_manager.start_cleanup_loop()
     yield
     logger.info("Shutting down LocalPlay backend")
@@ -57,7 +75,11 @@ def get_local_ip():
 
 
 @app.get("/system/info")
-async def get_system_info():
+async def get_system_info(req: Request):
+    """Internal IP info — always requires admin key."""
+    if not ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Admin API key not configured")
+    _check_admin(req)
     return {"ip": get_local_ip()}
 
 
@@ -66,6 +88,9 @@ _rate_limit_store: Dict[str, list] = defaultdict(list)
 
 # Global LLM call budget — protects API bill regardless of IP count
 _llm_call_timestamps: list = []
+
+# Stripe webhook event dedup — prevents double-processing on retries
+# Webhook event dedup moved to db.webhook_events table
 
 
 def _get_client_ip(req: Request) -> str:
@@ -121,6 +146,16 @@ quiz_images: Dict[str, Dict[int, str]] = {}  # quiz_id -> {question_id: base64_i
 mlt_scenarios: Dict[str, dict] = {}  # scenario_id -> {game_title, statements}
 mlt_timestamps: Dict[str, float] = {}  # scenario_id -> creation time
 
+# Content ownership: content_id -> wallet_id of creator
+content_owners: Dict[str, str] = {}
+
+
+def _check_content_owner(content_id: str, wallet_id: str):
+    """Raise 403 if wallet_id doesn't own this content."""
+    owner = content_owners.get(content_id)
+    if owner and owner != wallet_id:
+        raise HTTPException(status_code=403, detail="You don't have permission to modify this content")
+
 
 def _evict_old_content():
     """Evict oldest quizzes/MLT scenarios if storage limit exceeded, and expire stale ones."""
@@ -135,6 +170,7 @@ def _evict_old_content():
         quizzes.pop(qid, None)
         quiz_timestamps.pop(qid, None)
         quiz_images.pop(qid, None)
+        content_owners.pop(qid, None)
     # Evict oldest non-active quizzes until under limit
     if len(quizzes) >= config.MAX_QUIZZES:
         for qid in sorted(quiz_timestamps, key=quiz_timestamps.get):
@@ -144,6 +180,7 @@ def _evict_old_content():
                 quizzes.pop(qid, None)
                 quiz_timestamps.pop(qid, None)
                 quiz_images.pop(qid, None)
+                content_owners.pop(qid, None)
 
     # Evict MLT scenarios
     expired_mlt = [sid for sid, ts in mlt_timestamps.items()
@@ -151,6 +188,7 @@ def _evict_old_content():
     for sid in expired_mlt:
         mlt_scenarios.pop(sid, None)
         mlt_timestamps.pop(sid, None)
+        content_owners.pop(sid, None)
     if len(mlt_scenarios) >= config.MAX_QUIZZES:
         for sid in sorted(mlt_timestamps, key=mlt_timestamps.get):
             if len(mlt_scenarios) < config.MAX_QUIZZES:
@@ -158,6 +196,7 @@ def _evict_old_content():
             if sid not in active_content_ids:
                 mlt_scenarios.pop(sid, None)
                 mlt_timestamps.pop(sid, None)
+                content_owners.pop(sid, None)
 
 def generate_room_code() -> str:
     """Generate a unique 6-character room code, checking for collisions."""
@@ -262,7 +301,7 @@ async def generate_quiz(request: QuizRequest, req: Request):
     if idem_key:
         cached_id = db.check_idempotency(idem_key, device_id)
         if cached_id and cached_id in quizzes:
-            return {"quiz_id": cached_id, "quiz": quizzes[cached_id]}
+            return {"quiz_id": cached_id, "quiz": _strip_answers(quizzes[cached_id])}
 
     # Resolve wallet and check token balance
     wallet_id = tokens.get_wallet_id(req)
@@ -275,9 +314,11 @@ async def generate_quiz(request: QuizRequest, req: Request):
     if not _check_llm_budget():
         raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
 
-    model_override = config.GEMINI_PREMIUM_MODEL if tokens.use_premium_model(wallet_id) and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
+    await remote_config.get_config()  # refresh if stale
+    provider = request.provider or remote_config.get_provider()
+    model_override = remote_config.get_paid_model() if tokens.use_premium_model(wallet_id) else remote_config.get_free_model()
     try:
-        quiz_data = await quiz_engine.generate_quiz(request.prompt, request.difficulty, request.num_questions, request.provider, model_override=model_override)
+        quiz_data = await quiz_engine.generate_quiz(request.prompt, request.difficulty, request.num_questions, provider, model_override=model_override)
     except DailyLimitExceeded:
         raise HTTPException(status_code=429, detail="Daily quiz limit reached. Please try again tomorrow!")
     except AIQuotaExceeded:
@@ -294,10 +335,11 @@ async def generate_quiz(request: QuizRequest, req: Request):
     quiz_id = str(uuid.uuid4())
     quizzes[quiz_id] = quiz_data
     quiz_timestamps[quiz_id] = time.time()
+    content_owners[quiz_id] = wallet_id
     if idem_key:
         db.record_idempotency(idem_key, device_id, quiz_id)
-    logger.info("Quiz created: %s ('%s')", quiz_id, quiz_data.get("quiz_title", "Untitled"))
-    return {"quiz_id": quiz_id, "quiz": quiz_data}
+    logger.info("Quiz created: %s ('%s') owner=%s", quiz_id, quiz_data.get("quiz_title", "Untitled"), wallet_id[:8])
+    return {"quiz_id": quiz_id, "quiz": _strip_answers(quiz_data)}
 
 
 def _strip_answers(quiz_data: dict) -> dict:
@@ -342,20 +384,28 @@ class QuizUpdateRequest(BaseModel):
 
 
 @app.put("/quiz/{quiz_id}")
-async def update_quiz(quiz_id: str, request: QuizUpdateRequest):
+async def update_quiz(quiz_id: str, request: QuizUpdateRequest, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     if quiz_id not in quizzes:
         raise HTTPException(status_code=404, detail="Quiz not found")
+    _check_content_owner(quiz_id, wallet_id)
     quiz_data = {"quiz_title": request.quiz_title, "questions": request.questions}
     quiz_data = _sanitize_quiz(quiz_data)
     quizzes[quiz_id] = quiz_data
     logger.info("Quiz updated: %s ('%s'), %d questions", quiz_id, quiz_data["quiz_title"], len(quiz_data["questions"]))
-    return {"quiz_id": quiz_id, "quiz": quizzes[quiz_id]}
+    return {"quiz_id": quiz_id, "quiz": _strip_answers(quizzes[quiz_id])}
 
 
 @app.delete("/quiz/{quiz_id}/question/{question_id}")
-async def delete_question(quiz_id: str, question_id: int):
+async def delete_question(quiz_id: str, question_id: int, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     if quiz_id not in quizzes:
         raise HTTPException(status_code=404, detail="Quiz not found")
+    _check_content_owner(quiz_id, wallet_id)
     quiz = quizzes[quiz_id]
     remaining = [q for q in quiz["questions"] if q["id"] != question_id]
     if len(remaining) == len(quiz["questions"]):
@@ -364,14 +414,21 @@ async def delete_question(quiz_id: str, question_id: int):
         raise HTTPException(status_code=400, detail="Cannot delete the last question")
     quiz["questions"] = remaining
     logger.info("Question %d deleted from quiz %s", question_id, quiz_id)
-    return {"quiz_id": quiz_id, "quiz": quiz}
+    return {"quiz_id": quiz_id, "quiz": _strip_answers(quiz)}
 
 
 @app.post("/quiz/generate-images")
-async def generate_quiz_images(request: ImageGenerateRequest):
+async def generate_quiz_images(request: ImageGenerateRequest, req: Request):
     """Generate images for quiz questions using Stable Diffusion"""
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    client_ip = _get_client_ip(req)
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait.")
     if request.quiz_id not in quizzes:
         raise HTTPException(status_code=404, detail="Quiz not found")
+    _check_content_owner(request.quiz_id, wallet_id)
 
     if not await image_engine.is_available():
         raise HTTPException(status_code=503, detail="Stable Diffusion not available. Start the SD WebUI server.")
@@ -447,6 +504,10 @@ async def create_room(request: RoomCreateRequest, req: Request):
     room_code = generate_room_code()
     organizer_token = secrets.token_urlsafe(32)
 
+    # Copy game data to avoid mutating the stored original
+    import copy
+    game_data = copy.deepcopy(game_data)
+
     # Attach image URLs to quiz data if available (quiz only)
     if request.game_type == "quiz" and content_id in quiz_images:
         for question in game_data["questions"]:
@@ -463,21 +524,23 @@ async def create_room(request: RoomCreateRequest, req: Request):
 
 @app.websocket("/ws/{room_code}/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, room_code: str, client_id: str,
-                             organizer: bool = False, spectator: bool = False,
-                             token: str = ""):
+                             organizer: bool = False, spectator: bool = False):
     await socket_manager.connect(websocket, room_code, client_id,
-                                 is_organizer=organizer, is_spectator=spectator,
-                                 token=token)
+                                 is_organizer=organizer, is_spectator=spectator)
 
 
 # --- Export / Import ---
 
 @app.get("/quiz/{quiz_id}/export")
-async def export_quiz(quiz_id: str):
-    """Export a quiz as JSON for sharing/reuse."""
+async def export_quiz(quiz_id: str, req: Request):
+    """Export a quiz as JSON for sharing/reuse. Answers stripped."""
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     if quiz_id not in quizzes:
         raise HTTPException(status_code=404, detail="Quiz not found")
-    return {"quiz": quizzes[quiz_id]}
+    _check_content_owner(quiz_id, wallet_id)
+    return {"quiz": _strip_answers(quizzes[quiz_id])}
 
 
 class QuizImportRequest(BaseModel):
@@ -503,8 +566,11 @@ class QuizImportRequest(BaseModel):
 
 
 @app.post("/quiz/import")
-async def import_quiz(request: QuizImportRequest):
+async def import_quiz(request: QuizImportRequest, req: Request):
     """Import a previously exported quiz."""
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     _evict_old_content()
     quiz_id = str(uuid.uuid4())
     quiz_data = _sanitize_quiz(request.quiz)
@@ -512,8 +578,9 @@ async def import_quiz(request: QuizImportRequest):
         raise HTTPException(status_code=422, detail="Invalid quiz data: check questions, options, and answer_index values")
     quizzes[quiz_id] = quiz_data
     quiz_timestamps[quiz_id] = time.time()
-    logger.info("Quiz imported: %s ('%s')", quiz_id, quiz_data.get("quiz_title", "Untitled"))
-    return {"quiz_id": quiz_id, "quiz": quizzes[quiz_id]}
+    content_owners[quiz_id] = wallet_id
+    logger.info("Quiz imported: %s ('%s') owner=%s", quiz_id, quiz_data.get("quiz_title", "Untitled"), wallet_id[:8])
+    return {"quiz_id": quiz_id, "quiz": _strip_answers(quizzes[quiz_id])}
 
 
 # --- MLT (Most Likely To) Endpoints ---
@@ -595,9 +662,11 @@ async def generate_mlt(request: MLTRequest, req: Request):
     if not _check_llm_budget():
         raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
 
-    model_override = config.GEMINI_PREMIUM_MODEL if tokens.use_premium_model(wallet_id) and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
+    await remote_config.get_config()  # refresh if stale
+    provider = request.provider or remote_config.get_provider()
+    model_override = remote_config.get_paid_model() if tokens.use_premium_model(wallet_id) else remote_config.get_free_model()
     try:
-        mlt_data = await mlt_engine.generate_statements(request.prompt, request.difficulty, request.num_rounds, request.provider, model_override=model_override)
+        mlt_data = await mlt_engine.generate_statements(request.prompt, request.difficulty, request.num_rounds, provider, model_override=model_override)
     except DailyLimitExceeded:
         raise HTTPException(status_code=429, detail="Daily generation limit reached. Please try again tomorrow!")
     except AIQuotaExceeded:
@@ -614,9 +683,10 @@ async def generate_mlt(request: MLTRequest, req: Request):
     scenario_id = str(uuid.uuid4())
     mlt_scenarios[scenario_id] = mlt_data
     mlt_timestamps[scenario_id] = time.time()
+    content_owners[scenario_id] = wallet_id
     if idem_key:
         db.record_idempotency(idem_key, device_id, scenario_id)
-    logger.info("MLT created: %s ('%s')", scenario_id, mlt_data.get("game_title", "Untitled"))
+    logger.info("MLT created: %s ('%s') owner=%s", scenario_id, mlt_data.get("game_title", "Untitled"), wallet_id[:8])
     return {"scenario_id": scenario_id, "game": mlt_data}
 
 
@@ -645,9 +715,13 @@ class MLTUpdateRequest(BaseModel):
 
 
 @app.put("/mlt/{scenario_id}")
-async def update_mlt(scenario_id: str, request: MLTUpdateRequest):
+async def update_mlt(scenario_id: str, request: MLTUpdateRequest, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     if scenario_id not in mlt_scenarios:
         raise HTTPException(status_code=404, detail="MLT scenario not found")
+    _check_content_owner(scenario_id, wallet_id)
     mlt_data = {"game_title": request.game_title, "statements": request.statements}
     mlt_data = _sanitize_mlt(mlt_data)
     mlt_scenarios[scenario_id] = mlt_data
@@ -656,9 +730,13 @@ async def update_mlt(scenario_id: str, request: MLTUpdateRequest):
 
 
 @app.delete("/mlt/{scenario_id}/statement/{statement_id}")
-async def delete_mlt_statement(scenario_id: str, statement_id: int):
+async def delete_mlt_statement(scenario_id: str, statement_id: int, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     if scenario_id not in mlt_scenarios:
         raise HTTPException(status_code=404, detail="MLT scenario not found")
+    _check_content_owner(scenario_id, wallet_id)
     game = mlt_scenarios[scenario_id]
     remaining = [s for s in game["statements"] if s["id"] != statement_id]
     if len(remaining) == len(game["statements"]):
@@ -670,9 +748,13 @@ async def delete_mlt_statement(scenario_id: str, statement_id: int):
 
 
 @app.get("/mlt/{scenario_id}/export")
-async def export_mlt(scenario_id: str):
+async def export_mlt(scenario_id: str, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     if scenario_id not in mlt_scenarios:
         raise HTTPException(status_code=404, detail="MLT scenario not found")
+    _check_content_owner(scenario_id, wallet_id)
     return {"game": mlt_scenarios[scenario_id]}
 
 
@@ -695,7 +777,10 @@ class MLTImportRequest(BaseModel):
 
 
 @app.post("/mlt/import")
-async def import_mlt(request: MLTImportRequest):
+async def import_mlt(request: MLTImportRequest, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     _evict_old_content()
     scenario_id = str(uuid.uuid4())
     mlt_data = _sanitize_mlt(request.game)
@@ -703,7 +788,8 @@ async def import_mlt(request: MLTImportRequest):
         raise HTTPException(status_code=422, detail="Invalid MLT data: check statements have id and text fields")
     mlt_scenarios[scenario_id] = mlt_data
     mlt_timestamps[scenario_id] = time.time()
-    logger.info("MLT imported: %s ('%s')", scenario_id, mlt_data.get("game_title", "Untitled"))
+    content_owners[scenario_id] = wallet_id
+    logger.info("MLT imported: %s ('%s') owner=%s", scenario_id, mlt_data.get("game_title", "Untitled"), wallet_id[:8])
     return {"scenario_id": scenario_id, "game": mlt_scenarios[scenario_id]}
 
 
@@ -714,22 +800,25 @@ game_history: List[dict] = []
 
 @app.get("/history")
 async def get_game_history(req: Request):
-    """Get history of completed games. Requires device identity."""
+    """Get history of completed games scoped to the requesting wallet."""
     wallet_id = tokens.get_wallet_id(req)
     if not wallet_id:
         raise HTTPException(status_code=401, detail="Authentication required")
-    return {"games": game_history}
+    my_games = [g for g in game_history if g.get("wallet_id") == wallet_id]
+    return {"games": my_games}
 
 
 @app.get("/history/{room_code}")
 async def get_game_detail(room_code: str, req: Request):
-    """Get detailed results of a specific game. Requires device identity."""
+    """Get detailed results of a specific game. Must be the organizer."""
     wallet_id = tokens.get_wallet_id(req)
     if not wallet_id:
         raise HTTPException(status_code=401, detail="Authentication required")
     game = next((g for g in game_history if g["room_code"] == room_code), None)
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
+    if game.get("wallet_id") != wallet_id:
+        raise HTTPException(status_code=403, detail="Not your game")
     return game
 
 
@@ -806,6 +895,11 @@ async def auth_signin(request: SignInRequest, req: Request):
     result = auth.signin(request.provider, request.id_token, request.device_id)
     if not result:
         raise HTTPException(status_code=401, detail="Invalid or expired ID token")
+    # Migrate game history from device wallet to user wallet
+    user_id = result["user"]["id"]
+    for game in game_history:
+        if game.get("wallet_id") == request.device_id:
+            game["wallet_id"] = user_id
     return result
 
 
@@ -917,6 +1011,12 @@ async def stripe_webhook(req: Request):
         logger.warning("Stripe webhook signature failed: %s", e)
         raise HTTPException(status_code=400, detail="Invalid signature")
 
+    # Deduplicate webhook events (DB-backed, survives restarts)
+    event_id = event.get("id", "")
+    if event_id and db.is_webhook_event_processed(event_id):
+        logger.info("Skipping duplicate webhook event: %s", event_id)
+        return {"status": "ok", "detail": "already processed"}
+
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         stripe_session_id = session.get("id", "")
@@ -941,6 +1041,8 @@ async def stripe_webhook(req: Request):
         except (ValueError, TypeError):
             raw_token_amount = config.TOKEN_PACK_AMOUNT
         token_amount = min(raw_token_amount, max_allowed) if raw_token_amount > 0 else config.TOKEN_PACK_AMOUNT
+        if raw_token_amount > max_allowed:
+            logger.warning("Refund token_amount capped: requested %d, allowed %d (session %s)", raw_token_amount, max_allowed, stripe_session_id[:8])
         promo_id = metadata.get("promo_id", "")
         txn_metadata = json.dumps({"promo_id": promo_id}) if promo_id else ""
 
@@ -966,20 +1068,44 @@ async def stripe_webhook(req: Request):
                     refund_metadata = sessions.data[0].metadata
                     wallet_id = refund_metadata.get("wallet_id", "")
                     try:
-                        raw_refund = int(refund_metadata.get("token_amount") or config.TOKEN_PACK_AMOUNT)
+                        tokens_purchased = int(refund_metadata.get("token_amount") or config.TOKEN_PACK_AMOUNT)
                     except (ValueError, TypeError):
-                        raw_refund = config.TOKEN_PACK_AMOUNT
-                    refund_max = max(config.TOKEN_PACK_AMOUNT, config.PROMO_TOKEN_AMOUNT) if config.PROMO_TOKEN_AMOUNT > 0 else config.TOKEN_PACK_AMOUNT
-                    refund_amount = min(raw_refund, refund_max) if raw_refund > 0 else config.TOKEN_PACK_AMOUNT
-                    if wallet_id:
-                        success, _ = db.debit_tokens(wallet_id, refund_amount, "refund", stripe_session_id)
+                        tokens_purchased = config.TOKEN_PACK_AMOUNT
+                    token_cap = max(config.TOKEN_PACK_AMOUNT, config.PROMO_TOKEN_AMOUNT) if config.PROMO_TOKEN_AMOUNT > 0 else config.TOKEN_PACK_AMOUNT
+                    tokens_purchased = min(tokens_purchased, token_cap) if tokens_purchased > 0 else config.TOKEN_PACK_AMOUNT
+
+                    # Prorate tokens for partial refunds based on cumulative refund/charge ratio
+                    charge_amount = charge.get("amount", 0)  # cents
+                    refunded_amount = charge.get("amount_refunded", charge_amount)  # cents (cumulative)
+                    if charge_amount > 0 and refunded_amount < charge_amount:
+                        # Partial refund — prorate tokens proportionally, round up
+                        total_owed = max(1, -(-tokens_purchased * refunded_amount // charge_amount))
+                    else:
+                        # Full refund or dispute
+                        total_owed = tokens_purchased
+
+                    # Subtract tokens already debited for prior refunds on this session
+                    already_debited = db.get_refund_debits_for_session(stripe_session_id)
+                    refund_tokens = max(0, total_owed - already_debited)
+
+                    if wallet_id and refund_tokens > 0:
+                        success, _ = db.debit_tokens(wallet_id, refund_tokens, "refund", stripe_session_id)
                         if not success:
-                            logger.warning("Failed to debit tokens for refund: wallet=%s session=%s", wallet_id, stripe_session_id)
+                            logger.warning("Failed to debit tokens for refund: wallet=%s session=%s amount=%d",
+                                           wallet_id, stripe_session_id, refund_tokens)
                         else:
-                            logger.info("Debited %d tokens from wallet %s (refund, session %s)",
-                                        refund_amount, wallet_id[:8], stripe_session_id[:8])
+                            logger.info("Debited %d tokens from wallet %s (refund %d/%d cents, prior=%d, session %s)",
+                                        refund_tokens, wallet_id[:8], refunded_amount, charge_amount, already_debited, stripe_session_id[:8])
+                    elif wallet_id and refund_tokens == 0:
+                        logger.info("Refund already fully debited for session %s (owed=%d, debited=%d)",
+                                    stripe_session_id[:8], total_owed, already_debited)
             except Exception as e:
                 logger.error("Failed to process refund: %s", e)
+                raise  # Let Stripe retry — don't mark event as processed
+
+    # Mark event as processed AFTER business logic succeeds
+    if event_id:
+        db.mark_webhook_event_processed(event_id)
 
     return {"status": "ok"}
 
@@ -1072,11 +1198,12 @@ ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
 
 
 def _check_admin(req: Request):
-    """Verify admin API key from Authorization header."""
+    """Verify admin API key from Authorization header (constant-time compare)."""
     if not ADMIN_API_KEY:
         raise HTTPException(status_code=503, detail="Admin API not configured")
     auth_header = req.headers.get("Authorization", "")
-    if auth_header != f"Bearer {ADMIN_API_KEY}":
+    expected = f"Bearer {ADMIN_API_KEY}"
+    if not hmac.compare_digest(auth_header.encode(), expected.encode()):
         raise HTTPException(status_code=403, detail="Forbidden")
 
 

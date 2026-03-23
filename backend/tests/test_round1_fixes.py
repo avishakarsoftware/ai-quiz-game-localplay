@@ -5,6 +5,7 @@ import os
 import uuid
 import threading
 import time
+from contextlib import contextmanager
 
 import pytest
 
@@ -99,8 +100,12 @@ def create_room(quiz_id=None, mlt_id=None, game_type="quiz", time_limit=30):
     return data["room_code"], data["organizer_token"]
 
 
-def org_url(room_code, token, client_id="org-1"):
-    return f"/ws/{room_code}/{client_id}?organizer=true&token={token}"
+@contextmanager
+def org_connect(room_code, token, client_id="org-1"):
+    """Connect as organizer and send first-frame AUTH."""
+    with client.websocket_connect(f"/ws/{room_code}/{client_id}?organizer=true") as ws:
+        ws.send_json({"type": "AUTH", "token": token})
+        yield ws
 
 
 def player_url(room_code, client_id):
@@ -128,7 +133,7 @@ class TestNicknameCaseSensitivity:
         quiz_id = seed_quiz()
         room_code, token = create_room(quiz_id)
 
-        with client.websocket_connect(org_url(room_code, token)) as org_ws:
+        with org_connect(room_code, token) as org_ws:
             org_ws.receive_json()  # ROOM_CREATED
             with client.websocket_connect(player_url(room_code, "p1")) as p1_ws:
                 p1_ws.send_json({"type": "JOIN", "nickname": "Alice"})
@@ -201,7 +206,7 @@ class TestResetRoomGameType:
         quiz_id = seed_quiz(num_questions=2)
         room_code, token = create_room(quiz_id)
 
-        with client.websocket_connect(org_url(room_code, token)) as org_ws:
+        with org_connect(room_code, token) as org_ws:
             org_ws.receive_json()  # ROOM_CREATED
             with client.websocket_connect(player_url(room_code, "p1")) as p1_ws:
                 p1_ws.send_json({"type": "JOIN", "nickname": "Alice"})
@@ -317,7 +322,7 @@ class TestTeamLeaderboard:
         quiz_id = seed_quiz(num_questions=2)
         room_code, token = create_room(quiz_id)
 
-        with client.websocket_connect(org_url(room_code, token)) as org_ws:
+        with org_connect(room_code, token) as org_ws:
             org_ws.receive_json()  # ROOM_CREATED
             with client.websocket_connect(player_url(room_code, "p1")) as p1_ws:
                 p1_ws.send_json({"type": "JOIN", "nickname": "Alice"})

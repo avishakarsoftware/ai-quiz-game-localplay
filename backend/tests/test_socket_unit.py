@@ -1183,9 +1183,106 @@ class TestSparkChargingResetRoom:
         add_player(room, "p1", "Alice")
         room.state = "PODIUM"
         room.wallet_id = "test-wallet-id"
-        with patch("socket_manager.token_module.spend_room", return_value=(False, 0)):
-            await sm.handle_message(room, "org-1", {
-                "type": "RESET_ROOM", "content_id": "some-quiz", "time_limit": 20
-            }, is_organizer=True)
-        assert room.state == "PODIUM"
-        assert org_ws.last("INSUFFICIENT_SPARKS") is not None
+        # Seed valid content so validation passes, then charge fails
+        new_quiz = make_quiz(3)
+        from main import quizzes
+        quizzes["insuff-quiz"] = new_quiz
+        try:
+            with patch("socket_manager.token_module.spend_room", return_value=(False, 0)):
+                await sm.handle_message(room, "org-1", {
+                    "type": "RESET_ROOM", "content_id": "insuff-quiz", "time_limit": 20
+                }, is_organizer=True)
+            assert room.state == "PODIUM"
+            assert org_ws.last("INSUFFICIENT_SPARKS") is not None
+        finally:
+            quizzes.pop("insuff-quiz", None)
+
+
+# ---------------------------------------------------------------------------
+# Reset deepcopy isolation
+# ---------------------------------------------------------------------------
+
+class TestResetDeepcopy:
+    """reset_for_new_game must deepcopy game data so mutations don't corrupt the original."""
+
+    def test_reset_deepcopy_isolates_quiz(self):
+        original = make_quiz(2)
+        room = Room("DCPY", original, 15)
+        new_data = make_quiz(3)
+        room.reset_for_new_game(new_data, 20)
+        # Mutate the room's quiz in-place (simulates gameplay adding image URLs etc)
+        room.quiz["questions"][0]["image_url"] = "http://injected.png"
+        room.quiz["mutated"] = True
+        # Original data must be untouched
+        assert "image_url" not in new_data["questions"][0]
+        assert "mutated" not in new_data
+
+    def test_reset_deepcopy_nested_lists(self):
+        original = make_quiz(2)
+        room = Room("DCPY", original, 15)
+        new_data = make_quiz(2)
+        room.reset_for_new_game(new_data, 20)
+        # Mutate nested option list
+        room.quiz["questions"][0]["options"].append("EXTRA")
+        assert len(new_data["questions"][0]["options"]) == 4  # unchanged
+
+
+# ---------------------------------------------------------------------------
+# RESET_ROOM content ownership check
+# ---------------------------------------------------------------------------
+
+class TestResetRoomContentOwnership:
+    """RESET_ROOM should reject content owned by another wallet."""
+
+    @pytest.mark.asyncio
+    async def test_reset_room_rejects_foreign_content(self):
+        from main import quizzes, content_owners
+        sm = SocketManager()
+        quiz = make_quiz(3)
+        room = sm.create_room("OWNR", quiz, 15, organizer_token="tok")
+        room.state = "PODIUM"
+        room.wallet_id = "wallet-A"
+
+        # Seed content owned by wallet-B
+        foreign_quiz = make_quiz(2)
+        quizzes["foreign-quiz"] = foreign_quiz
+        content_owners["foreign-quiz"] = "wallet-B"
+
+        org_ws = MockWebSocket()
+        room.connections["org-1"] = org_ws
+        try:
+            with patch("socket_manager.token_module.spend_room", return_value=(True, 10)):
+                await sm.handle_message(room, "org-1", {
+                    "type": "RESET_ROOM", "content_id": "foreign-quiz", "time_limit": 20
+                }, is_organizer=True)
+            # Should stay in PODIUM (rejected)
+            assert room.state == "PODIUM"
+            assert org_ws.last("ERROR") is not None
+        finally:
+            quizzes.pop("foreign-quiz", None)
+            content_owners.pop("foreign-quiz", None)
+
+    @pytest.mark.asyncio
+    async def test_reset_room_allows_own_content(self):
+        from main import quizzes, content_owners
+        sm = SocketManager()
+        quiz = make_quiz(3)
+        room = sm.create_room("OWNR", quiz, 15, organizer_token="tok")
+        room.state = "PODIUM"
+        room.wallet_id = "wallet-A"
+
+        own_quiz = make_quiz(2)
+        quizzes["own-quiz"] = own_quiz
+        content_owners["own-quiz"] = "wallet-A"
+
+        org_ws = MockWebSocket()
+        room.connections["org-1"] = org_ws
+        try:
+            with patch("socket_manager.token_module.spend_room", return_value=(True, 10)):
+                await sm.handle_message(room, "org-1", {
+                    "type": "RESET_ROOM", "content_id": "own-quiz", "time_limit": 20
+                }, is_organizer=True)
+            assert room.state == "LOBBY"
+        finally:
+            quizzes.pop("own-quiz", None)
+            content_owners.pop("own-quiz", None)

@@ -523,3 +523,426 @@ class TestAdminGrantSecurity:
         res = test_app.post(f"/admin/grant?wallet_id=test-wallet&amount={config.MAX_TOKEN_BALANCE + 1}",
                             headers={"Authorization": "Bearer test-key"})
         assert res.status_code == 400
+
+
+class TestAnswerStrippingAllEndpoints:
+    """Answers must never leak from any quiz endpoint."""
+
+    def test_get_quiz_strips_answers(self, test_app):
+        from main import quizzes, quiz_timestamps
+        import time as _time
+        qid = "strip-test-get"
+        quizzes[qid] = {
+            "quiz_title": "Test",
+            "questions": [{"id": "q1", "text": "Q?", "options": ["A", "B", "C", "D"], "answer_index": 2}],
+        }
+        quiz_timestamps[qid] = _time.time()
+        res = test_app.get(f"/quiz/{qid}")
+        assert res.status_code == 200
+        for q in res.json()["questions"]:
+            assert "answer_index" not in q
+        del quizzes[qid]
+        del quiz_timestamps[qid]
+
+    def test_import_quiz_strips_answers(self, test_app):
+        quiz_data = {
+            "quiz_title": "Imported",
+            "questions": [{"id": 1, "text": "Q?", "options": ["A", "B", "C", "D"], "answer_index": 0}],
+        }
+        res = test_app.post("/quiz/import", json={"quiz": quiz_data})
+        assert res.status_code == 200
+        for q in res.json()["quiz"]["questions"]:
+            assert "answer_index" not in q
+
+
+class TestContentMutationAuth:
+    """Content mutation endpoints require authentication."""
+
+    def test_update_quiz_no_auth_401(self, test_app, monkeypatch):
+        import tokens as tokens_mod
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: "")
+        res = test_app.put("/quiz/nonexistent", json={
+            "quiz_title": "X",
+            "questions": [{"id": 1, "text": "Q?", "options": ["A", "B"], "answer_index": 0}],
+        })
+        assert res.status_code == 401
+
+    def test_delete_question_no_auth_401(self, test_app, monkeypatch):
+        import tokens as tokens_mod
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: "")
+        res = test_app.delete("/quiz/nonexistent/question/1")
+        assert res.status_code == 401
+
+    def test_import_quiz_no_auth_401(self, test_app, monkeypatch):
+        import tokens as tokens_mod
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: "")
+        quiz_data = {
+            "quiz_title": "Test",
+            "questions": [{"id": 1, "text": "Q?", "options": ["A", "B"], "answer_index": 0}],
+        }
+        res = test_app.post("/quiz/import", json={"quiz": quiz_data})
+        assert res.status_code == 401
+
+    def test_import_mlt_no_auth_401(self, test_app, monkeypatch):
+        import tokens as tokens_mod
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: "")
+        mlt_data = {
+            "game_title": "Test",
+            "statements": [{"id": 1, "text": "S?"}],
+        }
+        res = test_app.post("/mlt/import", json={"game": mlt_data})
+        assert res.status_code == 401
+
+
+class TestSystemInfoProtection:
+    """System info endpoint should be protected when admin key is set."""
+
+    def test_system_info_protected_when_admin_key_set(self, test_app, monkeypatch):
+        import main as main_mod
+        monkeypatch.setattr(main_mod, "ADMIN_API_KEY", "test-admin-key-1234567890")
+        res = test_app.get("/system/info")
+        assert res.status_code == 403
+
+    def test_system_info_accessible_with_admin_key(self, test_app, monkeypatch):
+        import main as main_mod
+        monkeypatch.setattr(main_mod, "ADMIN_API_KEY", "test-admin-key-1234567890")
+        res = test_app.get("/system/info", headers={"Authorization": "Bearer test-admin-key-1234567890"})
+        assert res.status_code == 200
+        assert "ip" in res.json()
+
+    def test_system_info_blocked_when_no_admin_key(self, test_app, monkeypatch):
+        import main as main_mod
+        monkeypatch.setattr(main_mod, "ADMIN_API_KEY", "")
+        res = test_app.get("/system/info")
+        assert res.status_code == 403
+
+
+class TestSecretStrengthCheck:
+    """Startup secret validation should warn on weak secrets."""
+
+    def test_warns_short_jwt_secret(self, monkeypatch):
+        from main import _check_secret_strength
+        import main as main_mod
+        monkeypatch.setattr(config, "JWT_SECRET", "tooshort")
+        monkeypatch.setattr(main_mod, "ADMIN_API_KEY", "")
+        monkeypatch.setattr(config, "STRIPE_WEBHOOK_SECRET", "")
+        warnings = _check_secret_strength()
+        assert any("JWT_SECRET" in w for w in warnings)
+
+    def test_warns_short_admin_key(self, monkeypatch):
+        from main import _check_secret_strength
+        import main as main_mod
+        monkeypatch.setattr(config, "JWT_SECRET", "")
+        monkeypatch.setattr(main_mod, "ADMIN_API_KEY", "short")
+        monkeypatch.setattr(config, "STRIPE_WEBHOOK_SECRET", "")
+        warnings = _check_secret_strength()
+        assert any("ADMIN_API_KEY" in w for w in warnings)
+
+    def test_no_warnings_when_unset(self, monkeypatch):
+        from main import _check_secret_strength
+        import main as main_mod
+        monkeypatch.setattr(config, "JWT_SECRET", "")
+        monkeypatch.setattr(main_mod, "ADMIN_API_KEY", "")
+        monkeypatch.setattr(config, "STRIPE_WEBHOOK_SECRET", "")
+        warnings = _check_secret_strength()
+        assert len(warnings) == 0
+
+
+class TestLLMBudget:
+    """Global LLM budget should cap total calls."""
+
+    def test_budget_rejects_when_exhausted(self, monkeypatch):
+        from main import _check_llm_budget, _llm_call_timestamps
+        monkeypatch.setattr(config, "MAX_LLM_CALLS_PER_HOUR", 3)
+        _llm_call_timestamps.clear()
+        assert _check_llm_budget() is True
+        assert _check_llm_budget() is True
+        assert _check_llm_budget() is True
+        assert _check_llm_budget() is False
+
+    def test_budget_unlimited_when_zero(self, monkeypatch):
+        from main import _check_llm_budget, _llm_call_timestamps
+        monkeypatch.setattr(config, "MAX_LLM_CALLS_PER_HOUR", 0)
+        _llm_call_timestamps.clear()
+        for _ in range(100):
+            assert _check_llm_budget() is True
+
+    def test_budget_prunes_old_entries(self, monkeypatch):
+        import time as _time
+        from main import _check_llm_budget, _llm_call_timestamps
+        monkeypatch.setattr(config, "MAX_LLM_CALLS_PER_HOUR", 2)
+        _llm_call_timestamps.clear()
+        _llm_call_timestamps.append(_time.time() - 7200)
+        _llm_call_timestamps.append(_time.time() - 7200)
+        assert _check_llm_budget() is True
+
+
+class TestHistoryScoping:
+    """History endpoints should only return the requesting wallet's games."""
+
+    def test_history_scoped_to_wallet(self, test_app, monkeypatch):
+        from main import game_history
+        game_history.clear()
+        game_history.append({"room_code": "AAAA", "wallet_id": "wallet-a", "game_title": "A"})
+        game_history.append({"room_code": "BBBB", "wallet_id": "wallet-b", "game_title": "B"})
+        import tokens as tokens_mod
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: "wallet-a")
+        res = test_app.get("/history")
+        assert res.status_code == 200
+        assert len(res.json()["games"]) == 1
+        assert res.json()["games"][0]["room_code"] == "AAAA"
+        game_history.clear()
+
+    def test_history_detail_403_for_other_wallet(self, test_app, monkeypatch):
+        from main import game_history
+        game_history.clear()
+        game_history.append({"room_code": "CCCC", "wallet_id": "wallet-c", "game_title": "C"})
+        import tokens as tokens_mod
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: "wallet-d")
+        res = test_app.get("/history/CCCC")
+        assert res.status_code == 403
+        game_history.clear()
+
+
+# ---------------------------------------------------------------------------
+# JWT exp field type
+# ---------------------------------------------------------------------------
+
+class TestJwtExpField:
+    """JWT exp must be an integer timestamp, not a datetime object."""
+
+    def test_session_token_exp_is_int(self):
+        import jwt as pyjwt
+        token = auth.create_session_token("user-1", "dev-1")
+        payload = pyjwt.decode(token, config.JWT_SECRET, algorithms=["HS256"])
+        assert isinstance(payload["exp"], (int, float))
+        assert isinstance(payload["iat"], (int, float))
+        assert payload["exp"] > payload["iat"]
+
+    def test_session_token_roundtrip(self):
+        token = auth.create_session_token("user-roundtrip", "dev-roundtrip")
+        result = auth.verify_session_token(token)
+        assert result is not None
+        assert result["user_id"] == "user-roundtrip"
+        assert result["device_id"] == "dev-roundtrip"
+
+
+# ---------------------------------------------------------------------------
+# Content ownership enforcement
+# ---------------------------------------------------------------------------
+
+class TestContentOwnership:
+    """Content can only be modified by its creator."""
+
+    def test_quiz_update_by_owner(self, test_app, monkeypatch):
+        from main import quizzes, content_owners
+        import tokens as tokens_mod
+        qid = "owner-test-quiz"
+        quizzes[qid] = {
+            "quiz_title": "Owned Quiz",
+            "questions": [{"id": 1, "text": "Q?", "options": ["A", "B", "C", "D"], "answer_index": 0, "image_prompt": "t"}],
+        }
+        content_owners[qid] = "wallet-owner"
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: "wallet-owner")
+        res = test_app.put(f"/quiz/{qid}", json={
+            "quiz_title": "Updated",
+            "questions": [{"id": 1, "text": "Q?", "options": ["A", "B", "C", "D"], "answer_index": 0}],
+        })
+        assert res.status_code == 200
+        quizzes.pop(qid, None)
+        content_owners.pop(qid, None)
+
+    def test_quiz_update_by_non_owner_rejected(self, test_app, monkeypatch):
+        from main import quizzes, content_owners
+        import tokens as tokens_mod
+        qid = "owner-test-quiz-2"
+        quizzes[qid] = {
+            "quiz_title": "Owned Quiz",
+            "questions": [{"id": 1, "text": "Q?", "options": ["A", "B", "C", "D"], "answer_index": 0, "image_prompt": "t"}],
+        }
+        content_owners[qid] = "wallet-owner"
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: "wallet-attacker")
+        res = test_app.put(f"/quiz/{qid}", json={
+            "quiz_title": "Hacked",
+            "questions": [{"id": 1, "text": "Q?", "options": ["A", "B", "C", "D"], "answer_index": 0}],
+        })
+        assert res.status_code == 403
+        quizzes.pop(qid, None)
+        content_owners.pop(qid, None)
+
+    def test_quiz_delete_question_by_non_owner_rejected(self, test_app, monkeypatch):
+        from main import quizzes, content_owners
+        import tokens as tokens_mod
+        qid = "owner-test-quiz-3"
+        quizzes[qid] = {
+            "quiz_title": "Owned",
+            "questions": [
+                {"id": 1, "text": "Q1?", "options": ["A", "B", "C", "D"], "answer_index": 0},
+                {"id": 2, "text": "Q2?", "options": ["A", "B", "C", "D"], "answer_index": 1},
+            ],
+        }
+        content_owners[qid] = "wallet-owner"
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: "wallet-attacker")
+        res = test_app.delete(f"/quiz/{qid}/question/1")
+        assert res.status_code == 403
+        quizzes.pop(qid, None)
+        content_owners.pop(qid, None)
+
+    def test_quiz_export_by_non_owner_rejected(self, test_app, monkeypatch):
+        from main import quizzes, content_owners
+        import tokens as tokens_mod
+        qid = "owner-test-quiz-4"
+        quizzes[qid] = {
+            "quiz_title": "Owned",
+            "questions": [{"id": 1, "text": "Q?", "options": ["A", "B", "C", "D"], "answer_index": 0}],
+        }
+        content_owners[qid] = "wallet-owner"
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: "wallet-attacker")
+        res = test_app.get(f"/quiz/{qid}/export")
+        assert res.status_code == 403
+        quizzes.pop(qid, None)
+        content_owners.pop(qid, None)
+
+    def test_mlt_update_by_non_owner_rejected(self, test_app, monkeypatch):
+        from main import mlt_scenarios, content_owners
+        import tokens as tokens_mod
+        sid = "owner-test-mlt"
+        mlt_scenarios[sid] = {
+            "game_title": "Owned MLT",
+            "statements": [{"id": 1, "text": "Most likely to X"}],
+        }
+        content_owners[sid] = "wallet-owner"
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: "wallet-attacker")
+        res = test_app.put(f"/mlt/{sid}", json={
+            "game_title": "Hacked",
+            "statements": [{"id": 1, "text": "Hacked statement"}],
+        })
+        assert res.status_code == 403
+        mlt_scenarios.pop(sid, None)
+        content_owners.pop(sid, None)
+
+    def test_unowned_content_still_editable(self, test_app, monkeypatch):
+        """Content without an owner (e.g. seeded in tests) can be edited by anyone."""
+        from main import quizzes, content_owners
+        import tokens as tokens_mod
+        qid = "no-owner-quiz"
+        quizzes[qid] = {
+            "quiz_title": "Unowned",
+            "questions": [{"id": 1, "text": "Q?", "options": ["A", "B", "C", "D"], "answer_index": 0, "image_prompt": "t"}],
+        }
+        # No entry in content_owners
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: "any-wallet")
+        res = test_app.put(f"/quiz/{qid}", json={
+            "quiz_title": "Updated",
+            "questions": [{"id": 1, "text": "Q?", "options": ["A", "B", "C", "D"], "answer_index": 0}],
+        })
+        assert res.status_code == 200
+        quizzes.pop(qid, None)
+        content_owners.pop(qid, None)
+
+
+# ---------------------------------------------------------------------------
+# Webhook dedupe in DB
+# ---------------------------------------------------------------------------
+
+class TestWebhookDedupe:
+    """Webhook event deduplication should be durable in the database."""
+
+    def test_new_event_not_processed(self):
+        assert not db.is_webhook_event_processed("evt_test_123")
+
+    def test_mark_and_check_processed(self):
+        db.mark_webhook_event_processed("evt_test_456")
+        assert db.is_webhook_event_processed("evt_test_456")
+
+    def test_duplicate_mark_is_idempotent(self):
+        db.mark_webhook_event_processed("evt_test_789")
+        db.mark_webhook_event_processed("evt_test_789")  # no error
+        assert db.is_webhook_event_processed("evt_test_789")
+
+
+# ---------------------------------------------------------------------------
+# Refund incremental debit tracking
+# ---------------------------------------------------------------------------
+
+class TestRefundIncrementalDebit:
+    """Partial refunds should track prior debits to prevent double-debiting."""
+
+    def test_no_prior_debits(self):
+        assert db.get_refund_debits_for_session("ses_no_refund") == 0
+
+    def test_tracks_refund_debits(self):
+        wallet_id = "refund-test-wallet"
+        db.get_or_create_wallet(wallet_id, signup_bonus=False)
+        db.credit_tokens(wallet_id, 200, "purchase", "ses_refund_1")
+        db.debit_tokens(wallet_id, 50, "refund", "ses_refund_1")
+        assert db.get_refund_debits_for_session("ses_refund_1") == 50
+        # Second partial refund
+        db.debit_tokens(wallet_id, 30, "refund", "ses_refund_1")
+        assert db.get_refund_debits_for_session("ses_refund_1") == 80
+
+    def test_does_not_count_non_refund_debits(self):
+        wallet_id = "refund-test-wallet-2"
+        db.get_or_create_wallet(wallet_id, signup_bonus=False)
+        db.credit_tokens(wallet_id, 200, "purchase", "ses_refund_2")
+        db.debit_tokens(wallet_id, 10, "spend_room", "ses_refund_2")
+        assert db.get_refund_debits_for_session("ses_refund_2") == 0
+
+
+# ---------------------------------------------------------------------------
+# History migration on signin
+# ---------------------------------------------------------------------------
+
+class TestHistoryMergeOnSignin:
+    """Game history wallet_id should be updated when device merges to user."""
+
+    def test_history_migrated_on_signin(self, test_app, monkeypatch):
+        from main import game_history
+        game_history.clear()
+        game_history.append({"room_code": "HIST1", "wallet_id": _DEVICE_ID, "game_title": "Pre-signin game"})
+
+        # Mock auth.signin to return a fake user
+        import auth as auth_mod
+        fake_result = {
+            "user": {"id": "user-merged-123", "provider": "google", "email": "t@t.com"},
+            "session_token": "fake-token",
+        }
+        monkeypatch.setattr(auth_mod, "signin", lambda p, t, d: fake_result)
+        import tokens as tokens_mod
+        monkeypatch.setattr(tokens_mod, "get_device_id", lambda req: _DEVICE_ID)
+
+        res = test_app.post("/auth/signin", json={
+            "provider": "google",
+            "id_token": "fake-id-token",
+            "device_id": _DEVICE_ID,
+        }, headers=_DEVICE_HEADERS)
+        assert res.status_code == 200
+
+        # History should now be under user wallet
+        assert game_history[0]["wallet_id"] == "user-merged-123"
+        game_history.clear()
+
+    def test_history_not_migrated_for_other_devices(self, test_app, monkeypatch):
+        from main import game_history
+        game_history.clear()
+        game_history.append({"room_code": "HIST2", "wallet_id": "other-device-id", "game_title": "Other game"})
+
+        import auth as auth_mod
+        fake_result = {
+            "user": {"id": "user-merged-456", "provider": "google", "email": "t@t.com"},
+            "session_token": "fake-token",
+        }
+        monkeypatch.setattr(auth_mod, "signin", lambda p, t, d: fake_result)
+        import tokens as tokens_mod
+        monkeypatch.setattr(tokens_mod, "get_device_id", lambda req: _DEVICE_ID)
+
+        res = test_app.post("/auth/signin", json={
+            "provider": "google",
+            "id_token": "fake-id-token",
+            "device_id": _DEVICE_ID,
+        }, headers=_DEVICE_HEADERS)
+        assert res.status_code == 200
+
+        # Other device's history should be untouched
+        assert game_history[0]["wallet_id"] == "other-device-id"
+        game_history.clear()

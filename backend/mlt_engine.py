@@ -111,11 +111,11 @@ def _validate_mlt(mlt_data: dict, attempt: int) -> bool:
     return True
 
 
-async def _generate_ollama(prompt: str, difficulty: str, num_rounds: int) -> Optional[dict]:
+async def _generate_ollama(prompt: str, difficulty: str, num_rounds: int, model_override: Optional[str] = None) -> Optional[dict]:
     system_prompt = _build_system_prompt(difficulty, num_rounds)
     wrapped_topic = _wrap_user_topic(prompt)
     payload = {
-        "model": config.OLLAMA_MODEL,
+        "model": model_override or config.OLLAMA_MODEL,
         "prompt": f"{system_prompt}\n\n{wrapped_topic}",
         "stream": False,
         "format": "json"
@@ -213,7 +213,7 @@ async def _generate_gemini(prompt: str, difficulty: str, num_rounds: int, model_
     return None
 
 
-async def _generate_claude(prompt: str, difficulty: str, num_rounds: int) -> Optional[dict]:
+async def _generate_claude(prompt: str, difficulty: str, num_rounds: int, model_override: Optional[str] = None) -> Optional[dict]:
     if not config.ANTHROPIC_API_KEY:
         logger.error("Anthropic API key not configured")
         return None
@@ -226,7 +226,7 @@ async def _generate_claude(prompt: str, difficulty: str, num_rounds: int) -> Opt
         "content-type": "application/json",
     }
     payload = {
-        "model": config.ANTHROPIC_MODEL,
+        "model": model_override or config.ANTHROPIC_MODEL,
         "max_tokens": 4096,
         "system": system_prompt,
         "messages": [{"role": "user", "content": _wrap_user_topic(prompt)}],
@@ -306,7 +306,7 @@ class MLTEngine:
         self._daily_count += 1
         logger.info("Daily MLT count: %d/%d", self._daily_count, config.DAILY_QUIZ_LIMIT)
         try:
-            if model_override and provider == "gemini":
+            if model_override:
                 result = await gen_fn(prompt, difficulty, num_rounds, model_override=model_override)
             else:
                 result = await gen_fn(prompt, difficulty, num_rounds)

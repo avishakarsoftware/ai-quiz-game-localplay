@@ -14,6 +14,7 @@ import os
 import uuid
 import json
 import asyncio
+from contextlib import asynccontextmanager
 
 import pytest
 import pytest_asyncio
@@ -146,10 +147,21 @@ async def collect_until(ws, msg_type, timeout=15.0, max_messages=200):
 def ws_url(port, room_code, client_id, **params):
     """Build a WebSocket URL with query params."""
     base = f"ws://127.0.0.1:{port}/ws/{room_code}/{client_id}"
+    # Strip 'token' from query params — auth is now first-frame
+    params.pop("token", None)
     if params:
         qs = "&".join(f"{k}={v}" for k, v in params.items())
         base += f"?{qs}"
     return base
+
+
+@asynccontextmanager
+async def org_ws_connect(port, room_code, org_token, client_id="org-1"):
+    """Connect as organizer with first-frame AUTH via real websockets."""
+    url = ws_url(port, room_code, client_id, organizer="true")
+    async with websockets.connect(url) as ws:
+        await ws.send(json.dumps({"type": "AUTH", "token": org_token}))
+        yield ws
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +177,7 @@ class TestTimerExpiry:
         quiz_id = seed_quiz(num_questions=1)
         room_code, org_token = await create_room(server_port, quiz_id, time_limit=5)
 
-        async with websockets.connect(ws_url(server_port, room_code, "org-1", organizer="true", token=org_token)) as org_ws:
+        async with org_ws_connect(server_port, room_code, org_token) as org_ws:
             await recv_until(org_ws, "ROOM_CREATED")
 
             async with websockets.connect(ws_url(server_port, room_code, "p-1")) as p_ws:
@@ -191,7 +203,7 @@ class TestTimerExpiry:
         quiz_id = seed_quiz(num_questions=1)
         room_code, org_token = await create_room(server_port, quiz_id, time_limit=5)
 
-        async with websockets.connect(ws_url(server_port, room_code, "org-1", organizer="true", token=org_token)) as org_ws:
+        async with org_ws_connect(server_port, room_code, org_token) as org_ws:
             await recv_until(org_ws, "ROOM_CREATED")
 
             async with websockets.connect(ws_url(server_port, room_code, "p-1")) as p_ws:
@@ -229,7 +241,7 @@ class TestStreakResetOnTimeout:
         quiz_id = seed_quiz(num_questions=3)
         room_code, org_token = await create_room(server_port, quiz_id, time_limit=5)
 
-        async with websockets.connect(ws_url(server_port, room_code, "org-1", organizer="true", token=org_token)) as org_ws:
+        async with org_ws_connect(server_port, room_code, org_token) as org_ws:
             await recv_until(org_ws, "ROOM_CREATED")
 
             async with websockets.connect(ws_url(server_port, room_code, "p-1")) as p_ws:
@@ -282,7 +294,7 @@ class TestSpectatorBroadcasts:
         quiz_id = seed_quiz(num_questions=1)
         room_code, org_token = await create_room(server_port, quiz_id, time_limit=5)
 
-        async with websockets.connect(ws_url(server_port, room_code, "org-1", organizer="true", token=org_token)) as org_ws:
+        async with org_ws_connect(server_port, room_code, org_token) as org_ws:
             await recv_until(org_ws, "ROOM_CREATED")
 
             async with websockets.connect(ws_url(server_port, room_code, "p-1")) as p_ws:
@@ -321,7 +333,7 @@ class TestSpectatorBroadcasts:
         quiz_id = seed_quiz(num_questions=1)
         room_code, org_token = await create_room(server_port, quiz_id, time_limit=50)
 
-        async with websockets.connect(ws_url(server_port, room_code, "org-1", organizer="true", token=org_token)) as org_ws:
+        async with org_ws_connect(server_port, room_code, org_token) as org_ws:
             await recv_until(org_ws, "ROOM_CREATED")
 
             async with websockets.connect(ws_url(server_port, room_code, "p-1")) as p_ws:
@@ -369,7 +381,7 @@ class TestBonusSplashDelay:
         quiz_id = seed_quiz(num_questions=5)
         room_code, org_token = await create_room(server_port, quiz_id, time_limit=10)
 
-        async with websockets.connect(ws_url(server_port, room_code, "org-1", organizer="true", token=org_token)) as org_ws:
+        async with org_ws_connect(server_port, room_code, org_token) as org_ws:
             await recv_until(org_ws, "ROOM_CREATED")
 
             async with websockets.connect(ws_url(server_port, room_code, "p-1")) as p_ws:

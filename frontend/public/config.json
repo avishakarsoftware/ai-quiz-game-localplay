@@ -29,5 +29,10 @@
     "show_upgrade_button": true,
     "enable_image_generation": true
   },
+  "ai_models": {
+    "free_model": "gemma-3-27b-it",
+    "paid_model": "gemma-3-27b-it",
+    "provider": "gemini"
+  },
   "announcements": []
 }

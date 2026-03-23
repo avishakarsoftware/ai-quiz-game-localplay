@@ -103,7 +103,7 @@ def create_session_token(user_id: str, device_id: str) -> Optional[str]:
         "user_id": user_id,
         "device_id": device_id,
         "iat": int(now.timestamp()),
-        "exp": exp,
+        "exp": int(exp.timestamp()),
         "type": "session",
     }
     return jwt.encode(payload, config.JWT_SECRET, algorithm="HS256")

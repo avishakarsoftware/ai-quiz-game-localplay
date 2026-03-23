@@ -106,6 +106,11 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_txn_wallet ON token_transactions(wallet_id);
         CREATE INDEX IF NOT EXISTS idx_txn_reference ON token_transactions(reference_id) WHERE reference_id IS NOT NULL;
+
+        CREATE TABLE IF NOT EXISTS webhook_events (
+            event_id TEXT PRIMARY KEY,
+            processed_at INTEGER NOT NULL
+        );
     """)
     conn.commit()
     # Add metadata column if missing (migration for existing databases)
@@ -1045,3 +1050,38 @@ def admin_lookup_wallet(wallet_id: str) -> Optional[dict]:
         (wallet_id,),
     ).fetchall()]
     return {"wallet": dict(wallet), "transactions": txns}
+
+
+# ---------------------------------------------------------------------------
+# Webhook event deduplication
+# ---------------------------------------------------------------------------
+
+def is_webhook_event_processed(event_id: str) -> bool:
+    """Check if a webhook event has already been processed."""
+    conn = _get_conn()
+    row = conn.execute("SELECT 1 FROM webhook_events WHERE event_id = ?", (event_id,)).fetchone()
+    return row is not None
+
+
+def get_refund_debits_for_session(reference_id: str) -> int:
+    """Get total tokens already debited as refunds for a given stripe session."""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT COALESCE(SUM(ABS(amount)), 0) as total FROM token_transactions WHERE reference_id = ? AND reason = 'refund'",
+        (reference_id,),
+    ).fetchone()
+    return row["total"] if row else 0
+
+
+def mark_webhook_event_processed(event_id: str):
+    """Mark a webhook event as processed. Call AFTER business logic succeeds."""
+    conn = _get_conn()
+    conn.execute(
+        "INSERT OR IGNORE INTO webhook_events (event_id, processed_at) VALUES (?, ?)",
+        (event_id, int(time.time())),
+    )
+    conn.commit()
+    # Prune events older than 7 days
+    cutoff = int(time.time()) - 7 * 86400
+    conn.execute("DELETE FROM webhook_events WHERE processed_at < ?", (cutoff,))
+    conn.commit()

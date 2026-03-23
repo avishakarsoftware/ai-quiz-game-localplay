@@ -90,7 +90,12 @@ def can_generate(wallet_id: str) -> bool:
 
 def spend_generate(wallet_id: str) -> tuple[bool, int]:
     """Debit tokens for content generation. Returns (success, new_balance)."""
-    return db.debit_tokens(wallet_id, config.COST_GENERATE, "spend_generate")
+    success, balance = db.debit_tokens(wallet_id, config.COST_GENERATE, "spend_generate")
+    if success:
+        logger.info("spend_generate: wallet=%s cost=%d balance=%d", wallet_id[:8], config.COST_GENERATE, balance)
+    else:
+        logger.warning("spend_generate failed: wallet=%s insufficient balance", wallet_id[:8])
+    return success, balance
 
 
 def can_create_room(wallet_id: str) -> bool:
@@ -100,7 +105,12 @@ def can_create_room(wallet_id: str) -> bool:
 
 def spend_room(wallet_id: str) -> tuple[bool, int]:
     """Debit tokens for game start/reset. Returns (success, new_balance)."""
-    return db.debit_tokens(wallet_id, config.COST_ROOM, "spend_room")
+    success, balance = db.debit_tokens(wallet_id, config.COST_ROOM, "spend_room")
+    if success:
+        logger.info("spend_room: wallet=%s cost=%d balance=%d", wallet_id[:8], config.COST_ROOM, balance)
+    else:
+        logger.warning("spend_room failed: wallet=%s insufficient balance", wallet_id[:8])
+    return success, balance
 
 
 def use_premium_model(wallet_id: str) -> bool:

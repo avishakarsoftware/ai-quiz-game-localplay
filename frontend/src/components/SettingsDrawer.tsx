@@ -256,6 +256,7 @@ export default function SettingsDrawer() {
 
     const handleSignOut = () => {
         signOut();
+        window.dispatchEvent(new CustomEvent('refresh-sparks'));
         track('signed_out', { source: 'settings' });
     };
 
