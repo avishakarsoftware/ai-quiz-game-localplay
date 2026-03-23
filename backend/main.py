@@ -787,6 +787,7 @@ async def auth_me(req: Request):
 
 class CheckoutRequest(BaseModel):
     device_id: str
+    promo_id: str = ""
 
     @field_validator('device_id')
     @classmethod
@@ -794,6 +795,14 @@ class CheckoutRequest(BaseModel):
         v = v.strip()
         if not tokens._UUID_RE.match(v):
             raise ValueError('device_id must be a valid UUID')
+        return v
+
+    @field_validator('promo_id')
+    @classmethod
+    def validate_promo_id(cls, v: str) -> str:
+        v = v.strip()
+        if v and (len(v) > 50 or not re.match(r'^[a-zA-Z0-9_-]+$', v)):
+            return ""  # Silently discard invalid promo IDs
         return v
 
 
@@ -820,11 +829,24 @@ async def create_checkout(request: CheckoutRequest, req: Request):
         raise HTTPException(status_code=400, detail="Device ID required")
     tokens.ensure_wallet(wallet_id)
 
+    # Determine token amount (promo or standard)
+    promo_id = request.promo_id.strip()
+    if promo_id and promo_id == config.PROMO_ID and config.PROMO_TOKEN_AMOUNT > 0:
+        token_amount = config.PROMO_TOKEN_AMOUNT
+    else:
+        token_amount = config.TOKEN_PACK_AMOUNT
+        promo_id = ""  # Clear invalid promo
+
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
             line_items=[{"price": config.STRIPE_PRICE_ID, "quantity": 1}],
-            metadata={"device_id": request.device_id, "wallet_id": wallet_id},
+            metadata={
+                "device_id": request.device_id,
+                "wallet_id": wallet_id,
+                "token_amount": str(token_amount),
+                "promo_id": promo_id,
+            },
             success_url=f"{origins[0]}?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{origins[0]}?checkout=cancel",
         )
@@ -863,15 +885,20 @@ async def stripe_webhook(req: Request):
             logger.error("No wallet_id in webhook metadata for session %s", stripe_session_id[:8])
             return {"status": "error", "detail": "No wallet_id in metadata"}
 
-        # Credit tokens to wallet (idempotent — credit_purchase checks for duplicate reference_id atomically)
+        # Read token amount from metadata (set at checkout creation), fallback to config
         import json
-        _, new_balance = db.credit_purchase(wallet_id, config.TOKEN_PACK_AMOUNT, stripe_session_id)
-        logger.info("Credited %d tokens to wallet %s (session %s, balance=%d)",
-                    config.TOKEN_PACK_AMOUNT, wallet_id[:8], stripe_session_id[:8], new_balance)
+        token_amount = int(metadata.get("token_amount", str(config.TOKEN_PACK_AMOUNT)))
+        promo_id = metadata.get("promo_id", "")
+        txn_metadata = json.dumps({"promo_id": promo_id}) if promo_id else ""
+
+        # Credit tokens to wallet (idempotent — credit_purchase checks for duplicate reference_id atomically)
+        _, new_balance = db.credit_purchase(wallet_id, token_amount, stripe_session_id, metadata=txn_metadata)
+        logger.info("Credited %d tokens to wallet %s (session %s, promo=%s, balance=%d)",
+                    token_amount, wallet_id[:8], stripe_session_id[:8], promo_id or "none", new_balance)
 
         # Store pickup notification for frontend polling
         if device_id:
-            notification = json.dumps({"tokens_added": config.TOKEN_PACK_AMOUNT, "new_balance": db.get_wallet_balance(wallet_id)})
+            notification = json.dumps({"tokens_added": token_amount, "new_balance": db.get_wallet_balance(wallet_id)})
             db.store_pending_token(device_id, notification)
 
     elif event["type"] in ("charge.refunded", "charge.dispute.created"):
@@ -883,14 +910,16 @@ async def stripe_webhook(req: Request):
                 sessions = stripe.checkout.Session.list(payment_intent=payment_intent_id, limit=1)
                 if sessions.data:
                     stripe_session_id = sessions.data[0].id
-                    wallet_id = sessions.data[0].metadata.get("wallet_id", "")
+                    refund_metadata = sessions.data[0].metadata
+                    wallet_id = refund_metadata.get("wallet_id", "")
+                    refund_amount = int(refund_metadata.get("token_amount", str(config.TOKEN_PACK_AMOUNT)))
                     if wallet_id:
-                        success, _ = db.debit_tokens(wallet_id, config.TOKEN_PACK_AMOUNT, "refund", stripe_session_id)
+                        success, _ = db.debit_tokens(wallet_id, refund_amount, "refund", stripe_session_id)
                         if not success:
                             logger.warning("Failed to debit tokens for refund: wallet=%s session=%s", wallet_id, stripe_session_id)
                         else:
                             logger.info("Debited %d tokens from wallet %s (refund, session %s)",
-                                        config.TOKEN_PACK_AMOUNT, wallet_id[:8], stripe_session_id[:8])
+                                        refund_amount, wallet_id[:8], stripe_session_id[:8])
             except Exception as e:
                 logger.error("Failed to process refund: %s", e)
 

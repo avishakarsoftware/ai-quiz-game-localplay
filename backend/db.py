@@ -101,12 +101,22 @@ def init_db():
             reason TEXT NOT NULL,
             reference_id TEXT,
             balance_after INTEGER NOT NULL,
+            metadata TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_txn_wallet ON token_transactions(wallet_id);
         CREATE INDEX IF NOT EXISTS idx_txn_reference ON token_transactions(reference_id) WHERE reference_id IS NOT NULL;
     """)
     conn.commit()
+    # Add metadata column if missing (migration for existing databases)
+    import sqlite3 as _sqlite3
+    try:
+        conn.execute("ALTER TABLE token_transactions ADD COLUMN metadata TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+    except _sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            logger.error("Failed to add metadata column: %s", e)
+            raise
     # Run one-time migration of old entitlements to token wallets
     migrate_entitlements_to_wallets()
     logger.info("Database initialized at %s", DB_PATH)
@@ -853,9 +863,10 @@ def has_ever_purchased(wallet_id: str) -> bool:
     return row is not None and row["lifetime_purchased"] > 0
 
 
-def credit_purchase(wallet_id: str, amount: int, reference_id: str) -> tuple[bool, int]:
+def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:
     """Credit purchased tokens and increment lifetime_purchased. Returns (success, new_balance).
-    Idempotent: if reference_id was already credited, returns current balance without double-crediting."""
+    Idempotent: if reference_id was already credited, returns current balance without double-crediting.
+    metadata: optional JSON string with promo info etc."""
     conn = _get_conn()
     now = int(time.time())
     conn.execute("BEGIN IMMEDIATE")
@@ -887,12 +898,12 @@ def credit_purchase(wallet_id: str, amount: int, reference_id: str) -> tuple[boo
 
         conn.execute(
             "UPDATE wallets SET balance = ?, lifetime_purchased = lifetime_purchased + ? WHERE id = ?",
-            (new_balance, amount, wallet_id),
+            (new_balance, actual_credit, wallet_id),
         )
         conn.execute(
-            "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at) "
-            "VALUES (?, ?, 'purchase', ?, ?, ?)",
-            (wallet_id, actual_credit, reference_id or None, new_balance, now),
+            "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, metadata, created_at) "
+            "VALUES (?, ?, 'purchase', ?, ?, ?, ?)",
+            (wallet_id, actual_credit, reference_id or None, new_balance, metadata or "", now),
         )
         conn.execute("COMMIT")
         return True, new_balance

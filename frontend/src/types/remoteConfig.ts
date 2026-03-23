@@ -24,6 +24,13 @@ export interface RemoteConfig {
     token_pack_price: string;
     token_pack_amount: number;
     label: string;
+    promo?: {
+      id: string;                   // e.g. "launch_2026" — must match backend PROMO_ID
+      original_amount: number;      // "normal" amount to show struck through
+      token_pack_amount: number;    // actual amount they get
+      badge: string;                // e.g. "LAUNCH DEAL" or "2X SPARKS!"
+      expires?: string;             // ISO date — optional countdown
+    };
   };
   feature_flags: {
     show_upgrade_button: boolean;

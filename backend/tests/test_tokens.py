@@ -124,6 +124,55 @@ class TestCreditPurchase:
         db.credit_purchase(TEST_DEVICE, 110, "stripe-session-123")
         assert db.has_ever_purchased(TEST_DEVICE) is True
 
+    def test_purchase_at_cap_credits_actual_amount(self):
+        """When near MAX_TOKEN_BALANCE, lifetime_purchased should reflect actual credit, not requested."""
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        db.credit_tokens(TEST_DEVICE, config.MAX_TOKEN_BALANCE - 10, "admin_grant")
+        db.credit_purchase(TEST_DEVICE, 110, "stripe-cap-test")
+        wallet = db.get_or_create_wallet(TEST_DEVICE)
+        # Only 10 tokens actually credited (capped), not 110
+        assert wallet["balance"] == config.MAX_TOKEN_BALANCE
+        assert wallet["lifetime_purchased"] == 10
+
+
+class TestCreditPurchaseMetadata:
+    def test_credit_purchase_stores_metadata(self):
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        db.credit_purchase(TEST_DEVICE, 110, "stripe-meta-1", metadata='{"promo_id":"launch_2026"}')
+        conn = db._get_conn()
+        row = conn.execute(
+            "SELECT metadata FROM token_transactions WHERE reference_id = 'stripe-meta-1' AND wallet_id = ?",
+            (TEST_DEVICE,),
+        ).fetchone()
+        assert row is not None
+        assert row["metadata"] == '{"promo_id":"launch_2026"}'
+
+    def test_credit_purchase_empty_metadata(self):
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        db.credit_purchase(TEST_DEVICE, 50, "stripe-meta-2", metadata="")
+        conn = db._get_conn()
+        row = conn.execute(
+            "SELECT metadata FROM token_transactions WHERE reference_id = 'stripe-meta-2' AND wallet_id = ?",
+            (TEST_DEVICE,),
+        ).fetchone()
+        assert row is not None
+        assert row["metadata"] == ""
+
+    def test_credit_purchase_idempotent_ignores_new_metadata(self):
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        db.credit_purchase(TEST_DEVICE, 110, "stripe-meta-3", metadata='{"promo_id":"launch_2026"}')
+        # Second call with different metadata and same reference_id
+        db.credit_purchase(TEST_DEVICE, 110, "stripe-meta-3", metadata='{"promo_id":"different"}')
+        conn = db._get_conn()
+        rows = conn.execute(
+            "SELECT metadata FROM token_transactions WHERE reference_id = 'stripe-meta-3' AND wallet_id = ?",
+            (TEST_DEVICE,),
+        ).fetchall()
+        assert len(rows) == 1  # No duplicate row
+        assert rows[0]["metadata"] == '{"promo_id":"launch_2026"}'  # First metadata kept
+        # Balance should only reflect one credit
+        assert db.get_wallet_balance(TEST_DEVICE) == 110
+
 
 class TestDailyBonus:
     def test_grants_on_new_day(self):

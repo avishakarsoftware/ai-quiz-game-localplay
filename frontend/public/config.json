@@ -14,10 +14,16 @@
     "min_supported_version": "1.0.0"
   },
   "pricing": {
-    "pass_price": "$0.99",
-    "games": 10,
-    "duration_hours": 720,
-    "label": "10-Game Pack"
+    "token_pack_price": "$0.99",
+    "token_pack_amount": 110,
+    "label": "110 Spark Pack",
+    "promo": {
+      "id": "launch_2026",
+      "original_amount": 55,
+      "token_pack_amount": 110,
+      "badge": "LAUNCH DEAL — 2X SPARKS!",
+      "expires": "2026-04-30T23:59:59Z"
+    }
   },
   "feature_flags": {
     "show_upgrade_button": true,

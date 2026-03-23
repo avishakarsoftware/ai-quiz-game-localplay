@@ -75,6 +75,8 @@ COST_ROOM = int(os.getenv("COST_ROOM", "10"))
 AD_REWARD_TOKENS = int(os.getenv("AD_REWARD_TOKENS", "5"))
 MAX_ADS_PER_DAY = int(os.getenv("MAX_ADS_PER_DAY", "5"))
 TOKEN_PACK_AMOUNT = int(os.getenv("TOKEN_PACK_AMOUNT", "110"))
+PROMO_ID = os.getenv("PROMO_ID", "")  # e.g. "launch_2026" — must match config.json promo.id
+PROMO_TOKEN_AMOUNT = int(os.getenv("PROMO_TOKEN_AMOUNT", "0"))  # tokens to credit when promo is active
 
 # --- Premium / Payments ---
 JWT_SECRET = os.getenv("JWT_SECRET", "")

@@ -396,3 +396,31 @@ class TestRestorePurchases:
         res = test_app.post("/purchases/restore", headers=_DEVICE_HEADERS)
         data = res.json()
         assert data["restored"] is False
+
+
+class TestPromoCheckout:
+    """Test promo_id validation in the checkout endpoint."""
+
+    def test_promo_id_validation_strips_invalid(self):
+        """promo_id with special characters should be silently discarded (validator returns '')."""
+        from main import CheckoutRequest
+        req = CheckoutRequest(device_id=_DEVICE_ID, promo_id="launch<script>alert(1)</script>")
+        assert req.promo_id == ""  # Validator silently discards invalid chars
+
+    def test_promo_id_too_long_discarded(self):
+        """promo_id longer than 50 chars should be silently discarded."""
+        from main import CheckoutRequest
+        req = CheckoutRequest(device_id=_DEVICE_ID, promo_id="a" * 51)
+        assert req.promo_id == ""  # Validator silently discards oversized promo_id
+
+    def test_promo_id_valid_passes_through(self):
+        """Valid promo_id (alphanumeric, underscores, hyphens, <=50 chars) passes through."""
+        from main import CheckoutRequest
+        req = CheckoutRequest(device_id=_DEVICE_ID, promo_id="launch_2026-special")
+        assert req.promo_id == "launch_2026-special"
+
+    def test_promo_id_empty_is_valid(self):
+        """Empty promo_id is the default and should pass through."""
+        from main import CheckoutRequest
+        req = CheckoutRequest(device_id=_DEVICE_ID)
+        assert req.promo_id == ""

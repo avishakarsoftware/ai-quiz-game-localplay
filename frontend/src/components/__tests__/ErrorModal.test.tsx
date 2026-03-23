@@ -80,4 +80,56 @@ describe('ErrorModal', () => {
     fireEvent.click(screen.getByText('Error'));
     expect(onDismiss).not.toHaveBeenCalled();
   });
+
+  it('shows promo badge and strikethrough amount when promo is active', () => {
+    // Set promo on the mock config
+    mockConfig.pricing = {
+      ...mockConfig.pricing,
+      promo: {
+        id: 'launch_2026',
+        original_amount: 110,
+        token_pack_amount: 220,
+        badge: 'LAUNCH DEAL',
+        expires: new Date(Date.now() + 86400000).toISOString(), // tomorrow
+      },
+    };
+    renderWithProvider(
+      <ErrorModal
+        title="Limit"
+        message="Out of sparks"
+        upgradeAvailable
+        onDismiss={() => {}}
+        onUpgrade={() => {}}
+      />
+    );
+    expect(screen.getByText('LAUNCH DEAL')).toBeInTheDocument();
+    // The strikethrough original amount
+    expect(screen.getByText('110')).toBeInTheDocument();
+    // The promo token amount
+    expect(screen.getByText('220')).toBeInTheDocument();
+    // Button shows promo amount
+    expect(screen.getByText(/Get 220 Sparks/)).toBeInTheDocument();
+  });
+
+  it('shows standard pricing when no promo is active', () => {
+    // Clear promo
+    mockConfig.pricing = {
+      ...mockConfig.pricing,
+      token_pack_amount: 110,
+      promo: undefined,
+    };
+    renderWithProvider(
+      <ErrorModal
+        title="Limit"
+        message="Out of sparks"
+        upgradeAvailable
+        onDismiss={() => {}}
+        onUpgrade={() => {}}
+      />
+    );
+    // No promo badge
+    expect(screen.queryByText('LAUNCH DEAL')).not.toBeInTheDocument();
+    // Standard amount in button
+    expect(screen.getByText(/Get 110 Sparks/)).toBeInTheDocument();
+  });
 });

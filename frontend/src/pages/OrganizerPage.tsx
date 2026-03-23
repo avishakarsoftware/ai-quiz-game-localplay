@@ -728,7 +728,7 @@ export default function OrganizerPage() {
                             const res = await fetch(apiUrl('/checkout/create'), {
                                 method: 'POST',
                                 headers: apiHeaders(),
-                                body: JSON.stringify({ device_id: getDeviceId() }),
+                                body: JSON.stringify({ device_id: getDeviceId(), promo_id: remoteConfig.pricing.promo?.id || '' }),
                             });
                             if (res.status === 403) {
                                 setErrorModal({ title: 'Use In-App Purchase', message: 'Please use the in-app purchase option on iOS.' });
