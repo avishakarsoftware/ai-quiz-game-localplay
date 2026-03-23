@@ -227,6 +227,7 @@ export default function SettingsDrawer() {
                 const data = await res.json().catch(() => ({ restored: false }));
                 if (data.restored) {
                     track('purchases_restored', { source: 'settings', tokens_added: data.tokens_added });
+                    window.dispatchEvent(new CustomEvent('refresh-sparks'));
                 } else {
                     setSignInError(data.reason === 'expired'
                         ? 'Your purchase has expired'

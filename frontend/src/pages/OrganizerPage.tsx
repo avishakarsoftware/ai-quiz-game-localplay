@@ -115,6 +115,7 @@ export default function OrganizerPage() {
                         clearCheckoutPending();
                         clearInterval(poll!); poll = null;
                         track('tokens_purchased', { source: 'resume', tokens_added: data.tokens_added });
+                        window.dispatchEvent(new CustomEvent('refresh-sparks'));
                         setErrorModal({ title: 'Sparks Added!', message: `+${data.tokens_added} sparks added to your balance. Enjoy!` });
                     }
                 } catch { /* keep polling */ }
@@ -133,6 +134,10 @@ export default function OrganizerPage() {
             soundManager.play('playerJoin');
         }
         else if (msg.type === 'QUESTION') {
+            // First question means game just started (sparks were charged)
+            if (msg.question_number === 1) {
+                window.dispatchEvent(new CustomEvent('refresh-sparks'));
+            }
             setCurrentQuestion(msg.question_number as number);
             setTotalQuestions(msg.total_questions as number);
             setTimeRemaining(msg.time_limit as number);
@@ -185,6 +190,9 @@ export default function OrganizerPage() {
             setPlayers(msg.players as PlayerInfo[] || []);
             setRoomLocked(false);
             setState('ROOM');
+        }
+        else if (msg.type === 'INSUFFICIENT_SPARKS') {
+            setErrorModal({ title: 'Not Enough Sparks', message: msg.message as string || 'You need more sparks to start a game.', upgradeAvailable: true });
         }
         else if (msg.type === 'ROOM_LOCK_STATUS') {
             setRoomLocked(msg.locked as boolean);
@@ -284,6 +292,7 @@ export default function OrganizerPage() {
                 setContentId(data.quiz_id);
                 setTotalQuestions(data.quiz.questions.length);
                 track('quiz_generated', { topic: prompt, difficulty, num_questions: numQuestions, provider });
+                window.dispatchEvent(new CustomEvent('refresh-sparks'));
                 setState('REVIEW');
             } else {
                 setErrorModal({ title: 'Generation Failed', message: 'Failed to generate quiz. Please try a different topic.' });
@@ -308,7 +317,7 @@ export default function OrganizerPage() {
                 body: JSON.stringify({ prompt, difficulty, num_rounds: numQuestions, provider }),
             });
             if (res.status === 402) {
-                const err = await res.json().catch(() => ({ detail: 'Not enough tokens.' }));
+                const err = await res.json().catch(() => ({ detail: 'Not enough sparks.' }));
                 track('paywall_hit', { source: 'mlt' });
                 setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: true });
                 setState('MLT_PROMPT');
@@ -332,6 +341,7 @@ export default function OrganizerPage() {
                 setContentId(data.scenario_id);
                 setTotalQuestions(data.game.statements.length);
                 track('mlt_generated', { topic: prompt, difficulty, num_rounds: numQuestions, provider });
+                window.dispatchEvent(new CustomEvent('refresh-sparks'));
                 setState('MLT_REVIEW');
             } else {
                 setErrorModal({ title: 'Generation Failed', message: 'Failed to generate statements. Please try a different topic.' });
@@ -469,11 +479,6 @@ export default function OrganizerPage() {
                 headers: apiHeaders(),
                 body: JSON.stringify(body),
             });
-            if (res.status === 402) {
-                track('paywall_hit', { source: 'room_create' });
-                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: true });
-                return;
-            }
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ detail: 'Failed to create room' }));
                 setErrorModal({ title: 'Room Error', message: err.detail || `Server error (${res.status})` });
@@ -754,6 +759,7 @@ export default function OrganizerPage() {
                                         if (checkoutPollRef.current) clearInterval(checkoutPollRef.current);
                                         checkoutPollRef.current = null;
                                         track('tokens_purchased', { source: 'stripe', tokens_added: data.tokens_added });
+                                        window.dispatchEvent(new CustomEvent('refresh-sparks'));
                                         setErrorModal({ title: 'Sparks Added!', message: `+${data.tokens_added} sparks added to your balance. Enjoy!` });
                                     }
                                 } catch { /* keep polling */ }

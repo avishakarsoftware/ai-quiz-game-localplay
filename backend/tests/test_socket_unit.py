@@ -7,6 +7,7 @@ import sys
 import os
 import asyncio
 import time
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -73,7 +74,9 @@ def make_quiz(num_questions=5):
 
 
 def make_room(num_questions=5, time_limit=15, token="test-token"):
-    return Room("UNIT01", make_quiz(num_questions), time_limit, organizer_token=token)
+    room = Room("UNIT01", make_quiz(num_questions), time_limit, organizer_token=token)
+    room.wallet_id = "test-wallet-id"  # Required for spark charging in START_GAME/RESET_ROOM
+    return room
 
 
 def add_player(room, client_id, nickname, score=0, team=None):
@@ -1102,3 +1105,87 @@ class TestBroadcastRouting:
         await room.send_to_organizer({"type": "ORG_ONLY"})
         assert org_ws.last("ORG_ONLY") is not None
         assert p_ws.last("ORG_ONLY") is None
+
+
+# ===========================================================================
+# Spark Charging — START_GAME
+# ===========================================================================
+
+class TestSparkChargingStartGame:
+    @pytest.mark.asyncio
+    async def test_start_game_charges_sparks(self):
+        room = make_room()
+        sm = SocketManager()
+        org_ws = add_organizer(room, "org-1")
+        add_player(room, "p1", "Alice")
+        room.state = "LOBBY"
+        room.wallet_id = "test-wallet-id"
+        with patch("socket_manager.token_module.spend_room", return_value=(True, 10)):
+            await sm.handle_message(room, "org-1", {"type": "START_GAME"}, is_organizer=True)
+        assert room.state == "INTRO"
+
+    @pytest.mark.asyncio
+    async def test_start_game_insufficient_sparks(self):
+        room = make_room()
+        sm = SocketManager()
+        org_ws = add_organizer(room, "org-1")
+        add_player(room, "p1", "Alice")
+        room.state = "LOBBY"
+        room.wallet_id = "test-wallet-id"
+        with patch("socket_manager.token_module.spend_room", return_value=(False, 0)):
+            await sm.handle_message(room, "org-1", {"type": "START_GAME"}, is_organizer=True)
+        assert room.state == "LOBBY"
+        assert org_ws.last("INSUFFICIENT_SPARKS") is not None
+
+    @pytest.mark.asyncio
+    async def test_start_game_no_wallet_sends_error(self):
+        room = make_room()
+        sm = SocketManager()
+        org_ws = add_organizer(room, "org-1")
+        add_player(room, "p1", "Alice")
+        room.state = "LOBBY"
+        room.wallet_id = None
+        await sm.handle_message(room, "org-1", {"type": "START_GAME"}, is_organizer=True)
+        assert room.state == "LOBBY"
+        assert org_ws.last("ERROR") is not None
+
+
+# ===========================================================================
+# Spark Charging — RESET_ROOM
+# ===========================================================================
+
+class TestSparkChargingResetRoom:
+    @pytest.mark.asyncio
+    async def test_reset_room_charges_sparks(self):
+        room = make_room()
+        sm = SocketManager()
+        org_ws = add_organizer(room, "org-1")
+        add_player(room, "p1", "Alice")
+        room.state = "PODIUM"
+        room.wallet_id = "test-wallet-id"
+        new_quiz = make_quiz(3)
+        from main import quizzes
+        quizzes["spark-reset-quiz"] = new_quiz
+        try:
+            with patch("socket_manager.token_module.spend_room", return_value=(True, 10)):
+                await sm.handle_message(room, "org-1", {
+                    "type": "RESET_ROOM", "content_id": "spark-reset-quiz", "time_limit": 20
+                }, is_organizer=True)
+            assert room.state == "LOBBY"
+        finally:
+            quizzes.pop("spark-reset-quiz", None)
+
+    @pytest.mark.asyncio
+    async def test_reset_room_insufficient_sparks(self):
+        room = make_room()
+        sm = SocketManager()
+        org_ws = add_organizer(room, "org-1")
+        add_player(room, "p1", "Alice")
+        room.state = "PODIUM"
+        room.wallet_id = "test-wallet-id"
+        with patch("socket_manager.token_module.spend_room", return_value=(False, 0)):
+            await sm.handle_message(room, "org-1", {
+                "type": "RESET_ROOM", "content_id": "some-quiz", "time_limit": 20
+            }, is_organizer=True)
+        assert room.state == "PODIUM"
+        assert org_ws.last("INSUFFICIENT_SPARKS") is not None

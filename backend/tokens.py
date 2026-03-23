@@ -99,7 +99,7 @@ def can_create_room(wallet_id: str) -> bool:
 
 
 def spend_room(wallet_id: str) -> tuple[bool, int]:
-    """Debit tokens for room creation. Returns (success, new_balance)."""
+    """Debit tokens for game start/reset. Returns (success, new_balance)."""
     return db.debit_tokens(wallet_id, config.COST_ROOM, "spend_room")
 
 

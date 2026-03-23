@@ -9,6 +9,7 @@ import logging
 import re
 
 import config
+import tokens as token_module
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class Room:
         self.previous_leaderboard: List[dict] = []
         self.lock = asyncio.Lock()
         self.last_activity = time.time()
+        self.wallet_id: Optional[str] = None  # organizer's wallet for spark charges
         self._organizer_just_disconnected = False  # flag for post-disconnect notification
         self._player_event: Optional[tuple] = None  # ('left'|'disconnected'|'reconnected', nickname)
         self.disconnected_players: Dict[str, dict] = {}  # nickname -> {score, prev_rank, streak}
@@ -272,6 +274,15 @@ class SocketManager:
         except asyncio.CancelledError:
             pass
 
+    async def _send_to_client(self, room: Room, client_id: str, message: dict):
+        """Send a JSON message to a specific client in the room."""
+        ws = room.connections.get(client_id)
+        if ws:
+            try:
+                await ws.send_json(message)
+            except Exception:
+                pass
+
     def create_room(self, room_code: str, game_data: dict, time_limit: int = 15,
                     organizer_token: str = "", content_id: str = "",
                     game_type: str = "quiz") -> Room:
@@ -491,22 +502,37 @@ class SocketManager:
 
         if is_organizer:
             if msg_type == "START_GAME":
-                if room.state != "LOBBY":
-                    return
-                # WMLT requires minimum players
-                if room.game_type == "wmlt":
-                    player_count = len([p for p in room.players.values() if p.get("nickname")])
-                    if player_count < config.MIN_WMLT_PLAYERS:
+                async with room.lock:
+                    if room.state != "LOBBY":
+                        return
+                    # Charge sparks to start the game
+                    if not room.wallet_id:
                         await self._send_to_client(room, client_id, {
                             "type": "ERROR",
-                            "message": f"Most Likely To needs at least {config.MIN_WMLT_PLAYERS} players to start",
+                            "message": "Internal error: wallet not configured.",
                         })
                         return
-                room.locked = True
-                if room.game_type != "wmlt":
-                    self._select_bonus_questions(room)
-                room.state = "INTRO"
-                await room.broadcast({"type": "GAME_STARTING"})
+                    spent, _ = token_module.spend_room(room.wallet_id)
+                    if not spent:
+                        await self._send_to_client(room, client_id, {
+                            "type": "INSUFFICIENT_SPARKS",
+                            "message": f"You need {config.COST_ROOM} sparks to start a game.",
+                        })
+                        return
+                    # WMLT requires minimum players
+                    if room.game_type == "wmlt":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_WMLT_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Most Likely To needs at least {config.MIN_WMLT_PLAYERS} players to start",
+                            })
+                            return
+                    room.locked = True
+                    if room.game_type != "wmlt":
+                        self._select_bonus_questions(room)
+                    room.state = "INTRO"
+                    await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
                 if room.state == "QUESTION":
@@ -551,47 +577,62 @@ class SocketManager:
                         logger.warning("Could not save game history for room %s", room.room_code)
 
             elif msg_type == "RESET_ROOM":
-                if room.state != "PODIUM":
-                    return
-                new_content_id = message.get("content_id", "")
-                raw_game_type = message.get("game_type", room.game_type)
-                new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt") else room.game_type
-                raw_time_limit = message.get("time_limit", room.time_limit)
+                async with room.lock:
+                    if room.state != "PODIUM":
+                        return
+                    # Charge sparks for new game
+                    if not room.wallet_id:
+                        await self._send_to_client(room, client_id, {
+                            "type": "ERROR",
+                            "message": "Internal error: wallet not configured.",
+                        })
+                        return
+                    spent, _ = token_module.spend_room(room.wallet_id)
+                    if not spent:
+                        await self._send_to_client(room, client_id, {
+                            "type": "INSUFFICIENT_SPARKS",
+                            "message": f"You need {config.COST_ROOM} sparks to start a new game.",
+                        })
+                        return
+                    new_content_id = message.get("content_id", "")
+                    raw_game_type = message.get("game_type", room.game_type)
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt") else room.game_type
+                    raw_time_limit = message.get("time_limit", room.time_limit)
 
-                # Validate time_limit
-                try:
-                    new_time_limit = int(raw_time_limit)
-                except (TypeError, ValueError):
-                    new_time_limit = room.time_limit
-                new_time_limit = max(5, min(60, new_time_limit))
+                    # Validate time_limit
+                    try:
+                        new_time_limit = int(raw_time_limit)
+                    except (TypeError, ValueError):
+                        new_time_limit = room.time_limit
+                    new_time_limit = max(5, min(60, new_time_limit))
 
-                # Resolve game data from content store by ID
-                from main import quizzes, mlt_scenarios
-                if new_game_type == "wmlt":
-                    new_game_data = mlt_scenarios.get(new_content_id)
-                else:
-                    new_game_data = quizzes.get(new_content_id)
+                    # Resolve game data from content store by ID
+                    from main import quizzes, mlt_scenarios
+                    if new_game_type == "wmlt":
+                        new_game_data = mlt_scenarios.get(new_content_id)
+                    else:
+                        new_game_data = quizzes.get(new_content_id)
 
-                if not new_game_data:
-                    logger.warning("RESET_ROOM rejected: content_id %s not found for room %s",
-                                   new_content_id, room.room_code)
-                    ws = room.connections.get(client_id)
-                    if ws:
-                        await ws.send_json({"type": "ERROR", "message": "Game content not found. Please generate a new game."})
-                    return
+                    if not new_game_data:
+                        logger.warning("RESET_ROOM rejected: content_id %s not found for room %s",
+                                       new_content_id, room.room_code)
+                        ws = room.connections.get(client_id)
+                        if ws:
+                            await ws.send_json({"type": "ERROR", "message": "Game content not found. Please generate a new game."})
+                        return
 
-                room.reset_for_new_game(new_game_data, new_time_limit,
-                                        game_type=new_game_type,
-                                        content_id=new_content_id)
-                logger.info("Room %s reset for new game (type=%s, content=%s)",
-                            room.room_code, new_game_type, new_content_id)
-                await room.broadcast({
-                    "type": "ROOM_RESET",
-                    "room_code": room.room_code,
-                    "game_type": new_game_type,
-                    "player_count": len(room.players),
-                    "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
-                })
+                    room.reset_for_new_game(new_game_data, new_time_limit,
+                                            game_type=new_game_type,
+                                            content_id=new_content_id)
+                    logger.info("Room %s reset for new game (type=%s, content=%s)",
+                                room.room_code, new_game_type, new_content_id)
+                    await room.broadcast({
+                        "type": "ROOM_RESET",
+                        "room_code": room.room_code,
+                        "game_type": new_game_type,
+                        "player_count": len(room.players),
+                        "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
+                    })
 
             elif msg_type == "TOGGLE_LOCK":
                 if room.state == "LOBBY":

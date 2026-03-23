@@ -45,5 +45,12 @@ export function useTokenBalance() {
         fetchTokenBalance().then(setTokenStatus);
     }, []);
 
+    // Listen for global refresh events (e.g. after spending sparks)
+    useEffect(() => {
+        const handler = () => refresh();
+        window.addEventListener('refresh-sparks', handler);
+        return () => window.removeEventListener('refresh-sparks', handler);
+    }, [refresh]);
+
     return { tokenStatus, loading, refresh };
 }

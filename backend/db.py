@@ -863,8 +863,8 @@ def credit_purchase(wallet_id: str, amount: int, reference_id: str) -> tuple[boo
         # Idempotency check inside transaction to prevent race conditions
         if reference_id:
             existing = conn.execute(
-                "SELECT balance_after FROM token_transactions WHERE reference_id = ? AND reason = 'purchase'",
-                (reference_id,),
+                "SELECT balance_after FROM token_transactions WHERE reference_id = ? AND wallet_id = ? AND reason = 'purchase'",
+                (reference_id, wallet_id),
             ).fetchone()
             if existing:
                 conn.execute("ROLLBACK")

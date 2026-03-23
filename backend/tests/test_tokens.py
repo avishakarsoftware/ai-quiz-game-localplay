@@ -296,6 +296,44 @@ class TestMigrateEntitlements:
         assert balance_after_first == balance_after_second
 
 
+class TestAdRewardEndpoint:
+    """Test the /tokens/ad-reward HTTP endpoint."""
+
+    def test_ad_reward_success(self):
+        from fastapi.testclient import TestClient
+        from main import app
+        client = TestClient(app)
+        # Create wallet for the device
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        res = client.post("/tokens/ad-reward", headers={"X-Device-Id": TEST_DEVICE})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["granted"] is True
+        assert data["tokens_added"] == config.AD_REWARD_TOKENS
+        assert data["new_balance"] == config.AD_REWARD_TOKENS
+        assert data["ads_remaining_today"] == config.MAX_ADS_PER_DAY - 1
+
+    def test_ad_reward_daily_cap(self):
+        from fastapi.testclient import TestClient
+        from main import app
+        client = TestClient(app)
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        # Watch MAX_ADS_PER_DAY ads
+        for _ in range(config.MAX_ADS_PER_DAY):
+            res = client.post("/tokens/ad-reward", headers={"X-Device-Id": TEST_DEVICE})
+            assert res.status_code == 200
+        # Next one should be rejected
+        res = client.post("/tokens/ad-reward", headers={"X-Device-Id": TEST_DEVICE})
+        assert res.status_code == 429
+
+    def test_ad_reward_no_device_id(self):
+        from fastapi.testclient import TestClient
+        from main import app
+        client = TestClient(app)
+        res = client.post("/tokens/ad-reward")
+        assert res.status_code == 400
+
+
 class TestAdminTokenFunctions:
     def test_admin_grant_tokens(self):
         new_bal = db.admin_grant_tokens(TEST_DEVICE, 50)

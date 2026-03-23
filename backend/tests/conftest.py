@@ -28,5 +28,7 @@ def fund_test_wallet(monkeypatch):
     monkeypatch.setattr(tokens_mod, "ensure_wallet", lambda wallet_id: {"id": wallet_id, "balance": 999})
     # Make use_premium_model return False by default
     monkeypatch.setattr(tokens_mod, "use_premium_model", lambda wallet_id: False)
+    # Make get_wallet_id return a stable test device ID (so /room/create doesn't 400)
+    monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: TEST_DEVICE_ID)
 
     yield

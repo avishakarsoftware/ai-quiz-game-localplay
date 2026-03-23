@@ -402,12 +402,11 @@ async def create_room(request: RoomCreateRequest, req: Request):
         if not game_data.get("questions"):
             raise HTTPException(status_code=422, detail="Quiz has no questions")
 
-    # Spend tokens at room creation (10 tokens to play)
+    # Resolve wallet for spark charges (charged on game start, not room creation)
     wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="Device ID required")
     tokens.ensure_wallet(wallet_id)
-    spent, _ = tokens.spend_room(wallet_id)
-    if not spent:
-        raise HTTPException(status_code=402, detail=f"You need {config.COST_ROOM} tokens to play. Buy tokens or watch an ad!")
 
     # Enforce max rooms limit
     if len(socket_manager.rooms) >= config.MAX_ROOMS:
@@ -422,9 +421,10 @@ async def create_room(request: RoomCreateRequest, req: Request):
             if question["id"] in quiz_images[content_id]:
                 question["image_url"] = f"/quiz/{content_id}/image/{question['id']}"
 
-    socket_manager.create_room(room_code, game_data, request.time_limit,
-                               organizer_token=organizer_token, content_id=content_id,
-                               game_type=request.game_type)
+    room = socket_manager.create_room(room_code, game_data, request.time_limit,
+                                      organizer_token=organizer_token, content_id=content_id,
+                                      game_type=request.game_type)
+    room.wallet_id = wallet_id
     logger.info("Room created: %s (type=%s)", room_code, request.game_type)
     return {"room_code": room_code, "organizer_token": organizer_token}
 

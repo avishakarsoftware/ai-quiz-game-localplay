@@ -290,13 +290,13 @@ class TestTokenSpendingAtRoomCreate:
         socket_manager.rooms.pop(room_code, None)
         quizzes.pop(quiz_id, None)
 
-    def test_room_create_402_when_no_tokens(self, test_app, monkeypatch):
-        """Room creation returns 402 when token spending fails."""
-        from main import quizzes
-        quiz_id = "test-no-tokens"
+    def test_room_create_succeeds_with_zero_balance(self, test_app, monkeypatch):
+        """Room creation succeeds even with zero balance (charge is on game start)."""
+        from main import quizzes, socket_manager
+        quiz_id = "test-zero-balance"
         quizzes[quiz_id] = {"quiz_title": "Test", "questions": [{"id": 1, "text": "Q", "options": ["A", "B", "C", "D"], "answer_index": 0, "image_prompt": ""}]}
 
-        # Undo conftest monkeypatch: make spend_room fail
+        # Undo conftest monkeypatch: make spend_room fail (simulating zero balance)
         monkeypatch.setattr(tokens_mod, "spend_room", lambda wallet_id: (False, 0))
 
         res = test_app.post("/room/create", json={
@@ -304,7 +304,9 @@ class TestTokenSpendingAtRoomCreate:
             "game_type": "quiz",
             "time_limit": 15,
         }, headers=_DEVICE_HEADERS)
-        assert res.status_code == 402
+        assert res.status_code == 200  # Room creation is free; charge happens on START_GAME
+        room_code = res.json()["room_code"]
+        socket_manager.rooms.pop(room_code, None)
         quizzes.pop(quiz_id, None)
 
 
@@ -353,7 +355,16 @@ class TestWindowExpiry:
 class TestTokenBalanceEndpoint:
     """Test GET /tokens/balance and GET /entitlements/current (alias)."""
 
-    def test_no_device_id(self, test_app):
+    def test_no_device_id(self, test_app, monkeypatch):
+        # Undo conftest monkeypatch so get_wallet_id uses real implementation
+        from tokens import get_device_id
+        import auth as auth_module
+        def real_get_wallet_id(req):
+            session = auth_module.get_session_from_request(req)
+            if session and session.get("user_id"):
+                return session["user_id"]
+            return get_device_id(req)
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", real_get_wallet_id)
         res = test_app.get("/tokens/balance")
         data = res.json()
         assert "balance" in data
