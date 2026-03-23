@@ -717,6 +717,8 @@ def get_wallet_balance(wallet_id: str) -> int:
 
 def debit_tokens(wallet_id: str, amount: int, reason: str, reference_id: str = "") -> tuple[bool, int]:
     """Atomically debit tokens. Returns (success, new_balance). Fails if insufficient balance."""
+    if amount <= 0:
+        raise ValueError(f"debit_tokens amount must be positive, got {amount}")
     conn = _get_conn()
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -743,6 +745,8 @@ def debit_tokens(wallet_id: str, amount: int, reason: str, reference_id: str = "
 def credit_tokens(wallet_id: str, amount: int, reason: str, reference_id: str = "") -> tuple[bool, int]:
     """Credit tokens to wallet, capped at MAX_TOKEN_BALANCE. Returns (success, new_balance).
     Creates wallet if it doesn't exist."""
+    if amount <= 0:
+        raise ValueError(f"credit_tokens amount must be positive, got {amount}")
     conn = _get_conn()
     now = int(time.time())
     conn.execute("BEGIN IMMEDIATE")
@@ -867,6 +871,8 @@ def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: st
     """Credit purchased tokens and increment lifetime_purchased. Returns (success, new_balance).
     Idempotent: if reference_id was already credited, returns current balance without double-crediting.
     metadata: optional JSON string with promo info etc."""
+    if amount <= 0:
+        raise ValueError(f"credit_purchase amount must be positive, got {amount}")
     conn = _get_conn()
     now = int(time.time())
     conn.execute("BEGIN IMMEDIATE")
@@ -914,10 +920,21 @@ def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: st
 
 def merge_wallet(from_id: str, to_id: str):
     """Transfer balance from one wallet to another (device → user on sign-in).
-    The source wallet balance is set to 0."""
+    The source wallet balance is set to 0. Idempotent: skips if already merged."""
+    if from_id == to_id:
+        return
     conn = _get_conn()
     conn.execute("BEGIN IMMEDIATE")
     try:
+        # Check if this merge already happened (prevent repeated merge abuse)
+        already_merged = conn.execute(
+            "SELECT 1 FROM token_transactions WHERE wallet_id = ? AND reason = 'merge_out' AND reference_id = ? LIMIT 1",
+            (from_id, to_id),
+        ).fetchone()
+        if already_merged:
+            conn.execute("ROLLBACK")
+            return
+
         from_row = conn.execute("SELECT * FROM wallets WHERE id = ?", (from_id,)).fetchone()
         if not from_row or from_row["balance"] == 0:
             conn.execute("ROLLBACK")
@@ -998,6 +1015,8 @@ def migrate_entitlements_to_wallets():
 
 def admin_grant_tokens(wallet_id: str, amount: int) -> int:
     """Admin: grant tokens to a wallet. Returns new balance."""
+    if amount <= 0 or amount > config.MAX_TOKEN_BALANCE:
+        raise ValueError(f"admin_grant amount must be between 1 and {config.MAX_TOKEN_BALANCE}, got {amount}")
     get_or_create_wallet(wallet_id, signup_bonus=False)
     _, new_balance = credit_tokens(wallet_id, amount, "admin_grant")
     return new_balance

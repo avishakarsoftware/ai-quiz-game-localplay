@@ -249,6 +249,8 @@ async def generate_quiz(request: QuizRequest, req: Request):
 
     # Resolve wallet and check token balance
     wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
     tokens.ensure_wallet(wallet_id)
     if not tokens.can_generate(wallet_id):
         raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
@@ -554,6 +556,8 @@ async def generate_mlt(request: MLTRequest, req: Request):
 
     # Resolve wallet and check token balance
     wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
     tokens.ensure_wallet(wallet_id)
     if not tokens.can_generate(wallet_id):
         raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
@@ -886,8 +890,11 @@ async def stripe_webhook(req: Request):
             return {"status": "error", "detail": "No wallet_id in metadata"}
 
         # Read token amount from metadata (set at checkout creation), fallback to config
+        # Cap to max allowed amount to prevent metadata tampering
         import json
-        token_amount = int(metadata.get("token_amount", str(config.TOKEN_PACK_AMOUNT)))
+        max_allowed = max(config.TOKEN_PACK_AMOUNT, config.PROMO_TOKEN_AMOUNT) if config.PROMO_TOKEN_AMOUNT > 0 else config.TOKEN_PACK_AMOUNT
+        raw_token_amount = int(metadata.get("token_amount", str(config.TOKEN_PACK_AMOUNT)))
+        token_amount = min(raw_token_amount, max_allowed) if raw_token_amount > 0 else config.TOKEN_PACK_AMOUNT
         promo_id = metadata.get("promo_id", "")
         txn_metadata = json.dumps({"promo_id": promo_id}) if promo_id else ""
 
@@ -912,7 +919,9 @@ async def stripe_webhook(req: Request):
                     stripe_session_id = sessions.data[0].id
                     refund_metadata = sessions.data[0].metadata
                     wallet_id = refund_metadata.get("wallet_id", "")
-                    refund_amount = int(refund_metadata.get("token_amount", str(config.TOKEN_PACK_AMOUNT)))
+                    raw_refund = int(refund_metadata.get("token_amount", str(config.TOKEN_PACK_AMOUNT)))
+                    refund_max = max(config.TOKEN_PACK_AMOUNT, config.PROMO_TOKEN_AMOUNT) if config.PROMO_TOKEN_AMOUNT > 0 else config.TOKEN_PACK_AMOUNT
+                    refund_amount = min(raw_refund, refund_max) if raw_refund > 0 else config.TOKEN_PACK_AMOUNT
                     if wallet_id:
                         success, _ = db.debit_tokens(wallet_id, refund_amount, "refund", stripe_session_id)
                         if not success:
@@ -967,7 +976,10 @@ async def entitlement_status_compat(req: Request):
 
 @app.post("/tokens/ad-reward")
 async def ad_reward(req: Request):
-    """Grant tokens for watching an ad. V1: trust client + daily cap."""
+    """Grant tokens for watching an ad. V1: trust client + daily cap + rate limit."""
+    client_ip = _get_client_ip(req)
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait.")
     wallet_id = tokens.get_wallet_id(req)
     if not wallet_id:
         raise HTTPException(status_code=400, detail="X-Device-Id header is required")
@@ -1050,6 +1062,8 @@ async def admin_grant(req: Request, wallet_id: str = "", device_id: str = "", us
     target = wallet_id or user_id or device_id
     if not target:
         raise HTTPException(status_code=400, detail="Provide wallet_id, device_id, or user_id")
+    if amount <= 0 or amount > config.MAX_TOKEN_BALANCE:
+        raise HTTPException(status_code=400, detail=f"Amount must be between 1 and {config.MAX_TOKEN_BALANCE}")
     new_balance = db.admin_grant_tokens(target, amount)
     return {"status": "granted", "wallet_id": target, "tokens_granted": amount, "new_balance": new_balance}
 

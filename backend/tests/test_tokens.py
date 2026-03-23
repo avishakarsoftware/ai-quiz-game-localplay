@@ -350,7 +350,8 @@ class TestAdRewardEndpoint:
 
     def test_ad_reward_success(self):
         from fastapi.testclient import TestClient
-        from main import app
+        from main import app, _rate_limit_store
+        _rate_limit_store.clear()
         client = TestClient(app)
         # Create wallet for the device
         db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
@@ -364,7 +365,8 @@ class TestAdRewardEndpoint:
 
     def test_ad_reward_daily_cap(self):
         from fastapi.testclient import TestClient
-        from main import app
+        from main import app, _rate_limit_store
+        _rate_limit_store.clear()
         client = TestClient(app)
         db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
         # Watch MAX_ADS_PER_DAY ads
@@ -377,7 +379,8 @@ class TestAdRewardEndpoint:
 
     def test_ad_reward_no_device_id(self):
         from fastapi.testclient import TestClient
-        from main import app
+        from main import app, _rate_limit_store
+        _rate_limit_store.clear()
         client = TestClient(app)
         res = client.post("/tokens/ad-reward")
         assert res.status_code == 400
@@ -395,3 +398,123 @@ class TestAdminTokenFunctions:
         assert result is not None
         assert result["wallet"]["balance"] == config.SIGNUP_BONUS_TOKENS - 1
         assert len(result["transactions"]) >= 1
+
+
+# --- Security Hardening Tests ---
+
+class TestAmountValidation:
+    """Ensure negative/zero amounts are rejected by all token functions."""
+
+    def test_debit_negative_amount_raises(self):
+        db.get_or_create_wallet(TEST_DEVICE)
+        with pytest.raises(ValueError, match="must be positive"):
+            db.debit_tokens(TEST_DEVICE, -5, "exploit")
+
+    def test_debit_zero_amount_raises(self):
+        db.get_or_create_wallet(TEST_DEVICE)
+        with pytest.raises(ValueError, match="must be positive"):
+            db.debit_tokens(TEST_DEVICE, 0, "exploit")
+
+    def test_credit_negative_amount_raises(self):
+        db.get_or_create_wallet(TEST_DEVICE)
+        with pytest.raises(ValueError, match="must be positive"):
+            db.credit_tokens(TEST_DEVICE, -10, "exploit")
+
+    def test_credit_zero_amount_raises(self):
+        db.get_or_create_wallet(TEST_DEVICE)
+        with pytest.raises(ValueError, match="must be positive"):
+            db.credit_tokens(TEST_DEVICE, 0, "exploit")
+
+    def test_credit_purchase_negative_raises(self):
+        db.get_or_create_wallet(TEST_DEVICE)
+        with pytest.raises(ValueError, match="must be positive"):
+            db.credit_purchase(TEST_DEVICE, -100, "fake-session")
+
+    def test_credit_purchase_zero_raises(self):
+        db.get_or_create_wallet(TEST_DEVICE)
+        with pytest.raises(ValueError, match="must be positive"):
+            db.credit_purchase(TEST_DEVICE, 0, "fake-session")
+
+
+class TestAdminGrantValidation:
+    """Admin grant must have bounded amounts."""
+
+    def test_admin_grant_negative_raises(self):
+        with pytest.raises(ValueError, match="must be between"):
+            db.admin_grant_tokens(TEST_DEVICE, -50)
+
+    def test_admin_grant_zero_raises(self):
+        with pytest.raises(ValueError, match="must be between"):
+            db.admin_grant_tokens(TEST_DEVICE, 0)
+
+    def test_admin_grant_over_max_raises(self):
+        with pytest.raises(ValueError, match="must be between"):
+            db.admin_grant_tokens(TEST_DEVICE, config.MAX_TOKEN_BALANCE + 1)
+
+    def test_admin_grant_at_max_succeeds(self):
+        new_bal = db.admin_grant_tokens(TEST_DEVICE, config.MAX_TOKEN_BALANCE)
+        assert new_bal == config.MAX_TOKEN_BALANCE
+
+
+class TestMergeWalletSecurity:
+    """Wallet merge abuse prevention."""
+
+    def test_merge_self_is_noop(self):
+        db.get_or_create_wallet(TEST_DEVICE)
+        original = db.get_wallet_balance(TEST_DEVICE)
+        db.merge_wallet(TEST_DEVICE, TEST_DEVICE)
+        assert db.get_wallet_balance(TEST_DEVICE) == original
+
+    def test_merge_idempotent_no_double_credit(self):
+        """Merging the same device→user twice should only transfer once."""
+        db.get_or_create_wallet(TEST_DEVICE)
+        db.get_or_create_wallet(TEST_USER)
+        device_bal = db.get_wallet_balance(TEST_DEVICE)
+        user_bal_before = db.get_wallet_balance(TEST_USER)
+
+        # First merge — should transfer
+        db.merge_wallet(TEST_DEVICE, TEST_USER)
+        user_bal_after_first = db.get_wallet_balance(TEST_USER)
+        assert user_bal_after_first == user_bal_before + device_bal
+
+        # Re-fund device wallet to simulate farming attempt
+        db.credit_tokens(TEST_DEVICE, 100, "refund_exploit")
+
+        # Second merge — should be blocked (already merged once)
+        db.merge_wallet(TEST_DEVICE, TEST_USER)
+        user_bal_after_second = db.get_wallet_balance(TEST_USER)
+        assert user_bal_after_second == user_bal_after_first  # No change
+
+    def test_merge_different_target_allowed(self):
+        """Merging to a different user is allowed (e.g. account transfer)."""
+        user_2 = "user-uuid-5678"
+        db.get_or_create_wallet(TEST_DEVICE)
+        db.get_or_create_wallet(TEST_USER)
+        db.get_or_create_wallet(user_2, signup_bonus=False)
+
+        db.merge_wallet(TEST_DEVICE, TEST_USER)
+        # Re-fund and merge to a different user — should work
+        db.credit_tokens(TEST_DEVICE, 50, "test")
+        db.merge_wallet(TEST_DEVICE, user_2)
+        assert db.get_wallet_balance(user_2) == 50
+
+
+class TestAdRewardEndpointRateLimit:
+    """Ad reward endpoint should be rate-limited."""
+
+    def test_ad_reward_rate_limited(self):
+        from fastapi.testclient import TestClient
+        from main import app, _rate_limit_store
+        client = TestClient(app)
+        headers = {"X-Device-Id": TEST_DEVICE}
+
+        # Clear rate limit store
+        _rate_limit_store.clear()
+
+        # Exhaust rate limit (config.RATE_LIMIT_MAX_REQUESTS calls)
+        for _ in range(config.RATE_LIMIT_MAX_REQUESTS):
+            client.post("/tokens/ad-reward", headers=headers)
+
+        # Next call should be 429
+        res = client.post("/tokens/ad-reward", headers=headers)
+        assert res.status_code == 429

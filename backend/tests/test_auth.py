@@ -424,3 +424,28 @@ class TestPromoCheckout:
         from main import CheckoutRequest
         req = CheckoutRequest(device_id=_DEVICE_ID)
         assert req.promo_id == ""
+
+
+class TestAdminGrantSecurity:
+    """Test admin grant amount validation at endpoint level."""
+
+    def test_admin_grant_negative_amount_400(self, test_app, monkeypatch):
+        import main as main_mod
+        monkeypatch.setattr(main_mod, "ADMIN_API_KEY", "test-key")
+        res = test_app.post("/admin/grant?wallet_id=test-wallet&amount=-50",
+                            headers={"Authorization": "Bearer test-key"})
+        assert res.status_code == 400
+
+    def test_admin_grant_zero_amount_400(self, test_app, monkeypatch):
+        import main as main_mod
+        monkeypatch.setattr(main_mod, "ADMIN_API_KEY", "test-key")
+        res = test_app.post("/admin/grant?wallet_id=test-wallet&amount=0",
+                            headers={"Authorization": "Bearer test-key"})
+        assert res.status_code == 400
+
+    def test_admin_grant_huge_amount_400(self, test_app, monkeypatch):
+        import main as main_mod
+        monkeypatch.setattr(main_mod, "ADMIN_API_KEY", "test-key")
+        res = test_app.post(f"/admin/grant?wallet_id=test-wallet&amount={config.MAX_TOKEN_BALANCE + 1}",
+                            headers={"Authorization": "Bearer test-key"})
+        assert res.status_code == 400
