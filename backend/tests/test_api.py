@@ -298,19 +298,19 @@ class TestExportImport:
         res = client.post("/quiz/import", json={"quiz": {"title": "bad"}})
         assert res.status_code == 422
 
-    def test_export_strips_answers(self):
-        """Exported quiz should not contain answer_index (anti-cheat)."""
+    def test_export_includes_answers_for_owner(self):
+        """Exported quiz includes answer_index (owner-protected endpoint)."""
         qid = seed_quiz()
         exported = client.get(f"/quiz/{qid}/export").json()["quiz"]
         for q in exported["questions"]:
-            assert "answer_index" not in q
+            assert "answer_index" in q
 
-    def test_roundtrip_export_import_fails_without_answers(self):
-        """Exported quiz (answers stripped) cannot be re-imported as-is."""
+    def test_roundtrip_export_import_succeeds(self):
+        """Exported quiz can be re-imported (answers included for owner)."""
         qid = seed_quiz()
         exported = client.get(f"/quiz/{qid}/export").json()["quiz"]
         res = client.post("/quiz/import", json={"quiz": exported})
-        assert res.status_code == 422  # Missing answer_index
+        assert res.status_code == 200
 
 
 # ---------------------------------------------------------------------------

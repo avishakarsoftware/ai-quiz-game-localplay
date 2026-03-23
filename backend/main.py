@@ -540,7 +540,7 @@ async def export_quiz(quiz_id: str, req: Request):
     if quiz_id not in quizzes:
         raise HTTPException(status_code=404, detail="Quiz not found")
     _check_content_owner(quiz_id, wallet_id)
-    return {"quiz": _strip_answers(quizzes[quiz_id])}
+    return {"quiz": quizzes[quiz_id]}
 
 
 class QuizImportRequest(BaseModel):

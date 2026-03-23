@@ -16,6 +16,15 @@ from mlt_engine import MLTEngine, PROVIDERS as MLT_PROVIDERS
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def clear_rate_limits():
+    """Clear rate limit state so quota tests aren't blocked by prior test traffic."""
+    from main import _rate_limit_store
+    _rate_limit_store.clear()
+    yield
+    _rate_limit_store.clear()
+
+
 def _fresh_device_headers():
     """Return headers with a unique device ID to avoid free-tier contamination."""
     import uuid
