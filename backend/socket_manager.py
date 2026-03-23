@@ -512,14 +512,7 @@ class SocketManager:
                             "message": "Internal error: wallet not configured.",
                         })
                         return
-                    spent, _ = token_module.spend_room(room.wallet_id)
-                    if not spent:
-                        await self._send_to_client(room, client_id, {
-                            "type": "INSUFFICIENT_SPARKS",
-                            "message": f"You need {config.COST_ROOM} sparks to start a game.",
-                        })
-                        return
-                    # WMLT requires minimum players
+                    # WMLT requires minimum players — check before charging
                     if room.game_type == "wmlt":
                         player_count = len([p for p in room.players.values() if p.get("nickname")])
                         if player_count < config.MIN_WMLT_PLAYERS:
@@ -528,6 +521,13 @@ class SocketManager:
                                 "message": f"Most Likely To needs at least {config.MIN_WMLT_PLAYERS} players to start",
                             })
                             return
+                    spent, _ = token_module.spend_room(room.wallet_id)
+                    if not spent:
+                        await self._send_to_client(room, client_id, {
+                            "type": "INSUFFICIENT_SPARKS",
+                            "message": f"You need {config.COST_ROOM} sparks to start a game.",
+                        })
+                        return
                     room.locked = True
                     if room.game_type != "wmlt":
                         self._select_bonus_questions(room)

@@ -64,6 +64,9 @@ async def get_system_info():
 # In-memory rate limiter
 _rate_limit_store: Dict[str, list] = defaultdict(list)
 
+# Global LLM call budget — protects API bill regardless of IP count
+_llm_call_timestamps: list = []
+
 
 def _get_client_ip(req: Request) -> str:
     """Get real client IP, accounting for reverse proxy headers.
@@ -92,6 +95,20 @@ def _check_rate_limit(client_ip: str) -> bool:
     if len(_rate_limit_store[client_ip]) >= config.RATE_LIMIT_MAX_REQUESTS:
         return False
     _rate_limit_store[client_ip].append(now)
+    return True
+
+
+def _check_llm_budget() -> bool:
+    """Return True if global LLM call budget allows another call. 0 = unlimited."""
+    if config.MAX_LLM_CALLS_PER_HOUR <= 0:
+        return True
+    now = time.time()
+    cutoff = now - 3600
+    _llm_call_timestamps[:] = [t for t in _llm_call_timestamps if t > cutoff]
+    if len(_llm_call_timestamps) >= config.MAX_LLM_CALLS_PER_HOUR:
+        logger.warning("LLM budget exhausted: %d/%d calls in the last hour", len(_llm_call_timestamps), config.MAX_LLM_CALLS_PER_HOUR)
+        return False
+    _llm_call_timestamps.append(now)
     return True
 
 
@@ -255,10 +272,8 @@ async def generate_quiz(request: QuizRequest, req: Request):
     if not tokens.can_generate(wallet_id):
         raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
 
-    # Spend 1 token for generation
-    spent, _ = tokens.spend_generate(wallet_id)
-    if not spent:
-        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
+    if not _check_llm_budget():
+        raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
 
     model_override = config.GEMINI_PREMIUM_MODEL if tokens.use_premium_model(wallet_id) and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
     try:
@@ -270,6 +285,11 @@ async def generate_quiz(request: QuizRequest, req: Request):
     if not quiz_data:
         raise HTTPException(status_code=500, detail="Failed to generate quiz")
 
+    # Charge only after successful generation
+    spent, _ = tokens.spend_generate(wallet_id)
+    if not spent:
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
+
     _evict_old_content()
     quiz_id = str(uuid.uuid4())
     quizzes[quiz_id] = quiz_data
@@ -280,11 +300,21 @@ async def generate_quiz(request: QuizRequest, req: Request):
     return {"quiz_id": quiz_id, "quiz": quiz_data}
 
 
+def _strip_answers(quiz_data: dict) -> dict:
+    """Return a copy of quiz data with answer_index removed from questions."""
+    stripped = {**quiz_data}
+    stripped["questions"] = [
+        {k: v for k, v in q.items() if k != "answer_index"}
+        for q in quiz_data.get("questions", [])
+    ]
+    return stripped
+
+
 @app.get("/quiz/{quiz_id}")
 async def get_quiz(quiz_id: str):
     if quiz_id not in quizzes:
         raise HTTPException(status_code=404, detail="Quiz not found")
-    return quizzes[quiz_id]
+    return _strip_answers(quizzes[quiz_id])
 
 
 class QuizUpdateRequest(BaseModel):
@@ -562,10 +592,8 @@ async def generate_mlt(request: MLTRequest, req: Request):
     if not tokens.can_generate(wallet_id):
         raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
 
-    # Spend 1 token for generation
-    spent, _ = tokens.spend_generate(wallet_id)
-    if not spent:
-        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
+    if not _check_llm_budget():
+        raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
 
     model_override = config.GEMINI_PREMIUM_MODEL if tokens.use_premium_model(wallet_id) and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
     try:
@@ -576,6 +604,11 @@ async def generate_mlt(request: MLTRequest, req: Request):
         raise HTTPException(status_code=503, detail="Free tier limit reached. Upgrade for unlimited games.")
     if not mlt_data:
         raise HTTPException(status_code=500, detail="Failed to generate statements")
+
+    # Charge only after successful generation
+    spent, _ = tokens.spend_generate(wallet_id)
+    if not spent:
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
 
     _evict_old_content()
     scenario_id = str(uuid.uuid4())
@@ -680,14 +713,20 @@ game_history: List[dict] = []
 
 
 @app.get("/history")
-async def get_game_history():
-    """Get history of completed games."""
+async def get_game_history(req: Request):
+    """Get history of completed games. Requires device identity."""
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     return {"games": game_history}
 
 
 @app.get("/history/{room_code}")
-async def get_game_detail(room_code: str):
-    """Get detailed results of a specific game."""
+async def get_game_detail(room_code: str, req: Request):
+    """Get detailed results of a specific game. Requires device identity."""
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     game = next((g for g in game_history if g["room_code"] == room_code), None)
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
@@ -759,7 +798,11 @@ class SignInRequest(BaseModel):
 
 
 @app.post("/auth/signin")
-async def auth_signin(request: SignInRequest):
+async def auth_signin(request: SignInRequest, req: Request):
+    # Bind body device_id to caller's device context (X-Device-Id header)
+    header_device_id = tokens.get_device_id(req)
+    if header_device_id and header_device_id != request.device_id:
+        raise HTTPException(status_code=400, detail="device_id does not match X-Device-Id header")
     result = auth.signin(request.provider, request.id_token, request.device_id)
     if not result:
         raise HTTPException(status_code=401, detail="Invalid or expired ID token")
@@ -851,8 +894,8 @@ async def create_checkout(request: CheckoutRequest, req: Request):
                 "token_amount": str(token_amount),
                 "promo_id": promo_id,
             },
-            success_url=f"{origins[0]}?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{origins[0]}?checkout=cancel",
+            success_url=f"{config.CHECKOUT_RETURN_URL or origins[0]}?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{config.CHECKOUT_RETURN_URL or origins[0]}?checkout=cancel",
         )
         return {"checkout_url": session.url, "session_id": session.id}
     except Exception as e:
@@ -1072,6 +1115,71 @@ async def admin_grant(req: Request, wallet_id: str = "", device_id: str = "", us
         raise HTTPException(status_code=400, detail=f"Amount must be between 1 and {config.MAX_TOKEN_BALANCE}")
     new_balance = db.admin_grant_tokens(target, amount)
     return {"status": "granted", "wallet_id": target, "tokens_granted": amount, "new_balance": new_balance}
+
+
+@app.get("/admin/stats")
+async def admin_stats(req: Request):
+    """Live server stats: LLM usage, rooms, wallets, revenue."""
+    _check_admin(req)
+    now = time.time()
+    cutoff = now - 3600
+
+    # LLM budget
+    active_llm_calls = len([t for t in _llm_call_timestamps if t > cutoff])
+
+    # Active rooms
+    active_rooms = len(socket_manager.rooms)
+    total_connections = sum(len(r.connections) for r in socket_manager.rooms.values())
+
+    # Content in memory
+    total_quizzes = len(quizzes)
+    total_mlt = len(mlt_scenarios)
+
+    # Database stats
+    conn = db._get_conn()
+    wallet_count = conn.execute("SELECT COUNT(*) as cnt FROM wallets").fetchone()["cnt"]
+    total_sparks = conn.execute("SELECT COALESCE(SUM(balance), 0) as total FROM wallets").fetchone()["total"]
+    paying_users = conn.execute("SELECT COUNT(*) as cnt FROM wallets WHERE lifetime_purchased > 0").fetchone()["cnt"]
+    total_revenue = conn.execute(
+        "SELECT COUNT(*) as cnt FROM token_transactions WHERE reason = 'purchase'"
+    ).fetchone()["cnt"]
+    total_merges = conn.execute(
+        "SELECT COUNT(*) as cnt FROM token_transactions WHERE reason = 'merge_in'"
+    ).fetchone()["cnt"]
+    users_count = conn.execute("SELECT COUNT(*) as cnt FROM users").fetchone()["cnt"]
+
+    # Rate limit pressure
+    active_ips = len(_rate_limit_store)
+
+    return {
+        "llm": {
+            "calls_last_hour": active_llm_calls,
+            "budget_per_hour": config.MAX_LLM_CALLS_PER_HOUR,
+            "budget_remaining": max(0, config.MAX_LLM_CALLS_PER_HOUR - active_llm_calls),
+            "utilization_pct": round(active_llm_calls / config.MAX_LLM_CALLS_PER_HOUR * 100, 1) if config.MAX_LLM_CALLS_PER_HOUR > 0 else 0,
+        },
+        "rooms": {
+            "active": active_rooms,
+            "total_connections": total_connections,
+        },
+        "content": {
+            "quizzes_in_memory": total_quizzes,
+            "mlt_in_memory": total_mlt,
+        },
+        "economy": {
+            "total_wallets": wallet_count,
+            "total_sparks_in_circulation": total_sparks,
+            "paying_users": paying_users,
+            "total_purchases": total_revenue,
+            "total_merges": total_merges,
+        },
+        "users": {
+            "signed_in_accounts": users_count,
+        },
+        "rate_limiting": {
+            "tracked_ips": active_ips,
+        },
+    }
 
 
 @app.get("/")

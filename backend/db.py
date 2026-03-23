@@ -699,6 +699,7 @@ def get_or_create_wallet(wallet_id: str, signup_bonus: bool = True) -> dict:
                 (wallet_id, bonus, bonus, now),
             )
         conn.commit()
+        logger.info("New wallet created: %s (bonus=%d)", wallet_id[:8], bonus)
     except sqlite3.IntegrityError:
         # Race condition: another thread created it
         row = conn.execute("SELECT * FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
@@ -920,13 +921,23 @@ def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: st
 
 def merge_wallet(from_id: str, to_id: str):
     """Transfer balance from one wallet to another (device → user on sign-in).
-    The source wallet balance is set to 0. Idempotent: skips if already merged."""
+    The source wallet balance is set to 0. Max 1 merge per target user wallet."""
     if from_id == to_id:
         return
     conn = _get_conn()
     conn.execute("BEGIN IMMEDIATE")
     try:
-        # Check if this merge already happened (prevent repeated merge abuse)
+        # Max 1 merge per user account — prevents consolidating many synthetic wallets
+        existing_merges = conn.execute(
+            "SELECT COUNT(*) as cnt FROM token_transactions WHERE wallet_id = ? AND reason = 'merge_in'",
+            (to_id,),
+        ).fetchone()
+        if existing_merges and existing_merges["cnt"] >= 1:
+            logger.warning("Merge rejected: user wallet %s already has %d merge(s)", to_id[:8], existing_merges["cnt"])
+            conn.execute("ROLLBACK")
+            return
+
+        # Check if this specific merge already happened
         already_merged = conn.execute(
             "SELECT 1 FROM token_transactions WHERE wallet_id = ? AND reason = 'merge_out' AND reference_id = ? LIMIT 1",
             (from_id, to_id),
@@ -981,6 +992,7 @@ def merge_wallet(from_id: str, to_id: str):
             (to_id, actual_transfer, from_id, new_to_balance, now),
         )
         conn.execute("COMMIT")
+        logger.info("Wallet merge: %s → %s (%d sparks transferred)", from_id[:8], to_id[:8], actual_transfer)
     except Exception:
         conn.execute("ROLLBACK")
         raise

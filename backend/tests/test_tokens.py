@@ -24,6 +24,8 @@ def real_token_functions(fund_test_wallet, monkeypatch):
     monkeypatch.setattr(tokens_mod, "can_create_room", tokens_mod.can_create_room)
     monkeypatch.setattr(tokens_mod, "ensure_wallet", tokens_mod.ensure_wallet)
     monkeypatch.setattr(tokens_mod, "use_premium_model", tokens_mod.use_premium_model)
+    # Set signup bonus to 20 for token tests (prod default is 0 to prevent farming)
+    monkeypatch.setattr(config, "SIGNUP_BONUS_TOKENS", 20)
     # Clean wallet and entitlement tables so each test starts fresh
     conn = db._get_conn()
     conn.execute("DELETE FROM wallets")
@@ -497,6 +499,51 @@ class TestMergeWalletSecurity:
         db.credit_tokens(TEST_DEVICE, 50, "test")
         db.merge_wallet(TEST_DEVICE, user_2)
         assert db.get_wallet_balance(user_2) == 50
+
+
+class TestMaxOneMergePerUser:
+    """User wallets should only accept 1 merge (prevents consolidating farmed wallets)."""
+
+    def test_second_merge_from_different_device_blocked(self):
+        """Merging a second device into the same user should be blocked."""
+        device_2 = "22222222-3333-4444-5555-666666666666"
+        db.get_or_create_wallet(TEST_DEVICE)
+        db.get_or_create_wallet(device_2)
+        db.get_or_create_wallet(TEST_USER, signup_bonus=False)
+
+        # First merge succeeds
+        db.merge_wallet(TEST_DEVICE, TEST_USER)
+        user_bal = db.get_wallet_balance(TEST_USER)
+        assert user_bal > 0
+
+        # Second merge from different device is blocked
+        db.merge_wallet(device_2, TEST_USER)
+        assert db.get_wallet_balance(TEST_USER) == user_bal  # No change
+        assert db.get_wallet_balance(device_2) > 0  # Device wallet untouched
+
+    def test_first_merge_still_works(self):
+        """First merge into a fresh user should succeed normally."""
+        db.get_or_create_wallet(TEST_DEVICE)
+        db.get_or_create_wallet(TEST_USER, signup_bonus=False)
+        db.merge_wallet(TEST_DEVICE, TEST_USER)
+        assert db.get_wallet_balance(TEST_USER) == config.SIGNUP_BONUS_TOKENS
+        assert db.get_wallet_balance(TEST_DEVICE) == 0
+
+
+class TestSignupBonusZero:
+    """With SIGNUP_BONUS_TOKENS=0, new wallets should start empty."""
+
+    def test_zero_signup_bonus(self, monkeypatch):
+        monkeypatch.setattr(config, "SIGNUP_BONUS_TOKENS", 0)
+        wallet = db.get_or_create_wallet("zero-bonus-device")
+        assert wallet["balance"] == 0
+
+    def test_daily_bonus_still_works_with_zero_signup(self, monkeypatch):
+        monkeypatch.setattr(config, "SIGNUP_BONUS_TOKENS", 0)
+        db.get_or_create_wallet(TEST_DEVICE)
+        granted, new_bal = db.check_and_grant_daily_bonus(TEST_DEVICE)
+        assert granted is True
+        assert new_bal == config.DAILY_BONUS_TOKENS
 
 
 class TestAdRewardEndpointRateLimit:

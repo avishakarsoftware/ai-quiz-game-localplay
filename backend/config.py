@@ -30,6 +30,7 @@ ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "")
 RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX_REQUESTS = 5  # max quiz generations per window per IP
 DAILY_QUIZ_LIMIT = int(os.getenv("DAILY_QUIZ_LIMIT", "100"))  # max quiz generations per day (0 = unlimited)
+MAX_LLM_CALLS_PER_HOUR = int(os.getenv("MAX_LLM_CALLS_PER_HOUR", "500"))  # global cap across all users (0 = unlimited)
 TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "false").lower() == "true"  # trust X-Forwarded-For
 
 # --- WebSocket Security ---
@@ -78,12 +79,17 @@ TOKEN_PACK_AMOUNT = int(os.getenv("TOKEN_PACK_AMOUNT", "110"))
 PROMO_ID = os.getenv("PROMO_ID", "")  # e.g. "launch_2026" — must match config.json promo.id
 PROMO_TOKEN_AMOUNT = int(os.getenv("PROMO_TOKEN_AMOUNT", "0"))  # tokens to credit when promo is active
 
+# --- Legacy (kept for db.py migration compatibility, not actively used) ---
+PREMIUM_DURATION_HOURS = int(os.getenv("PREMIUM_DURATION_HOURS", "720"))  # 30 days
+FREE_TIER_LIMIT = int(os.getenv("FREE_TIER_LIMIT", "3"))
+
 # --- Premium / Payments ---
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 GEMINI_PREMIUM_MODEL = os.getenv("GEMINI_PREMIUM_MODEL", "gemini-2.5-flash")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")
+CHECKOUT_RETURN_URL = os.getenv("CHECKOUT_RETURN_URL", "")  # explicit return URL for Stripe checkout
 
 # --- Auth (Phase 2) ---
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")

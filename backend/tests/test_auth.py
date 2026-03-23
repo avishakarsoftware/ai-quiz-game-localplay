@@ -426,6 +426,80 @@ class TestPromoCheckout:
         assert req.promo_id == ""
 
 
+class TestSigninDeviceIdBinding:
+    """Sign-in should reject mismatched body device_id vs X-Device-Id header."""
+
+    def test_signin_mismatched_device_id_400(self, test_app):
+        res = test_app.post("/auth/signin", json={
+            "provider": "google",
+            "id_token": "fake-token",
+            "device_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        }, headers={"X-Device-Id": "11111111-2222-3333-4444-555555555555"})
+        assert res.status_code == 400
+        assert "does not match" in res.json()["detail"]
+
+    def test_signin_matching_device_id_passes_validation(self, test_app):
+        """Matching header should not cause 400 (will get 401 from invalid token)."""
+        device = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        res = test_app.post("/auth/signin", json={
+            "provider": "google",
+            "id_token": "fake-token",
+            "device_id": device,
+        }, headers={"X-Device-Id": device})
+        # Gets past device_id check — fails on token verification (401)
+        assert res.status_code == 401
+
+    def test_signin_no_header_passes_validation(self, test_app):
+        """Missing X-Device-Id header should not cause 400 (old clients)."""
+        res = test_app.post("/auth/signin", json={
+            "provider": "google",
+            "id_token": "fake-token",
+            "device_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        })
+        assert res.status_code == 401  # Fails on token, not device_id
+
+
+class TestQuizAnswerStripping:
+    """Public quiz endpoint should strip answer_index from questions."""
+
+    def test_get_quiz_strips_answers(self, test_app):
+        """GET /quiz/{id} should not include answer_index."""
+        from main import quizzes, quiz_timestamps
+        import time
+        quiz_id = "test-strip-answers"
+        quizzes[quiz_id] = {
+            "quiz_title": "Test",
+            "questions": [
+                {"id": "q1", "text": "Q?", "options": ["A", "B", "C", "D"], "answer_index": 2},
+            ],
+        }
+        quiz_timestamps[quiz_id] = time.time()
+        res = test_app.get(f"/quiz/{quiz_id}")
+        assert res.status_code == 200
+        data = res.json()
+        for q in data["questions"]:
+            assert "answer_index" not in q
+        # Clean up
+        del quizzes[quiz_id]
+        del quiz_timestamps[quiz_id]
+
+
+class TestHistoryAuth:
+    """History endpoints should require device identity."""
+
+    def test_history_no_device_id_401(self, test_app, monkeypatch):
+        import tokens as tokens_mod
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: "")
+        res = test_app.get("/history")
+        assert res.status_code == 401
+
+    def test_history_detail_no_device_id_401(self, test_app, monkeypatch):
+        import tokens as tokens_mod
+        monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: "")
+        res = test_app.get("/history/NONEXISTENT")
+        assert res.status_code == 401
+
+
 class TestAdminGrantSecurity:
     """Test admin grant amount validation at endpoint level."""
 
