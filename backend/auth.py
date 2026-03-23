@@ -156,6 +156,9 @@ def signin(provider: str, id_token: str, device_id: str) -> Optional[dict]:
     # 3. Merge device entitlements/usage to user
     db.merge_device_to_user(user["id"], device_id)
 
+    # 4. Merge device token wallet to user wallet
+    db.merge_wallet(device_id, user["id"])
+
     # 4. Create session JWT
     session_token = create_session_token(user["id"], device_id)
     if not session_token:

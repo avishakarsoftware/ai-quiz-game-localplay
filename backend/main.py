@@ -23,7 +23,7 @@ from quiz_engine import quiz_engine, _sanitize_quiz, _validate_quiz, DailyLimitE
 from mlt_engine import mlt_engine, _sanitize_mlt, _validate_mlt
 from socket_manager import socket_manager
 from image_engine import image_engine
-import premium
+import tokens
 import db
 import auth
 
@@ -236,36 +236,29 @@ async def generate_quiz(request: QuizRequest, req: Request):
     client_ip = _get_client_ip(req)
     if not _check_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating another quiz.")
-    device_id = premium.get_device_id(req)
+    device_id = tokens.get_device_id(req)
     if not device_id:
         raise HTTPException(status_code=400, detail="X-Device-Id header is required")
-    idem_key = premium.get_idempotency_key(req)
+    idem_key = tokens.get_idempotency_key(req)
 
     # Idempotency: return cached result if this request was already processed
-    # Scoped to device — reject if key exists but for a different device
     if idem_key:
         cached_id = db.check_idempotency(idem_key, device_id)
         if cached_id and cached_id in quizzes:
             return {"quiz_id": cached_id, "quiz": quizzes[cached_id]}
 
-    # Check session for signed-in user
-    session = auth.get_session_from_request(req)
-    user_id = session["user_id"] if session else ""
+    # Resolve wallet and check token balance
+    wallet_id = tokens.get_wallet_id(req)
+    tokens.ensure_wallet(wallet_id)
+    if not tokens.can_generate(wallet_id):
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
 
-    # Check entitlement (peek only — consumption happens at room creation, not generation)
-    if user_id:
-        has_entitlement = premium.has_active_entitlement_for_user(user_id)
-    else:
-        has_entitlement = premium.has_active_entitlement(device_id)
-    if not has_entitlement:
-        if user_id:
-            can_play, used = premium.peek_user_free_limit(user_id)
-        else:
-            can_play, used = premium.peek_free_limit(device_id)
-        if not can_play:
-            raise HTTPException(status_code=402, detail=f"You've used all {used} free games. Get a 10-Game Pack for just $0.99!")
+    # Spend 1 token for generation
+    spent, _ = tokens.spend_generate(wallet_id)
+    if not spent:
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
 
-    model_override = config.GEMINI_PREMIUM_MODEL if has_entitlement and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
+    model_override = config.GEMINI_PREMIUM_MODEL if tokens.use_premium_model(wallet_id) and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
     try:
         quiz_data = await quiz_engine.generate_quiz(request.prompt, request.difficulty, request.num_questions, request.provider, model_override=model_override)
     except DailyLimitExceeded:
@@ -409,30 +402,12 @@ async def create_room(request: RoomCreateRequest, req: Request):
         if not game_data.get("questions"):
             raise HTTPException(status_code=422, detail="Quiz has no questions")
 
-    # Consume entitlement/free game at room creation (not generation)
-    device_id = premium.get_device_id(req)
-    session = auth.get_session_from_request(req)
-    user_id = session["user_id"] if session else ""
-
-    if user_id:
-        has_entitlement = premium.has_active_entitlement_for_user(user_id)
-    else:
-        has_entitlement = premium.has_active_entitlement(device_id) if device_id else False
-
-    if has_entitlement:
-        if user_id:
-            consumed, _ = premium.check_and_use_entitlement_for_user(user_id)
-        else:
-            consumed, _ = premium.check_and_use_entitlement(device_id)
-        if not consumed:
-            raise HTTPException(status_code=402, detail="Your game pack has expired. Get a new 10-Game Pack to continue!")
-    elif device_id:
-        if user_id:
-            allowed, _ = premium.check_user_free_limit(user_id, device_id)
-        else:
-            allowed, _ = premium.check_free_limit(device_id)
-        if not allowed:
-            raise HTTPException(status_code=402, detail="You've used all your free games. Get a 10-Game Pack for just $0.99!")
+    # Spend tokens at room creation (10 tokens to play)
+    wallet_id = tokens.get_wallet_id(req)
+    tokens.ensure_wallet(wallet_id)
+    spent, _ = tokens.spend_room(wallet_id)
+    if not spent:
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_ROOM} tokens to play. Buy tokens or watch an ad!")
 
     # Enforce max rooms limit
     if len(socket_manager.rooms) >= config.MAX_ROOMS:
@@ -566,36 +541,29 @@ async def generate_mlt(request: MLTRequest, req: Request):
     client_ip = _get_client_ip(req)
     if not _check_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating.")
-    device_id = premium.get_device_id(req)
+    device_id = tokens.get_device_id(req)
     if not device_id:
         raise HTTPException(status_code=400, detail="X-Device-Id header is required")
-    idem_key = premium.get_idempotency_key(req)
+    idem_key = tokens.get_idempotency_key(req)
 
     # Idempotency: return cached result if this request was already processed
-    # Scoped to device — reject if key exists but for a different device
     if idem_key:
         cached_id = db.check_idempotency(idem_key, device_id)
         if cached_id and cached_id in mlt_scenarios:
             return {"scenario_id": cached_id, "game": mlt_scenarios[cached_id]}
 
-    # Check session for signed-in user
-    session = auth.get_session_from_request(req)
-    user_id = session["user_id"] if session else ""
+    # Resolve wallet and check token balance
+    wallet_id = tokens.get_wallet_id(req)
+    tokens.ensure_wallet(wallet_id)
+    if not tokens.can_generate(wallet_id):
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
 
-    # Check entitlement (peek only — consumption happens at room creation, not generation)
-    if user_id:
-        has_entitlement = premium.has_active_entitlement_for_user(user_id)
-    else:
-        has_entitlement = premium.has_active_entitlement(device_id)
-    if not has_entitlement:
-        if user_id:
-            can_play, used = premium.peek_user_free_limit(user_id)
-        else:
-            can_play, used = premium.peek_free_limit(device_id)
-        if not can_play:
-            raise HTTPException(status_code=402, detail=f"You've used all {used} free games. Get a 10-Game Pack for just $0.99!")
+    # Spend 1 token for generation
+    spent, _ = tokens.spend_generate(wallet_id)
+    if not spent:
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
 
-    model_override = config.GEMINI_PREMIUM_MODEL if has_entitlement and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
+    model_override = config.GEMINI_PREMIUM_MODEL if tokens.use_premium_model(wallet_id) and (request.provider or config.DEFAULT_PROVIDER) == "gemini" else None
     try:
         mlt_data = await mlt_engine.generate_statements(request.prompt, request.difficulty, request.num_rounds, request.provider, model_override=model_override)
     except DailyLimitExceeded:
@@ -781,7 +749,7 @@ class SignInRequest(BaseModel):
     @classmethod
     def validate_device_id(cls, v: str) -> str:
         v = v.strip()
-        if not premium._UUID_RE.match(v):
+        if not tokens._UUID_RE.match(v):
             raise ValueError('device_id must be a valid UUID')
         return v
 
@@ -803,9 +771,7 @@ async def auth_me(req: Request):
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
-    # Get entitlement status for this user
-    ent = db.get_active_entitlement_for_user(user["id"])
-    free_used = db.get_user_free_usage_count(user["id"])
+    token_status = tokens.get_token_status(user["id"])
 
     return {
         "user": {
@@ -813,14 +779,7 @@ async def auth_me(req: Request):
             "provider": user["provider"],
             "email": user.get("email"),
         },
-        "entitlement": {
-            "premium": ent is not None,
-            "status": ent["status"] if ent else None,
-            "games_remaining": ent["games_remaining"] if ent else 0,
-            "expires_at": ent["expires_at"] if ent else None,
-            "free_games_used": free_used,
-            "free_games_limit": config.FREE_TIER_LIMIT,
-        },
+        "tokens": token_status,
     }
 
 
@@ -833,7 +792,7 @@ class CheckoutRequest(BaseModel):
     @classmethod
     def validate_device_id(cls, v: str) -> str:
         v = v.strip()
-        if not premium._UUID_RE.match(v):
+        if not tokens._UUID_RE.match(v):
             raise ValueError('device_id must be a valid UUID')
         return v
 
@@ -841,12 +800,12 @@ class CheckoutRequest(BaseModel):
 @app.post("/checkout/create")
 async def create_checkout(request: CheckoutRequest, req: Request):
     # Enforce iOS IAP-only rule: block Stripe on native iOS
-    platform = premium.get_platform(req)
+    platform = tokens.get_platform(req)
     if platform == "ios":
         raise HTTPException(status_code=403, detail="Use in-app purchase on iOS")
 
     # Verify body device_id matches header device_id
-    header_device_id = premium.get_device_id(req)
+    header_device_id = tokens.get_device_id(req)
     if header_device_id and header_device_id != request.device_id:
         raise HTTPException(status_code=400, detail="Device ID mismatch")
 
@@ -855,28 +814,19 @@ async def create_checkout(request: CheckoutRequest, req: Request):
     import stripe
     stripe.api_key = config.STRIPE_SECRET_KEY
 
-    # Create a pending entitlement in DB so we can track it
-    entitlement_id = str(uuid.uuid4())
-
-    # Link to user if signed in (so entitlement is available cross-device)
-    user_session = auth.get_session_from_request(req)
-    user_id = user_session["user_id"] if user_session else None
+    # Resolve wallet for this user/device
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="Device ID required")
+    tokens.ensure_wallet(wallet_id)
 
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
             line_items=[{"price": config.STRIPE_PRICE_ID, "quantity": 1}],
-            metadata={"device_id": request.device_id, "entitlement_id": entitlement_id},
+            metadata={"device_id": request.device_id, "wallet_id": wallet_id},
             success_url=f"{origins[0]}?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{origins[0]}?checkout=cancel",
-        )
-        # Create pending entitlement linked to Stripe session and user (if signed in)
-        db.create_entitlement(
-            entitlement_id=entitlement_id,
-            device_id=request.device_id,
-            stripe_session_id=session.id,
-            user_id=user_id,
-            status="pending_payment",
         )
         return {"checkout_url": session.url, "session_id": session.id}
     except Exception as e:
@@ -893,111 +843,117 @@ async def stripe_webhook(req: Request):
     payload = await req.body()
     sig = req.headers.get("stripe-signature", "")
     try:
-        # construct_event checks signature + enforces 300s timestamp tolerance
         event = stripe.Webhook.construct_event(payload, sig, config.STRIPE_WEBHOOK_SECRET)
     except (ValueError, stripe.SignatureVerificationError) as e:
         logger.warning("Stripe webhook signature failed: %s", e)
         raise HTTPException(status_code=400, detail="Invalid signature")
 
-    # Idempotency is enforced by UNIQUE index on stripe_session_id —
-    # duplicate events are no-ops via activate_pending_entitlement logic
-
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         stripe_session_id = session.get("id", "")
-        device_id = session.get("metadata", {}).get("device_id", "")
-        if not device_id or not premium._UUID_RE.match(device_id):
-            logger.error("Invalid device_id in webhook metadata: %s", device_id[:40] if device_id else "empty")
-            return {"status": "error", "detail": "Invalid device_id in metadata"}
+        metadata = session.get("metadata", {})
+        device_id = metadata.get("device_id", "")
+        wallet_id = metadata.get("wallet_id", "")
 
-        # Activate the pending entitlement
-        ent = db.activate_pending_entitlement(stripe_session_id)
-        if not ent:
-            # May already be active (duplicate webhook) — check for existing active entitlement
-            ent = db.get_entitlement_by_stripe_session(stripe_session_id)
-        if ent and device_id:
-            token = premium.create_premium_token(
-                device_id, entitlement_id=ent["id"],
-                games_remaining=ent["games_remaining"],
-            )
-            if not token:
-                logger.error("Failed to create premium token (JWT_SECRET not configured?) for device %s", device_id[:8])
-            else:
-                db.store_pending_token(device_id, token)
-            logger.info("Entitlement activated for device %s (session %s)", device_id[:8], stripe_session_id[:8])
-        else:
-            logger.warning("No entitlement found for session %s (device=%s)", stripe_session_id[:8], device_id[:8] if device_id else "none")
+        if not wallet_id:
+            # Fallback: use device_id as wallet_id (backward compat)
+            wallet_id = device_id
 
-    elif event["type"] == "checkout.session.expired":
-        session = event["data"]["object"]
-        stripe_session_id = session.get("id", "")
-        if stripe_session_id:
-            # Clean up pending entitlement that was never completed
-            conn = db._get_conn()
-            cursor = conn.execute(
-                "UPDATE entitlements SET status = 'expired_checkout' "
-                "WHERE stripe_session_id = ? AND status = 'pending_payment'",
-                (stripe_session_id,),
-            )
-            conn.commit()
-            if cursor.rowcount > 0:
-                logger.info("Expired checkout session cleaned up: %s", stripe_session_id[:8])
+        if not wallet_id:
+            logger.error("No wallet_id in webhook metadata for session %s", stripe_session_id[:8])
+            return {"status": "error", "detail": "No wallet_id in metadata"}
+
+        # Credit tokens to wallet (idempotent — credit_purchase checks for duplicate reference_id atomically)
+        import json
+        _, new_balance = db.credit_purchase(wallet_id, config.TOKEN_PACK_AMOUNT, stripe_session_id)
+        logger.info("Credited %d tokens to wallet %s (session %s, balance=%d)",
+                    config.TOKEN_PACK_AMOUNT, wallet_id[:8], stripe_session_id[:8], new_balance)
+
+        # Store pickup notification for frontend polling
+        if device_id:
+            notification = json.dumps({"tokens_added": config.TOKEN_PACK_AMOUNT, "new_balance": db.get_wallet_balance(wallet_id)})
+            db.store_pending_token(device_id, notification)
 
     elif event["type"] in ("charge.refunded", "charge.dispute.created"):
-        # Revoke entitlement on refund/chargeback
+        # Debit tokens back on refund/chargeback
         charge = event["data"]["object"]
-        # Stripe charge has payment_intent; we need session_id — look up via metadata
         payment_intent_id = charge.get("payment_intent", "")
         if payment_intent_id:
             try:
                 sessions = stripe.checkout.Session.list(payment_intent=payment_intent_id, limit=1)
                 if sessions.data:
                     stripe_session_id = sessions.data[0].id
-                    revoked = db.revoke_entitlement_by_stripe(stripe_session_id)
-                    if revoked:
-                        logger.info("Entitlement revoked for session %s (refund/dispute)", stripe_session_id[:8])
+                    wallet_id = sessions.data[0].metadata.get("wallet_id", "")
+                    if wallet_id:
+                        success, _ = db.debit_tokens(wallet_id, config.TOKEN_PACK_AMOUNT, "refund", stripe_session_id)
+                        if not success:
+                            logger.warning("Failed to debit tokens for refund: wallet=%s session=%s", wallet_id, stripe_session_id)
+                        else:
+                            logger.info("Debited %d tokens from wallet %s (refund, session %s)",
+                                        config.TOKEN_PACK_AMOUNT, wallet_id[:8], stripe_session_id[:8])
             except Exception as e:
-                logger.error("Failed to look up session for refund: %s", e)
+                logger.error("Failed to process refund: %s", e)
 
     return {"status": "ok"}
 
 
 @app.get("/checkout/token")
 async def get_checkout_token(req: Request):
-    # Use X-Device-Id header (not query param) to bind token to authenticated device
-    device_id = premium.get_device_id(req)
+    """Poll for checkout completion — returns token credit notification."""
+    device_id = tokens.get_device_id(req)
     if not device_id:
         raise HTTPException(status_code=400, detail="X-Device-Id header is required")
-    token = db.pop_pending_token(device_id)
-    if not token:
+    notification = db.pop_pending_token(device_id)
+    if not notification:
         raise HTTPException(status_code=404, detail="Token not ready")
-    return {"token": token}
+    # notification is JSON string: {"tokens_added": 110, "new_balance": X}
+    import json
+    try:
+        return json.loads(notification)
+    except (json.JSONDecodeError, TypeError):
+        return {"tokens_added": config.TOKEN_PACK_AMOUNT}
 
 
+@app.get("/tokens/balance")
+async def token_balance(req: Request):
+    """Get current token balance. Auto-grants daily bonus if new UTC day."""
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        device_id = tokens.get_device_id(req)
+        if not device_id:
+            return {"balance": 0, "has_purchased": False, "daily_bonus_available": False,
+                    "daily_bonus_granted": False, "bonus_amount": 0,
+                    "cost_generate": config.COST_GENERATE, "cost_room": config.COST_ROOM,
+                    "ads_remaining_today": config.MAX_ADS_PER_DAY}
+        wallet_id = device_id
+    return tokens.get_token_status(wallet_id)
+
+
+# Keep old endpoint as alias for backward compatibility during rollout
 @app.get("/entitlements/current")
-async def entitlement_status(req: Request):
-    device_id = premium.get_device_id(req)
-    if not device_id:
-        return {
-            "premium": False,
-            "status": None,
-            "games_remaining": 0,
-            "expires_at": None,
-            "free_games_used": 0,
-            "free_games_limit": config.FREE_TIER_LIMIT,
-            "pending_purchase": False,
-        }
-    # If signed in, use user-scoped entitlements
-    session = auth.get_session_from_request(req)
-    user_id = session["user_id"] if session else ""
-    return premium.get_entitlement_status(device_id, user_id=user_id)
+async def entitlement_status_compat(req: Request):
+    """Legacy endpoint — redirects to token balance."""
+    return await token_balance(req)
+
+
+@app.post("/tokens/ad-reward")
+async def ad_reward(req: Request):
+    """Grant tokens for watching an ad. V1: trust client + daily cap."""
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    tokens.ensure_wallet(wallet_id)
+    granted, new_balance, ads_remaining = db.check_and_grant_ad_reward(wallet_id)
+    if not granted:
+        raise HTTPException(status_code=429, detail="Daily ad limit reached. Come back tomorrow!")
+    return {"granted": True, "tokens_added": config.AD_REWARD_TOKENS,
+            "new_balance": new_balance, "ads_remaining_today": ads_remaining}
 
 
 @app.post("/purchases/restore")
 async def restore_purchases(req: Request):
-    """Restore IAP purchases — finds active/expired Apple or Google entitlements
-    and returns a fresh premium token if found."""
-    device_id = premium.get_device_id(req)
+    """Restore IAP purchases — credits tokens if not already credited."""
+    device_id = tokens.get_device_id(req)
     if not device_id:
         raise HTTPException(status_code=400, detail="X-Device-Id header is required")
 
@@ -1008,15 +964,16 @@ async def restore_purchases(req: Request):
     if not ent:
         return {"restored": False}
 
-    # Only re-issue token for active entitlements
     if ent["status"] != "active":
         return {"restored": False, "reason": "expired"}
 
-    token = premium.create_premium_token(
-        device_id, entitlement_id=ent["id"],
-        games_remaining=ent["games_remaining"],
-    )
-    return {"restored": True, "token": token}
+    # Credit remaining games as tokens (if not already migrated)
+    wallet_id = user_id or device_id
+    tokens_to_credit = ent["games_remaining"] * config.COST_ROOM
+    if tokens_to_credit > 0:
+        db.credit_tokens(wallet_id, tokens_to_credit, "restore", reference_id=ent["id"])
+    new_balance = db.get_wallet_balance(wallet_id)
+    return {"restored": True, "tokens_added": tokens_to_credit, "new_balance": new_balance}
 
 
 # --- Admin Endpoints ---
@@ -1034,44 +991,38 @@ def _check_admin(req: Request):
 
 
 @app.get("/admin/lookup")
-async def admin_lookup(req: Request, device_id: str = "", entitlement_id: str = "", user_id: str = "", email: str = ""):
+async def admin_lookup(req: Request, device_id: str = "", wallet_id: str = "", user_id: str = "", email: str = ""):
     _check_admin(req)
+    if wallet_id:
+        result = db.admin_lookup_wallet(wallet_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Wallet not found")
+        return result
     if device_id:
-        return db.lookup_by_device(device_id)
-    if entitlement_id:
-        ent = db.lookup_entitlement(entitlement_id)
-        if not ent:
-            raise HTTPException(status_code=404, detail="Entitlement not found")
-        return ent
+        # Look up wallet by device_id + legacy entitlement data
+        wallet = db.admin_lookup_wallet(device_id)
+        legacy = db.lookup_by_device(device_id)
+        return {"wallet": wallet, "legacy": legacy}
     if user_id:
-        return db.lookup_by_user(user_id)
+        wallet = db.admin_lookup_wallet(user_id)
+        legacy = db.lookup_by_user(user_id)
+        return {"wallet": wallet, "legacy": legacy}
     if email:
         users = db.lookup_user_by_email(email)
         if not users:
             raise HTTPException(status_code=404, detail="No users found")
         return {"results": users}
-    raise HTTPException(status_code=400, detail="Provide device_id, entitlement_id, user_id, or email")
-
-
-@app.post("/admin/revoke")
-async def admin_revoke(req: Request, entitlement_id: str):
-    _check_admin(req)
-    if db.admin_revoke(entitlement_id):
-        return {"status": "revoked", "entitlement_id": entitlement_id}
-    raise HTTPException(status_code=404, detail="Entitlement not found or already revoked")
+    raise HTTPException(status_code=400, detail="Provide wallet_id, device_id, user_id, or email")
 
 
 @app.post("/admin/grant")
-async def admin_grant(req: Request, device_id: str = "", user_id: str = "", games: int = 10, hours: int = 720):
+async def admin_grant(req: Request, wallet_id: str = "", device_id: str = "", user_id: str = "", amount: int = 110):
     _check_admin(req)
-    if not device_id and not user_id:
-        raise HTTPException(status_code=400, detail="Provide device_id or user_id (or both)")
-    if user_id:
-        user = db.get_user(user_id)
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-    eid = db.admin_grant(device_id=device_id or "admin-grant", games=games, hours=hours, user_id=user_id or None)
-    return {"status": "granted", "entitlement_id": eid, "device_id": device_id or "admin-grant", "user_id": user_id, "games": games, "hours": hours}
+    target = wallet_id or user_id or device_id
+    if not target:
+        raise HTTPException(status_code=400, detail="Provide wallet_id, device_id, or user_id")
+    new_balance = db.admin_grant_tokens(target, amount)
+    return {"status": "granted", "wallet_id": target, "tokens_granted": amount, "new_balance": new_balance}
 
 
 @app.get("/")

@@ -235,45 +235,6 @@ class TestResetRoomGameType:
                 assert reset["game_type"] == "quiz"
 
 
-# ===========================================================================
-# Decrement Entitlement Race Condition
-# ===========================================================================
-
-class TestDecrementEntitlement:
-    def test_decrement_cannot_go_negative(self):
-        """Even with concurrent calls, games_remaining should never go below 0."""
-        device_id = str(uuid.uuid4())
-        ent_id = str(uuid.uuid4())
-        db.create_entitlement(ent_id, device_id, games=1)
-
-        # Try to decrement twice concurrently
-        results = []
-
-        def decrement():
-            results.append(db.decrement_entitlement(ent_id))
-
-        t1 = threading.Thread(target=decrement)
-        t2 = threading.Thread(target=decrement)
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
-
-        # Exactly one should succeed
-        assert results.count(True) == 1
-        assert results.count(False) == 1
-
-        # Verify games_remaining is 0 via active entitlement check (should be exhausted)
-        ent = db.get_active_entitlement(device_id)
-        assert ent is None  # exhausted, so no active entitlement
-
-    def test_decrement_exhausted_entitlement_fails(self):
-        """Decrementing an already-exhausted entitlement should fail."""
-        device_id = str(uuid.uuid4())
-        ent_id = str(uuid.uuid4())
-        db.create_entitlement(ent_id, device_id, games=1)
-        assert db.decrement_entitlement(ent_id) is True  # 1 -> 0
-        assert db.decrement_entitlement(ent_id) is False  # already exhausted
 
 
 # ===========================================================================
@@ -427,20 +388,3 @@ class TestRoomCreationValidation:
         assert "room_code" in res.json()
 
 
-# ===========================================================================
-# Round 3: Entitlement Selection Order
-# ===========================================================================
-
-class TestEntitlementSelectionOrder:
-    def test_picks_entitlement_with_most_games(self):
-        """Should pick the entitlement with the most games remaining."""
-        device_id = str(uuid.uuid4())
-        # Create two entitlements: one with 2 games, one with 8
-        ent1 = str(uuid.uuid4())
-        ent2 = str(uuid.uuid4())
-        db.create_entitlement(ent1, device_id, games=2)
-        db.create_entitlement(ent2, device_id, games=8)
-
-        ent = db.get_active_entitlement(device_id)
-        assert ent is not None
-        assert ent["games_remaining"] == 8

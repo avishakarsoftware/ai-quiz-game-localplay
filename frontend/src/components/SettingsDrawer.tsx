@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { soundManager } from '../utils/sound';
 import { useAuth } from '../context/AuthContext';
 import { track } from '../utils/analytics';
+import { useTokenBalance } from '../hooks/useTokenBalance';
+import TokenBadge from './TokenBadge';
 
 declare global {
     interface Window {
@@ -41,6 +43,7 @@ export default function SettingsDrawer() {
     const drawerRef = useRef<HTMLDivElement>(null);
     const googleBtnRef = useRef<HTMLDivElement>(null);
     const { user, signIn, signOut } = useAuth();
+    const { tokenStatus, loading: tokenLoading } = useTokenBalance();
 
     // Listen for external open requests (e.g. from SignInNudge)
     useEffect(() => {
@@ -223,13 +226,10 @@ export default function SettingsDrawer() {
             } else {
                 const data = await res.json().catch(() => ({ restored: false }));
                 if (data.restored) {
-                    // Store the premium token
-                    const { setPremiumToken } = await import('../utils/storage');
-                    if (data.token) setPremiumToken(data.token);
-                    track('purchases_restored', { source: 'settings' });
+                    track('purchases_restored', { source: 'settings', tokens_added: data.tokens_added });
                 } else {
                     setSignInError(data.reason === 'expired'
-                        ? 'Your Party Pass has expired'
+                        ? 'Your purchase has expired'
                         : 'No active purchases found');
                 }
             }
@@ -258,22 +258,22 @@ export default function SettingsDrawer() {
 
     return (
         <>
-            {/* Trigger button */}
+            {/* Spark badge — fixed top-right */}
+            <div className="settings-spark-badge">
+                <TokenBadge tokenStatus={tokenStatus} loading={tokenLoading} />
+            </div>
+
+            {/* Hamburger menu trigger — top-left */}
             <button
                 onClick={() => setOpen(!open)}
                 className="settings-trigger"
-                title="Settings"
+                title="Menu"
             >
-                {user ? (
-                    <span style={{ fontSize: 16, lineHeight: 1 }}>
-                        {user.email?.[0]?.toUpperCase() || user.provider[0].toUpperCase()}
-                    </span>
-                ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-                        <circle cx="12" cy="12" r="3" />
-                    </svg>
-                )}
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
             </button>
 
             {/* Backdrop */}
@@ -282,7 +282,23 @@ export default function SettingsDrawer() {
             {/* Drawer */}
             <div ref={drawerRef} className={`settings-drawer ${open ? 'settings-drawer-open' : ''}`}>
                 <div className="settings-drawer-handle" />
-                <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, textAlign: 'center' }}>Settings</h2>
+                <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, textAlign: 'center' }}>Menu</h2>
+
+                {/* Home button */}
+                <div
+                    className="settings-drawer-row"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => {
+                        setOpen(false);
+                        window.dispatchEvent(new CustomEvent('navigate-home'));
+                    }}
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                        <polyline points="9 22 9 12 15 12 15 22" />
+                    </svg>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>Home</span>
+                </div>
 
                 {/* Account Section */}
                 {user ? (
@@ -305,7 +321,7 @@ export default function SettingsDrawer() {
                 ) : (
                     <div className="settings-drawer-row" style={{ flexDirection: 'column', alignItems: 'center', gap: 10 }}>
                         <p style={{ fontSize: 13, color: 'var(--text-secondary)', textAlign: 'center' }}>
-                            Sign in to keep your Party Pass across devices
+                            Sign in to sync your sparks across devices
                         </p>
                         {signInLoading ? (
                             <p style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Signing in...</p>

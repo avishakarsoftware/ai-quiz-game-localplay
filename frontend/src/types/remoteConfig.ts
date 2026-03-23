@@ -21,9 +21,8 @@ export interface RemoteConfig {
     min_supported_version?: string;
   };
   pricing: {
-    pass_price: string;
-    games: number;
-    duration_hours: number;
+    token_pack_price: string;
+    token_pack_amount: number;
     label: string;
   };
   feature_flags: {
@@ -49,10 +48,9 @@ export const DEFAULT_CONFIG: RemoteConfig = {
     min_supported_version: '1.0.0',
   },
   pricing: {
-    pass_price: '$0.99',
-    games: 10,
-    duration_hours: 720,
-    label: '10-Game Pack',
+    token_pack_price: '$0.99',
+    token_pack_amount: 110,
+    label: '110 Spark Pack',
   },
   feature_flags: {
     show_upgrade_button: true,

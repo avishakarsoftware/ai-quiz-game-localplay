@@ -27,7 +27,7 @@ describe('SignInNudge', () => {
 
     it('shows nudge for premium users who are not signed in', () => {
         render(<SignInNudge isPremium={true} />);
-        expect(screen.getByText(/sign in to keep your party pass/i)).toBeInTheDocument();
+        expect(screen.getByText(/sign in to sync your sparks/i)).toBeInTheDocument();
     });
 
     it('shows different message for non-premium users', () => {
@@ -60,7 +60,7 @@ describe('SignInNudge', () => {
         const user = userEvent.setup();
         const { container } = render(<SignInNudge isPremium={true} />);
 
-        expect(screen.getByText(/sign in to keep your party pass/i)).toBeInTheDocument();
+        expect(screen.getByText(/sign in to sync your sparks/i)).toBeInTheDocument();
 
         await user.click(screen.getByTitle('Dismiss'));
 

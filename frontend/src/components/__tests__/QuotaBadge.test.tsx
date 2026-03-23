@@ -1,95 +1,46 @@
 import { render, screen } from '@testing-library/react';
-import QuotaBadge from '../QuotaBadge';
-import type { EntitlementStatus } from '../../hooks/useEntitlement';
+import TokenBadge from '../TokenBadge';
+import type { TokenStatus } from '../../hooks/useTokenBalance';
 
-const BASE: EntitlementStatus = {
-    premium: false,
-    status: null,
-    games_remaining: 0,
-    expires_at: null,
-    free_games_used: 0,
-    free_games_limit: 3,
-    pending_purchase: false,
+const BASE: TokenStatus = {
+    balance: 0,
+    has_purchased: false,
+    daily_bonus_available: false,
+    cost_generate: 1,
+    cost_room: 10,
 };
 
-describe('QuotaBadge', () => {
+describe('TokenBadge', () => {
     it('renders nothing when loading', () => {
-        const { container } = render(<QuotaBadge entitlement={BASE} loading={true} />);
+        const { container } = render(<TokenBadge tokenStatus={BASE} loading={true} />);
         expect(container.innerHTML).toBe('');
     });
 
-    it('shows free games used count', () => {
-        render(<QuotaBadge entitlement={{ ...BASE, free_games_used: 1 }} loading={false} />);
-        expect(screen.getByText('1 of 3 free games used')).toBeInTheDocument();
+    it('shows spark count', () => {
+        render(<TokenBadge tokenStatus={{ ...BASE, balance: 42 }} loading={false} />);
+        expect(screen.getByText('42 sparks')).toBeInTheDocument();
     });
 
-    it('shows exhausted state when limit reached', () => {
-        const { container } = render(
-            <QuotaBadge entitlement={{ ...BASE, free_games_used: 3 }} loading={false} />
-        );
+    it('shows singular "spark" for balance of 1', () => {
+        render(<TokenBadge tokenStatus={{ ...BASE, balance: 1 }} loading={false} />);
+        expect(screen.getByText('1 spark')).toBeInTheDocument();
+    });
+
+    it('shows exhausted state when balance is 0', () => {
+        const { container } = render(<TokenBadge tokenStatus={BASE} loading={false} />);
         expect(container.querySelector('.quota-badge-exhausted')).not.toBeNull();
     });
 
-    it('shows premium games remaining with days left', () => {
-        const futureDate = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString();
-        render(
-            <QuotaBadge
-                entitlement={{ ...BASE, premium: true, games_remaining: 42, expires_at: futureDate }}
-                loading={false}
-            />
-        );
-        expect(screen.getByText(/42 games remaining/)).toBeInTheDocument();
-        expect(screen.getByText(/days left/)).toBeInTheDocument();
-    });
-
-    it('shows premium games remaining without days when expires_at is null', () => {
-        render(
-            <QuotaBadge
-                entitlement={{ ...BASE, premium: true, games_remaining: 42, expires_at: null }}
-                loading={false}
-            />
-        );
-        expect(screen.getByText('42 games remaining')).toBeInTheDocument();
-    });
-
-    it('handles malformed expires_at gracefully', () => {
-        render(
-            <QuotaBadge
-                entitlement={{ ...BASE, premium: true, games_remaining: 5, expires_at: 'not-a-date' }}
-                loading={false}
-            />
-        );
-        // Should still show games remaining without crashing
-        expect(screen.getByText('5 games remaining')).toBeInTheDocument();
-    });
-
-    it('shows 0 days left when expired', () => {
-        const pastDate = new Date(Date.now() - 1000).toISOString();
-        render(
-            <QuotaBadge
-                entitlement={{ ...BASE, premium: true, games_remaining: 3, expires_at: pastDate }}
-                loading={false}
-            />
-        );
-        expect(screen.getByText(/0 days left/)).toBeInTheDocument();
-    });
-
-    it('shows singular "game" for 1 remaining', () => {
-        render(
-            <QuotaBadge
-                entitlement={{ ...BASE, premium: true, games_remaining: 1 }}
-                loading={false}
-            />
-        );
-        expect(screen.getByText('1 game remaining')).toBeInTheDocument();
-    });
-
-    it('applies premium class for premium users', () => {
+    it('shows warning state when balance is low (< 10)', () => {
         const { container } = render(
-            <QuotaBadge
-                entitlement={{ ...BASE, premium: true, games_remaining: 10 }}
-                loading={false}
-            />
+            <TokenBadge tokenStatus={{ ...BASE, balance: 5 }} loading={false} />
+        );
+        expect(container.querySelector('.quota-badge-warning')).not.toBeNull();
+    });
+
+    it('shows premium class for normal balance', () => {
+        const { container } = render(
+            <TokenBadge tokenStatus={{ ...BASE, balance: 42 }} loading={false} />
         );
         expect(container.querySelector('.quota-badge-premium')).not.toBeNull();
     });

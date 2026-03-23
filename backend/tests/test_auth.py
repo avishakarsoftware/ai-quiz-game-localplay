@@ -1,4 +1,4 @@
-"""Tests for Phase 2: auth, session tokens, user-scoped entitlements, and quota consume checks."""
+"""Tests for Phase 2: auth, session tokens, token balance, and wallet merge."""
 import sys
 import os
 import time
@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import db
 import auth
 import config
-import premium
+import tokens as tokens_mod
 from fastapi.testclient import TestClient
 
 
@@ -56,20 +56,17 @@ class TestSessionTokens:
         assert result["user_id"] == user_id
         assert result["device_id"] == _DEVICE_ID
 
-    def test_session_token_rejects_premium_token(self):
-        """Session verification must reject non-session JWTs."""
-        token = premium.create_premium_token(_DEVICE_ID)
+    def test_session_token_rejects_non_session_jwt(self):
+        """Session verification must reject JWTs without type=session."""
+        import jwt as pyjwt
+        payload = {
+            "device_id": _DEVICE_ID,
+            "exp": time.time() + 3600,
+            "type": "party_pass",
+        }
+        token = pyjwt.encode(payload, config.JWT_SECRET, algorithm="HS256")
         result = auth.verify_session_token(token)
         assert result is None
-
-    def test_premium_token_rejects_session_token(self):
-        """Premium verification must reject session JWTs."""
-        user_id = str(uuid.uuid4())
-        token = auth.create_session_token(user_id, _DEVICE_ID)
-        result = premium.verify_premium_token(token, _DEVICE_ID)
-        # verify_premium_token doesn't check type, but device_id should match
-        # The key point: they shouldn't be interchangeable for authorization
-        assert result is True  # It will match device_id, but type check is on session side
 
     def test_session_token_missing_fields(self):
         """Token with missing user_id or device_id is rejected."""
@@ -160,133 +157,6 @@ class TestUserDB:
         assert db.get_user("nonexistent") is None
 
 
-class TestMergeDeviceToUser:
-    """Test that entitlements/usage are merged on sign-in."""
-
-    def test_merge_entitlements(self):
-        # Create orphaned entitlement (no user_id)
-        ent_id = str(uuid.uuid4())
-        db.create_entitlement(ent_id, _DEVICE_ID)
-        ent = db.get_active_entitlement(_DEVICE_ID)
-        assert ent is not None
-        assert ent["user_id"] is None or ent["user_id"] == ""
-
-        # Create user and merge
-        user = db.find_or_create_user("google", "sub_merge", "merge@test.com")
-        db.merge_device_to_user(user["id"], _DEVICE_ID)
-
-        # Entitlement should now belong to user
-        ent = db.get_active_entitlement_for_user(user["id"])
-        assert ent is not None
-        assert ent["id"] == ent_id
-
-    def test_merge_does_not_steal_other_users_entitlements(self):
-        """Merging should not overwrite entitlements belonging to another user."""
-        user_a = db.find_or_create_user("google", "user_a", "a@test.com")
-        ent_id = str(uuid.uuid4())
-        db.create_entitlement(ent_id, _DEVICE_ID, user_id=user_a["id"])
-
-        user_b = db.find_or_create_user("google", "user_b", "b@test.com")
-        db.merge_device_to_user(user_b["id"], _DEVICE_ID)
-
-        # Entitlement should still belong to user_a
-        ent = db.lookup_entitlement(ent_id)
-        assert ent["user_id"] == user_a["id"]
-
-    def test_merge_usage(self):
-        # Create orphaned usage
-        db.check_and_increment_free_usage(_DEVICE_ID)
-        user = db.find_or_create_user("google", "sub_usage", "usage@test.com")
-        db.merge_device_to_user(user["id"], _DEVICE_ID)
-
-        count = db.get_user_free_usage_count(user["id"])
-        assert count == 1
-
-
-class TestUserFreeUsage:
-    """Test cross-device free usage for signed-in users."""
-
-    def test_cross_device_counting(self):
-        user = db.find_or_create_user("google", "sub_cross", "cross@test.com")
-        uid = user["id"]
-
-        # Use on device 1
-        db.merge_device_to_user(uid, _DEVICE_ID)
-        allowed, count = db.check_and_increment_user_free_usage(uid, _DEVICE_ID)
-        assert allowed is True
-        assert count == 1
-
-        # Use on device 2
-        db.merge_device_to_user(uid, _DEVICE_ID_2)
-        allowed, count = db.check_and_increment_user_free_usage(uid, _DEVICE_ID_2)
-        assert allowed is True
-        assert count == 2
-
-        total = db.get_user_free_usage_count(uid)
-        assert total == 2
-
-    def test_cross_device_limit_enforced(self, monkeypatch):
-        monkeypatch.setattr(config, "FREE_TIER_LIMIT", 2)
-        user = db.find_or_create_user("google", "sub_limit", "limit@test.com")
-        uid = user["id"]
-
-        db.check_and_increment_user_free_usage(uid, _DEVICE_ID)
-        db.check_and_increment_user_free_usage(uid, _DEVICE_ID_2)
-
-        # Third attempt on a new device should be denied
-        device_3 = "aaaaaaaa-bbbb-cccc-dddd-111111111111"
-        allowed, count = db.check_and_increment_user_free_usage(uid, device_3)
-        assert allowed is False
-        assert count == 2
-
-    def test_peek_user_free_usage(self, monkeypatch):
-        monkeypatch.setattr(config, "FREE_TIER_LIMIT", 3)
-        user = db.find_or_create_user("google", "sub_peek", "peek@test.com")
-        uid = user["id"]
-
-        can_play, used = db.peek_user_free_usage(uid)
-        assert can_play is True
-        assert used == 0
-
-        db.check_and_increment_user_free_usage(uid, _DEVICE_ID)
-        can_play, used = db.peek_user_free_usage(uid)
-        assert can_play is True
-        assert used == 1
-
-
-class TestUserEntitlements:
-    """Test user-scoped entitlement checks."""
-
-    def test_has_active_entitlement_for_user(self):
-        user = db.find_or_create_user("google", "sub_ent", "ent@test.com")
-        assert premium.has_active_entitlement_for_user(user["id"]) is False
-
-        ent_id = str(uuid.uuid4())
-        db.create_entitlement(ent_id, _DEVICE_ID, user_id=user["id"])
-        assert premium.has_active_entitlement_for_user(user["id"]) is True
-
-    def test_check_and_use_entitlement_for_user(self):
-        user = db.find_or_create_user("google", "sub_use", "use@test.com")
-        ent_id = str(uuid.uuid4())
-        db.create_entitlement(ent_id, _DEVICE_ID, user_id=user["id"], games=2)
-
-        success, ent = premium.check_and_use_entitlement_for_user(user["id"])
-        assert success is True
-        assert ent["games_remaining"] == 1
-
-        success, ent = premium.check_and_use_entitlement_for_user(user["id"])
-        assert success is True
-        assert ent["games_remaining"] == 0
-
-        # Third use should fail (exhausted)
-        success, ent = premium.check_and_use_entitlement_for_user(user["id"])
-        assert success is False
-        assert ent is None
-
-    def test_empty_user_id_returns_false(self):
-        assert premium.has_active_entitlement_for_user("") is False
-
-
 # ============================================================================
 # main.py endpoint tests
 # ============================================================================
@@ -350,11 +220,10 @@ class TestSignInEndpoint:
             assert data["user"]["email"] == "test@gmail.com"
             assert data["session_token"]
 
-    def test_signin_merges_device_entitlements(self, test_app):
-        """Signing in should merge orphaned entitlements to the user."""
-        # Create orphaned entitlement
-        ent_id = str(uuid.uuid4())
-        db.create_entitlement(ent_id, _DEVICE_ID)
+    def test_signin_merges_wallet(self, test_app):
+        """Signing in should merge device wallet to user wallet."""
+        # Fund the device wallet before sign-in
+        db.credit_tokens(_DEVICE_ID, 50, "test_setup")
 
         with patch("auth.verify_id_token", return_value={"sub": "merge_sub", "email": "merge@test.com"}):
             res = test_app.post("/auth/signin", json={
@@ -365,8 +234,9 @@ class TestSignInEndpoint:
             assert res.status_code == 200
             user_id = res.json()["user"]["id"]
 
-        ent = db.lookup_entitlement(ent_id)
-        assert ent["user_id"] == user_id
+        # User wallet should have the merged tokens
+        balance = db.get_wallet_balance(user_id)
+        assert balance >= 50
 
 
 class TestAuthMeEndpoint:
@@ -390,7 +260,8 @@ class TestAuthMeEndpoint:
         data = res.json()
         assert data["user"]["id"] == user["id"]
         assert data["user"]["email"] == "me@test.com"
-        assert "entitlement" in data
+        assert "tokens" in data
+        assert "balance" in data["tokens"]
 
     def test_me_deleted_user(self, test_app):
         """If user is deleted but has valid session, return 401."""
@@ -399,77 +270,42 @@ class TestAuthMeEndpoint:
         assert res.status_code == 401
 
 
-class TestConsumeReturnValues:
-    """Test that room creation consumes entitlement/free games (moved from generate)."""
+class TestTokenSpendingAtRoomCreate:
+    """Test that room creation spends tokens (conftest monkeypatches spend to succeed)."""
 
-    def test_room_create_402_on_expired_entitlement(self, test_app):
-        """If entitlement expires at room creation, return 402."""
-        from main import quizzes
-        quiz_id = "test-consume-quiz"
-        quizzes[quiz_id] = {"quiz_title": "Test", "questions": [{"id": 1, "text": "Q", "options": ["A", "B", "C", "D"], "answer_index": 0, "image_prompt": ""}]}
-
-        with patch("main.premium.has_active_entitlement", return_value=True), \
-             patch("main.premium.check_and_use_entitlement", return_value=(False, None)):
-            res = test_app.post("/room/create", json={
-                "quiz_id": quiz_id,
-                "game_type": "quiz",
-                "time_limit": 15,
-            }, headers=_DEVICE_HEADERS)
-            assert res.status_code == 402
-            assert "expired" in res.json()["detail"].lower()
-        quizzes.pop(quiz_id, None)
-
-    def test_room_create_402_on_free_limit(self, test_app):
-        """If free limit reached at room creation, return 402."""
-        from main import quizzes
-        quiz_id = "test-free-limit-quiz"
-        quizzes[quiz_id] = {"quiz_title": "Test", "questions": [{"id": 1, "text": "Q", "options": ["A", "B", "C", "D"], "answer_index": 0, "image_prompt": ""}]}
-
-        with patch("main.premium.has_active_entitlement", return_value=False), \
-             patch("main.premium.check_free_limit", return_value=(False, 3)):
-            res = test_app.post("/room/create", json={
-                "quiz_id": quiz_id,
-                "game_type": "quiz",
-                "time_limit": 15,
-            }, headers=_DEVICE_HEADERS)
-            assert res.status_code == 402
-        quizzes.pop(quiz_id, None)
-
-    def test_room_create_success_consumes_game(self, test_app):
-        """Successful room creation consumes a game."""
+    def test_room_create_succeeds_with_tokens(self, test_app):
+        """Room creation succeeds when token spending succeeds (monkeypatched)."""
         from main import quizzes
         from socket_manager import socket_manager
-        quiz_id = "test-consume-success"
+        quiz_id = "test-token-spend"
         quizzes[quiz_id] = {"quiz_title": "Test", "questions": [{"id": 1, "text": "Q", "options": ["A", "B", "C", "D"], "answer_index": 0, "image_prompt": ""}]}
 
-        with patch("main.premium.has_active_entitlement", return_value=True), \
-             patch("main.premium.check_and_use_entitlement", return_value=(True, {"id": "ent-1", "games_remaining": 9})):
-            res = test_app.post("/room/create", json={
-                "quiz_id": quiz_id,
-                "game_type": "quiz",
-                "time_limit": 15,
-            }, headers=_DEVICE_HEADERS)
-            assert res.status_code == 200
-            room_code = res.json()["room_code"]
-            socket_manager.rooms.pop(room_code, None)
+        res = test_app.post("/room/create", json={
+            "quiz_id": quiz_id,
+            "game_type": "quiz",
+            "time_limit": 15,
+        }, headers=_DEVICE_HEADERS)
+        assert res.status_code == 200
+        room_code = res.json()["room_code"]
+        socket_manager.rooms.pop(room_code, None)
         quizzes.pop(quiz_id, None)
 
-    def test_quiz_generate_does_not_consume(self, test_app):
-        """Generation should peek but NOT consume entitlement."""
-        from unittest.mock import AsyncMock
+    def test_room_create_402_when_no_tokens(self, test_app, monkeypatch):
+        """Room creation returns 402 when token spending fails."""
+        from main import quizzes
+        quiz_id = "test-no-tokens"
+        quizzes[quiz_id] = {"quiz_title": "Test", "questions": [{"id": 1, "text": "Q", "options": ["A", "B", "C", "D"], "answer_index": 0, "image_prompt": ""}]}
 
-        with patch("main._check_rate_limit", return_value=True), \
-             patch("main.quiz_engine.generate_quiz", new_callable=AsyncMock) as mock_gen, \
-             patch("main.premium.has_active_entitlement", return_value=True), \
-             patch("main.premium.check_and_use_entitlement") as mock_consume:
-            mock_gen.return_value = {"quiz_title": "Test", "questions": [{"id": 1}]}
-            res = test_app.post("/quiz/generate", json={
-                "prompt": "test topic",
-                "difficulty": "medium",
-                "num_questions": 5,
-            }, headers=_DEVICE_HEADERS)
-            assert res.status_code == 200
-            mock_consume.assert_not_called()  # Should NOT consume at generation
+        # Undo conftest monkeypatch: make spend_room fail
+        monkeypatch.setattr(tokens_mod, "spend_room", lambda wallet_id: (False, 0))
+
+        res = test_app.post("/room/create", json={
+            "quiz_id": quiz_id,
+            "game_type": "quiz",
+            "time_limit": 15,
+        }, headers=_DEVICE_HEADERS)
+        assert res.status_code == 402
+        quizzes.pop(quiz_id, None)
 
 
 class TestPendingTokenTTL:
@@ -514,42 +350,28 @@ class TestWindowExpiry:
         assert used == 0
 
 
-class TestEntitlementStatus:
-    """Test GET /entitlements/current."""
+class TestTokenBalanceEndpoint:
+    """Test GET /tokens/balance and GET /entitlements/current (alias)."""
 
     def test_no_device_id(self, test_app):
-        res = test_app.get("/entitlements/current")
+        res = test_app.get("/tokens/balance")
         data = res.json()
-        assert data["premium"] is False
-        assert data["free_games_limit"] == config.FREE_TIER_LIMIT
+        assert "balance" in data
+        assert data["balance"] == 0
 
-    def test_with_device_id_no_entitlement(self, test_app):
+    def test_with_device_id(self, test_app):
+        res = test_app.get("/tokens/balance", headers=_DEVICE_HEADERS)
+        data = res.json()
+        assert "balance" in data
+        assert "cost_generate" in data
+        assert "cost_room" in data
+
+    def test_entitlements_current_is_alias(self, test_app):
+        """Legacy /entitlements/current returns same format as /tokens/balance."""
         res = test_app.get("/entitlements/current", headers=_DEVICE_HEADERS)
         data = res.json()
-        assert data["premium"] is False
-        assert data["free_games_used"] == 0
-
-    def test_with_active_entitlement(self, test_app):
-        ent_id = str(uuid.uuid4())
-        db.create_entitlement(ent_id, _DEVICE_ID)
-
-        res = test_app.get("/entitlements/current", headers=_DEVICE_HEADERS)
-        data = res.json()
-        assert data["premium"] is True
-        assert data["games_remaining"] == 10
-
-    def test_user_scoped_entitlement(self, test_app):
-        user = db.find_or_create_user("google", "ent_sub", "ent@test.com")
-        ent_id = str(uuid.uuid4())
-        db.create_entitlement(ent_id, _DEVICE_ID, user_id=user["id"])
-        session_token = auth.create_session_token(user["id"], _DEVICE_ID)
-
-        res = test_app.get("/entitlements/current", headers={
-            **_DEVICE_HEADERS,
-            "X-Session-Token": session_token,
-        })
-        data = res.json()
-        assert data["premium"] is True
+        assert "balance" in data
+        assert "cost_generate" in data
 
 
 class TestRestorePurchases:
@@ -563,59 +385,3 @@ class TestRestorePurchases:
         res = test_app.post("/purchases/restore", headers=_DEVICE_HEADERS)
         data = res.json()
         assert data["restored"] is False
-
-    def test_restore_active_apple_purchase(self, test_app):
-        ent_id = str(uuid.uuid4())
-        db.create_entitlement(ent_id, _DEVICE_ID, apple_transaction_id="apple_txn_123")
-
-        res = test_app.post("/purchases/restore", headers=_DEVICE_HEADERS)
-        data = res.json()
-        assert data["restored"] is True
-        assert "token" in data
-
-    def test_restore_active_google_purchase(self, test_app):
-        ent_id = str(uuid.uuid4())
-        db.create_entitlement(ent_id, _DEVICE_ID, google_order_id="google_order_123")
-
-        res = test_app.post("/purchases/restore", headers=_DEVICE_HEADERS)
-        data = res.json()
-        assert data["restored"] is True
-        assert "token" in data
-
-    def test_no_restore_for_stripe_only(self, test_app):
-        """Stripe purchases are not restorable via this endpoint."""
-        ent_id = str(uuid.uuid4())
-        db.create_entitlement(ent_id, _DEVICE_ID, stripe_session_id="stripe_sess_123")
-
-        res = test_app.post("/purchases/restore", headers=_DEVICE_HEADERS)
-        data = res.json()
-        assert data["restored"] is False
-
-    def test_no_restore_for_expired_iap(self, test_app):
-        """Expired IAP entitlements are found but not restored (no active status)."""
-        ent_id = str(uuid.uuid4())
-        db.create_entitlement(ent_id, _DEVICE_ID, apple_transaction_id="apple_txn_456")
-        # Expire it
-        conn = db._get_conn()
-        conn.execute("UPDATE entitlements SET status = 'expired_time' WHERE id = ?", (ent_id,))
-        conn.commit()
-
-        res = test_app.post("/purchases/restore", headers=_DEVICE_HEADERS)
-        data = res.json()
-        assert data["restored"] is False
-
-    def test_restore_user_scoped_purchase(self, test_app):
-        """Signed-in user can restore a purchase linked to their account."""
-        user = db.find_or_create_user("apple", "restore_sub", "restore@test.com")
-        ent_id = str(uuid.uuid4())
-        db.create_entitlement(ent_id, _DEVICE_ID_2, apple_transaction_id="apple_txn_789",
-                              user_id=user["id"])
-
-        session_token = auth.create_session_token(user["id"], _DEVICE_ID)
-        res = test_app.post("/purchases/restore", headers={
-            **_DEVICE_HEADERS,
-            "X-Session-Token": session_token,
-        })
-        data = res.json()
-        assert data["restored"] is True
-        assert "token" in data

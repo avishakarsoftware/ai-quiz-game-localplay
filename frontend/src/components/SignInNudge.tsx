@@ -7,7 +7,7 @@ interface SignInNudgeProps {
 
 /**
  * Dismissible nudge shown to users who aren't signed in.
- * Premium users: encourages sign-in to keep Party Pass across devices.
+ * Premium users: encourages sign-in to sync tokens across devices.
  * Free users: encourages sign-in to keep progress.
  * Clicking opens the settings drawer for sign-in.
  */
@@ -30,7 +30,7 @@ export default function SignInNudge({ isPremium }: SignInNudgeProps) {
     };
 
     const message = isPremium
-        ? 'Sign in to keep your Party Pass across devices'
+        ? 'Sign in to sync your sparks across devices'
         : 'Sign in to save your progress across devices';
 
     return (

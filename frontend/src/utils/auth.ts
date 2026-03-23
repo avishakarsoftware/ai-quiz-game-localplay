@@ -37,7 +37,7 @@ export async function signInWithBackend(provider: 'google' | 'apple', idToken: s
     return data;
 }
 
-export async function fetchUserProfile(): Promise<{ user: UserProfile; entitlement: Record<string, unknown> } | null> {
+export async function fetchUserProfile(): Promise<{ user: UserProfile; tokens: Record<string, unknown> } | null> {
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);

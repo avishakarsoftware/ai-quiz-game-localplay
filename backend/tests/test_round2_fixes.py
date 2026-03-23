@@ -116,31 +116,6 @@ class TestImageBase64Safety:
         quiz_images.pop(quiz_id, None)
 
 
-class TestWebhookTokenNoneGuard:
-    """Webhook should not store None token if JWT_SECRET is empty."""
-
-    def test_create_premium_token_returns_none_without_secret(self):
-        import premium
-        original = config.JWT_SECRET
-        config.JWT_SECRET = ""
-        try:
-            token = premium.create_premium_token(DEVICE_ID, entitlement_id="ent-1", games_remaining=10)
-            assert token is None
-        finally:
-            config.JWT_SECRET = original
-
-    def test_create_premium_token_returns_string_with_secret(self):
-        import premium
-        original = config.JWT_SECRET
-        config.JWT_SECRET = "test-secret-key"
-        try:
-            token = premium.create_premium_token(DEVICE_ID, entitlement_id="ent-1", games_remaining=10)
-            assert isinstance(token, str)
-            assert len(token) > 0
-        finally:
-            config.JWT_SECRET = original
-
-
 class TestDBIndexes:
     """Verify user_id indexes exist on entitlements and device_usage tables."""
 
@@ -157,11 +132,3 @@ class TestDBIndexes:
             "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_device_usage_user'"
         ).fetchall()
         assert len(rows) == 1
-
-
-class TestPremiumDuration:
-    """PREMIUM_DURATION_HOURS should be 744 (31 days)."""
-
-    def test_duration_is_31_days(self):
-        assert config.PREMIUM_DURATION_HOURS == 744
-        assert config.PREMIUM_DURATION_HOURS / 24 == 31

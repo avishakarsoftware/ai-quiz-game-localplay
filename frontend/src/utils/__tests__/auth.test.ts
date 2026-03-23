@@ -86,7 +86,7 @@ describe('fetchUserProfile', () => {
     it('returns profile on success', async () => {
         const mockProfile = {
             user: { id: '1', provider: 'google', email: 'test@test.com' },
-            entitlement: {},
+            tokens: {},
         };
         globalThis.fetch = vi.fn().mockResolvedValue({
             ok: true,

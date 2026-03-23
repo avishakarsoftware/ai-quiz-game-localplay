@@ -1,5 +1,4 @@
-import { useEntitlement } from '../../hooks/useEntitlement';
-import QuotaBadge from '../QuotaBadge';
+import { useTokenBalance } from '../../hooks/useTokenBalance';
 import SignInNudge from '../SignInNudge';
 
 export interface AIProvider {
@@ -241,7 +240,7 @@ export default function PromptScreen({
     numQuestions, setNumQuestions, provider, setProvider,
     providers, onGenerate,
 }: PromptScreenProps) {
-    const { entitlement, loading: entitlementLoading } = useEntitlement();
+    const { tokenStatus, loading: tokenLoading } = useTokenBalance();
 
     const shuffleTopic = () => {
         let next: string;
@@ -260,8 +259,7 @@ export default function PromptScreen({
                     <h1 className="hero-title">Create Quiz</h1>
                     <p className="text-[--text-tertiary] mt-2">What should your players be quizzed on?</p>
                     <div className="mt-3" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                        <QuotaBadge entitlement={entitlement} loading={entitlementLoading} />
-                        <SignInNudge isPremium={entitlement.premium} />
+                        <SignInNudge isPremium={tokenStatus.has_purchased} />
                     </div>
                 </div>
 

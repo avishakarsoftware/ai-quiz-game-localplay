@@ -19,7 +19,6 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 // Import AFTER localStorage mock is set up
 const {
-    setPremiumToken, getPremiumToken,
     setCheckoutPending, getCheckoutPending,
     setSessionToken, getSessionToken,
     setUserProfile, getUserProfile,
@@ -33,34 +32,20 @@ describe('storage utilities', () => {
     });
 
     describe('signOut', () => {
-        it('clears session token, user profile, premium token, and checkout pending', () => {
+        it('clears session token, user profile, and checkout pending', () => {
             setSessionToken('session-123');
             setUserProfile({ id: '1', provider: 'google', email: 'a@b.com' });
-            setPremiumToken('premium-jwt');
             setCheckoutPending('cs_123');
 
             expect(getSessionToken()).toBe('session-123');
             expect(getUserProfile()).not.toBeNull();
-            expect(getPremiumToken()).toBe('premium-jwt');
             expect(getCheckoutPending().pending).toBe(true);
 
             signOut();
 
             expect(getSessionToken()).toBeNull();
             expect(getUserProfile()).toBeNull();
-            expect(getPremiumToken()).toBeNull();
             expect(getCheckoutPending().pending).toBe(false);
-        });
-    });
-
-    describe('premium token', () => {
-        it('stores and retrieves token', () => {
-            setPremiumToken('tok123');
-            expect(getPremiumToken()).toBe('tok123');
-        });
-
-        it('returns null when no token set', () => {
-            expect(getPremiumToken()).toBeNull();
         });
     });
 

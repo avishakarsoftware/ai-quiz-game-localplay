@@ -7,7 +7,7 @@ import { type RemoteConfig, DEFAULT_CONFIG } from '../../types/remoteConfig';
 const mockConfig: RemoteConfig = {
   ...DEFAULT_CONFIG,
   feature_flags: { ...DEFAULT_CONFIG.feature_flags, show_upgrade_button: true },
-  pricing: { ...DEFAULT_CONFIG.pricing, pass_price: '$0.99' },
+  pricing: { ...DEFAULT_CONFIG.pricing },
 };
 
 vi.mock('../../hooks/useRemoteConfig', () => ({
@@ -47,7 +47,7 @@ describe('ErrorModal', () => {
         onUpgrade={onUpgrade}
       />
     );
-    const upgradeBtn = screen.getByText(/10 Games for 30 Days/);
+    const upgradeBtn = screen.getByText(/110 Sparks/);
     expect(upgradeBtn).toBeInTheDocument();
     expect(screen.getByText('Maybe Later')).toBeInTheDocument();
     fireEvent.click(upgradeBtn);
@@ -58,7 +58,7 @@ describe('ErrorModal', () => {
     renderWithProvider(
       <ErrorModal title="Error" message="msg" upgradeAvailable={false} onDismiss={() => {}} />
     );
-    expect(screen.queryByText(/Get 10 Games/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/110 Sparks/)).not.toBeInTheDocument();
     expect(screen.getByText('OK')).toBeInTheDocument();
   });
 

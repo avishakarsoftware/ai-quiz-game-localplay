@@ -57,7 +57,7 @@ export default function ErrorModal({ title, message, upgradeAvailable, onDismiss
                 cursor: 'pointer',
               }}
             >
-              {config.pricing.games} Games for {Math.floor(config.pricing.duration_hours / 24)} Days — {config.pricing.pass_price}
+              Get {config.pricing.token_pack_amount} Sparks — {config.pricing.token_pack_price}
             </button>
           )}
           <button

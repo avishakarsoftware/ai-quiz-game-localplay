@@ -3,7 +3,7 @@ import { API_URL, WS_URL } from '../config';
 import { type Quiz, type MLTGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
-import { getDeviceId, getPremiumToken, setPremiumToken, setCheckoutPending, getCheckoutPending, clearCheckoutPending } from '../utils/storage';
+import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending } from '../utils/storage';
 import { apiHeaders, apiUrl, generateIdempotencyKey } from '../utils/api';
 import GameSelectScreen from '../components/organizer/GameSelectScreen';
 import PromptScreen, { type AIProvider } from '../components/organizer/PromptScreen';
@@ -74,6 +74,17 @@ export default function OrganizerPage() {
         if (errorModal?.upgradeAvailable) track('paywall_shown', { source: 'error_modal' });
     }, [errorModal]);
 
+    // Listen for home navigation from hamburger menu
+    useEffect(() => {
+        const handler = () => {
+            if (stateRef.current === 'PROMPT' || stateRef.current === 'MLT_PROMPT' || stateRef.current === 'SELECT_GAME') {
+                setState('SELECT_GAME');
+            }
+        };
+        window.addEventListener('navigate-home', handler);
+        return () => window.removeEventListener('navigate-home', handler);
+    }, []);
+
     useEffect(() => {
         fetch(`${API_URL}/sd/status`)
             .then(res => res.json())
@@ -100,12 +111,11 @@ export default function OrganizerPage() {
                 try {
                     const tokenRes = await fetch(apiUrl('/checkout/token'), { headers: apiHeaders() });
                     if (tokenRes.ok) {
-                        const { token } = await tokenRes.json();
-                        setPremiumToken(token);
+                        const data = await tokenRes.json();
                         clearCheckoutPending();
                         clearInterval(poll!); poll = null;
-                        track('premium_activated', { source: 'resume' });
-                        setErrorModal({ title: 'Game Pack Activated!', message: `Your game pack is ready. Enjoy!` });
+                        track('tokens_purchased', { source: 'resume', tokens_added: data.tokens_added });
+                        setErrorModal({ title: 'Sparks Added!', message: `+${data.tokens_added} sparks added to your balance. Enjoy!` });
                     }
                 } catch { /* keep polling */ }
             }, 2000);
@@ -252,13 +262,13 @@ export default function OrganizerPage() {
             });
             if (res.status === 402) {
                 track('paywall_hit', { source: 'quiz' });
-                setErrorModal({ title: 'Free Games Used Up', message: 'You\'ve used your free games! Grab a 10-Game Pack for just $0.99 and keep the fun going.', upgradeAvailable: true });
+                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: true });
                 setState('PROMPT');
                 return;
             }
             if (res.status === 503) {
                 track('quota_error', { source: 'quiz' });
-                setErrorModal({ title: 'Free Tier Sold Out', message: 'Free games for today are all claimed! Grab a 10-Game Pack for just $0.99 and keep the fun going.', upgradeAvailable: true });
+                setErrorModal({ title: 'Daily Limit Reached', message: 'Daily generation limit reached. Try again tomorrow or buy a spark pack!', upgradeAvailable: true });
                 setState('PROMPT');
                 return;
             }
@@ -298,15 +308,15 @@ export default function OrganizerPage() {
                 body: JSON.stringify({ prompt, difficulty, num_rounds: numQuestions, provider }),
             });
             if (res.status === 402) {
-                const err = await res.json().catch(() => ({ detail: 'Free game limit reached. Get a Party Pass for unlimited games!' }));
+                const err = await res.json().catch(() => ({ detail: 'Not enough tokens.' }));
                 track('paywall_hit', { source: 'mlt' });
-                setErrorModal({ title: 'Free Games Used Up', message: 'You\'ve used your free games! Grab a 10-Game Pack for just $0.99 and keep the fun going.', upgradeAvailable: true });
+                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: true });
                 setState('MLT_PROMPT');
                 return;
             }
             if (res.status === 503) {
                 track('quota_error', { source: 'mlt' });
-                setErrorModal({ title: 'Free Tier Sold Out', message: 'Free games for today are all claimed! Grab a 10-Game Pack for just $0.99 and keep the fun going.', upgradeAvailable: true });
+                setErrorModal({ title: 'Daily Limit Reached', message: 'Daily generation limit reached. Try again tomorrow or buy a spark pack!', upgradeAvailable: true });
                 setState('MLT_PROMPT');
                 return;
             }
@@ -461,7 +471,7 @@ export default function OrganizerPage() {
             });
             if (res.status === 402) {
                 track('paywall_hit', { source: 'room_create' });
-                setErrorModal({ title: 'Free Games Used Up', message: 'You\'ve used your free games! Grab a 10-Game Pack for just $0.99 and keep the fun going.', upgradeAvailable: true });
+                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: true });
                 return;
             }
             if (!res.ok) {
@@ -739,13 +749,12 @@ export default function OrganizerPage() {
                                 try {
                                     const tokenRes = await fetch(apiUrl('/checkout/token'), { headers: apiHeaders() });
                                     if (tokenRes.ok) {
-                                        const { token } = await tokenRes.json();
-                                        setPremiumToken(token);
+                                        const data = await tokenRes.json();
                                         clearCheckoutPending();
                                         if (checkoutPollRef.current) clearInterval(checkoutPollRef.current);
                                         checkoutPollRef.current = null;
-                                        track('premium_activated', { source: 'stripe' });
-                                        setErrorModal({ title: 'Game Pack Activated!', message: `You now have ${remoteConfig.pricing.games} games. Enjoy!` });
+                                        track('tokens_purchased', { source: 'stripe', tokens_added: data.tokens_added });
+                                        setErrorModal({ title: 'Sparks Added!', message: `+${data.tokens_added} sparks added to your balance. Enjoy!` });
                                     }
                                 } catch { /* keep polling */ }
                             }, 2000);

@@ -66,10 +66,18 @@ STREAK_THRESHOLDS = {3: 1.5, 5: 2.0}  # streak_count -> multiplier
 # --- Bonus rounds ---
 BONUS_ROUND_FRACTION = 0.3  # ~30% of questions will be bonus rounds (2x points)
 
-# --- Premium / Monetization ---
-FREE_TIER_LIMIT = int(os.getenv("FREE_TIER_LIMIT", "3"))  # max games per device per 24h
+# --- Token Economy ---
+SIGNUP_BONUS_TOKENS = int(os.getenv("SIGNUP_BONUS_TOKENS", "20"))
+DAILY_BONUS_TOKENS = int(os.getenv("DAILY_BONUS_TOKENS", "10"))
+MAX_TOKEN_BALANCE = int(os.getenv("MAX_TOKEN_BALANCE", "1000"))
+COST_GENERATE = int(os.getenv("COST_GENERATE", "1"))
+COST_ROOM = int(os.getenv("COST_ROOM", "10"))
+AD_REWARD_TOKENS = int(os.getenv("AD_REWARD_TOKENS", "5"))
+MAX_ADS_PER_DAY = int(os.getenv("MAX_ADS_PER_DAY", "5"))
+TOKEN_PACK_AMOUNT = int(os.getenv("TOKEN_PACK_AMOUNT", "110"))
+
+# --- Premium / Payments ---
 JWT_SECRET = os.getenv("JWT_SECRET", "")
-PREMIUM_DURATION_HOURS = int(os.getenv("PREMIUM_DURATION_HOURS", "744"))  # 31 days (generous)
 GEMINI_PREMIUM_MODEL = os.getenv("GEMINI_PREMIUM_MODEL", "gemini-2.5-flash")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")

@@ -4,7 +4,6 @@
  * Keychain (iOS) / Keystore (Android) in the future.
  */
 const DEVICE_ID_KEY = 'revelry_device_id';
-const PREMIUM_TOKEN_KEY = 'revelry_premium_token';
 const CHECKOUT_PENDING_KEY = 'checkout_pending';
 const CHECKOUT_SESSION_KEY = 'checkout_session_id';
 
@@ -43,20 +42,6 @@ export function getDeviceId(): string {
         set(DEVICE_ID_KEY, id);
     }
     return id;
-}
-
-// --- Premium Token ---
-
-export function getPremiumToken(): string | null {
-    return get(PREMIUM_TOKEN_KEY);
-}
-
-export function setPremiumToken(token: string): void {
-    set(PREMIUM_TOKEN_KEY, token);
-}
-
-export function clearPremiumToken(): void {
-    remove(PREMIUM_TOKEN_KEY);
 }
 
 // --- Checkout Pending ---
@@ -122,6 +107,5 @@ export function clearUserProfile(): void {
 export function signOut(): void {
     clearSessionToken();
     clearUserProfile();
-    clearPremiumToken();
     clearCheckoutPending();
 }

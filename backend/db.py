@@ -1,4 +1,4 @@
-"""SQLite database for persistent entitlements and usage tracking."""
+"""SQLite database for token wallets, entitlements (legacy), and usage tracking."""
 import os
 import sqlite3
 import time
@@ -83,8 +83,32 @@ def init_db():
             created_at INTEGER NOT NULL,
             UNIQUE(provider, provider_subject_id)
         );
+
+        CREATE TABLE IF NOT EXISTS wallets (
+            id TEXT PRIMARY KEY,
+            balance INTEGER NOT NULL DEFAULT 0,
+            lifetime_purchased INTEGER NOT NULL DEFAULT 0,
+            last_daily_bonus_date TEXT NOT NULL DEFAULT '',
+            ads_watched_today INTEGER NOT NULL DEFAULT 0,
+            ads_watched_date TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS token_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            wallet_id TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            reason TEXT NOT NULL,
+            reference_id TEXT,
+            balance_after INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_txn_wallet ON token_transactions(wallet_id);
+        CREATE INDEX IF NOT EXISTS idx_txn_reference ON token_transactions(reference_id) WHERE reference_id IS NOT NULL;
     """)
     conn.commit()
+    # Run one-time migration of old entitlements to token wallets
+    migrate_entitlements_to_wallets()
     logger.info("Database initialized at %s", DB_PATH)
 
 
@@ -631,3 +655,351 @@ def lookup_user_by_email(email: str) -> list[dict]:
         (f"%{escaped}%",),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- Token Wallets ---
+
+def _utc_date_str() -> str:
+    """Get today's UTC date as YYYY-MM-DD string."""
+    import datetime
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+
+
+def get_or_create_wallet(wallet_id: str, signup_bonus: bool = True) -> dict:
+    """Get wallet by ID, or create one with optional signup bonus.
+    Returns wallet dict with keys: id, balance, lifetime_purchased, last_daily_bonus_date,
+    ads_watched_today, ads_watched_date, created_at."""
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
+    if row:
+        return dict(row)
+
+    now = int(time.time())
+    bonus = config.SIGNUP_BONUS_TOKENS if signup_bonus else 0
+    try:
+        conn.execute(
+            "INSERT INTO wallets (id, balance, lifetime_purchased, last_daily_bonus_date, "
+            "ads_watched_today, ads_watched_date, created_at) VALUES (?, ?, 0, '', 0, '', ?)",
+            (wallet_id, bonus, now),
+        )
+        if bonus > 0:
+            conn.execute(
+                "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at) "
+                "VALUES (?, ?, 'signup_bonus', NULL, ?, ?)",
+                (wallet_id, bonus, bonus, now),
+            )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        # Race condition: another thread created it
+        row = conn.execute("SELECT * FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
+        if row:
+            return dict(row)
+    return {"id": wallet_id, "balance": bonus, "lifetime_purchased": 0,
+            "last_daily_bonus_date": "", "ads_watched_today": 0, "ads_watched_date": "", "created_at": now}
+
+
+def get_wallet_balance(wallet_id: str) -> int:
+    """Get current token balance. Returns 0 if wallet doesn't exist."""
+    conn = _get_conn()
+    row = conn.execute("SELECT balance FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
+    return row["balance"] if row else 0
+
+
+def debit_tokens(wallet_id: str, amount: int, reason: str, reference_id: str = "") -> tuple[bool, int]:
+    """Atomically debit tokens. Returns (success, new_balance). Fails if insufficient balance."""
+    conn = _get_conn()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute("SELECT balance FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
+        if not row or row["balance"] < amount:
+            conn.execute("ROLLBACK")
+            return False, row["balance"] if row else 0
+
+        new_balance = row["balance"] - amount
+        now = int(time.time())
+        conn.execute("UPDATE wallets SET balance = ? WHERE id = ?", (new_balance, wallet_id))
+        conn.execute(
+            "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (wallet_id, -amount, reason, reference_id or None, new_balance, now),
+        )
+        conn.execute("COMMIT")
+        return True, new_balance
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def credit_tokens(wallet_id: str, amount: int, reason: str, reference_id: str = "") -> tuple[bool, int]:
+    """Credit tokens to wallet, capped at MAX_TOKEN_BALANCE. Returns (success, new_balance).
+    Creates wallet if it doesn't exist."""
+    conn = _get_conn()
+    now = int(time.time())
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute("SELECT balance FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
+        if not row:
+            # Create wallet without signup bonus (credit is the initial action)
+            conn.execute(
+                "INSERT INTO wallets (id, balance, lifetime_purchased, last_daily_bonus_date, "
+                "ads_watched_today, ads_watched_date, created_at) VALUES (?, 0, 0, '', 0, '', ?)",
+                (wallet_id, now),
+            )
+            current = 0
+        else:
+            current = row["balance"]
+
+        new_balance = min(current + amount, config.MAX_TOKEN_BALANCE)
+        actual_credit = new_balance - current
+        if actual_credit <= 0:
+            conn.execute("COMMIT")
+            return True, current  # At cap, no change but not an error
+
+        conn.execute("UPDATE wallets SET balance = ? WHERE id = ?", (new_balance, wallet_id))
+        conn.execute(
+            "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (wallet_id, actual_credit, reason, reference_id or None, new_balance, now),
+        )
+        conn.execute("COMMIT")
+        return True, new_balance
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def check_and_grant_daily_bonus(wallet_id: str) -> tuple[bool, int]:
+    """Grant daily bonus if new UTC day. Returns (granted, new_balance)."""
+    conn = _get_conn()
+    today = _utc_date_str()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute("SELECT * FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
+        if not row:
+            conn.execute("ROLLBACK")
+            return False, 0
+
+        if row["last_daily_bonus_date"] == today:
+            conn.execute("ROLLBACK")
+            return False, row["balance"]
+
+        # New day — grant bonus and reset ad counter
+        new_balance = min(row["balance"] + config.DAILY_BONUS_TOKENS, config.MAX_TOKEN_BALANCE)
+        actual_bonus = new_balance - row["balance"]
+        now = int(time.time())
+
+        conn.execute(
+            "UPDATE wallets SET balance = ?, last_daily_bonus_date = ?, "
+            "ads_watched_today = 0, ads_watched_date = ? WHERE id = ?",
+            (new_balance, today, today, wallet_id),
+        )
+        if actual_bonus > 0:
+            conn.execute(
+                "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at) "
+                "VALUES (?, ?, 'daily_bonus', NULL, ?, ?)",
+                (wallet_id, actual_bonus, new_balance, now),
+            )
+        conn.execute("COMMIT")
+        return True, new_balance
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def check_and_grant_ad_reward(wallet_id: str) -> tuple[bool, int, int]:
+    """Grant ad reward if under daily cap. Returns (granted, new_balance, ads_remaining_today)."""
+    conn = _get_conn()
+    today = _utc_date_str()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute("SELECT * FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
+        if not row:
+            conn.execute("ROLLBACK")
+            return False, 0, 0
+
+        # Reset ad counter if new day
+        ads_today = row["ads_watched_today"] if row["ads_watched_date"] == today else 0
+        if ads_today >= config.MAX_ADS_PER_DAY:
+            conn.execute("ROLLBACK")
+            return False, row["balance"], 0
+
+        new_balance = min(row["balance"] + config.AD_REWARD_TOKENS, config.MAX_TOKEN_BALANCE)
+        actual_reward = new_balance - row["balance"]
+        ads_today += 1
+        remaining = config.MAX_ADS_PER_DAY - ads_today
+        now = int(time.time())
+
+        conn.execute(
+            "UPDATE wallets SET balance = ?, ads_watched_today = ?, ads_watched_date = ? WHERE id = ?",
+            (new_balance, ads_today, today, wallet_id),
+        )
+        if actual_reward > 0:
+            conn.execute(
+                "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at) "
+                "VALUES (?, ?, 'ad_reward', NULL, ?, ?)",
+                (wallet_id, actual_reward, new_balance, now),
+            )
+        conn.execute("COMMIT")
+        return True, new_balance, remaining
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def has_ever_purchased(wallet_id: str) -> bool:
+    """Check if this wallet has ever purchased tokens (for premium model access)."""
+    conn = _get_conn()
+    row = conn.execute("SELECT lifetime_purchased FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
+    return row is not None and row["lifetime_purchased"] > 0
+
+
+def credit_purchase(wallet_id: str, amount: int, reference_id: str) -> tuple[bool, int]:
+    """Credit purchased tokens and increment lifetime_purchased. Returns (success, new_balance).
+    Idempotent: if reference_id was already credited, returns current balance without double-crediting."""
+    conn = _get_conn()
+    now = int(time.time())
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        # Idempotency check inside transaction to prevent race conditions
+        if reference_id:
+            existing = conn.execute(
+                "SELECT balance_after FROM token_transactions WHERE reference_id = ? AND reason = 'purchase'",
+                (reference_id,),
+            ).fetchone()
+            if existing:
+                conn.execute("ROLLBACK")
+                logger.info("Duplicate credit_purchase skipped for reference_id=%s", reference_id)
+                return True, existing["balance_after"]
+
+        row = conn.execute("SELECT balance FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
+        if not row:
+            conn.execute(
+                "INSERT INTO wallets (id, balance, lifetime_purchased, last_daily_bonus_date, "
+                "ads_watched_today, ads_watched_date, created_at) VALUES (?, 0, 0, '', 0, '', ?)",
+                (wallet_id, now),
+            )
+            current = 0
+        else:
+            current = row["balance"]
+
+        new_balance = min(current + amount, config.MAX_TOKEN_BALANCE)
+        actual_credit = new_balance - current
+
+        conn.execute(
+            "UPDATE wallets SET balance = ?, lifetime_purchased = lifetime_purchased + ? WHERE id = ?",
+            (new_balance, amount, wallet_id),
+        )
+        conn.execute(
+            "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at) "
+            "VALUES (?, ?, 'purchase', ?, ?, ?)",
+            (wallet_id, actual_credit, reference_id or None, new_balance, now),
+        )
+        conn.execute("COMMIT")
+        return True, new_balance
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def merge_wallet(from_id: str, to_id: str):
+    """Transfer balance from one wallet to another (device → user on sign-in).
+    The source wallet balance is set to 0."""
+    conn = _get_conn()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        from_row = conn.execute("SELECT * FROM wallets WHERE id = ?", (from_id,)).fetchone()
+        if not from_row or from_row["balance"] == 0:
+            conn.execute("ROLLBACK")
+            return
+
+        # Ensure target wallet exists
+        to_row = conn.execute("SELECT * FROM wallets WHERE id = ?", (to_id,)).fetchone()
+        now = int(time.time())
+        if not to_row:
+            conn.execute(
+                "INSERT INTO wallets (id, balance, lifetime_purchased, last_daily_bonus_date, "
+                "ads_watched_today, ads_watched_date, created_at) VALUES (?, 0, 0, '', 0, '', ?)",
+                (to_id, now),
+            )
+            to_balance = 0
+        else:
+            to_balance = to_row["balance"]
+
+        transfer_amount = from_row["balance"]
+        new_to_balance = min(to_balance + transfer_amount, config.MAX_TOKEN_BALANCE)
+        actual_transfer = new_to_balance - to_balance
+
+        if actual_transfer < transfer_amount:
+            logger.warning("Wallet merge capped: %s lost %d tokens (cap %d)", from_id, transfer_amount - actual_transfer, config.MAX_TOKEN_BALANCE)
+
+        # Also merge lifetime_purchased
+        from_purchased = from_row["lifetime_purchased"]
+
+        conn.execute("UPDATE wallets SET balance = 0 WHERE id = ?", (from_id,))
+        conn.execute(
+            "UPDATE wallets SET balance = ?, lifetime_purchased = lifetime_purchased + ? WHERE id = ?",
+            (new_to_balance, from_purchased, to_id),
+        )
+
+        # Log both sides
+        conn.execute(
+            "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at) "
+            "VALUES (?, ?, 'merge_out', ?, 0, ?)",
+            (from_id, -transfer_amount, to_id, now),
+        )
+        conn.execute(
+            "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at) "
+            "VALUES (?, ?, 'merge_in', ?, ?, ?)",
+            (to_id, actual_transfer, from_id, new_to_balance, now),
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def migrate_entitlements_to_wallets():
+    """One-time migration: convert active entitlements to token balances."""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM entitlements WHERE status = 'active'"
+    ).fetchall()
+    if not rows:
+        return
+
+    for row in rows:
+        wallet_id = row["user_id"] or row["device_id"]
+        tokens_to_credit = row["games_remaining"] * config.COST_ROOM
+        if tokens_to_credit <= 0:
+            continue
+
+        # Create or get wallet (no signup bonus for migration)
+        get_or_create_wallet(wallet_id, signup_bonus=False)
+        credit_tokens(wallet_id, tokens_to_credit, "migration", reference_id=row["id"])
+
+        conn.execute(
+            "UPDATE entitlements SET status = 'migrated_to_tokens' WHERE id = ?",
+            (row["id"],),
+        )
+    conn.commit()
+    logger.info("Migrated %d active entitlements to token wallets", len(rows))
+
+
+def admin_grant_tokens(wallet_id: str, amount: int) -> int:
+    """Admin: grant tokens to a wallet. Returns new balance."""
+    get_or_create_wallet(wallet_id, signup_bonus=False)
+    _, new_balance = credit_tokens(wallet_id, amount, "admin_grant")
+    return new_balance
+
+
+def admin_lookup_wallet(wallet_id: str) -> Optional[dict]:
+    """Admin: look up wallet and recent transactions."""
+    conn = _get_conn()
+    wallet = conn.execute("SELECT * FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
+    if not wallet:
+        return None
+    txns = [dict(r) for r in conn.execute(
+        "SELECT * FROM token_transactions WHERE wallet_id = ? ORDER BY created_at DESC LIMIT 50",
+        (wallet_id,),
+    ).fetchall()]
+    return {"wallet": dict(wallet), "transactions": txns}

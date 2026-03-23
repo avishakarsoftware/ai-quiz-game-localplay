@@ -1,7 +1,6 @@
 import { type AIProvider } from './PromptScreen';
 import { useSwipeBack } from '../../utils/useSwipeBack';
-import { useEntitlement } from '../../hooks/useEntitlement';
-import QuotaBadge from '../QuotaBadge';
+import { useTokenBalance } from '../../hooks/useTokenBalance';
 import SignInNudge from '../SignInNudge';
 
 interface MLTPromptScreenProps {
@@ -69,7 +68,7 @@ export default function MLTPromptScreen({
     numRounds, setNumRounds, provider, setProvider,
     providers, onGenerate, onBack,
 }: MLTPromptScreenProps) {
-    const { entitlement, loading: entitlementLoading } = useEntitlement();
+    const { tokenStatus, loading: tokenLoading } = useTokenBalance();
     const swipeProgress = useSwipeBack(onBack);
 
     const shuffleTheme = () => {
@@ -91,8 +90,7 @@ export default function MLTPromptScreen({
                     <h1 className="hero-title">Most Likely To</h1>
                     <p className="text-[--text-tertiary] mt-2">Enter a theme for your statements</p>
                     <div className="mt-3" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                        <QuotaBadge entitlement={entitlement} loading={entitlementLoading} />
-                        <SignInNudge isPremium={entitlement.premium} />
+                        <SignInNudge isPremium={tokenStatus.has_purchased} />
                     </div>
                 </div>
 

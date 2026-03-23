@@ -26,6 +26,14 @@ vi.mock('../../utils/analytics', () => ({
     track: vi.fn(),
 }));
 
+vi.mock('../../hooks/useTokenBalance', () => ({
+    useTokenBalance: () => ({
+        tokenStatus: { balance: 42, has_purchased: false, daily_bonus_available: false, cost_generate: 1, cost_room: 10 },
+        loading: false,
+        refresh: vi.fn(),
+    }),
+}));
+
 vi.mock('@capgo/capacitor-social-login', () => ({
     SocialLogin: {
         login: vi.fn(),
@@ -33,35 +41,44 @@ vi.mock('@capgo/capacitor-social-login', () => ({
 }));
 
 describe('SettingsDrawer', () => {
-    it('renders the settings trigger button', () => {
+    it('renders the menu trigger button', () => {
         render(<SettingsDrawer />);
-        expect(screen.getByTitle('Settings')).toBeInTheDocument();
+        expect(screen.getByTitle('Menu')).toBeInTheDocument();
     });
 
     it('opens drawer on trigger click', async () => {
         const user = userEvent.setup();
         const { container } = render(<SettingsDrawer />);
 
-        await user.click(screen.getByTitle('Settings'));
+        await user.click(screen.getByTitle('Menu'));
 
         const drawer = container.querySelector('.settings-drawer');
         expect(drawer).toHaveClass('settings-drawer-open');
     });
 
-    it('shows Settings heading when open', async () => {
+    it('shows Menu heading when open', async () => {
         const user = userEvent.setup();
         render(<SettingsDrawer />);
 
-        await user.click(screen.getByTitle('Settings'));
+        await user.click(screen.getByTitle('Menu'));
 
-        expect(screen.getByText('Settings')).toBeInTheDocument();
+        expect(screen.getByText('Menu')).toBeInTheDocument();
+    });
+
+    it('shows Home button in drawer', async () => {
+        const user = userEvent.setup();
+        render(<SettingsDrawer />);
+
+        await user.click(screen.getByTitle('Menu'));
+
+        expect(screen.getByText('Home')).toBeInTheDocument();
     });
 
     it('shows Sound and Vibration labels', async () => {
         const user = userEvent.setup();
         render(<SettingsDrawer />);
 
-        await user.click(screen.getByTitle('Settings'));
+        await user.click(screen.getByTitle('Menu'));
 
         expect(screen.getByText('Sound')).toBeInTheDocument();
         expect(screen.getByText('Vibration')).toBeInTheDocument();
@@ -71,7 +88,7 @@ describe('SettingsDrawer', () => {
         const user = userEvent.setup();
         const { container } = render(<SettingsDrawer />);
 
-        await user.click(screen.getByTitle('Settings'));
+        await user.click(screen.getByTitle('Menu'));
         expect(container.querySelector('.settings-drawer')).toHaveClass('settings-drawer-open');
 
         await user.keyboard('{Escape}');
@@ -82,7 +99,7 @@ describe('SettingsDrawer', () => {
         const user = userEvent.setup();
         const { container } = render(<SettingsDrawer />);
 
-        await user.click(screen.getByTitle('Settings'));
+        await user.click(screen.getByTitle('Menu'));
         expect(container.querySelector('.settings-drawer')).toHaveClass('settings-drawer-open');
 
         const backdrop = container.querySelector('.settings-backdrop');
@@ -96,7 +113,7 @@ describe('SettingsDrawer', () => {
         const user = userEvent.setup();
         render(<SettingsDrawer />);
 
-        await user.click(screen.getByTitle('Settings'));
+        await user.click(screen.getByTitle('Menu'));
 
         expect(screen.getByText('Revelry Quiz v1.0')).toBeInTheDocument();
     });
@@ -105,30 +122,42 @@ describe('SettingsDrawer', () => {
         const user = userEvent.setup();
         render(<SettingsDrawer />);
 
-        await user.click(screen.getByTitle('Settings'));
+        await user.click(screen.getByTitle('Menu'));
 
-        expect(screen.getByText(/sign in to keep your party pass/i)).toBeInTheDocument();
+        expect(screen.getByText(/sign in to sync your sparks/i)).toBeInTheDocument();
     });
 
     it('shows sign-in prompt when no client IDs configured', async () => {
         const user = userEvent.setup();
         render(<SettingsDrawer />);
 
-        await user.click(screen.getByTitle('Settings'));
+        await user.click(screen.getByTitle('Menu'));
 
-        // Sign-in section should be present (either buttons or coming soon)
-        expect(screen.getByText(/sign in to keep your party pass/i)).toBeInTheDocument();
+        expect(screen.getByText(/sign in to sync your sparks/i)).toBeInTheDocument();
     });
 
     it('shows privacy policy link', async () => {
         const user = userEvent.setup();
         render(<SettingsDrawer />);
 
-        await user.click(screen.getByTitle('Settings'));
+        await user.click(screen.getByTitle('Menu'));
 
         const link = screen.getByText('Privacy Policy');
         expect(link).toBeInTheDocument();
         expect(link).toHaveAttribute('href', 'privacy.html');
+    });
+
+    it('dispatches navigate-home event when Home is clicked', async () => {
+        const user = userEvent.setup();
+        const handler = vi.fn();
+        window.addEventListener('navigate-home', handler);
+
+        render(<SettingsDrawer />);
+        await user.click(screen.getByTitle('Menu'));
+        await user.click(screen.getByText('Home'));
+
+        expect(handler).toHaveBeenCalledTimes(1);
+        window.removeEventListener('navigate-home', handler);
     });
 });
 
@@ -148,7 +177,7 @@ describe('SettingsDrawer (signed in)', () => {
         const user = userEvent.setup();
         render(<SettingsDrawer />);
 
-        await user.click(screen.getByTitle('Settings'));
+        await user.click(screen.getByTitle('Menu'));
 
         expect(screen.getByText('Signed in')).toBeInTheDocument();
         expect(screen.getByText('test@test.com')).toBeInTheDocument();
