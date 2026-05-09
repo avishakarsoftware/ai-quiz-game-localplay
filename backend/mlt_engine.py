@@ -7,7 +7,7 @@ import logging
 from typing import Optional
 
 import config
-from quiz_engine import AIQuotaExceeded, DailyLimitExceeded
+from quiz_engine import AIQuotaExceeded, DailyLimitExceeded, _extract_gemini_text
 
 logger = logging.getLogger(__name__)
 
@@ -179,12 +179,11 @@ async def _generate_gemini(prompt: str, difficulty: str, num_rounds: int, model_
                 response = await client.post(url, json=payload, headers=headers, timeout=60)
                 response.raise_for_status()
             result = response.json()
-            try:
-                text = result["candidates"][0]["content"]["parts"][0]["text"]
-            except (KeyError, IndexError, TypeError):
+            text = _extract_gemini_text(result)
+            if text is None:
                 logger.warning("Gemini returned unexpected response structure: %s", str(result)[:200])
                 continue
-            # Extract first JSON object — handles thinking text, markdown blocks, etc.
+            # Extract first JSON object — handles markdown blocks, etc.
             json_match = re.search(r'\{.*\}', text, re.DOTALL)
             if json_match:
                 text = json_match.group()

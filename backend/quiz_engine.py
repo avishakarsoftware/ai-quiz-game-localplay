@@ -54,6 +54,28 @@ def _build_system_prompt(difficulty: str, num_questions: int) -> str:
     )
 
 
+def _strip_thinking_leaks(text: str) -> str:
+    """Remove thinking/reasoning blocks that leak through in text parts."""
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    text = re.sub(r'<thinking>.*?</thinking>', '', text, flags=re.DOTALL)
+    return text.strip()
+
+
+def _extract_gemini_text(result: dict) -> Optional[str]:
+    """Extract text from Gemini response, filtering out thought parts structurally."""
+    try:
+        parts = result["candidates"][0]["content"]["parts"]
+    except (KeyError, IndexError, TypeError):
+        return None
+    # Structural filter: drop parts marked as thought
+    text_parts = [p["text"] for p in parts if "text" in p and not p.get("thought")]
+    if not text_parts:
+        return None
+    text = "\n".join(text_parts)
+    # Regex fallback: strip any thinking leaks in text content
+    return _strip_thinking_leaks(text)
+
+
 def _sanitize_text(text: str) -> str:
     """Strip HTML tags and control characters from LLM-generated text."""
     text = re.sub(r'<[^>]+>', '', text)
@@ -175,12 +197,11 @@ async def _generate_gemini(prompt: str, difficulty: str, num_questions: int, mod
                 response = await client.post(url, json=payload, headers=headers, timeout=60)
                 response.raise_for_status()
             result = response.json()
-            try:
-                text = result["candidates"][0]["content"]["parts"][0]["text"]
-            except (KeyError, IndexError, TypeError):
+            text = _extract_gemini_text(result)
+            if text is None:
                 logger.warning("Gemini returned unexpected response structure: %s", str(result)[:200])
                 continue
-            # Extract first JSON object — handles thinking text, markdown blocks, etc.
+            # Extract first JSON object — handles markdown blocks, etc.
             json_match = re.search(r'\{.*\}', text, re.DOTALL)
             if json_match:
                 text = json_match.group()
