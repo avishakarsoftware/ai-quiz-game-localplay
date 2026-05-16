@@ -2,6 +2,8 @@
 
 This document describes the system as it exists now. It is intended as a baseline for planning new games and platform upgrades.
 
+For the forward-looking LocalPlay platform vision, including the future Revelry integration boundary, see `SPEC-PLATFORM.md`.
+
 ## Product
 
 LocalPlay / Revelry is an AI-powered party game platform. A host generates game content with an LLM, creates a room, shares a room code or QR join URL, and players join from their phones. Gameplay happens in real time over WebSockets.
