@@ -20,6 +20,14 @@ logs/
 
 # Dev environment
 .dev-pids/
+backend/data/
+
+# Generated experiment outputs
+model_comparison_results.json
+backend/model_comparison_results.json
+
+# Backup files
+*.bak
 
 # OS
 .DS_Store
