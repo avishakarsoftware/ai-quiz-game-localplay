@@ -830,10 +830,13 @@ else:
     origins = [
         "http://localhost:5173",
         "http://localhost:5174",
+        "http://localhost:9200",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
+        "http://127.0.0.1:9200",
         f"http://{local_ip}:5173",
         f"http://{local_ip}:5174",
+        f"http://{local_ip}:9200",
         # Capacitor native app origins
         "capacitor://localhost",  # iOS
         "http://localhost",       # Android

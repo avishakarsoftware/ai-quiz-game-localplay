@@ -893,17 +893,13 @@ Testing commands are documented in `README.md` and the Makefile.
 
 Common commands:
 
-- `make test`: backend unit and integration tests.
-- `make test-e2e`: end-to-end tests requiring live Ollama.
+- `make test`: backend unit and integration tests (excludes e2e and websocket integration).
+- `make test-e2e`: end-to-end tests that call live LLM generation. These tests still use an `@requires_ollama` skip guard, so local Ollama must be running even if generation is configured to use another provider.
 - `make test-all`: all tests.
 - `make lint`: frontend TypeScript type check.
 - `make build`: frontend production build.
 
-README notes claim the backend tests cover API validation, game logic, WebSocket flows, power-ups, reconnection, bonus rounds, and team leaderboard behavior. The exact count may drift over time.
-
-Known historical test issue:
-
-- `REVIEW_STATUS_TABLE_2026-03-21.md` records an open test issue where a reset-room test sent old payload shape (`quiz_data`) while the backend expects `content_id`.
+The backend test suite includes API validation, game logic, WebSocket flows, power-ups, reconnection, bonus rounds, team leaderboard, token economy, auth, and thinking-leak defense. The exact count may drift over time.
 
 ## Native / Capacitor
 
@@ -938,6 +934,62 @@ Known pressure points:
 - Adding many games by direct branching will make socket and page state machines increasingly large.
 
 These are current design facts, not necessarily defects. They should guide any upgrade plan.
+
+## Upgrade Backlog
+
+### Hosting Strategy
+
+LocalPlay currently fits a single-server deployment best.
+
+Decision:
+
+- Keep LocalPlay on a server for now.
+- Do not move to Cloud Run or another autoscaled multi-instance platform until traffic or ops needs justify the state-management work.
+
+Rationale:
+
+- Active rooms live in process memory through `socket_manager.rooms`.
+- WebSocket connection objects live in process memory.
+- Generated quiz/WMLT content is stored in process memory.
+- Game history is currently in process memory.
+- Reconnect behavior assumes the room still exists on the same backend process.
+- This architecture is simple and appropriate while LocalPlay is still expanding its game catalog and gameplay loops.
+
+Cloud Run notes for later:
+
+- Cloud Run supports WebSockets.
+- WebSockets are treated as long-running HTTP requests and are subject to Cloud Run request timeouts.
+- Cloud Run can scale to multiple instances, but LocalPlay's current in-memory room model is not safe across instances.
+- Session affinity may reduce reconnect issues, but it should not be treated as a correctness guarantee.
+- A first Cloud Run deployment could work with `min-instances=1`, `max-instances=1`, and a long request timeout, but that would mostly reproduce the single-server model with different ops tradeoffs.
+
+Required work before multi-instance hosting:
+
+- Move generated game content and ownership out of process memory.
+- Persist game history outside process memory.
+- Decide where live room state belongs, likely Redis/Memorystore, Firestore, Cloud SQL, or another shared store.
+- Add a broadcast/routing strategy for WebSocket events if one room can span instances.
+- Make reconnect safe when a client lands on a different backend instance.
+- Revisit cleanup semantics so room TTL and organizer disconnect cleanup work across instances.
+- Add deployment tests for reconnects, room creation, game start, and podium flow under instance restarts.
+
+Recommended migration order:
+
+1. Keep the current server deployment while adding games.
+2. Persist generated content and completed game history.
+3. Externalize live room state only when multi-instance scaling is actually needed.
+4. Add shared pub/sub or room routing for WebSocket fanout.
+5. Move to autoscaled infrastructure after the state model is no longer process-local.
+
+### Product Boundary
+
+LocalPlay is a separate app/platform. It may later integrate with Revelry accounts or let Revelry users launch and play LocalPlay games, but the current system should be treated as LocalPlay first.
+
+Backlog:
+
+- Clean up docs and user-facing labels that imply LocalPlay and Revelry are the same product.
+- Keep legacy deployment/package names documented where they are real operational facts.
+- Define the future integration boundary explicitly before connecting Revelry users to LocalPlay.
 
 ## Markdown Document Currentness
 

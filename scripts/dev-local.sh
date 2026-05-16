@@ -21,8 +21,8 @@ PID_DIR="$ROOT/.dev-pids"
 
 # Auto-detect LAN IP
 LAN_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "localhost")
-BACKEND_PORT=8000
-FRONTEND_PORT=5173
+BACKEND_PORT=9100
+FRONTEND_PORT=9200
 
 # Colors
 GREEN='\033[0;32m'

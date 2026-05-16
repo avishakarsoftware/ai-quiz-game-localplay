@@ -349,7 +349,9 @@ export default function PlayerPage() {
                 {/* JOIN */}
                 {state === 'JOIN' && (
                     <div className="container-responsive safe-bottom animate-in" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                        <div className="hero-icon mb-4">🎮</div>
+                        <div className="hero-icon mb-4" style={{ background: 'none', boxShadow: 'none' }}>
+                            <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="Revelry" style={{ width: '100%', height: '100%', borderRadius: '20px' }} />
+                        </div>
                         <h1 className="hero-title mb-2">Join Game</h1>
                         <p className="text-[--text-tertiary] mb-8">Enter the game PIN to play</p>
 

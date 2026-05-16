@@ -6,10 +6,10 @@ dev:
 	$(MAKE) dev-backend & $(MAKE) dev-frontend & wait
 
 dev-backend:
-	cd backend && ../backend/venv/bin/python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+	cd backend && ../backend/venv/bin/python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 9100
 
 dev-frontend:
-	cd frontend && npm run dev -- --host
+	cd frontend && npm run dev -- --host 0.0.0.0 --port 9200
 
 # Install dependencies
 install:
