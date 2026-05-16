@@ -937,6 +937,15 @@ Known pressure points:
 
 These are current design facts, not necessarily defects. They should guide any upgrade plan.
 
+## Known Residual Backlog
+
+Historical review notes were consolidated into this section and the platform spec. Items here are not necessarily urgent, but they are useful checks when touching nearby code.
+
+- **Spectator lifecycle:** `SpectatorPage` has reconnect/backoff handling and cleanup guards, but spectator reconnect behavior should be regression-tested when changing room join/leave UI. In particular, verify reconnect still works after manually leaving one spectator room and joining another in the same mounted page.
+- **Spectator/player client-id collision:** Spectators and players use different client id prefixes, so real collisions are unlikely. Still, room cleanup paths should avoid assuming a `client_id` can only ever belong to one connection map.
+- **Reset-room tests:** Older tests once sent `RESET_ROOM` with inline `quiz_data`; current backend expects a valid `content_id`. Keep reset-room tests aligned with the content-id flow.
+- **Remote config announcement shape:** Historical review notes called out partial normalization of announcement entries. If remote config banners are expanded, normalize `type`, `dismissible`, and defaults explicitly.
+
 ## Upgrade Backlog
 
 ### Hosting Strategy
@@ -1000,7 +1009,7 @@ The repository contains several Markdown files with different freshness levels:
 - `SPEC.md`: current baseline spec for the codebase as inspected.
 - `README.md`: broadly useful for quick start, feature list, project structure, and test commands; branding and provider defaults may be older.
 - `DEPLOY.md`: useful production deployment reference. It is operationally specific and should be verified before executing commands.
-- `REVIEW_STATUS_TABLE_2026-03-21.md`: useful historical review/status table. Some line numbers and protocol details are stale; notably organizer auth now uses first-frame `AUTH`, not a query-token protocol.
+- Historical `REVIEW_STATUS_TABLE_2026-03-21.md`: reviewed and consolidated into `SPEC.md`; the standalone scratch file is not required.
 - `rollback_economy.md`: emergency rollback note from token economy back to entitlement economy. Not current product behavior.
 - `docs/monetization_plan.md`: historical monetization architecture for an entitlement/party-pass model. Useful for rationale, but not the current economy.
 - `docs/auth_persistence_plan.md`: historical auth plan. Useful identity guidance, but some entitlement references are stale.
