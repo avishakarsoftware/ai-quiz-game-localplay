@@ -1,0 +1,954 @@
+# LocalPlay / Revelry System Spec
+
+This document describes the system as it exists now. It is intended as a baseline for planning new games and platform upgrades.
+
+## Product
+
+LocalPlay / Revelry is an AI-powered party game platform. A host generates game content with an LLM, creates a room, shares a room code or QR join URL, and players join from their phones. Gameplay happens in real time over WebSockets.
+
+The platform currently supports:
+
+- `quiz`: AI-generated multiple-choice trivia.
+- `wmlt`: "Who's Most Likely To" voting rounds.
+
+The system uses shared room, player, team, token, and WebSocket infrastructure. Game-specific rules are handled by `room.game_type` branches in backend and frontend code.
+
+## Architecture
+
+### Backend
+
+The backend is a FastAPI app.
+
+Key files:
+
+- `backend/main.py`: REST API routes, room creation, content storage, imports/exports, auth/payment/history routes.
+- `backend/socket_manager.py`: WebSocket room lifecycle, player join/reconnect, organizer control messages, game state transitions, scoring.
+- `backend/config.py`: centralized environment variables and constants.
+- `backend/db.py`: SQLite persistence for wallets, users, checkout/webhook/idempotency data.
+- `backend/tokens.py`: spark wallet and token economy.
+- `backend/quiz_engine.py`: LLM generation and validation for quiz content.
+- `backend/mlt_engine.py`: LLM generation and validation for WMLT content.
+- `backend/image_engine.py`: optional Stable Diffusion image generation for quiz questions.
+- `backend/auth.py`: Google/Apple sign-in and session handling.
+- `backend/remote_config.py`: remote config for provider/model/operation flags.
+
+### Frontend
+
+The frontend is React + TypeScript + Vite.
+
+Key files:
+
+- `frontend/src/pages/OrganizerPage.tsx`: host state machine and WebSocket client.
+- `frontend/src/pages/PlayerPage.tsx`: player join, game, result, reconnect, and podium flows.
+- `frontend/src/components/organizer/GameSelectScreen.tsx`: game picker.
+- `frontend/src/components/organizer/PromptScreen.tsx`: quiz generation prompt.
+- `frontend/src/components/organizer/MLTPromptScreen.tsx`: WMLT generation prompt.
+- `frontend/src/components/organizer/ReviewScreen.tsx`: quiz review/edit before room creation.
+- `frontend/src/components/organizer/MLTReviewScreen.tsx`: WMLT review/edit before room creation.
+- `frontend/src/components/organizer/LobbyScreen.tsx`: host room lobby.
+- `frontend/src/components/organizer/GameQuestionScreen.tsx`: host active-round display.
+- `frontend/src/components/organizer/LeaderboardScreen.tsx`: quiz leaderboard between rounds.
+- `frontend/src/components/organizer/PodiumScreen.tsx`: final results.
+- `frontend/src/types.ts`: shared frontend types.
+
+### Production Topology
+
+Production deployment is documented in `DEPLOY.md`.
+
+Current production shape:
+
+```text
+Users -> games.revelryapp.me (IONOS CDN/static hosting) -> React/Vite frontend
+      -> gamesapi.revelryapp.me (GCP VM)                 -> FastAPI backend + WebSockets
+```
+
+Production URLs:
+
+- Frontend: `https://games.revelryapp.me/quiz/`
+- Backend API: `https://gamesapi.revelryapp.me`
+- Player join: `https://games.revelryapp.me/quiz/join`
+- Spectator/TV: `https://games.revelryapp.me/quiz/spectator`
+- Cast App ID: `1BC9ACD8`
+
+Backend hosting:
+
+- GCP Compute Engine VM.
+- Dockerized FastAPI backend.
+- Nginx terminates HTTPS and proxies API and WebSocket requests to the backend.
+- Let's Encrypt certificates are managed with Certbot.
+
+Frontend hosting:
+
+- Static Vite build uploaded under the IONOS `games/quiz/` directory.
+- SPA routing is handled by `.htaccess` under `/quiz/`.
+
+Production notes:
+
+- Ollama and Stable Diffusion are not expected to be available on the production VM.
+- Production should use cloud AI providers, primarily Gemini.
+- The frontend is built with `VITE_BASE_PATH=/quiz/` and `VITE_API_URL=https://gamesapi.revelryapp.me`.
+
+## Runtime Configuration
+
+Backend config is centralized in `backend/config.py`.
+
+Important settings:
+
+- LLM providers:
+  - `DEFAULT_PROVIDER`, default `gemini`.
+  - `GEMINI_MODEL`, default `gemini-2.5-flash-lite`.
+  - `GEMINI_PREMIUM_MODEL`, default `gemini-2.5-flash`.
+  - `OLLAMA_MODEL`, `OLLAMA_URL`, `ANTHROPIC_MODEL`.
+- Server:
+  - `HOST`, `PORT`, `ALLOWED_ORIGINS`.
+- Rate limits:
+  - `RATE_LIMIT_WINDOW`, `RATE_LIMIT_MAX_REQUESTS`.
+  - `DAILY_QUIZ_LIMIT`.
+  - `MAX_LLM_CALLS_PER_HOUR`.
+  - `WS_RATE_LIMIT_PER_SEC`.
+  - `MAX_WS_MESSAGE_SIZE`.
+- Game:
+  - `DEFAULT_TIME_LIMIT`.
+  - `DEFAULT_NUM_QUESTIONS`.
+  - `MIN_QUESTIONS`, `MAX_QUESTIONS`.
+  - `MAX_PLAYERS_PER_ROOM`.
+  - `MIN_WMLT_PLAYERS`.
+  - `ROOM_TTL_SECONDS`.
+  - `QUIZ_TTL_SECONDS`.
+- Economy:
+  - `COST_GENERATE`.
+  - `COST_ROOM`.
+  - `SIGNUP_BONUS_TOKENS`.
+  - `DAILY_BONUS_TOKENS`.
+  - `TOKEN_PACK_AMOUNT`.
+
+### Request Headers
+
+The platform uses shared API headers from the frontend fetch wrapper.
+
+Important headers:
+
+- `X-Device-Id`: stable device identifier for wallet/device context.
+- `X-Platform`: `web`, `ios`, or `android` when available.
+- `X-App-Version`: app version when available.
+- `X-Build`: build number when available.
+- `X-Idempotency-Key`: used on generation requests to avoid duplicate charges/results on retry.
+
+The backend CORS configuration explicitly allows these headers.
+
+## Content Model
+
+Generated game content is stored in memory in `backend/main.py`.
+
+Quiz storage:
+
+- `quizzes: Dict[str, dict]`
+- `quiz_timestamps: Dict[str, float]`
+- `quiz_images: Dict[str, Dict[int, str]]`
+
+WMLT storage:
+
+- `mlt_scenarios: Dict[str, dict]`
+- `mlt_timestamps: Dict[str, float]`
+
+Ownership:
+
+- `content_owners: Dict[str, str]`
+- Content ids are mapped to wallet ids.
+- Update, delete, export, and image-generation actions require matching ownership.
+
+Eviction:
+
+- `_evict_old_content()` removes expired content and trims storage to `MAX_QUIZZES`.
+- Content used by active rooms is not evicted.
+- Quiz and WMLT content use the same TTL constant.
+
+## Game Types
+
+Frontend game types are defined in `frontend/src/types.ts`:
+
+```ts
+export type GameType = 'quiz' | 'wmlt';
+```
+
+Backend room creation accepts:
+
+- `quiz`
+- `wmlt`
+
+Unsupported game types are rejected by `RoomCreateRequest.validate_game_type`.
+
+## LLM Generation Pattern
+
+Both existing generation engines follow the same pattern:
+
+1. Build a system prompt.
+2. Wrap the user prompt/theme in boundary markers.
+3. Call the selected provider.
+4. Extract JSON from the provider response.
+5. Validate required fields.
+6. Sanitize all user-visible text.
+7. Return structured content.
+
+Provider support:
+
+- Ollama
+- Gemini
+- Claude
+
+Gemini handling includes:
+
+- Header auth for Gemini models.
+- Query-param API key for Gemma models.
+- `responseMimeType: application/json` for non-Gemma models.
+- Structural filtering of Gemini `part.thought` response parts.
+- Regex fallback stripping of `<think>` / `<thinking>` blocks.
+
+### Quiz Content Shape
+
+Quiz generation returns:
+
+```json
+{
+  "quiz_title": "string",
+  "questions": [
+    {
+      "id": 1,
+      "text": "Question text",
+      "options": ["A", "B", "C", "D"],
+      "answer_index": 0,
+      "image_prompt": "Image generation prompt"
+    }
+  ]
+}
+```
+
+Validation requires:
+
+- `questions` exists and is a non-empty list.
+- Each question has `id`, `text`, `options`, `answer_index`.
+- Options count is either 2 or 4.
+- `answer_index` is an integer within option bounds.
+
+Quiz API responses strip `answer_index` before returning quiz data to clients except export/import and server-internal room data.
+
+### WMLT Content Shape
+
+WMLT generation returns:
+
+```json
+{
+  "game_title": "string",
+  "statements": [
+    {
+      "id": 1,
+      "text": "Who is most likely to forget their passport?"
+    }
+  ]
+}
+```
+
+Validation requires:
+
+- `statements` exists and is a non-empty list.
+- Each statement has `id` and non-empty `text`.
+
+## REST API
+
+### System
+
+- `GET /system/info`
+  - Requires admin key.
+  - Returns local IP information.
+
+### Providers
+
+- `GET /providers`
+  - Returns provider availability for Ollama, Gemini, and Claude.
+
+### Quiz
+
+- `POST /quiz/generate`
+  - Requires `X-Device-Id`.
+  - Charges `COST_GENERATE` after successful generation.
+  - Supports idempotency through `X-Idempotency-Key`.
+  - Body:
+    - `prompt`
+    - `difficulty`
+    - `num_questions`
+    - `provider`
+  - Returns:
+    - `quiz_id`
+    - `quiz` with answers stripped.
+
+- `GET /quiz/{quiz_id}`
+  - Returns quiz with answers stripped.
+
+- `PUT /quiz/{quiz_id}`
+  - Requires authenticated wallet ownership.
+  - Updates quiz title and questions.
+
+- `DELETE /quiz/{quiz_id}/question/{question_id}`
+  - Requires authenticated wallet ownership.
+  - Deletes a question.
+  - Cannot delete the last question.
+
+- `POST /quiz/generate-images`
+  - Requires authenticated wallet ownership.
+  - Generates one or all question images using Stable Diffusion.
+
+- `GET /quiz/{quiz_id}/image/{question_id}`
+  - Returns generated PNG image bytes.
+
+- `GET /quiz/{quiz_id}/export`
+  - Requires ownership.
+  - Returns full quiz including answers.
+
+- `POST /quiz/import`
+  - Requires authentication.
+  - Validates and stores imported quiz.
+
+### Stable Diffusion
+
+- `GET /sd/status`
+  - Returns whether image generation backend is available.
+
+### WMLT
+
+- `POST /mlt/generate`
+  - Requires `X-Device-Id`.
+  - Charges `COST_GENERATE` after successful generation.
+  - Supports idempotency through `X-Idempotency-Key`.
+  - Body:
+    - `prompt`
+    - `difficulty`, used as WMLT vibe.
+    - `num_rounds`
+    - `provider`
+  - Returns:
+    - `scenario_id`
+    - `game`
+
+- `GET /mlt/{scenario_id}`
+  - Returns generated WMLT game.
+
+- `PUT /mlt/{scenario_id}`
+  - Requires authenticated wallet ownership.
+  - Updates title and statements.
+
+- `DELETE /mlt/{scenario_id}/statement/{statement_id}`
+  - Requires authenticated wallet ownership.
+  - Deletes a statement.
+  - Cannot delete the last statement.
+
+- `GET /mlt/{scenario_id}/export`
+  - Requires ownership.
+
+- `POST /mlt/import`
+  - Requires authentication.
+  - Validates and stores imported WMLT game.
+
+### Rooms
+
+- `POST /room/create`
+  - Requires device/wallet context.
+  - Does not charge sparks; game-start charge happens over WebSocket.
+  - Body:
+    - `game_type`
+    - `time_limit`
+    - `quiz_id` for quiz.
+    - `mlt_id` for WMLT.
+  - Returns:
+    - `room_code`
+    - `organizer_token`
+
+- `WS /ws/{room_code}/{client_id}`
+  - Query params:
+    - `organizer=true` for host.
+    - `spectator=true` for spectator.
+
+### History
+
+- `GET /history`
+  - Requires authentication.
+  - Returns completed games for the current wallet.
+
+- `GET /history/{room_code}`
+  - Requires ownership.
+  - Returns detailed game history.
+
+### Auth And Payments
+
+The backend also includes routes for:
+
+- `POST /auth/signin`
+- `GET /auth/me`
+- `POST /checkout/create`
+- `POST /webhook/stripe`
+
+Token and checkout details are handled through `tokens.py`, `db.py`, and Stripe configuration.
+
+## Room Model
+
+`Room` lives in `backend/socket_manager.py`.
+
+Important fields:
+
+- `room_code`
+- `quiz`
+  - Generic game content payload. Used for both quiz and WMLT.
+- `content_id`
+- `game_type`
+- `time_limit`
+- `organizer_token`
+- `players`
+- `organizer`
+- `spectators`
+- `state`
+- `current_question_index`
+- `question_start_time`
+- `answered_players`
+- `connections`
+- `timer_task`
+- `previous_leaderboard`
+- `wallet_id`
+- `disconnected_players`
+- `answer_log`
+- `teams`
+- `power_ups`
+- `player_tokens`
+- `bonus_questions`
+- `locked`
+- `votes`
+- `show_votes`
+- `mlt_round_history`
+
+Room states:
+
+- `LOBBY`
+- `INTRO`
+- `QUESTION`
+- `LEADERBOARD`
+- `PODIUM`
+
+The field name `current_question_index` is used for both quiz questions and WMLT statements.
+
+## WebSocket Security
+
+Shared rules:
+
+- Origin validation is based on configured allowed origins.
+- Organizer sockets must send first-frame `AUTH` with `organizer_token`.
+- Message size is capped by `MAX_WS_MESSAGE_SIZE`.
+- Per-client message rate is capped by `WS_RATE_LIMIT_PER_SEC`.
+- Malformed JSON is rejected.
+- Organizer privilege is tied to the current organizer client id.
+
+Player join validation:
+
+- Nicknames are stripped of HTML tags and control characters.
+- Nicknames must be 1 to `MAX_NICKNAME_LENGTH` characters.
+- Team names are sanitized and capped.
+- Avatars are capped by `MAX_AVATAR_LENGTH`.
+- Duplicate nickname takeover requires a matching session token.
+- New joins are blocked if the room is locked or no longer in `LOBBY`.
+
+Reconnection:
+
+- Mid-game player disconnects preserve score, rank, streak, avatar, and answered state.
+- Session tokens prevent nickname hijacking.
+- Organizer disconnect starts a short cleanup grace period.
+- Organizer reconnect receives a full room sync.
+
+## WebSocket Protocol
+
+### Organizer Messages To Server
+
+- `AUTH`
+  - First message required for organizer sockets.
+  - Fields:
+    - `token`
+
+- `START_GAME`
+  - Allowed from `LOBBY`.
+  - Charges `COST_ROOM`.
+  - Locks room.
+  - WMLT validates minimum player count before charging.
+  - Sets state to `INTRO`.
+  - Broadcasts `GAME_STARTING`.
+
+- `NEXT_QUESTION`
+  - If state is `QUESTION`, ends current round.
+  - If state is `INTRO` or `LEADERBOARD`, starts next round.
+
+- `SET_TIME_LIMIT`
+  - Allowed from `LOBBY`, `LEADERBOARD`, or `PODIUM`.
+  - Time must be 5 to 60 seconds.
+
+- `SET_SHOW_VOTES`
+  - WMLT only.
+  - Controls whether vote breakdown is exposed.
+
+- `END_QUIZ`
+  - Ends active game and broadcasts `PODIUM`.
+
+- `RESET_ROOM`
+  - Allowed from `PODIUM`.
+  - Validates new content id and ownership.
+  - Charges `COST_ROOM`.
+  - Resets room while keeping connected players.
+
+- `TOGGLE_LOCK`
+  - Allowed from `LOBBY`.
+  - Broadcasts room lock status.
+
+### Player Messages To Server
+
+- `JOIN`
+  - Fields:
+    - `nickname`
+    - `team`
+    - `avatar`
+    - `session_token`
+
+- `ANSWER`
+  - Quiz only.
+  - Fields:
+    - `answer_index`
+
+- `VOTE`
+  - WMLT only.
+  - Fields:
+    - `voted_for`
+
+- `USE_POWER_UP`
+  - Quiz only.
+  - Fields:
+    - `power_up`: `double_points` or `fifty_fifty`.
+
+### Server Messages To Clients
+
+Common:
+
+- `ERROR`
+- `PING`
+- `ROOM_CREATED`
+- `JOINED_ROOM`
+- `RECONNECTED`
+- `PLAYER_JOINED`
+- `PLAYER_LEFT`
+- `PLAYER_DISCONNECTED`
+- `PLAYER_RECONNECTED`
+- `ORGANIZER_DISCONNECTED`
+- `HOST_RECONNECTED`
+- `ROOM_CLOSED`
+- `ROOM_RESET`
+- `ROOM_LOCK_STATUS`
+- `GAME_STARTING`
+- `QUESTION`
+- `TIMER`
+- `QUESTION_OVER`
+- `PODIUM`
+
+Quiz-specific:
+
+- `ANSWER_COUNT`
+- `ANSWER_RESULT`
+- `POWER_UP_ACTIVATED`
+
+WMLT-specific:
+
+- `VOTE_COUNT`
+- `VOTE_CONFIRMED`
+
+Spectator sync:
+
+- `SPECTATOR_SYNC`
+
+Organizer sync:
+
+- `ORGANIZER_RECONNECTED`
+
+## Quiz Gameplay
+
+### Round Start
+
+When `start_question()` runs for quiz:
+
+1. Current round index increments.
+2. Previous leaderboard is stored.
+3. `answered_players` is cleared.
+4. Per-question power-up state is cleared.
+5. State becomes `QUESTION`.
+6. The current question is broadcast without `answer_index`.
+7. Timer starts after optional bonus splash delay.
+
+Quiz `QUESTION` payload includes:
+
+- `question`
+- `question_number`
+- `total_questions`
+- `time_limit`
+- `is_bonus`
+
+### Answering
+
+Players send `ANSWER` with `answer_index`.
+
+Scoring:
+
+- Correct answer base points are time-based: 100 to 1000.
+- Bonus rounds double base points.
+- Streak multipliers come from `STREAK_THRESHOLDS`.
+- `double_points` power-up doubles awarded points once.
+- Wrong answer resets streak and awards 0 points.
+
+Power-ups:
+
+- `double_points`: marks next correct answer for double points.
+- `fifty_fifty`: removes up to two wrong options from the player view.
+
+### Round End
+
+Round ends when all active players answer or timer expires.
+
+Server broadcasts `QUESTION_OVER`:
+
+- `answer`
+- `leaderboard`
+- `previous_leaderboard`
+- `is_final`
+
+## WMLT Gameplay
+
+### Start Constraint
+
+WMLT requires at least `MIN_WMLT_PLAYERS` players.
+
+### Round Start
+
+When `start_question()` runs for WMLT:
+
+1. Current round index increments.
+2. Previous leaderboard is stored.
+3. `answered_players` is cleared.
+4. `votes` is cleared.
+5. State becomes `QUESTION`.
+6. Current statement and player list are broadcast.
+7. Timer starts after optional bonus splash delay.
+
+WMLT `QUESTION` payload includes:
+
+- `statement`
+- `question_number`
+- `total_questions`
+- `time_limit`
+- `is_bonus`
+- `game_type: "wmlt"`
+- `players`
+
+### Voting
+
+Players send `VOTE` with `voted_for`.
+
+Rules:
+
+- Vote target must be an active or disconnected player nickname.
+- Each player may vote once per round.
+- The server tracks `room.votes` as `voter -> target`.
+- The server sends `VOTE_CONFIRMED` to the voter.
+- The organizer receives `VOTE_COUNT`.
+
+### Round End
+
+Round ends when all active players vote or timer expires.
+
+Vote tally:
+
+- Votes are tallied by target nickname.
+- All players tied for the most votes are winners.
+- Unanimous means one winner received all votes and more than one vote exists.
+
+Scoring:
+
+- Players who voted for a winner receive 500 base points.
+- Bonus rounds double base points.
+- Unanimous rounds add 200 points.
+- Streak multipliers apply to repeated majority votes.
+- Most-voted winners receive an additional 100 points if they are active players.
+- Non-voters and voters outside the winning set lose streak.
+
+Server broadcasts WMLT `QUESTION_OVER`:
+
+- `game_type: "wmlt"`
+- `statement`
+- `votes`, hidden if `show_votes` is false.
+- `round_podium`
+- `winner`
+- `winners`
+- `winner_votes`
+- `unanimous`
+- `show_votes`
+- `leaderboard`
+- `previous_leaderboard`
+- `is_final`
+- `is_bonus`
+
+### WMLT Superlatives
+
+At podium time, WMLT may include:
+
+- Most Likely To Everything
+- Narcissist Award
+- Mind Reader
+- Most Controversial
+
+Superlatives are calculated from `mlt_round_history`.
+
+## Frontend Organizer State Machine
+
+Organizer states:
+
+- `SELECT_GAME`
+- `PROMPT`
+- `MLT_PROMPT`
+- `LOADING`
+- `REVIEW`
+- `MLT_REVIEW`
+- `GENERATING_IMAGES`
+- `ROOM`
+- `QUESTION`
+- `LEADERBOARD`
+- `PODIUM`
+
+Game select:
+
+- `quiz` goes to `PROMPT`.
+- `wmlt` goes to `MLT_PROMPT`.
+
+Generation:
+
+- Quiz calls `/quiz/generate`.
+- WMLT calls `/mlt/generate`.
+- Successful generation moves to review.
+- `402`, `429`, and `503` are surfaced in an error modal.
+
+Room creation:
+
+- Calls `/room/create`.
+- Sends `quiz_id` or `mlt_id` based on `gameType`.
+- Opens organizer WebSocket with `organizer=true`.
+- Sends first-frame `AUTH`.
+
+Game start:
+
+- Plays start sound.
+- Sends `SET_SHOW_VOTES` for WMLT.
+- Sends `START_GAME`.
+- Sends `NEXT_QUESTION`.
+
+Round progression:
+
+- Server `QUESTION` moves host to `QUESTION`.
+- `ANSWER_COUNT` and `VOTE_COUNT` update progress.
+- `QUESTION_OVER` moves host to `LEADERBOARD`.
+- `PODIUM` moves host to final results.
+
+Play again:
+
+- Host returns to game select.
+- If reusing an existing room, `RESET_ROOM` can replace room content after podium.
+
+## Frontend Player State Machine
+
+Player states:
+
+- `JOIN`
+- `LOBBY`
+- `QUESTION`
+- `WAITING`
+- `RESULT`
+- `PODIUM`
+- `RECONNECTING`
+- `GAME_IN_PROGRESS`
+
+Join:
+
+- Player enters room code, nickname, optional team, and avatar.
+- Session info is stored in `sessionStorage` under `localplay_session`.
+- Saved sessions auto-rejoin after refresh.
+
+Quiz round UI:
+
+- Displays question text, optional image, timer, progress, answer options, streak, bonus, and power-ups.
+- Sends `ANSWER`.
+- Waits for `ANSWER_RESULT`.
+
+WMLT round UI:
+
+- Displays statement, timer, and player voting grid.
+- Sends `VOTE`.
+- Waits for `VOTE_CONFIRMED`.
+
+Results:
+
+- Quiz result shows correctness, points, rank, and leaderboard.
+- WMLT result shows winner(s), vote count, majority feedback, and vote podium.
+
+Podium:
+
+- Shows final rankings and team rankings.
+- Shows WMLT superlatives when present.
+- Waits for host to reset/start another game.
+
+## Token Economy
+
+Spark costs:
+
+- Generate content: `COST_GENERATE`, currently 1 spark.
+- Start a game: `COST_ROOM`, currently 10 sparks.
+
+Bonuses and packs:
+
+- Signup bonus: `SIGNUP_BONUS_TOKENS`, currently 20.
+- Daily bonus: `DAILY_BONUS_TOKENS`, currently 10.
+- Paid token pack: `TOKEN_PACK_AMOUNT`, currently 110.
+
+Billing:
+
+- Stripe Checkout is used for web purchases.
+- Native iOS requests are blocked from Stripe checkout and directed to in-app purchase.
+- Stripe webhook events are deduplicated in SQLite.
+
+Important behavior:
+
+- Generation is charged only after successful LLM generation.
+- Room creation is free.
+- Game start and room reset charge room-start sparks.
+- iOS native clients are blocked from Stripe checkout by `/checkout/create`; native iOS purchases are expected to use in-app purchase paths when implemented.
+
+### Historical Monetization Context
+
+Older docs describe an entitlement-based "Party Pass" model with free-game counters and premium JWTs. The current codebase has moved to the spark/token economy:
+
+- `backend/tokens.py` is active.
+- `frontend/src/hooks/useTokenBalance.ts` is active.
+- `rollback_economy.md` describes reverting from token economy back to entitlement economy and should be treated as an emergency rollback note, not the current product model.
+- `docs/monetization_plan.md` contains useful historical design rationale around idempotency, platform headers, kill switches, SQLite persistence, and native-store compliance, but its entitlement state machine is not the current implementation.
+
+## Security And Sanitization
+
+Input sanitization:
+
+- User prompts strip control characters and HTML tags.
+- Prompt validators reject common prompt-injection phrases.
+- Nicknames and team names strip HTML tags and control characters.
+- LLM output strips HTML tags and control characters.
+
+Prompt injection defense:
+
+- User topics/themes are wrapped in boundary markers.
+- System prompts state that user text is subject matter only, not instructions.
+
+LLM output defense:
+
+- JSON is parsed and structurally validated.
+- User-visible generated text is sanitized and length-capped.
+- Gemini thought parts are filtered.
+- `<think>` and `<thinking>` blocks are stripped.
+
+WebSocket defense:
+
+- Organizer auth token required.
+- Message size limit.
+- Per-client message rate limit.
+- Origin validation.
+- Session tokens protect nickname ownership.
+
+Ownership:
+
+- Generated content is associated with wallet id.
+- Mutating and exporting content requires ownership.
+
+## Authentication And Persistence
+
+Current auth support exists in `backend/auth.py`, `backend/db.py`, and `backend/main.py`.
+
+Current behavior:
+
+- `POST /auth/signin` accepts provider, id token, and device id.
+- Supported providers are `google` and `apple`.
+- `GET /auth/me` returns the current signed-in user and token status.
+- Sign-in migrates in-memory game history entries from the device wallet id to the signed-in user id.
+- Token/wallet status is resolved through the current spark economy.
+
+Historical context:
+
+- `docs/auth_persistence_plan.md` describes the intended Phase 2 identity model using provider subject id rather than email.
+- Parts of that document refer to the older entitlement/free-tier model and should not be treated as current code behavior.
+- The durable architectural idea is still relevant: provider `sub` is the stable identity key, email is display-only, and cross-device recovery depends on authenticated user identity.
+
+## Testing
+
+Testing commands are documented in `README.md` and the Makefile.
+
+Common commands:
+
+- `make test`: backend unit and integration tests.
+- `make test-e2e`: end-to-end tests requiring live Ollama.
+- `make test-all`: all tests.
+- `make lint`: frontend TypeScript type check.
+- `make build`: frontend production build.
+
+README notes claim the backend tests cover API validation, game logic, WebSocket flows, power-ups, reconnection, bonus rounds, and team leaderboard behavior. The exact count may drift over time.
+
+Known historical test issue:
+
+- `REVIEW_STATUS_TABLE_2026-03-21.md` records an open test issue where a reset-room test sent old payload shape (`quiz_data`) while the backend expects `content_id`.
+
+## Native / Capacitor
+
+The frontend includes Capacitor/iOS scaffolding.
+
+Known notes:
+
+- `frontend/ios/App/CapApp-SPM/README.md` is generated Capacitor Swift Package Manager scaffolding and says not to modify it manually.
+- Native iOS checkout must avoid Stripe and use in-app purchase paths.
+- The organizer page adjusts join URL generation when running under Capacitor.
+- Historical plans mention secure storage for native device/session tokens; current code should be checked before relying on a specific native storage implementation.
+
+## Current Boundaries And Constraints
+
+The platform intentionally does not have a plugin system or generic game engine.
+
+Current extensibility pattern:
+
+- Add a generation engine per game.
+- Add REST endpoints under a namespaced prefix.
+- Add storage and ownership for that game content.
+- Extend room creation by `game_type`.
+- Add WebSocket branches in `socket_manager.py`.
+- Add frontend game type, prompt/review screens, player round UI, and organizer result UI.
+
+Known pressure points:
+
+- `socket_manager.py` contains both shared infrastructure and game-specific rules.
+- `Room.quiz` is a generic content field despite the quiz-specific name.
+- `current_question_index`, `QUESTION`, `QUESTION_OVER`, and related message names are reused for non-quiz games.
+- In-memory generated content and in-memory game history do not survive backend restarts.
+- Adding many games by direct branching will make socket and page state machines increasingly large.
+
+These are current design facts, not necessarily defects. They should guide any upgrade plan.
+
+## Markdown Document Currentness
+
+The repository contains several Markdown files with different freshness levels:
+
+- `SPEC.md`: current baseline spec for the codebase as inspected.
+- `README.md`: broadly useful for quick start, feature list, project structure, and test commands; branding and provider defaults may be older.
+- `DEPLOY.md`: useful production deployment reference. It is operationally specific and should be verified before executing commands.
+- `REVIEW_STATUS_TABLE_2026-03-21.md`: useful historical review/status table. Some line numbers and protocol details are stale; notably organizer auth now uses first-frame `AUTH`, not a query-token protocol.
+- `rollback_economy.md`: emergency rollback note from token economy back to entitlement economy. Not current product behavior.
+- `docs/monetization_plan.md`: historical monetization architecture for an entitlement/party-pass model. Useful for rationale, but not the current economy.
+- `docs/auth_persistence_plan.md`: historical auth plan. Useful identity guidance, but some entitlement references are stale.
+- `frontend/README.md`: default Vite template README, not project-specific.
+- `frontend/ios/App/CapApp-SPM/README.md`: generated Capacitor note, not project architecture.
