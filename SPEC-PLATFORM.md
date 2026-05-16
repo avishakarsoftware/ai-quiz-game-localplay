@@ -607,7 +607,9 @@ The spark economy applies uniformly to all games:
 - **Start a game**: `COST_ROOM` (10 sparks) — charged on `START_GAME` and `RESET_ROOM` WebSocket messages.
 - **Room creation**: free.
 
-New games don't need their own pricing. The shared cost model keeps things simple and predictable for users. If a game has no AI generation step (e.g. user-supplied content), only the game-start cost applies.
+Default rule: new games should use the shared cost model. That keeps pricing simple and predictable while the catalog is growing.
+
+If a game has no AI generation step, such as a player-authored game, only the game-start cost applies. Future exceptions are possible for premium games, sponsored/free games, unusually expensive generation modes, or games that use additional paid media services, but exceptions should be deliberate product decisions rather than per-game drift.
 
 ## Game Backlog
 
@@ -818,14 +820,14 @@ Spectator/TV display needs vary by game:
 - **Word Association**: Show seed word, then reveal all submissions grouped. Great for TV.
 - **Chinese Whispers**: Show the chain reveal sequence. The best spectator experience — watching the chain degrade is the fun.
 - **Pictionary**: Show the drawing canvas in real-time + guess stream. Ideal for TV/Chromecast.
-- **Taboo**: Show target word (to spectators only, not guessing team), timer, score. Spectators act as "audience".
+- **Taboo**: Public spectator view should show timer, score, team, and safe round state. Do not show target/forbidden words on a shared TV by default because the guessing team may see it. A private host/judge view can show the hidden card.
 - **Two Truths and a Lie**: Show statements, vote distribution, reveal which was the lie.
 
 All games should produce a spectator-friendly live view. The existing `SPECTATOR_SYNC` pattern (send current state on connect, then stream updates) works for all game types.
 
 ## Play Pattern Classification
 
-Games fall into two runtime patterns that affect socket_manager architecture:
+Games fall into several runtime patterns that affect socket_manager architecture:
 
 ### Simultaneous (all players act in same window)
 - Quiz (answer)
@@ -835,17 +837,24 @@ Games fall into two runtime patterns that affect socket_manager architecture:
 
 These share: timer, round start → collect submissions → reveal → score → next round.
 
-### Sequential (players take turns)
+### Sequential (players take private turns)
 - Chinese Whispers (chain of turns)
+
+These need: turn queue, active-player tracking, per-player private prompts, and waiting state for inactive players.
+
+### Role-Based / Turn-Led (one player has a special role)
+
 - Pictionary (one drawer, others guess simultaneously)
 - Taboo (one clue-giver, team guesses)
 
-These need: turn queue, active-player tracking, per-player prompts (private), waiting state for inactive players.
+These need: role assignment, private role prompts, simultaneous actions from other players, and role rotation. They are not fully sequential because non-active players still act during the turn.
 
-The socket_manager currently only handles simultaneous games. Sequential games will need:
+The socket_manager currently mainly handles simultaneous games. Sequential and role-based games will need:
 - `room.turn_order: list[str]` — player order for the current round.
-- `room.active_player: str` — whose turn it is.
-- `TURN_START` / `TURN_END` messages (only active player gets the prompt/role).
+- `room.active_player: str` — whose private turn or special role is active.
+- `room.player_roles: dict[str, str]` — current role assignment where needed.
+- `TURN_START` / `TURN_END` messages.
+- `ROLE_ASSIGNED` messages for role-led games.
 - `WAITING_FOR_TURN` state on the player frontend.
 
 This is the main infrastructure investment needed before Chinese Whispers or Pictionary.
@@ -853,7 +862,7 @@ This is the main infrastructure investment needed before Chinese Whispers or Pic
 ## Open Design Questions
 
 - Should LocalPlay have its own user accounts, or only anonymous users plus external handoff identities?
-  - **Recommendation**: Keep anonymous fast-join as the primary path. LocalPlay accounts (via existing Google/Apple sign-in) are optional and only needed for cross-device history/purchases. Never require sign-in to play.
+  - **Recommendation**: Keep anonymous fast-join as the primary path. LocalPlay identity should stay optional and mainly support host history, purchases, cross-device recovery, and external handoff identity. Never require sign-in to play.
 - Should generated content be reusable across sessions?
   - **Recommendation**: Yes. Content already persists independently of rooms (quiz_id / mlt_id). Multiple rooms can reference the same content. This should continue for new games.
 - Should hosts be able to build custom game packs?
@@ -867,7 +876,7 @@ This is the main infrastructure investment needed before Chinese Whispers or Pic
 - Should LocalPlay monetize independently, share Revelry billing, or support both?
   - **Recommendation**: Independent for now (spark economy is already built). Future Revelry integration could grant sparks to Revelry Premium subscribers, but LocalPlay's economy should remain self-contained.
 - How should native app deep links route between Revelry and LocalPlay?
-  - **Recommendation**: Universal links. `games.revelryapp.me/quiz/join?room=XXXX` already works. Future games get `games.revelryapp.me/{game_type}/join?room=XXXX`. Revelry app opens these via app link or falls back to browser.
+  - **Recommendation**: Stable LocalPlay universal links. The exact path can change, but links should support app-open when installed and browser fallback when not. Existing `/quiz/join` style links are legacy-compatible examples, not the final platform shape.
 - **New: How should we handle games that need a canvas/drawing?**
   - Build a shared `<DrawingCanvas>` component that handles touch/mouse input, undo, color picker, and exports strokes as compact events. Reuse across Chinese Whispers (drawing variant) and Pictionary. Don't build it until the first drawing game is in scope.
 
@@ -875,11 +884,11 @@ This is the main infrastructure investment needed before Chinese Whispers or Pic
 
 1. ~~Add `SPEC-PLATFORM.md` as the forward-looking design document.~~ Done.
 2. Keep `SPEC.md` as current-state truth.
-3. **Add Word Association** — first new game. Exercises text-submission + reveal pattern. No new infrastructure needed beyond what Quiz/WMLT already provide.
-4. **Add Two Truths and a Lie** — player-authored content, sequential reveal, tests non-AI game flow.
-5. Add game catalog metadata for existing games + new ones.
-6. Add a `/catalog` endpoint (can be static JSON initially, doesn't need a database).
-7. **Add Chinese Whispers (text-only)** — first turn-based game, builds turn-queue infrastructure.
-8. Add a lightweight `GameSession` persistence model.
-9. Persist completed results.
-10. Add drawing games (Chinese Whispers drawing variant, then Pictionary) after the turn-queue and session model are solid.
+3. Add game catalog metadata for Quiz, WMLT, and planned games. Keep it static/code-backed initially.
+4. Add a `/catalog` endpoint so LocalPlay and future host apps can read the same game list.
+5. **Add Word Association** — first new game. Exercises text-submission + reveal pattern with minimal new infrastructure.
+6. **Add Two Truths and a Lie** — player-authored content, sequential reveal, and low/no-AI flow.
+7. Add a lightweight `GameSession` persistence model once the third game exposes the repeated room/session needs clearly.
+8. Persist completed results in the normalized result shape.
+9. **Add Chinese Whispers (text-only)** — first true private-turn game, builds turn-queue infrastructure.
+10. Add drawing games (Chinese Whispers drawing variant, then Pictionary) after the turn-queue and session/result model are solid.
