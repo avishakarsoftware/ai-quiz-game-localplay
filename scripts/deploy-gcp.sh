@@ -7,6 +7,7 @@
 #   ./scripts/deploy-gcp.sh --skip-build   # Deploy with existing image on VM
 #   ./scripts/deploy-gcp.sh --with-frontend # Build frontend into backend image
 #   ./scripts/deploy-gcp.sh --gamma --with-frontend # Deploy gamma container
+#   ./scripts/deploy-gcp.sh --bootstrap-vm # Create /home/revelry-games layout, then deploy
 #
 # What this script does:
 #   1. Builds the Docker image locally
@@ -26,11 +27,13 @@ set -euo pipefail
 # --- Config ---
 VM_NAME="revelry-backend"
 VM_ZONE="us-central1-a"
+REMOTE_BASE_DIR="/home/revelry-games"
 CONTAINER_NAME="games-backend"
 IMAGE_NAME="revelry-backend"
-REMOTE_DATA_DIR="/home/revelry-games/revelry-data"
-REMOTE_BACKUP_DIR="/home/revelry-games/revelry-backups"
-REMOTE_ENV_FILE="/home/revelry-games/app/.env"
+REMOTE_APP_DIR="$REMOTE_BASE_DIR/app"
+REMOTE_DATA_DIR="$REMOTE_BASE_DIR/revelry-data"
+REMOTE_BACKUP_DIR="$REMOTE_BASE_DIR/revelry-backups"
+REMOTE_ENV_FILE="$REMOTE_APP_DIR/.env"
 HOST_PORT="8000"
 BACKEND_DIR="$(cd "$(dirname "$0")/../backend" && pwd)"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -38,6 +41,7 @@ FRONTEND_DIR="$ROOT_DIR/frontend"
 INCLUDE_FRONTEND=false
 SKIP_BUILD=false
 ENVIRONMENT="prod"
+BOOTSTRAP_VM=false
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -62,9 +66,13 @@ while [[ $# -gt 0 ]]; do
             ENVIRONMENT="gamma"
             shift
             ;;
+        --bootstrap-vm)
+            BOOTSTRAP_VM=true
+            shift
+            ;;
         *)
             error "Unknown option: $1"
-            echo "Usage: ./scripts/deploy-gcp.sh [--skip-build] [--with-frontend] [--gamma]"
+            echo "Usage: ./scripts/deploy-gcp.sh [--skip-build] [--with-frontend] [--gamma] [--bootstrap-vm]"
             exit 1
             ;;
     esac
@@ -73,9 +81,9 @@ done
 if [[ "$ENVIRONMENT" == "gamma" ]]; then
     CONTAINER_NAME="games-backend-gamma"
     IMAGE_NAME="revelry-backend-gamma"
-    REMOTE_DATA_DIR="/home/revelry-games/revelry-data-gamma"
-    REMOTE_BACKUP_DIR="/home/revelry-games/revelry-backups-gamma"
-    REMOTE_ENV_FILE="/home/revelry-games/app/.env.gamma"
+    REMOTE_DATA_DIR="$REMOTE_BASE_DIR/revelry-data-gamma"
+    REMOTE_BACKUP_DIR="$REMOTE_BASE_DIR/revelry-backups-gamma"
+    REMOTE_ENV_FILE="$REMOTE_APP_DIR/.env.gamma"
     HOST_PORT="8004"
     if [[ "$INCLUDE_FRONTEND" != "true" ]]; then
         warn "Gamma deploys are usually expected to use --with-frontend for same-origin testing."
@@ -84,6 +92,35 @@ fi
 
 ssh_cmd() {
     gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --command "$1"
+}
+
+bootstrap_vm_layout() {
+    info "Bootstrapping $REMOTE_BASE_DIR on VM..."
+    ssh_cmd "
+        set -e
+        REMOTE_USER=\$(whoami)
+        sudo mkdir -p $REMOTE_APP_DIR $REMOTE_BASE_DIR/revelry-data $REMOTE_BASE_DIR/revelry-backups $REMOTE_BASE_DIR/revelry-data-gamma $REMOTE_BASE_DIR/revelry-backups-gamma
+
+        if [ ! -f $REMOTE_APP_DIR/.env ]; then
+            if [ -f /home/Avi/app/.env ]; then
+                sudo cp /home/Avi/app/.env $REMOTE_APP_DIR/.env
+            else
+                echo 'Missing production env: $REMOTE_APP_DIR/.env' >&2
+                echo 'Copy an env file there before deploying.' >&2
+                exit 1
+            fi
+        fi
+
+        if [ ! -f $REMOTE_APP_DIR/.env.gamma ]; then
+            sudo cp $REMOTE_APP_DIR/.env $REMOTE_APP_DIR/.env.gamma
+        fi
+
+        sudo sh -c \"grep -q '^ALLOWED_ORIGINS=' $REMOTE_APP_DIR/.env.gamma && sed -i 's#^ALLOWED_ORIGINS=.*#ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me#' $REMOTE_APP_DIR/.env.gamma || echo 'ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me' >> $REMOTE_APP_DIR/.env.gamma\"
+        sudo sh -c \"grep -q '^DB_DIR=' $REMOTE_APP_DIR/.env.gamma && sed -i 's#^DB_DIR=.*#DB_DIR=/app/data#' $REMOTE_APP_DIR/.env.gamma || echo 'DB_DIR=/app/data' >> $REMOTE_APP_DIR/.env.gamma\"
+
+        sudo chmod 600 $REMOTE_APP_DIR/.env $REMOTE_APP_DIR/.env.gamma
+        sudo chown -R \"\$REMOTE_USER:\$REMOTE_USER\" $REMOTE_BASE_DIR
+    "
 }
 
 # --- Pre-flight checks ---
@@ -97,6 +134,22 @@ info "Checking VM is reachable..."
 if ! ssh_cmd "echo ok" &>/dev/null; then
     error "Cannot SSH to $VM_NAME. Check firewall and SSH keys."
     exit 1
+fi
+
+if [[ "$BOOTSTRAP_VM" == "true" ]]; then
+    bootstrap_vm_layout
+fi
+
+info "Checking remote env file exists..."
+if ! ssh_cmd "test -f $REMOTE_ENV_FILE" &>/dev/null; then
+    error "Missing remote env file: $REMOTE_ENV_FILE"
+    error "Run ./scripts/deploy-gcp.sh --bootstrap-vm first, or create the env file manually."
+    exit 1
+fi
+
+if [[ "$BOOTSTRAP_VM" == "true" && "$SKIP_BUILD" == "true" && "$INCLUDE_FRONTEND" != "true" ]]; then
+    info "Bootstrap complete; skipping deploy because --skip-build was provided without --with-frontend."
+    exit 0
 fi
 
 build_context="$BACKEND_DIR"

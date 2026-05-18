@@ -1085,7 +1085,7 @@ Remaining outside the repo:
 
 1. Add/verify DNS and SSL for `gamesapi-gamma.revelryapp.me`.
 2. Add nginx gamma server block and route it to `127.0.0.1:8004`.
-3. Create `/home/revelry-games/app/.env.gamma` and `/home/revelry-games/revelry-data-gamma` on the VM.
+3. Bootstrap `/home/revelry-games` with `./scripts/deploy-gcp.sh --bootstrap-vm --skip-build`, or manually create `/home/revelry-games/app/.env.gamma` and `/home/revelry-games/revelry-data-gamma` on the VM.
 4. Run `./scripts/deploy-gcp.sh --gamma --with-frontend`.
 5. Verify gamma end-to-end.
 

@@ -110,6 +110,9 @@ This file is already deployed. Only re-upload it if the base path changes.
 The deployment script builds locally, copies the image to the VM, backs up SQLite, restarts the container, and verifies `/health`.
 
 ```bash
+# One-time VM layout bootstrap
+./scripts/deploy-gcp.sh --bootstrap-vm --skip-build
+
 # Production API/optional backend preview
 ./scripts/deploy-gcp.sh --with-frontend
 
@@ -128,6 +131,8 @@ Script container layout:
 | Gamma | `games-backend-gamma` | `127.0.0.1:8004` | `/home/revelry-games/app/.env.gamma` | `/home/revelry-games/revelry-data-gamma` |
 
 `--with-frontend` builds `frontend/dist` with same-origin API settings and packages it into the backend image at `/app/static`. If `/app/static/index.html` is absent, the backend still runs API-only.
+
+`--bootstrap-vm` creates the canonical LocalPlay VM home at `/home/revelry-games`, migrates `/home/Avi/app/.env` into `/home/revelry-games/app/.env` if needed, creates `.env.gamma`, and creates prod/gamma data and backup directories.
 
 Port notes:
 - Production `gamesapi.revelryapp.me` uses `127.0.0.1:8000`.
@@ -269,7 +274,26 @@ sudo systemctl reload nginx
 
 ### Gamma env setup
 
-The production env currently lives at `/home/revelry-games/app/.env`. Gamma should live beside it:
+The canonical LocalPlay VM home is `/home/revelry-games`. Bootstrap it once:
+
+```bash
+./scripts/deploy-gcp.sh --bootstrap-vm --skip-build
+```
+
+This creates:
+
+```text
+/home/revelry-games/
+  app/
+    .env
+    .env.gamma
+  revelry-data/
+  revelry-backups/
+  revelry-data-gamma/
+  revelry-backups-gamma/
+```
+
+If doing it manually instead, production env lives at `/home/revelry-games/app/.env`, and gamma should live beside it:
 
 ```bash
 sudo cp /home/revelry-games/app/.env /home/revelry-games/app/.env.gamma
