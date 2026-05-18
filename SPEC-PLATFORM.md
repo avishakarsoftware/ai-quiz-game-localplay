@@ -759,6 +759,86 @@ Future games should be evaluated by:
 5. **Chinese Whispers (drawing)** — builds canvas component.
 6. **Pictionary** — reuses canvas from Chinese Whispers, adds real-time stroke sync + guessing.
 
+## Gamma Environment
+
+LocalPlay should follow the same deployment pattern as VibePix and Revelry: the backend serves both the API and the frontend, enabling a self-contained gamma environment for testing.
+
+### How It Works
+
+**Production** (unchanged):
+- Frontend: IONOS CDN at `games.revelryapp.me/quiz/` — static Vite build
+- Backend: GCP VM at `gamesapi.revelryapp.me` — API + WebSockets only
+
+**Gamma** (new):
+- A second Docker container on the same GCP VM (or Cloud Run)
+- Serves both frontend and API at the same origin, e.g. `gamma-gamesapi.revelryapp.me`
+- No IONOS involvement — the backend serves the built frontend directly
+- Uses test Stripe keys, separate DB path (or table prefix), etc.
+
+### Backend Serves Frontend
+
+FastAPI mounts the built frontend as static files with an SPA fallback:
+
+```python
+# After all API routes are registered:
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
+
+# SPA fallback for client-side routes (e.g. /join, /spectator):
+@app.exception_handler(404)
+async def spa_fallback(request, exc):
+    if not request.url.path.startswith("/api/") and not request.url.path.startswith("/ws/"):
+        return FileResponse("static/index.html")
+    raise exc
+```
+
+### Build Configuration
+
+The Vite build uses a placeholder for the API URL:
+
+- **Same-origin (gamma/backend-served)**: `VITE_API_URL` is empty string — API calls go to the same origin.
+- **Cross-origin (IONOS production)**: `VITE_API_URL=https://gamesapi.revelryapp.me` — API calls go to the GCP backend.
+
+The frontend config already handles this:
+
+```ts
+const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:9100`;
+```
+
+For same-origin serving, `VITE_API_URL` should be empty and the fallback should use the current origin:
+
+```ts
+const API_URL = import.meta.env.VITE_API_URL || '';
+const WS_URL = import.meta.env.VITE_API_URL
+  ? import.meta.env.VITE_API_URL.replace(/^http/, 'ws')
+  : `ws://${window.location.hostname}:${window.location.port}`;
+```
+
+### Gamma Deployment
+
+```text
+Production:
+  games.revelryapp.me (IONOS) → static frontend
+  gamesapi.revelryapp.me (GCP) → API + WebSockets
+
+Gamma:
+  gamma-gamesapi.revelryapp.me (GCP) → API + WebSockets + frontend (same origin)
+```
+
+Gamma uses:
+- Separate nginx server block on the VM
+- Separate Docker container (different port, e.g. 8001)
+- Separate `.env` with test Stripe keys, gamma DB path
+- Same Gemini API key (free tier is fine for testing)
+
+### Workflow
+
+1. Develop locally (`scripts/dev-local.sh`)
+2. Deploy to gamma — build frontend, copy into Docker image, deploy gamma container
+3. Test full stack on `gamma-gamesapi.revelryapp.me`
+4. When satisfied, deploy frontend to IONOS + backend to production container
+
+This aligns LocalPlay with VibePix and Revelry, and sets up the integration path — Revelry can point its Games tab at the gamma URL for integration testing.
+
 ## Infrastructure Roadmap
 
 ### Current Phase: Single Server
@@ -884,11 +964,12 @@ This is the main infrastructure investment needed before Chinese Whispers or Pic
 
 1. ~~Add `SPEC-PLATFORM.md` as the forward-looking design document.~~ Done.
 2. Keep `SPEC.md` as current-state truth.
-3. Add game catalog metadata for Quiz, WMLT, and planned games. Keep it static/code-backed initially.
-4. Add a `/catalog` endpoint so LocalPlay and future host apps can read the same game list.
-5. **Add Word Association** — first new game. Exercises text-submission + reveal pattern with minimal new infrastructure.
-6. **Add Two Truths and a Lie** — player-authored content, sequential reveal, and low/no-AI flow.
-7. Add a lightweight `GameSession` persistence model once the third game exposes the repeated room/session needs clearly.
-8. Persist completed results in the normalized result shape.
-9. **Add Chinese Whispers (text-only)** — first true private-turn game, builds turn-queue infrastructure.
-10. Add drawing games (Chinese Whispers drawing variant, then Pictionary) after the turn-queue and session/result model are solid.
+3. **Set up gamma environment** — FastAPI serves built frontend, nginx server block for `gamma-gamesapi.revelryapp.me`, separate Docker container. Enables testing new games end-to-end before production.
+4. Add game catalog metadata for Quiz, WMLT, and planned games. Keep it static/code-backed initially.
+5. Add a `/catalog` endpoint so LocalPlay and future host apps can read the same game list.
+6. **Add Word Association** — first new game. Exercises text-submission + reveal pattern with minimal new infrastructure.
+7. **Add Two Truths and a Lie** — player-authored content, sequential reveal, and low/no-AI flow.
+8. Add a lightweight `GameSession` persistence model once the third game exposes the repeated room/session needs clearly.
+9. Persist completed results in the normalized result shape.
+10. **Add Chinese Whispers (text-only)** — first true private-turn game, builds turn-queue infrastructure.
+11. Add drawing games (Chinese Whispers drawing variant, then Pictionary) after the turn-queue and session/result model are solid.
