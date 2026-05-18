@@ -863,14 +863,15 @@ if (FRONTEND_DIST_DIR / "index.html").exists():
         if any(path == prefix or path.startswith(prefix + "/") for prefix in API_PREFIXES):
             raise HTTPException(status_code=404, detail="Not found")
 
-        candidate = FRONTEND_DIST_DIR / full_path
-        if candidate.is_file():
+        candidate = (FRONTEND_DIST_DIR / full_path).resolve()
+        if candidate.is_file() and str(candidate).startswith(str(FRONTEND_DIST_DIR.resolve())):
             return FileResponse(candidate)
         return FileResponse(FRONTEND_DIST_DIR / "index.html")
 ```
 
 Notes:
 
+- The `resolve()` + `startswith()` check on static file candidates prevents path traversal (e.g. `../../etc/passwd`).
 - `API_PREFIXES` must be updated whenever a new top-level API namespace is added.
 - If routes later move under `/api`, the fallback can become simpler, but that is not required for this deployment step.
 - Static serving must not mount over `/` before API routes are registered.
