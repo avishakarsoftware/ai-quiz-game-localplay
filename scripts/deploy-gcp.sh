@@ -28,9 +28,9 @@ VM_NAME="revelry-backend"
 VM_ZONE="us-central1-a"
 CONTAINER_NAME="games-backend"
 IMAGE_NAME="revelry-backend"
-REMOTE_DATA_DIR="/home/revelry-data"
-REMOTE_BACKUP_DIR="/home/revelry-backups"
-REMOTE_ENV_FILE="/home/.env"
+REMOTE_DATA_DIR="/home/Avi/revelry-data"
+REMOTE_BACKUP_DIR="/home/Avi/revelry-backups"
+REMOTE_ENV_FILE="/home/Avi/app/.env"
 HOST_PORT="8000"
 BACKEND_DIR="$(cd "$(dirname "$0")/../backend" && pwd)"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -73,10 +73,10 @@ done
 if [[ "$ENVIRONMENT" == "gamma" ]]; then
     CONTAINER_NAME="games-backend-gamma"
     IMAGE_NAME="revelry-backend-gamma"
-    REMOTE_DATA_DIR="/home/revelry-data-gamma"
-    REMOTE_BACKUP_DIR="/home/revelry-backups-gamma"
-    REMOTE_ENV_FILE="/home/.env.gamma"
-    HOST_PORT="8001"
+    REMOTE_DATA_DIR="/home/Avi/revelry-data-gamma"
+    REMOTE_BACKUP_DIR="/home/Avi/revelry-backups-gamma"
+    REMOTE_ENV_FILE="/home/Avi/app/.env.gamma"
+    HOST_PORT="8004"
     if [[ "$INCLUDE_FRONTEND" != "true" ]]; then
         warn "Gamma deploys are usually expected to use --with-frontend for same-origin testing."
     fi
@@ -163,7 +163,7 @@ NEEDS_MIGRATION=$(ssh_cmd "
 
 if [[ "$NEEDS_MIGRATION" == "yes" ]]; then
     warn "First deploy with volume mount — migrating DB from container..."
-    ssh_cmd "docker cp ${CONTAINER_NAME}:/app/backend/data/revelry.db $REMOTE_DATA_DIR/revelry.db 2>/dev/null || echo 'No DB in container, starting fresh'"
+    ssh_cmd "docker cp ${CONTAINER_NAME}:/app/data/revelry.db $REMOTE_DATA_DIR/revelry.db 2>/dev/null || docker cp ${CONTAINER_NAME}:/app/backend/data/revelry.db $REMOTE_DATA_DIR/revelry.db 2>/dev/null || echo 'No DB in container, starting fresh'"
     info "Migration complete."
 fi
 
@@ -195,7 +195,7 @@ ssh_cmd "docker run -d \
     --name $CONTAINER_NAME \
     --env-file $REMOTE_ENV_FILE \
     -p 127.0.0.1:$HOST_PORT:8000 \
-    -v $REMOTE_DATA_DIR:/app/backend/data \
+    -v $REMOTE_DATA_DIR:/app/data \
     --restart unless-stopped \
     $IMAGE_NAME:latest"
 

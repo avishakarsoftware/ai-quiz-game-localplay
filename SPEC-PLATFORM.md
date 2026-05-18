@@ -815,7 +815,7 @@ Implementation should be small and reversible. It should not change the room mod
 4. **Docker image**
    - Build the frontend before building the backend image.
    - Copy `frontend/dist/` into the backend image at `/app/static/`.
-   - Keep backend data mounted separately at `/app/backend/data` or an equivalent persistent path.
+   - Keep backend data mounted separately at `/app/data` or an equivalent persistent path.
 
 5. **Deployment scripts/docs**
    - Add a gamma deployment flow that builds the frontend in backend-served mode, builds the backend image with static files included, and runs a second container.
@@ -992,7 +992,7 @@ Production backend preview:
 
 Gamma uses:
 - Separate nginx server block on the VM
-- Separate Docker container (different port, e.g. 8001)
+- Separate Docker container on `127.0.0.1:8004`
 - Separate `.env` with test Stripe keys, gamma DB path
 - Same Gemini API key (free tier is fine for testing)
 
@@ -1019,7 +1019,7 @@ server {
 }
 ```
 
-Gamma should use the same shape but proxy to the gamma container port, e.g. `127.0.0.1:8001`.
+Gamma should use the same shape but proxy to the gamma container port, e.g. `127.0.0.1:8004`.
 
 ### Gamma Runtime
 
@@ -1029,14 +1029,14 @@ Suggested VM container layout:
 
 ```text
 games-backend-prod   -> 127.0.0.1:8000 -> gamesapi.revelryapp.me
-games-backend-gamma  -> 127.0.0.1:8001 -> gamesapi-gamma.revelryapp.me
+games-backend-gamma  -> 127.0.0.1:8004 -> gamesapi-gamma.revelryapp.me
 ```
 
 Gamma env requirements:
 
 - `ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me`
 - test Stripe keys and webhook secret
-- distinct `DB_DIR`, e.g. `/app/backend/data-gamma` or a separate mounted VM directory
+- distinct mounted data directory; current gamma should set `DB_DIR=/app/data` and mount `/home/Avi/revelry-data-gamma:/app/data`
 - same Gemini key unless a separate quota is desired
 - lower rate limits are acceptable for testing
 
@@ -1084,8 +1084,8 @@ Done in repo:
 Remaining outside the repo:
 
 1. Add/verify DNS and SSL for `gamesapi-gamma.revelryapp.me`.
-2. Add nginx gamma server block and route it to `127.0.0.1:8001`.
-3. Create `/home/.env.gamma` and `/home/revelry-data-gamma` on the VM.
+2. Add nginx gamma server block and route it to `127.0.0.1:8004`.
+3. Create `/home/Avi/app/.env.gamma` and `/home/Avi/revelry-data-gamma` on the VM.
 4. Run `./scripts/deploy-gcp.sh --gamma --with-frontend`.
 5. Verify gamma end-to-end.
 

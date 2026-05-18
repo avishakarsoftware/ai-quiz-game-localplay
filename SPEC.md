@@ -1017,8 +1017,8 @@ Repo implementation is complete:
 Remaining infrastructure work:
 
 - Create or verify DNS and certificate for `gamesapi-gamma.revelryapp.me`.
-- Add/verify the nginx server block that proxies `gamesapi-gamma.revelryapp.me` to `127.0.0.1:8001` with WebSocket upgrade headers.
-- Create `/home/.env.gamma` and `/home/revelry-data-gamma` on the VM.
+- Add/verify the nginx server block that proxies `gamesapi-gamma.revelryapp.me` to `127.0.0.1:8004` with WebSocket upgrade headers.
+- Create `/home/Avi/app/.env.gamma` and `/home/Avi/revelry-data-gamma` on the VM. Gamma should set `DB_DIR=/app/data`.
 - Run `./scripts/deploy-gcp.sh --gamma --with-frontend`.
 - Smoke test `/health`, `/`, `/join`, `/spectator`, a built `/assets/*` file, and WebSocket room join on gamma.
 

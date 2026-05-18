@@ -124,10 +124,16 @@ Script container layout:
 
 | Environment | Container | VM bind | Env file | Data dir |
 |-------------|-----------|---------|----------|----------|
-| Production | `games-backend` | `127.0.0.1:8000` | `/home/.env` | `/home/revelry-data` |
-| Gamma | `games-backend-gamma` | `127.0.0.1:8001` | `/home/.env.gamma` | `/home/revelry-data-gamma` |
+| Production | `games-backend` | `127.0.0.1:8000` | `/home/Avi/app/.env` | `/home/Avi/revelry-data` |
+| Gamma | `games-backend-gamma` | `127.0.0.1:8004` | `/home/Avi/app/.env.gamma` | `/home/Avi/revelry-data-gamma` |
 
 `--with-frontend` builds `frontend/dist` with same-origin API settings and packages it into the backend image at `/app/static`. If `/app/static/index.html` is absent, the backend still runs API-only.
+
+Port notes:
+- Production `gamesapi.revelryapp.me` uses `127.0.0.1:8000`.
+- `127.0.0.1:8001` is already reserved by the existing `/pp/` proxy in `revelry-gamesapi`.
+- `127.0.0.1:8003` is already used by the older `api-gamma.revelryapp.me` config.
+- LocalPlay gamma therefore uses `127.0.0.1:8004`.
 
 ### Step 1: Copy backend files to the VM
 
@@ -212,7 +218,7 @@ Key sections:
 - WebSocket upgrade headers for `/ws/` paths
 - HTTP (port 80) redirects to HTTPS
 
-Gamma should proxy to `http://127.0.0.1:8001`; production should proxy to `http://127.0.0.1:8000`.
+Gamma should proxy to `http://127.0.0.1:8004`; production should proxy to `http://127.0.0.1:8000`.
 
 ### View current config
 ```bash
@@ -223,6 +229,74 @@ sudo cat /etc/nginx/sites-available/revelry-gamesapi
 ```bash
 sudo nginx -t              # test config syntax
 sudo systemctl reload nginx  # apply changes
+```
+
+### Gamma nginx setup
+
+Create `/etc/nginx/sites-available/revelry-gamesapi-gamma`:
+
+```nginx
+server {
+    server_name gamesapi-gamma.revelryapp.me;
+
+    location / {
+        proxy_pass http://127.0.0.1:8004;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400;
+    }
+
+    listen 80;
+}
+```
+
+Enable and issue cert:
+
+```bash
+sudo ln -sf /etc/nginx/sites-available/revelry-gamesapi-gamma /etc/nginx/sites-enabled/revelry-gamesapi-gamma
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx -d gamesapi-gamma.revelryapp.me
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### Gamma env setup
+
+The production env currently lives at `/home/Avi/app/.env`. Gamma should live beside it:
+
+```bash
+sudo cp /home/Avi/app/.env /home/Avi/app/.env.gamma
+sudo mkdir -p /home/Avi/revelry-data-gamma /home/Avi/revelry-backups-gamma
+```
+
+Then edit `/home/Avi/app/.env.gamma`:
+
+```env
+ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me
+DB_DIR=/app/data
+```
+
+Use test Stripe keys in gamma before testing checkout. If checkout is not being tested, live Stripe keys should still be avoided in gamma.
+
+Deploy gamma:
+
+```bash
+./scripts/deploy-gcp.sh --gamma --with-frontend
+```
+
+Verify:
+
+```bash
+curl -s https://gamesapi-gamma.revelryapp.me/health
+curl -s https://gamesapi-gamma.revelryapp.me/ | head -3
+curl -sI https://gamesapi-gamma.revelryapp.me/assets/DO_REPLACE_WITH_BUILT_ASSET
 ```
 
 ---
