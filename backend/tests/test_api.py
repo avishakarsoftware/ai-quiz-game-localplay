@@ -6,6 +6,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from fastapi.testclient import TestClient
+import main
 from main import app, quizzes
 import config
 
@@ -39,6 +40,58 @@ class TestHealthEndpoints:
     def test_system_info_requires_admin(self):
         res = client.get("/system/info")
         assert res.status_code in (403, 401)  # blocked without admin key
+
+
+class TestFrontendStaticServing:
+    def test_root_serves_api_status_without_frontend_build(self):
+        res = client.get("/")
+        assert res.status_code == 200
+        assert "running" in res.json()["message"].lower()
+
+    def test_root_serves_frontend_when_build_exists(self, tmp_path, monkeypatch):
+        (tmp_path / "index.html").write_text("<html><body>LocalPlay</body></html>")
+        monkeypatch.setattr(main, "FRONTEND_DIST_DIR", tmp_path)
+
+        res = client.get("/")
+
+        assert res.status_code == 200
+        assert "LocalPlay" in res.text
+        assert res.headers["content-type"].startswith("text/html")
+
+    def test_spa_route_serves_frontend_when_build_exists(self, tmp_path, monkeypatch):
+        (tmp_path / "index.html").write_text("<html><body>SPA</body></html>")
+        monkeypatch.setattr(main, "FRONTEND_DIST_DIR", tmp_path)
+
+        res = client.get("/join")
+
+        assert res.status_code == 200
+        assert "SPA" in res.text
+
+    def test_unknown_api_route_stays_json_404(self, tmp_path, monkeypatch):
+        (tmp_path / "index.html").write_text("<html><body>SPA</body></html>")
+        monkeypatch.setattr(main, "FRONTEND_DIST_DIR", tmp_path)
+
+        res = client.get("/quiz/not-real/export")
+
+        assert res.status_code == 404
+        assert res.headers["content-type"].startswith("application/json")
+
+    def test_missing_static_asset_returns_404(self, tmp_path, monkeypatch):
+        (tmp_path / "index.html").write_text("<html><body>SPA</body></html>")
+        monkeypatch.setattr(main, "FRONTEND_DIST_DIR", tmp_path)
+
+        res = client.get("/assets/missing.js")
+
+        assert res.status_code == 404
+        assert res.headers["content-type"].startswith("application/json")
+
+    def test_static_file_path_traversal_falls_back_to_index(self, tmp_path, monkeypatch):
+        (tmp_path / "index.html").write_text("<html><body>SPA</body></html>")
+        monkeypatch.setattr(main, "FRONTEND_DIST_DIR", tmp_path)
+
+        response = main._frontend_file_response("../../etc/passwd")
+
+        assert response.path == tmp_path / "index.html"
 
 
 # ---------------------------------------------------------------------------

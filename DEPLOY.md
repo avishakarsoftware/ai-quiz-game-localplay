@@ -5,10 +5,12 @@
 ```
 Users → games.revelryapp.me (IONOS CDN) → static frontend
      → gamesapi.revelryapp.me (GCP VM)  → FastAPI backend + WebSockets
+     → gamma-gamesapi.revelryapp.me (GCP VM) → FastAPI backend + WebSockets + frontend
 ```
 
 - **Frontend**: Static React/Vite build hosted on IONOS shared hosting
 - **Backend**: FastAPI in Docker on a GCP Compute Engine e2-micro VM
+- **Gamma/preview frontend**: The FastAPI container can also serve the built Vite frontend from `/app/static`
 - **Reverse proxy**: Nginx on the VM handles HTTPS termination + WebSocket upgrade
 - **SSL**: Let's Encrypt via Certbot (auto-renewing)
 
@@ -18,6 +20,7 @@ Users → games.revelryapp.me (IONOS CDN) → static frontend
 |-----------|-----|
 | Frontend  | https://games.revelryapp.me/quiz/ |
 | Backend API | https://gamesapi.revelryapp.me |
+| Gamma full stack | https://gamma-gamesapi.revelryapp.me |
 | Spectator/TV | https://games.revelryapp.me/quiz/spectator |
 | Player join  | https://games.revelryapp.me/quiz/join |
 | Cast App ID  | `1BC9ACD8` |
@@ -102,6 +105,30 @@ This file is already deployed. Only re-upload it if the base path changes.
 - `gcloud` CLI installed and authenticated (`gcloud auth login`)
 - Docker installed on the VM (already done)
 
+### Preferred script deploy
+
+The deployment script builds locally, copies the image to the VM, backs up SQLite, restarts the container, and verifies `/health`.
+
+```bash
+# Production API/optional backend preview
+./scripts/deploy-gcp.sh --with-frontend
+
+# Gamma full-stack same-origin environment
+./scripts/deploy-gcp.sh --gamma --with-frontend
+
+# Backend-only production deploy
+./scripts/deploy-gcp.sh
+```
+
+Script container layout:
+
+| Environment | Container | VM bind | Env file | Data dir |
+|-------------|-----------|---------|----------|----------|
+| Production | `games-backend` | `127.0.0.1:8000` | `/home/.env` | `/home/revelry-data` |
+| Gamma | `games-backend-gamma` | `127.0.0.1:8001` | `/home/.env.gamma` | `/home/revelry-data-gamma` |
+
+`--with-frontend` builds `frontend/dist` with same-origin API settings and packages it into the backend image at `/app/static`. If `/app/static/index.html` is absent, the backend still runs API-only.
+
 ### Step 1: Copy backend files to the VM
 
 ```bash
@@ -176,6 +203,7 @@ sudo docker restart revelry-backend
 Nginx runs on the VM as a reverse proxy. Each subdomain has its own config file:
 
 - `/etc/nginx/sites-available/revelry-gamesapi` — `gamesapi.revelryapp.me` (quiz game backend)
+- `/etc/nginx/sites-available/revelry-gamesapi-gamma` — `gamma-gamesapi.revelryapp.me` (gamma backend + frontend)
 - `/etc/nginx/sites-available/revelry-api` — `api.revelryapp.me` (legacy, kept for backward compat)
 
 Key sections:
@@ -183,6 +211,8 @@ Key sections:
 - Proxies all requests to `http://127.0.0.1:8000`
 - WebSocket upgrade headers for `/ws/` paths
 - HTTP (port 80) redirects to HTTPS
+
+Gamma should proxy to `http://127.0.0.1:8001`; production should proxy to `http://127.0.0.1:8000`.
 
 ### View current config
 ```bash
@@ -262,6 +292,23 @@ gcloud compute scp *.py requirements.txt Dockerfile \
 # 4. Rebuild on VM
 gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a -- \
   'cd ~/app && sudo docker stop revelry-backend && sudo docker rm revelry-backend && sudo docker build -t revelry-backend . && sudo docker run -d --name revelry-backend --restart=unless-stopped --env-file .env -p 127.0.0.1:8000:8000 revelry-backend'
+```
+
+### Full redeploy with backend-served preview
+
+```bash
+# 1. Deploy backend with frontend bundled for same-origin preview
+./scripts/deploy-gcp.sh --with-frontend
+
+# 2. Verify backend preview
+curl -s https://gamesapi.revelryapp.me/health
+curl -s https://gamesapi.revelryapp.me/ | head -3
+
+# 3. Build and upload public IONOS frontend
+cd frontend
+VITE_BASE_PATH=/quiz/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npx vite build
+ssh u69414981@home420463025.1and1-data.host "rm -rf ~/revelryapp/games/quiz/assets"
+scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/quiz/
 ```
 
 ### View backend logs

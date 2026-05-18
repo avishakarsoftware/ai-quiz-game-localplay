@@ -5,6 +5,8 @@
 # Usage:
 #   ./scripts/deploy-gcp.sh          # Build locally, push, deploy
 #   ./scripts/deploy-gcp.sh --skip-build   # Deploy with existing image on VM
+#   ./scripts/deploy-gcp.sh --with-frontend # Build frontend into backend image
+#   ./scripts/deploy-gcp.sh --gamma --with-frontend # Deploy gamma container
 #
 # What this script does:
 #   1. Builds the Docker image locally
@@ -29,7 +31,13 @@ IMAGE_NAME="revelry-backend"
 REMOTE_DATA_DIR="/home/revelry-data"
 REMOTE_BACKUP_DIR="/home/revelry-backups"
 REMOTE_ENV_FILE="/home/.env"
+HOST_PORT="8000"
 BACKEND_DIR="$(cd "$(dirname "$0")/../backend" && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+FRONTEND_DIR="$ROOT_DIR/frontend"
+INCLUDE_FRONTEND=false
+SKIP_BUILD=false
+ENVIRONMENT="prod"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -39,6 +47,40 @@ NC='\033[0m'
 info()  { echo -e "${GREEN}[deploy]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[deploy]${NC} $*"; }
 error() { echo -e "${RED}[deploy]${NC} $*" >&2; }
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
+        --with-frontend)
+            INCLUDE_FRONTEND=true
+            shift
+            ;;
+        --gamma)
+            ENVIRONMENT="gamma"
+            shift
+            ;;
+        *)
+            error "Unknown option: $1"
+            echo "Usage: ./scripts/deploy-gcp.sh [--skip-build] [--with-frontend] [--gamma]"
+            exit 1
+            ;;
+    esac
+done
+
+if [[ "$ENVIRONMENT" == "gamma" ]]; then
+    CONTAINER_NAME="games-backend-gamma"
+    IMAGE_NAME="revelry-backend-gamma"
+    REMOTE_DATA_DIR="/home/revelry-data-gamma"
+    REMOTE_BACKUP_DIR="/home/revelry-backups-gamma"
+    REMOTE_ENV_FILE="/home/.env.gamma"
+    HOST_PORT="8001"
+    if [[ "$INCLUDE_FRONTEND" != "true" ]]; then
+        warn "Gamma deploys are usually expected to use --with-frontend for same-origin testing."
+    fi
+fi
 
 ssh_cmd() {
     gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --command "$1"
@@ -57,20 +99,50 @@ if ! ssh_cmd "echo ok" &>/dev/null; then
     exit 1
 fi
 
+build_context="$BACKEND_DIR"
+cleanup_build_context() {
+    if [[ "${TEMP_BUILD_CONTEXT:-}" != "" && -d "$TEMP_BUILD_CONTEXT" ]]; then
+        rm -rf "$TEMP_BUILD_CONTEXT"
+    fi
+}
+trap cleanup_build_context EXIT
+
 # --- Step 1: Build Docker image (unless --skip-build) ---
-if [[ "${1:-}" != "--skip-build" ]]; then
-    info "Building Docker image from $BACKEND_DIR..."
-    docker build -t "$IMAGE_NAME:latest" "$BACKEND_DIR"
+if [[ "$SKIP_BUILD" != "true" ]]; then
+    if [[ "$INCLUDE_FRONTEND" == "true" ]]; then
+        info "Building frontend for backend-served deployment..."
+        (
+            cd "$FRONTEND_DIR"
+            VITE_BASE_PATH=/ VITE_API_URL= VITE_CAST_APP_ID="${VITE_CAST_APP_ID:-1BC9ACD8}" npx vite build
+        )
+
+        TEMP_BUILD_CONTEXT="$(mktemp -d)"
+        info "Preparing temporary Docker context with frontend static assets..."
+        rsync -a \
+            --exclude 'venv' \
+            --exclude 'data' \
+            --exclude '__pycache__' \
+            --exclude '*.pyc' \
+            "$BACKEND_DIR/" "$TEMP_BUILD_CONTEXT/"
+        rm -rf "$TEMP_BUILD_CONTEXT/static"
+        mkdir -p "$TEMP_BUILD_CONTEXT/static"
+        rsync -a "$FRONTEND_DIR/dist/" "$TEMP_BUILD_CONTEXT/static/"
+        build_context="$TEMP_BUILD_CONTEXT"
+    fi
+
+    info "Building Docker image from $build_context..."
+    docker build -t "$IMAGE_NAME:latest" "$build_context"
 
     info "Saving image to tarball..."
-    docker save "$IMAGE_NAME:latest" | gzip > /tmp/revelry-backend.tar.gz
+    IMAGE_TARBALL="/tmp/${IMAGE_NAME}.tar.gz"
+    docker save "$IMAGE_NAME:latest" | gzip > "$IMAGE_TARBALL"
 
-    info "Copying image to VM ($(du -h /tmp/revelry-backend.tar.gz | cut -f1))..."
-    gcloud compute scp /tmp/revelry-backend.tar.gz "$VM_NAME:/tmp/revelry-backend.tar.gz" --zone "$VM_ZONE"
+    info "Copying image to VM ($(du -h "$IMAGE_TARBALL" | cut -f1))..."
+    gcloud compute scp "$IMAGE_TARBALL" "$VM_NAME:$IMAGE_TARBALL" --zone "$VM_ZONE"
 
     info "Loading image on VM..."
-    ssh_cmd "gunzip -c /tmp/revelry-backend.tar.gz | docker load && rm /tmp/revelry-backend.tar.gz"
-    rm /tmp/revelry-backend.tar.gz
+    ssh_cmd "gunzip -c $IMAGE_TARBALL | docker load && rm $IMAGE_TARBALL"
+    rm "$IMAGE_TARBALL"
 else
     info "Skipping build (--skip-build)"
 fi
@@ -122,7 +194,7 @@ info "Starting new container..."
 ssh_cmd "docker run -d \
     --name $CONTAINER_NAME \
     --env-file $REMOTE_ENV_FILE \
-    -p 8000:8000 \
+    -p 127.0.0.1:$HOST_PORT:8000 \
     -v $REMOTE_DATA_DIR:/app/backend/data \
     --restart unless-stopped \
     $IMAGE_NAME:latest"
@@ -131,7 +203,7 @@ ssh_cmd "docker run -d \
 info "Waiting for container to start..."
 sleep 3
 
-HEALTH=$(ssh_cmd "curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health 2>/dev/null || echo 'fail'")
+HEALTH=$(ssh_cmd "curl -s -o /dev/null -w '%{http_code}' http://localhost:$HOST_PORT/health 2>/dev/null || echo 'fail'")
 if [[ "$HEALTH" == "200" ]]; then
     info "Health check passed!"
 else
@@ -150,6 +222,7 @@ info "Post-deploy: $DB_CHECK"
 echo ""
 info "Deploy complete!"
 info "  Container: $CONTAINER_NAME"
+info "  Port:      127.0.0.1:$HOST_PORT"
 info "  Data:      $REMOTE_DATA_DIR/revelry.db"
 info "  Backup:    $REMOTE_BACKUP_DIR/revelry_${TIMESTAMP}.db"
 info "  Logs:      gcloud compute ssh $VM_NAME --zone $VM_ZONE --command 'docker logs $CONTAINER_NAME -f'"

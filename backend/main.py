@@ -1,6 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, field_validator
 from typing import List, Optional, Dict
 from collections import defaultdict
@@ -8,6 +8,7 @@ import os
 import re
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 import uvicorn
 import uuid
 import string
@@ -30,6 +31,56 @@ import auth
 import remote_config
 
 logger = logging.getLogger(__name__)
+
+FRONTEND_DIST_DIR = Path(config.FRONTEND_DIST_DIR)
+API_PREFIXES = (
+    "/admin",
+    "/auth",
+    "/checkout",
+    "/entitlements",
+    "/health",
+    "/history",
+    "/mlt",
+    "/providers",
+    "/purchases",
+    "/quiz",
+    "/room",
+    "/sd",
+    "/system",
+    "/tokens",
+    "/webhook",
+    "/ws",
+)
+
+
+def _frontend_index_path() -> Path:
+    return FRONTEND_DIST_DIR / "index.html"
+
+
+def _has_frontend_build() -> bool:
+    return _frontend_index_path().is_file()
+
+
+def _is_api_path(path: str) -> bool:
+    return any(path == prefix or path.startswith(prefix + "/") for prefix in API_PREFIXES)
+
+
+def _frontend_file_response(full_path: str):
+    if not _has_frontend_build():
+        raise HTTPException(status_code=404, detail="Not found")
+
+    frontend_root = FRONTEND_DIST_DIR.resolve()
+    candidate = (frontend_root / full_path).resolve()
+    try:
+        candidate.relative_to(frontend_root)
+    except ValueError:
+        return FileResponse(_frontend_index_path())
+
+    if candidate.is_file():
+        return FileResponse(candidate)
+    if full_path == "assets" or full_path.startswith("assets/"):
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(_frontend_index_path())
 
 
 def _check_secret_strength():
@@ -1314,12 +1365,21 @@ async def admin_stats(req: Request):
 
 @app.get("/")
 async def root():
+    if _has_frontend_build():
+        return FileResponse(_frontend_index_path())
     return {"message": "AI Quiz Game API is running"}
 
 
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def frontend_spa(full_path: str, request: Request):
+    if _is_api_path(request.url.path):
+        raise HTTPException(status_code=404, detail="Not found")
+    return _frontend_file_response(full_path)
 
 
 if __name__ == "__main__":

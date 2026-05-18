@@ -21,6 +21,8 @@ logs/
 # Dev environment
 .dev-pids/
 backend/data/
+backend/static/*
+!backend/static/.gitkeep
 
 # Generated experiment outputs
 model_comparison_results.json

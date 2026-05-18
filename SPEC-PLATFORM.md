@@ -795,10 +795,10 @@ Backend-served mode is required for gamma/staging, production smoke tests, and f
 Implementation should be small and reversible. It should not change the room model, WebSocket protocol, game rules, or IONOS production URL.
 
 1. **Backend static serving**
-   - Add `StaticFiles` and `FileResponse` imports in `backend/main.py`.
+   - Add `FileResponse` and `Path` usage in `backend/main.py`.
    - Add a config/env value for the frontend build directory, defaulting to `/app/static` inside Docker and optionally `backend/static` for local packaged testing.
-   - Mount the frontend only if the directory exists and contains `index.html`.
-   - Register static serving after API and WebSocket routes.
+   - Serve the frontend only if the directory exists and contains `index.html`.
+   - Register the SPA catch-all after API and WebSocket routes.
    - Preserve `/health` and all API endpoints exactly as API responses.
    - Change the current `GET /` API route so it returns the frontend `index.html` when a frontend build exists, and only returns the API status JSON when no frontend build exists.
 
@@ -828,7 +828,6 @@ The final implementation can vary, but it must satisfy this contract:
 ```python
 from pathlib import Path
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 
 FRONTEND_DIST_DIR = Path(os.getenv("FRONTEND_DIST_DIR", "/app/static"))
 
@@ -851,30 +850,42 @@ API_PREFIXES = (
     "/ws",
 )
 
-# After API routes and websocket routes are registered:
-if (FRONTEND_DIST_DIR / "index.html").exists():
-    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST_DIR / "assets"), name="assets")
-
-    @app.get("/{full_path:path}", include_in_schema=False)
-    async def frontend_spa(full_path: str, request: Request):
-        path = request.url.path
-        if path == "/":
-            return FileResponse(FRONTEND_DIST_DIR / "index.html")
-        if any(path == prefix or path.startswith(prefix + "/") for prefix in API_PREFIXES):
-            raise HTTPException(status_code=404, detail="Not found")
-
-        candidate = (FRONTEND_DIST_DIR / full_path).resolve()
-        if candidate.is_file() and str(candidate).startswith(str(FRONTEND_DIST_DIR.resolve())):
-            return FileResponse(candidate)
+@app.get("/")
+async def root():
+    if (FRONTEND_DIST_DIR / "index.html").is_file():
         return FileResponse(FRONTEND_DIST_DIR / "index.html")
+    return {"message": "AI Quiz Game API is running"}
+
+
+# After API routes and websocket routes are registered.
+@app.get("/{full_path:path}", include_in_schema=False)
+async def frontend_spa(full_path: str, request: Request):
+    path = request.url.path
+    if any(path == prefix or path.startswith(prefix + "/") for prefix in API_PREFIXES):
+        raise HTTPException(status_code=404, detail="Not found")
+    if not (FRONTEND_DIST_DIR / "index.html").is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+
+    frontend_root = FRONTEND_DIST_DIR.resolve()
+    candidate = (frontend_root / full_path).resolve()
+    try:
+        candidate.relative_to(frontend_root)
+    except ValueError:
+        return FileResponse(FRONTEND_DIST_DIR / "index.html")
+    if candidate.is_file():
+        return FileResponse(candidate)
+    if full_path == "assets" or full_path.startswith("assets/"):
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(FRONTEND_DIST_DIR / "index.html")
 ```
 
 Notes:
 
-- The `resolve()` + `startswith()` check on static file candidates prevents path traversal (e.g. `../../etc/passwd`).
+- The `resolve()` + `relative_to()` check on static file candidates prevents path traversal (e.g. `../../etc/passwd`).
+- Missing `/assets/*` files should return JSON 404 instead of `index.html`, so stale hashed bundles fail clearly.
 - `API_PREFIXES` must be updated whenever a new top-level API namespace is added.
 - If routes later move under `/api`, the fallback can become simpler, but that is not required for this deployment step.
-- Static serving must not mount over `/` before API routes are registered.
+- The catch-all route must be registered after API routes.
 - If no frontend build is present, the backend should continue to run API-only. This keeps local backend tests simple.
 
 ### Frontend API Base Configuration
@@ -951,11 +962,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY backend/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY backend/*.py ./
-COPY frontend/dist ./static
+COPY *.py ./
+COPY static ./static
 
 ENV FRONTEND_DIST_DIR=/app/static
 
@@ -963,7 +974,7 @@ EXPOSE 8000
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
-If keeping `backend/Dockerfile` as the build file, build it from the repo root so `frontend/dist` is available in the Docker context, or add a packaging step that copies `frontend/dist` into `backend/static` before `docker build backend`.
+The current implementation keeps `backend/Dockerfile` as the build file. For backend-served deploys, `scripts/deploy-gcp.sh --with-frontend` builds the frontend and creates a temporary Docker context where `frontend/dist` is copied into `static/` before `docker build`.
 
 ### Deployment Topology
 

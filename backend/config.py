@@ -25,6 +25,7 @@ SD_API_URL = os.getenv("SD_API_URL", "http://localhost:8765")
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "9100"))
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "")
+FRONTEND_DIST_DIR = os.getenv("FRONTEND_DIST_DIR", "/app/static")
 
 # --- Rate Limiting ---
 RATE_LIMIT_WINDOW = 60  # seconds
