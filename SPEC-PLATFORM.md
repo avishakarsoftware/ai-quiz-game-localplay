@@ -759,25 +759,37 @@ Future games should be evaluated by:
 5. **Chinese Whispers (drawing)** — builds canvas component.
 6. **Pictionary** — reuses canvas from Chinese Whispers, adds real-time stroke sync + guessing.
 
-## Gamma Environment
+## Deployment Model
 
-LocalPlay should follow the same deployment pattern as VibePix and Revelry: the backend serves both the API and the frontend, enabling a self-contained gamma environment for testing.
+LocalPlay should follow the VibePix deployment pattern: the backend is capable of serving the built frontend, but IONOS remains the user-facing production host for the web app.
 
-### How It Works
+That gives LocalPlay two valid ways to serve HTML:
 
-**Production** (unchanged):
-- Frontend: IONOS CDN at `games.revelryapp.me/quiz/` — static Vite build
-- Backend: GCP VM at `gamesapi.revelryapp.me` — API + WebSockets only
+- **IONOS-hosted frontend**: the primary production path for users. IONOS serves the static Vite build, and the frontend calls the backend API/WebSockets cross-origin.
+- **Backend-served frontend**: the staging/gamma and diagnostic path. The FastAPI container serves the same built frontend and API from one origin, making full-stack testing simpler before pushing static assets to IONOS.
 
-**Gamma** (new):
-- A second Docker container on the same GCP VM (or Cloud Run)
-- Serves both frontend and API at the same origin, e.g. `gamma-gamesapi.revelryapp.me`
-- No IONOS involvement — the backend serves the built frontend directly
-- Uses test Stripe keys, separate DB path (or table prefix), etc.
+The backend-served frontend is a capability, not a replacement for IONOS production hosting.
+
+### Environment Shape
+
+**Production user-facing path**:
+- Frontend: IONOS CDN/shared hosting at `games.revelryapp.me/quiz/`
+- Backend: GCP VM at `gamesapi.revelryapp.me`
+- API mode: cross-origin from IONOS frontend to backend API/WebSockets
+
+**Gamma/staging path**:
+- Frontend + backend: one FastAPI container origin, e.g. `gamma-gamesapi.revelryapp.me`
+- Deployment target: a second Docker container on the same GCP VM initially; Cloud Run is possible later if state constraints are addressed
+- API mode: same-origin API and WebSockets
+- Config: test Stripe keys, separate DB path or table prefix, separate env file
+
+**Optional backend-hosted production preview**:
+- The production backend may also serve the built frontend at `gamesapi.revelryapp.me` for smoke testing before IONOS rollout.
+- This should not be treated as the canonical customer URL unless a later deployment decision explicitly changes it.
 
 ### Backend Serves Frontend
 
-FastAPI mounts the built frontend as static files with an SPA fallback:
+FastAPI should mount the built frontend as static files with an SPA fallback after API and WebSocket routes are registered:
 
 ```python
 # After all API routes are registered:
@@ -791,37 +803,37 @@ async def spa_fallback(request, exc):
     raise exc
 ```
 
-### Build Configuration
+### Frontend API Base Configuration
 
-The Vite build uses a placeholder for the API URL:
+The frontend must support both same-origin and cross-origin API bases:
 
-- **Same-origin (gamma/backend-served)**: `VITE_API_URL` is empty string — API calls go to the same origin.
-- **Cross-origin (IONOS production)**: `VITE_API_URL=https://gamesapi.revelryapp.me` — API calls go to the GCP backend.
+- **Same-origin backend-served build**: no API base is injected. REST calls use `''`, and WebSockets use the current page origin.
+- **IONOS production build**: inject `VITE_API_URL=https://gamesapi.revelryapp.me`.
+- **Local dev**: use explicit local ports from the dev scripts, currently backend `9100` and frontend `9200`.
 
-The frontend config already handles this:
-
-```ts
-const API_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:9100`;
-```
-
-For same-origin serving, `VITE_API_URL` should be empty and the fallback should use the current origin:
+The frontend config should distinguish local dev from deployed same-origin hosting. The deployed same-origin fallback should be:
 
 ```ts
 const API_URL = import.meta.env.VITE_API_URL || '';
 const WS_URL = import.meta.env.VITE_API_URL
   ? import.meta.env.VITE_API_URL.replace(/^http/, 'ws')
-  : `ws://${window.location.hostname}:${window.location.port}`;
+  : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
 ```
 
-### Gamma Deployment
+Local dev can still override these values through dev-specific env vars or script defaults.
+
+### Deployment Topology
 
 ```text
-Production:
-  games.revelryapp.me (IONOS) → static frontend
-  gamesapi.revelryapp.me (GCP) → API + WebSockets
+Production user-facing:
+  games.revelryapp.me/quiz/ (IONOS) → static frontend
+                                    → gamesapi.revelryapp.me (GCP) API + WebSockets
 
 Gamma:
-  gamma-gamesapi.revelryapp.me (GCP) → API + WebSockets + frontend (same origin)
+  gamma-gamesapi.revelryapp.me (GCP) → FastAPI + WebSockets + frontend (same origin)
+
+Production backend preview:
+  gamesapi.revelryapp.me (GCP) → FastAPI + WebSockets + frontend (same origin, optional)
 ```
 
 Gamma uses:
@@ -833,11 +845,12 @@ Gamma uses:
 ### Workflow
 
 1. Develop locally (`scripts/dev-local.sh`)
-2. Deploy to gamma — build frontend, copy into Docker image, deploy gamma container
+2. Deploy to gamma by building the frontend into the Docker image and starting the gamma container
 3. Test full stack on `gamma-gamesapi.revelryapp.me`
-4. When satisfied, deploy frontend to IONOS + backend to production container
+4. Deploy the backend to the production container and test the optional backend-hosted production preview
+5. When satisfied, deploy the static frontend build to IONOS for real users
 
-This aligns LocalPlay with VibePix and Revelry, and sets up the integration path — Revelry can point its Games tab at the gamma URL for integration testing.
+Users on IONOS are not affected until the IONOS static deploy happens. This mirrors VibePix: Cloud Run or server-served pages are useful staging surfaces, while IONOS is the public web delivery path.
 
 ## Infrastructure Roadmap
 
@@ -964,7 +977,7 @@ This is the main infrastructure investment needed before Chinese Whispers or Pic
 
 1. ~~Add `SPEC-PLATFORM.md` as the forward-looking design document.~~ Done.
 2. Keep `SPEC.md` as current-state truth.
-3. **Set up gamma environment** — FastAPI serves built frontend, nginx server block for `gamma-gamesapi.revelryapp.me`, separate Docker container. Enables testing new games end-to-end before production.
+3. **Set up dual-serving deployment** — FastAPI can serve the built frontend for gamma/backend preview, while IONOS remains the user-facing production frontend. Add nginx routing for `gamma-gamesapi.revelryapp.me` and a separate gamma container.
 4. Add game catalog metadata for Quiz, WMLT, and planned games. Keep it static/code-backed initially.
 5. Add a `/catalog` endpoint so LocalPlay and future host apps can read the same game list.
 6. **Add Word Association** — first new game. Exercises text-submission + reveal pattern with minimal new infrastructure.
