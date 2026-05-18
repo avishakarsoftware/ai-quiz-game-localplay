@@ -33,3 +33,4 @@ backend/model_comparison_results.json
 
 # OS
 .DS_Store
+codex-context.md

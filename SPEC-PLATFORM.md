@@ -1036,7 +1036,7 @@ Gamma env requirements:
 
 - `ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me`
 - test Stripe keys and webhook secret
-- distinct mounted data directory; current gamma should set `DB_DIR=/app/data` and mount `/home/Avi/revelry-data-gamma:/app/data`
+- distinct mounted data directory; current gamma should set `DB_DIR=/app/data` and mount `/home/revelry-games/revelry-data-gamma:/app/data`
 - same Gemini key unless a separate quota is desired
 - lower rate limits are acceptable for testing
 
@@ -1085,7 +1085,7 @@ Remaining outside the repo:
 
 1. Add/verify DNS and SSL for `gamesapi-gamma.revelryapp.me`.
 2. Add nginx gamma server block and route it to `127.0.0.1:8004`.
-3. Create `/home/Avi/app/.env.gamma` and `/home/Avi/revelry-data-gamma` on the VM.
+3. Create `/home/revelry-games/app/.env.gamma` and `/home/revelry-games/revelry-data-gamma` on the VM.
 4. Run `./scripts/deploy-gcp.sh --gamma --with-frontend`.
 5. Verify gamma end-to-end.
 

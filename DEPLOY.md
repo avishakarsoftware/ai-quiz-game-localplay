@@ -124,8 +124,8 @@ Script container layout:
 
 | Environment | Container | VM bind | Env file | Data dir |
 |-------------|-----------|---------|----------|----------|
-| Production | `games-backend` | `127.0.0.1:8000` | `/home/Avi/app/.env` | `/home/Avi/revelry-data` |
-| Gamma | `games-backend-gamma` | `127.0.0.1:8004` | `/home/Avi/app/.env.gamma` | `/home/Avi/revelry-data-gamma` |
+| Production | `games-backend` | `127.0.0.1:8000` | `/home/revelry-games/app/.env` | `/home/revelry-games/revelry-data` |
+| Gamma | `games-backend-gamma` | `127.0.0.1:8004` | `/home/revelry-games/app/.env.gamma` | `/home/revelry-games/revelry-data-gamma` |
 
 `--with-frontend` builds `frontend/dist` with same-origin API settings and packages it into the backend image at `/app/static`. If `/app/static/index.html` is absent, the backend still runs API-only.
 
@@ -269,14 +269,14 @@ sudo systemctl reload nginx
 
 ### Gamma env setup
 
-The production env currently lives at `/home/Avi/app/.env`. Gamma should live beside it:
+The production env currently lives at `/home/revelry-games/app/.env`. Gamma should live beside it:
 
 ```bash
-sudo cp /home/Avi/app/.env /home/Avi/app/.env.gamma
-sudo mkdir -p /home/Avi/revelry-data-gamma /home/Avi/revelry-backups-gamma
+sudo cp /home/revelry-games/app/.env /home/revelry-games/app/.env.gamma
+sudo mkdir -p /home/revelry-games/revelry-data-gamma /home/revelry-games/revelry-backups-gamma
 ```
 
-Then edit `/home/Avi/app/.env.gamma`:
+Then edit `/home/revelry-games/app/.env.gamma`:
 
 ```env
 ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me
