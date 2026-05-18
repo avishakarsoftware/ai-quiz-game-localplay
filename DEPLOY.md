@@ -5,7 +5,7 @@
 ```
 Users → games.revelryapp.me (IONOS CDN) → static frontend
      → gamesapi.revelryapp.me (GCP VM)  → FastAPI backend + WebSockets
-     → gamma-gamesapi.revelryapp.me (GCP VM) → FastAPI backend + WebSockets + frontend
+     → gamesapi-gamma.revelryapp.me (GCP VM) → FastAPI backend + WebSockets + frontend
 ```
 
 - **Frontend**: Static React/Vite build hosted on IONOS shared hosting
@@ -20,7 +20,7 @@ Users → games.revelryapp.me (IONOS CDN) → static frontend
 |-----------|-----|
 | Frontend  | https://games.revelryapp.me/quiz/ |
 | Backend API | https://gamesapi.revelryapp.me |
-| Gamma full stack | https://gamma-gamesapi.revelryapp.me |
+| Gamma full stack | https://gamesapi-gamma.revelryapp.me |
 | Spectator/TV | https://games.revelryapp.me/quiz/spectator |
 | Player join  | https://games.revelryapp.me/quiz/join |
 | Cast App ID  | `1BC9ACD8` |
@@ -203,7 +203,7 @@ sudo docker restart revelry-backend
 Nginx runs on the VM as a reverse proxy. Each subdomain has its own config file:
 
 - `/etc/nginx/sites-available/revelry-gamesapi` — `gamesapi.revelryapp.me` (quiz game backend)
-- `/etc/nginx/sites-available/revelry-gamesapi-gamma` — `gamma-gamesapi.revelryapp.me` (gamma backend + frontend)
+- `/etc/nginx/sites-available/revelry-gamesapi-gamma` — `gamesapi-gamma.revelryapp.me` (gamma backend + frontend)
 - `/etc/nginx/sites-available/revelry-api` — `api.revelryapp.me` (legacy, kept for backward compat)
 
 Key sections:

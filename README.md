@@ -60,7 +60,7 @@ Key settings in `backend/.env`:
 make dev
 ```
 
-This starts both backend (port 8000) and frontend (port 5173) with hot-reload.
+This starts both backend (port 9100) and frontend (port 9200) with hot-reload.
 
 Or run them separately:
 
@@ -73,9 +73,9 @@ make dev-frontend
 ```
 
 ### Access
-- **Organizer**: http://localhost:5173/
-- **Players**: http://localhost:5173/join (or scan QR code)
-- **Spectator**: http://localhost:5173/spectate?room=ROOMCODE
+- **Organizer**: http://localhost:9200/
+- **Players**: http://localhost:9200/join (or scan QR code)
+- **Spectator**: http://localhost:9200/spectator?room=ROOMCODE
 
 ## Testing
 
@@ -124,6 +124,25 @@ make lint
 | `make build` | Build frontend for production |
 | `make lint` | TypeScript type checking |
 | `make clean` | Remove build artifacts and `__pycache__` |
+
+## Deployment Notes
+
+Public production still uses IONOS for the web frontend:
+
+- `https://games.revelryapp.me/quiz/` serves the static Vite build.
+- `https://gamesapi.revelryapp.me` serves API and WebSockets.
+
+The backend can also serve the built SPA from `/app/static` for gamma and backend preview:
+
+```bash
+# Backend preview with bundled frontend
+./scripts/deploy-gcp.sh --with-frontend
+
+# Gamma same-origin app/API/WebSockets
+./scripts/deploy-gcp.sh --gamma --with-frontend
+```
+
+Gamma convention: `https://gamesapi-gamma.revelryapp.me`.
 
 ## Tech Stack
 

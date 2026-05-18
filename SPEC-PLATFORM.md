@@ -779,7 +779,7 @@ Backend-served mode is required for gamma/staging, production smoke tests, and f
 - Build mode: `VITE_BASE_PATH=/quiz/`, `VITE_API_URL=https://gamesapi.revelryapp.me`
 
 **Gamma/staging path**:
-- Frontend + backend: one FastAPI container origin, e.g. `gamma-gamesapi.revelryapp.me`
+- Frontend + backend: one FastAPI container origin, e.g. `gamesapi-gamma.revelryapp.me`
 - Deployment target: a second Docker container on the same GCP VM initially
 - API mode: same-origin API and WebSockets
 - Config: test Stripe keys, separate DB path or table prefix, separate env file
@@ -984,7 +984,7 @@ Production user-facing:
                                     → gamesapi.revelryapp.me (GCP) API + WebSockets
 
 Gamma:
-  gamma-gamesapi.revelryapp.me (GCP) → FastAPI + WebSockets + frontend (same origin)
+  gamesapi-gamma.revelryapp.me (GCP) → FastAPI + WebSockets + frontend (same origin)
 
 Production backend preview:
   gamesapi.revelryapp.me (GCP) → FastAPI + WebSockets + frontend (same origin, optional)
@@ -1029,12 +1029,12 @@ Suggested VM container layout:
 
 ```text
 games-backend-prod   -> 127.0.0.1:8000 -> gamesapi.revelryapp.me
-games-backend-gamma  -> 127.0.0.1:8001 -> gamma-gamesapi.revelryapp.me
+games-backend-gamma  -> 127.0.0.1:8001 -> gamesapi-gamma.revelryapp.me
 ```
 
 Gamma env requirements:
 
-- `ALLOWED_ORIGINS=https://gamma-gamesapi.revelryapp.me`
+- `ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me`
 - test Stripe keys and webhook secret
 - distinct `DB_DIR`, e.g. `/app/backend/data-gamma` or a separate mounted VM directory
 - same Gemini key unless a separate quota is desired
@@ -1049,7 +1049,7 @@ Production env should include both user-facing and backend-preview origins:
 
 1. Develop locally (`scripts/dev-local.sh`)
 2. Deploy to gamma by building the frontend into the Docker image and starting the gamma container
-3. Test full stack on `gamma-gamesapi.revelryapp.me`
+3. Test full stack on `gamesapi-gamma.revelryapp.me`
 4. Deploy the backend to the production container and test the optional backend-hosted production preview
 5. When satisfied, deploy the static frontend build to IONOS for real users
 
@@ -1059,9 +1059,9 @@ Users on IONOS are not affected until the IONOS static deploy happens. This mirr
 
 Before calling the implementation done:
 
-- `curl -s https://gamma-gamesapi.revelryapp.me/health` returns backend health JSON.
-- `curl -s https://gamma-gamesapi.revelryapp.me/ | head` returns HTML.
-- `curl -sI https://gamma-gamesapi.revelryapp.me/assets/<built-asset>` returns `200`.
+- `curl -s https://gamesapi-gamma.revelryapp.me/health` returns backend health JSON.
+- `curl -s https://gamesapi-gamma.revelryapp.me/ | head` returns HTML.
+- `curl -sI https://gamesapi-gamma.revelryapp.me/assets/<built-asset>` returns `200`.
 - Browser refresh works on `/join`, `/spectator`, and organizer routes.
 - WebSocket join works from the backend-served gamma page.
 - Unknown API paths such as `/quiz/not-real/export` return JSON 404, not `index.html`.
@@ -1070,15 +1070,24 @@ Before calling the implementation done:
 - Existing backend tests pass with no frontend build present.
 - The deployed production container can still run API-only if `/app/static/index.html` is missing.
 
-### Implementation Order
+### Implementation Status
 
-1. Update `frontend/src/config.ts` for explicit API URL plus same-origin fallback.
-2. Add conditional FastAPI static serving and SPA fallback.
-3. Adjust Docker build context or packaging so `frontend/dist` can be copied into `/app/static`.
-4. Add a gamma deploy script or extend `scripts/deploy-gcp.sh` with an explicit gamma mode.
-5. Add nginx gamma server block and route it to the gamma container port.
-6. Verify gamma end-to-end.
-7. Update `DEPLOY.md` with the final commands after the implementation is tested.
+Done in repo:
+
+- `frontend/src/config.ts` supports explicit API URLs and same-origin backend-served builds.
+- `backend/main.py` conditionally serves the SPA and keeps API routes protected.
+- `backend/Dockerfile` includes `/app/static`.
+- `scripts/deploy-gcp.sh` supports `--with-frontend` and `--gamma --with-frontend`.
+- `DEPLOY.md` documents the operational flow.
+- Backend tests cover the SPA serving edge cases.
+
+Remaining outside the repo:
+
+1. Add/verify DNS and SSL for `gamesapi-gamma.revelryapp.me`.
+2. Add nginx gamma server block and route it to `127.0.0.1:8001`.
+3. Create `/home/.env.gamma` and `/home/revelry-data-gamma` on the VM.
+4. Run `./scripts/deploy-gcp.sh --gamma --with-frontend`.
+5. Verify gamma end-to-end.
 
 ## Infrastructure Roadmap
 
@@ -1205,7 +1214,7 @@ This is the main infrastructure investment needed before Chinese Whispers or Pic
 
 1. ~~Add `SPEC-PLATFORM.md` as the forward-looking design document.~~ Done.
 2. Keep `SPEC.md` as current-state truth.
-3. **Set up dual-serving deployment** — FastAPI can serve the built frontend for gamma/backend preview, while IONOS remains the user-facing production frontend. Add nginx routing for `gamma-gamesapi.revelryapp.me` and a separate gamma container.
+3. ~~Set up dual-serving deployment in repo.~~ Done. Remaining work is VM/nginx/DNS gamma rollout.
 4. Add game catalog metadata for Quiz, WMLT, and planned games. Keep it static/code-backed initially.
 5. Add a `/catalog` endpoint so LocalPlay and future host apps can read the same game list.
 6. **Add Word Association** — first new game. Exercises text-submission + reveal pattern with minimal new infrastructure.

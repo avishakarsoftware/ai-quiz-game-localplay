@@ -62,12 +62,14 @@ Current production shape:
 ```text
 Users -> games.revelryapp.me (IONOS CDN/static hosting) -> React/Vite frontend
       -> gamesapi.revelryapp.me (GCP VM)                 -> FastAPI backend + WebSockets
+      -> gamesapi-gamma.revelryapp.me (GCP VM)           -> FastAPI backend + WebSockets + frontend
 ```
 
 Production URLs:
 
 - Frontend: `https://games.revelryapp.me/quiz/`
 - Backend API: `https://gamesapi.revelryapp.me`
+- Gamma full stack: `https://gamesapi-gamma.revelryapp.me`
 - Player join: `https://games.revelryapp.me/quiz/join`
 - Spectator/TV: `https://games.revelryapp.me/quiz/spectator`
 - Cast App ID: `1BC9ACD8`
@@ -83,6 +85,15 @@ Frontend hosting:
 
 - Static Vite build uploaded under the IONOS `games/quiz/` directory.
 - SPA routing is handled by `.htaccess` under `/quiz/`.
+
+Backend-served frontend:
+
+- FastAPI can also serve a built Vite frontend from `FRONTEND_DIST_DIR`, default `/app/static`.
+- When `/app/static/index.html` exists, `/` and browser routes such as `/join` and `/spectator` return the app shell.
+- Known API prefixes still return API JSON/errors and are not swallowed by the SPA fallback.
+- Missing `/assets/*` files return JSON 404 instead of `index.html`.
+- This mode is for gamma, backend preview, and future container-hosted staging. IONOS remains the public production frontend.
+- The deploy script packages this mode with `./scripts/deploy-gcp.sh --with-frontend` or `./scripts/deploy-gcp.sh --gamma --with-frontend`.
 
 Production notes:
 
@@ -102,7 +113,7 @@ Important settings:
   - `GEMINI_PREMIUM_MODEL`, default `gemini-2.5-flash`.
   - `OLLAMA_MODEL`, `OLLAMA_URL`, `ANTHROPIC_MODEL`.
 - Server:
-  - `HOST`, `PORT`, `ALLOWED_ORIGINS`.
+  - `HOST`, `PORT`, `ALLOWED_ORIGINS`, `FRONTEND_DIST_DIR`.
 - Rate limits:
   - `RATE_LIMIT_WINDOW`, `RATE_LIMIT_MAX_REQUESTS`.
   - `DAILY_QUIZ_LIMIT`.
@@ -991,6 +1002,25 @@ Recommended migration order:
 3. Externalize live room state only when multi-instance scaling is actually needed.
 4. Add shared pub/sub or room routing for WebSocket fanout.
 5. Move to autoscaled infrastructure after the state model is no longer process-local.
+
+### Backend-Served SPA Status
+
+Repo implementation is complete:
+
+- `frontend/src/config.ts` supports empty `VITE_API_URL` for same-origin API and WebSocket traffic.
+- `backend/main.py` conditionally serves the SPA when a frontend build is present and remains API-only when it is absent.
+- `backend/Dockerfile` includes a `static/` directory in the image.
+- `scripts/deploy-gcp.sh --with-frontend` builds and packages `frontend/dist` into the backend image.
+- `scripts/deploy-gcp.sh --gamma --with-frontend` targets a separate gamma container, VM port, env file, and data directory.
+- Backend tests cover root behavior, SPA fallback, API 404 protection, missing static assets, and path traversal.
+
+Remaining infrastructure work:
+
+- Create or verify DNS and certificate for `gamesapi-gamma.revelryapp.me`.
+- Add/verify the nginx server block that proxies `gamesapi-gamma.revelryapp.me` to `127.0.0.1:8001` with WebSocket upgrade headers.
+- Create `/home/.env.gamma` and `/home/revelry-data-gamma` on the VM.
+- Run `./scripts/deploy-gcp.sh --gamma --with-frontend`.
+- Smoke test `/health`, `/`, `/join`, `/spectator`, a built `/assets/*` file, and WebSocket room join on gamma.
 
 ### Product Boundary
 
