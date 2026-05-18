@@ -1215,11 +1215,12 @@ This is the main infrastructure investment needed before Chinese Whispers or Pic
 1. ~~Add `SPEC-PLATFORM.md` as the forward-looking design document.~~ Done.
 2. Keep `SPEC.md` as current-state truth.
 3. ~~Set up dual-serving deployment in repo.~~ Done. Remaining work is VM/nginx/DNS gamma rollout.
-4. Add game catalog metadata for Quiz, WMLT, and planned games. Keep it static/code-backed initially.
-5. Add a `/catalog` endpoint so LocalPlay and future host apps can read the same game list.
-6. **Add Word Association** — first new game. Exercises text-submission + reveal pattern with minimal new infrastructure.
-7. **Add Two Truths and a Lie** — player-authored content, sequential reveal, and low/no-AI flow.
-8. Add a lightweight `GameSession` persistence model once the third game exposes the repeated room/session needs clearly.
-9. Persist completed results in the normalized result shape.
-10. **Add Chinese Whispers (text-only)** — first true private-turn game, builds turn-queue infrastructure.
-11. Add drawing games (Chinese Whispers drawing variant, then Pictionary) after the turn-queue and session/result model are solid.
+4. **Migrate from SQLite to Supabase** — VibePix already uses Supabase; shared infra across projects simplifies Revelry integration, enables gamma/prod isolation via table prefixes (like VibePix's `vp_` / `vp_gamma_`), and removes the single-server data durability risk. Schema is small (wallets, users, transactions, game history). Do this soon after the gamma environment is live.
+5. Add game catalog metadata for Quiz, WMLT, and planned games. Keep it static/code-backed initially.
+6. Add a `/catalog` endpoint so LocalPlay and future host apps can read the same game list.
+7. **Add Word Association** — first new game. Exercises text-submission + reveal pattern with minimal new infrastructure.
+8. **Add Two Truths and a Lie** — player-authored content, sequential reveal, and low/no-AI flow.
+9. Add a lightweight `GameSession` persistence model once the third game exposes the repeated room/session needs clearly.
+10. Persist completed results in the normalized result shape.
+11. **Add Chinese Whispers (text-only)** — first true private-turn game, builds turn-queue infrastructure.
+12. Add drawing games (Chinese Whispers drawing variant, then Pictionary) after the turn-queue and session/result model are solid.
