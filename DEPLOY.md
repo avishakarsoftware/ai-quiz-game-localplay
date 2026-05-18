@@ -108,6 +108,7 @@ This file is already deployed. Only re-upload it if the base path changes.
 ### Preferred script deploy
 
 The deployment script builds locally, copies the image to the VM, backs up SQLite, restarts the container, and verifies `/health`.
+Images are built with `--platform linux/amd64` because the GCP VM is AMD64 even when the local build machine is Apple Silicon.
 
 ```bash
 # One-time VM layout bootstrap

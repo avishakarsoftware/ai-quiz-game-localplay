@@ -184,7 +184,7 @@ if [[ "$SKIP_BUILD" != "true" ]]; then
     fi
 
     info "Building Docker image from $build_context..."
-    docker build -t "$IMAGE_NAME:latest" "$build_context"
+    docker build --platform linux/amd64 -t "$IMAGE_NAME:latest" "$build_context"
 
     info "Saving image to tarball..."
     IMAGE_TARBALL="/tmp/${IMAGE_NAME}.tar.gz"
