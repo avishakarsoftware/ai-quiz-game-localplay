@@ -761,14 +761,14 @@ Future games should be evaluated by:
 
 ## Deployment Model
 
-LocalPlay should follow the VibePix deployment pattern: the backend is capable of serving the built frontend, but IONOS remains the user-facing production host for the web app.
+LocalPlay should follow the VibePix deployment pattern: the backend can serve the built frontend, but IONOS remains the user-facing production host for the public web app.
 
-That gives LocalPlay two valid ways to serve HTML:
+This is an implementation requirement, not just a hosting preference. The same frontend build must be usable in two modes:
 
-- **IONOS-hosted frontend**: the primary production path for users. IONOS serves the static Vite build, and the frontend calls the backend API/WebSockets cross-origin.
-- **Backend-served frontend**: the staging/gamma and diagnostic path. The FastAPI container serves the same built frontend and API from one origin, making full-stack testing simpler before pushing static assets to IONOS.
+- **IONOS-hosted mode**: IONOS serves the static Vite build. The frontend calls the backend API/WebSockets cross-origin.
+- **Backend-served mode**: FastAPI serves the static Vite build from the same origin as API/WebSockets.
 
-The backend-served frontend is a capability, not a replacement for IONOS production hosting.
+Backend-served mode is required for gamma/staging, production smoke tests, and future Cloud Run compatibility. It is not a replacement for IONOS production hosting unless a later decision explicitly changes the public URL strategy.
 
 ### Environment Shape
 
@@ -776,32 +776,105 @@ The backend-served frontend is a capability, not a replacement for IONOS product
 - Frontend: IONOS CDN/shared hosting at `games.revelryapp.me/quiz/`
 - Backend: GCP VM at `gamesapi.revelryapp.me`
 - API mode: cross-origin from IONOS frontend to backend API/WebSockets
+- Build mode: `VITE_BASE_PATH=/quiz/`, `VITE_API_URL=https://gamesapi.revelryapp.me`
 
 **Gamma/staging path**:
 - Frontend + backend: one FastAPI container origin, e.g. `gamma-gamesapi.revelryapp.me`
-- Deployment target: a second Docker container on the same GCP VM initially; Cloud Run is possible later if state constraints are addressed
+- Deployment target: a second Docker container on the same GCP VM initially
 - API mode: same-origin API and WebSockets
 - Config: test Stripe keys, separate DB path or table prefix, separate env file
+- Build mode: no API base, root base path unless gamma is intentionally mounted under a subpath
 
 **Optional backend-hosted production preview**:
 - The production backend may also serve the built frontend at `gamesapi.revelryapp.me` for smoke testing before IONOS rollout.
 - This should not be treated as the canonical customer URL unless a later deployment decision explicitly changes it.
+- Build mode: no API base, root base path
 
-### Backend Serves Frontend
+### Required Code Changes
 
-FastAPI should mount the built frontend as static files with an SPA fallback after API and WebSocket routes are registered:
+Implementation should be small and reversible. It should not change the room model, WebSocket protocol, game rules, or IONOS production URL.
+
+1. **Backend static serving**
+   - Add `StaticFiles` and `FileResponse` imports in `backend/main.py`.
+   - Add a config/env value for the frontend build directory, defaulting to `/app/static` inside Docker and optionally `backend/static` for local packaged testing.
+   - Mount the frontend only if the directory exists and contains `index.html`.
+   - Register static serving after API and WebSocket routes.
+   - Preserve `/health` and all API endpoints exactly as API responses.
+   - Change the current `GET /` API route so it returns the frontend `index.html` when a frontend build exists, and only returns the API status JSON when no frontend build exists.
+
+2. **SPA fallback**
+   - Return `index.html` for unknown browser routes such as `/join`, `/spectator`, and future platform routes.
+   - Do not swallow API mistakes. Unknown API paths should still return 404 JSON, not the app shell.
+   - Because the current backend uses top-level routes rather than only `/api/*`, the fallback must exclude known API prefixes.
+
+3. **Frontend API base**
+   - Update `frontend/src/config.ts` so deployed same-origin builds use `API_URL=''`.
+   - Keep local dev ergonomic by making `scripts/dev-local.sh` pass `VITE_API_URL=http://<LAN_IP>:9100`, as it already does.
+   - WebSocket same-origin fallback must derive `ws` or `wss` from `window.location.protocol`.
+
+4. **Docker image**
+   - Build the frontend before building the backend image.
+   - Copy `frontend/dist/` into the backend image at `/app/static/`.
+   - Keep backend data mounted separately at `/app/backend/data` or an equivalent persistent path.
+
+5. **Deployment scripts/docs**
+   - Add a gamma deployment flow that builds the frontend in backend-served mode, builds the backend image with static files included, and runs a second container.
+   - Keep the existing IONOS static deployment flow for production users.
+
+### FastAPI Static Serving Contract
+
+The final implementation can vary, but it must satisfy this contract:
 
 ```python
-# After all API routes are registered:
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+from pathlib import Path
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-# SPA fallback for client-side routes (e.g. /join, /spectator):
-@app.exception_handler(404)
-async def spa_fallback(request, exc):
-    if not request.url.path.startswith("/api/") and not request.url.path.startswith("/ws/"):
-        return FileResponse("static/index.html")
-    raise exc
+FRONTEND_DIST_DIR = Path(os.getenv("FRONTEND_DIST_DIR", "/app/static"))
+
+API_PREFIXES = (
+    "/admin",
+    "/auth",
+    "/checkout",
+    "/entitlements",
+    "/health",
+    "/history",
+    "/mlt",
+    "/providers",
+    "/purchases",
+    "/quiz",
+    "/room",
+    "/sd",
+    "/system",
+    "/tokens",
+    "/webhook",
+    "/ws",
+)
+
+# After API routes and websocket routes are registered:
+if (FRONTEND_DIST_DIR / "index.html").exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST_DIR / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def frontend_spa(full_path: str, request: Request):
+        path = request.url.path
+        if path == "/":
+            return FileResponse(FRONTEND_DIST_DIR / "index.html")
+        if any(path == prefix or path.startswith(prefix + "/") for prefix in API_PREFIXES):
+            raise HTTPException(status_code=404, detail="Not found")
+
+        candidate = FRONTEND_DIST_DIR / full_path
+        if candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIST_DIR / "index.html")
 ```
+
+Notes:
+
+- `API_PREFIXES` must be updated whenever a new top-level API namespace is added.
+- If routes later move under `/api`, the fallback can become simpler, but that is not required for this deployment step.
+- Static serving must not mount over `/` before API routes are registered.
+- If no frontend build is present, the backend should continue to run API-only. This keeps local backend tests simple.
 
 ### Frontend API Base Configuration
 
@@ -811,16 +884,85 @@ The frontend must support both same-origin and cross-origin API bases:
 - **IONOS production build**: inject `VITE_API_URL=https://gamesapi.revelryapp.me`.
 - **Local dev**: use explicit local ports from the dev scripts, currently backend `9100` and frontend `9200`.
 
-The frontend config should distinguish local dev from deployed same-origin hosting. The deployed same-origin fallback should be:
+`frontend/src/config.ts` should be implemented like this:
 
 ```ts
-const API_URL = import.meta.env.VITE_API_URL || '';
-const WS_URL = import.meta.env.VITE_API_URL
-  ? import.meta.env.VITE_API_URL.replace(/^http/, 'ws')
-  : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
+const explicitApiUrl = import.meta.env.VITE_API_URL;
+const API_URL = explicitApiUrl || '';
+const WS_URL = explicitApiUrl
+  ? explicitApiUrl.replace(/^http/, 'ws')
+  : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
+const API_HOST = explicitApiUrl ? new URL(explicitApiUrl).hostname : window.location.hostname;
+
+export { API_URL, WS_URL, API_HOST };
 ```
 
-Local dev can still override these values through dev-specific env vars or script defaults.
+Local dev remains explicit because `scripts/dev-local.sh` sets `VITE_API_URL="http://$LAN_IP:$BACKEND_PORT"`.
+
+### Build Commands
+
+Use separate build commands for each serving mode.
+
+**IONOS production frontend build**:
+
+```bash
+cd frontend
+VITE_BASE_PATH=/quiz/ \
+VITE_API_URL=https://gamesapi.revelryapp.me \
+VITE_CAST_APP_ID=1BC9ACD8 \
+npx vite build
+```
+
+Deploy `frontend/dist/*` to `~/revelryapp/games/quiz/` on IONOS as described in `DEPLOY.md`.
+
+**Backend-served gamma/preview build**:
+
+```bash
+cd frontend
+VITE_BASE_PATH=/ \
+VITE_API_URL= \
+VITE_CAST_APP_ID=1BC9ACD8 \
+npx vite build
+```
+
+Then copy or package `frontend/dist/` into the backend image as `/app/static/`.
+
+### Docker Image Shape
+
+The backend image should contain both the FastAPI app and, when available, the built frontend:
+
+```text
+/app/
+  main.py
+  config.py
+  ...
+  static/
+    index.html
+    assets/
+      *.js
+      *.css
+```
+
+Recommended Dockerfile direction:
+
+```dockerfile
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/*.py ./
+COPY frontend/dist ./static
+
+ENV FRONTEND_DIST_DIR=/app/static
+
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+If keeping `backend/Dockerfile` as the build file, build it from the repo root so `frontend/dist` is available in the Docker context, or add a packaging step that copies `frontend/dist` into `backend/static` before `docker build backend`.
 
 ### Deployment Topology
 
@@ -842,6 +984,55 @@ Gamma uses:
 - Separate `.env` with test Stripe keys, gamma DB path
 - Same Gemini API key (free tier is fine for testing)
 
+### Nginx Requirements
+
+Each backend-served environment needs WebSocket upgrade headers and normal HTTP proxying.
+
+Production API/preview:
+
+```nginx
+server {
+    server_name gamesapi.revelryapp.me;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+Gamma should use the same shape but proxy to the gamma container port, e.g. `127.0.0.1:8001`.
+
+### Gamma Runtime
+
+Gamma should run as a separate container, not as a mode inside the production container.
+
+Suggested VM container layout:
+
+```text
+games-backend-prod   -> 127.0.0.1:8000 -> gamesapi.revelryapp.me
+games-backend-gamma  -> 127.0.0.1:8001 -> gamma-gamesapi.revelryapp.me
+```
+
+Gamma env requirements:
+
+- `ALLOWED_ORIGINS=https://gamma-gamesapi.revelryapp.me`
+- test Stripe keys and webhook secret
+- distinct `DB_DIR`, e.g. `/app/backend/data-gamma` or a separate mounted VM directory
+- same Gemini key unless a separate quota is desired
+- lower rate limits are acceptable for testing
+
+Production env should include both user-facing and backend-preview origins:
+
+- `ALLOWED_ORIGINS=https://games.revelryapp.me,https://gamesapi.revelryapp.me`
+- keep any existing `revelryapp.me` origins that are still needed for compatibility
+
 ### Workflow
 
 1. Develop locally (`scripts/dev-local.sh`)
@@ -851,6 +1042,31 @@ Gamma uses:
 5. When satisfied, deploy the static frontend build to IONOS for real users
 
 Users on IONOS are not affected until the IONOS static deploy happens. This mirrors VibePix: Cloud Run or server-served pages are useful staging surfaces, while IONOS is the public web delivery path.
+
+### Acceptance Checks
+
+Before calling the implementation done:
+
+- `curl -s https://gamma-gamesapi.revelryapp.me/health` returns backend health JSON.
+- `curl -s https://gamma-gamesapi.revelryapp.me/ | head` returns HTML.
+- `curl -sI https://gamma-gamesapi.revelryapp.me/assets/<built-asset>` returns `200`.
+- Browser refresh works on `/join`, `/spectator`, and organizer routes.
+- WebSocket join works from the backend-served gamma page.
+- Unknown API paths such as `/quiz/not-real/export` return JSON 404, not `index.html`.
+- IONOS production still loads from `https://games.revelryapp.me/quiz/`.
+- IONOS production still calls `https://gamesapi.revelryapp.me` for API/WebSockets.
+- Existing backend tests pass with no frontend build present.
+- The deployed production container can still run API-only if `/app/static/index.html` is missing.
+
+### Implementation Order
+
+1. Update `frontend/src/config.ts` for explicit API URL plus same-origin fallback.
+2. Add conditional FastAPI static serving and SPA fallback.
+3. Adjust Docker build context or packaging so `frontend/dist` can be copied into `/app/static`.
+4. Add a gamma deploy script or extend `scripts/deploy-gcp.sh` with an explicit gamma mode.
+5. Add nginx gamma server block and route it to the gamma container port.
+6. Verify gamma end-to-end.
+7. Update `DEPLOY.md` with the final commands after the implementation is tested.
 
 ## Infrastructure Roadmap
 
