@@ -957,6 +957,15 @@ These are current design facts, not necessarily defects. They should guide any u
 
 Historical review notes were consolidated into this section and the platform spec. Items here are not necessarily urgent, but they are useful checks when touching nearby code.
 
+- **Auth error specificity:** `/auth/signin` currently returns `401 Invalid or expired ID token` for several backend failures, including missing `JWT_SECRET`. Split provider-token verification failures from LocalPlay session creation/config failures so the UI and logs point to the real cause.
+- **Sign-in wallet merge verification:** A newly signed-in gamma user showed `0 sparks`. Verify whether guest sparks should merge into the signed-in wallet in all flows, including existing-user re-sign-in and repeated merge rejection paths.
+- **Signed-in balance refresh:** After sign-in, confirm the header spark balance refreshes from the signed-in session and does not keep stale guest-wallet state.
+- **Show answers control:** The organizer/player "show answers" UI currently appears to do nothing. Trace the intended answer-reveal state, WebSocket message, and client rendering path, then add regression coverage.
+- **Apple web sign-in regression coverage:** Apple sign-in has been verified on gamma and the IONOS production frontend. Add automated or manual smoke coverage so Service ID/domain/return URL regressions are caught after auth or deploy changes.
+- **Provider sign-in diagnostics:** Add a narrow admin/debug view or structured log event for sign-in attempts that reports provider, origin, audience, verification stage, and sanitized failure reason without logging tokens.
+- **Auth config startup checks:** Startup currently warns on short `JWT_SECRET`, but missing `JWT_SECRET` is fatal for sign-in. Add a deployment/startup warning that explicitly says Google/Apple sign-in is disabled when `JWT_SECRET`, `GOOGLE_CLIENT_ID`, or Apple audience config is absent.
+- **LocalPlay/Revelry session boundary:** Document and test that LocalPlay sessions are independent from the main Revelry app even if Google Cloud/Firebase infrastructure is shared.
+- **Google OAuth branding:** Google currently shows the main Revelry OAuth app name during sign-in because the web client lives in the main `revelryapp` Google Cloud project. If the user-facing label must say "Revelry Games" without changing the main Revelry app name, create a separate Google Cloud project/OAuth brand for Revelry Games and move the LocalPlay web client there.
 - **Spectator lifecycle:** `SpectatorPage` has reconnect/backoff handling and cleanup guards, but spectator reconnect behavior should be regression-tested when changing room join/leave UI. In particular, verify reconnect still works after manually leaving one spectator room and joining another in the same mounted page.
 - **Spectator/player client-id collision:** Spectators and players use different client id prefixes, so real collisions are unlikely. Still, room cleanup paths should avoid assuming a `client_id` can only ever belong to one connection map.
 - **Reset-room tests:** Older tests once sent `RESET_ROOM` with inline `quiz_data`; current backend expects a valid `content_id`. Keep reset-room tests aligned with the content-id flow.
@@ -1035,6 +1044,10 @@ Current deployed infrastructure:
 - Prod and gamma envs must set the browser auth client IDs used for backend token verification: `GOOGLE_CLIENT_ID=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com`, `APPLE_CLIENT_ID=me.revelryapp.quiz.web`, and `APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz`.
 - Google OAuth Web Client authorized JavaScript origins must include every SPA host: `https://games.revelryapp.me`, `https://gamesapi.revelryapp.me`, `https://gamesapi-gamma.revelryapp.me`, `http://localhost:5173`, `http://localhost:9200`, and `http://127.0.0.1:9200`.
 - Apple Sign in with Apple Service ID `me.revelryapp.quiz.web` must allow `games.revelryapp.me`, `gamesapi.revelryapp.me`, and `gamesapi-gamma.revelryapp.me` with matching `https://...` return URLs.
+- Browser sign-in is direct Google Identity Services / Apple Sign-In, not Firebase Auth. The provider returns an ID token, the LocalPlay backend verifies it, and the backend mints a LocalPlay session JWT.
+- A successful signed-in state is visible in the menu as **Signed in**, account/email prefix, and a **Sign Out** button.
+- LocalPlay sessions are independent from the main Revelry app session even if Google Cloud/Firebase project infrastructure is shared.
+- Verified browser sign-in: Google on gamma; Apple on gamma and IONOS production. Production Google is configured on the IONOS bundle and production backend but should still be smoke-tested before release.
 
 Operational follow-up:
 

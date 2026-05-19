@@ -215,6 +215,43 @@ https://gamesapi-gamma.revelryapp.me
 
 Backend-served builds intentionally set `VITE_APPLE_REDIRECT_URI` to blank, so Apple JS falls back to `window.location.origin`. The IONOS build can keep `VITE_APPLE_REDIRECT_URI=https://games.revelryapp.me`.
 
+### 3b. Verify sign-in state
+
+Browser sign-in is not Firebase Auth. The app uses Google Identity Services and Apple Sign-In directly, sends the provider ID token to `/auth/signin`, and the backend creates a LocalPlay session JWT.
+
+Expected successful login state:
+
+- The menu shows **Signed in**.
+- The account/email prefix is visible.
+- The **Sign Out** button is visible.
+- The browser has a LocalPlay session token for the current origin.
+
+Verified browser sign-in coverage:
+
+| Origin | Google | Apple |
+|--------|--------|-------|
+| `https://gamesapi-gamma.revelryapp.me` | Verified | Verified |
+| `https://games.revelryapp.me/quiz/` | Configured; expected to work with the same web client | Verified |
+
+The LocalPlay session is separate from the main Revelry app. It may share Google Cloud/Firebase project infrastructure, but it does not share the main Revelry app's login cookie or session.
+
+Common sign-in failures:
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| Google `origin_mismatch` before the app receives a token | Missing OAuth JavaScript origin | Add the exact SPA origin in Google Cloud Console |
+| Account chooser appears, then app says invalid/expired token | Backend cannot complete LocalPlay session creation | Verify `JWT_SECRET`, `GOOGLE_CLIENT_ID`, and container runtime env |
+| Apple popup fails or returns invalid token | Apple Service ID domains/return URLs or audience mismatch | Verify Apple Developer Service ID and `APPLE_CLIENT_IDS` |
+| Login works on `games.revelryapp.me` but not `gamesapi-gamma.revelryapp.me` | Provider console only trusts the IONOS origin | Add backend-served prod/gamma origins |
+| Signed-in user has 0 sparks | New user wallet or wallet merge did not transfer guest balance | Check wallet merge logs and `/tokens/balance` under the signed-in session |
+
+Runtime checks:
+
+```bash
+gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --command \
+  'for c in games-backend games-backend-gamma; do echo "== $c =="; docker exec "$c" sh -lc '"'"'printf "JWT_SECRET=%s\n" "${JWT_SECRET:+set}"; printf "GOOGLE_CLIENT_ID=%s\n" "${GOOGLE_CLIENT_ID:+set}"; printf "APPLE_CLIENT_ID=%s\n" "${APPLE_CLIENT_ID:+set}"; printf "APPLE_CLIENT_IDS=%s\n" "${APPLE_CLIENT_IDS:+set}"'"'"'; done'
+```
+
 ### 4. Install nginx routes
 
 Production should proxy to `127.0.0.1:8000`; gamma should proxy to `127.0.0.1:8004`.

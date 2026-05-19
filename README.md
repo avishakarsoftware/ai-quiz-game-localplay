@@ -1,4 +1,4 @@
-# 🎮 AI Quiz Game (LocalPlay)
+# AI Quiz Game (LocalPlay)
 
 A multiplayer quiz game powered by local AI (Ollama). The organizer gives a prompt, AI generates questions, and players compete in real-time.
 
@@ -125,6 +125,23 @@ make lint
 | `make lint` | TypeScript type checking |
 | `make clean` | Remove build artifacts and `__pycache__` |
 
+## Sign-In And Sessions
+
+LocalPlay uses Google Identity Services and Apple Sign-In directly, not Firebase Auth, for the browser sign-in flow:
+
+```text
+Browser provider sign-in -> provider ID token -> LocalPlay backend verifies token -> LocalPlay session JWT
+```
+
+The signed-in state is LocalPlay-specific. It is not shared with the main Revelry app session, even though the Google Cloud project/client family may be shared. When sign-in works, the menu shows **Signed in**, the account/email prefix, and a **Sign Out** button.
+
+Required deployed auth settings:
+
+- `GOOGLE_CLIENT_ID` must match `VITE_GOOGLE_CLIENT_ID`.
+- `APPLE_CLIENT_ID` should be the web Service ID, currently `me.revelryapp.quiz.web`.
+- `APPLE_CLIENT_IDS` should include web and future native audiences, currently `me.revelryapp.quiz.web,me.revelryapp.quiz`.
+- `JWT_SECRET` must be set or provider sign-in can succeed but LocalPlay session creation will fail.
+
 ## Deployment Notes
 
 Public production still uses IONOS for the web frontend:
@@ -143,6 +160,8 @@ The backend can also serve the built SPA from `/app/static` for gamma and backen
 ```
 
 Gamma convention: `https://gamesapi-gamma.revelryapp.me`.
+
+Backend-served prod/gamma SPA origins must also be registered in Google Cloud OAuth and Apple Developer for browser sign-in. See [DEPLOY.md](DEPLOY.md) for the exact origins and redirect roots.
 
 ## Tech Stack
 
