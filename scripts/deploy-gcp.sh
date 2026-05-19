@@ -115,8 +115,21 @@ bootstrap_vm_layout() {
             sudo cp $REMOTE_APP_DIR/.env $REMOTE_APP_DIR/.env.gamma
         fi
 
-        sudo sh -c \"grep -q '^ALLOWED_ORIGINS=' $REMOTE_APP_DIR/.env.gamma && sed -i 's#^ALLOWED_ORIGINS=.*#ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me#' $REMOTE_APP_DIR/.env.gamma || echo 'ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me' >> $REMOTE_APP_DIR/.env.gamma\"
-        sudo sh -c \"grep -q '^DB_DIR=' $REMOTE_APP_DIR/.env.gamma && sed -i 's#^DB_DIR=.*#DB_DIR=/app/data#' $REMOTE_APP_DIR/.env.gamma || echo 'DB_DIR=/app/data' >> $REMOTE_APP_DIR/.env.gamma\"
+        # Set gamma-specific env vars (upsert pattern: update if exists, append if not)
+        for KV in \
+            'ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me' \
+            'DB_DIR=/app/data' \
+            'CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/' \
+            'TRUST_PROXY_HEADERS=true' \
+        ; do
+            KEY=\${KV%%=*}
+            sudo sh -c \"grep -q '^'\$KEY'=' $REMOTE_APP_DIR/.env.gamma && sed -i 's#^'\$KEY'=.*#\$KV#' $REMOTE_APP_DIR/.env.gamma || echo '\$KV' >> $REMOTE_APP_DIR/.env.gamma\"
+        done
+
+        echo ''
+        echo '*** IMPORTANT: Review Stripe keys in $REMOTE_APP_DIR/.env.gamma ***'
+        echo 'Gamma should use test-mode Stripe keys (sk_test_..., whsec_...) to avoid charging real money.'
+        echo ''
 
         sudo chmod 600 $REMOTE_APP_DIR/.env $REMOTE_APP_DIR/.env.gamma
         sudo chown -R \"\$REMOTE_USER:\$REMOTE_USER\" $REMOTE_BASE_DIR

@@ -4,26 +4,49 @@
 
 ```
 Users → games.revelryapp.me (IONOS CDN) → static frontend
-     → gamesapi.revelryapp.me (GCP VM)  → FastAPI backend + WebSockets
+     → gamesapi.revelryapp.me (GCP VM)  → FastAPI backend + WebSockets + optional frontend
      → gamesapi-gamma.revelryapp.me (GCP VM) → FastAPI backend + WebSockets + frontend
 ```
 
 - **Frontend**: Static React/Vite build hosted on IONOS shared hosting
 - **Backend**: FastAPI in Docker on a GCP Compute Engine e2-micro VM
-- **Gamma/preview frontend**: The FastAPI container can also serve the built Vite frontend from `/app/static`
+- **Backend-served SPA**: The FastAPI container can serve the built Vite frontend from `/app/static`
 - **Reverse proxy**: Nginx on the VM handles HTTPS termination + WebSocket upgrade
 - **SSL**: Let's Encrypt via Certbot (auto-renewing)
+
+The public production game is still expected to run at `https://games.revelryapp.me/quiz/` from IONOS. The backend-served SPA gives us a same-origin deployment path for gamma, previews, and emergency/prod fallback at the API domains.
 
 ## Production URLs
 
 | Component | URL |
 |-----------|-----|
 | Frontend  | https://games.revelryapp.me/quiz/ |
-| Backend API | https://gamesapi.revelryapp.me |
+| Backend API + SPA fallback | https://gamesapi.revelryapp.me |
 | Gamma full stack | https://gamesapi-gamma.revelryapp.me |
 | Spectator/TV | https://games.revelryapp.me/quiz/spectator |
 | Player join  | https://games.revelryapp.me/quiz/join |
 | Cast App ID  | `1BC9ACD8` |
+
+## Current VM State
+
+As of the SPA rollout, the VM has both LocalPlay containers deployed:
+
+| Environment | Domain | Container | Image | VM bind | Data dir |
+|-------------|--------|-----------|-------|---------|----------|
+| Production | `gamesapi.revelryapp.me` | `games-backend` | `revelry-backend:latest` | `127.0.0.1:8000` | `/home/revelry-games/revelry-data` |
+| Gamma | `gamesapi-gamma.revelryapp.me` | `games-backend-gamma` | `revelry-backend-gamma:latest` | `127.0.0.1:8004` | `/home/revelry-games/revelry-data-gamma` |
+
+The older backup containers `revelry-platform` and `revelry-gamma` may exist on the VM. They are not managed by `scripts/deploy-gcp.sh`; the LocalPlay deploy script only stops/removes `games-backend` and `games-backend-gamma`.
+
+Useful state checks:
+
+```bash
+gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --command \
+  'docker ps -a --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"'
+
+curl -sS -i https://gamesapi.revelryapp.me/health
+curl -sS -i https://gamesapi-gamma.revelryapp.me/health
+```
 
 ## IONOS Directory Structure
 
@@ -45,6 +68,188 @@ Users → games.revelryapp.me (IONOS CDN) → static frontend
 | GCP Project | `revelryapp` |
 | GCP Zone | `us-central1-a` |
 | GCP Instance | `revelry-backend` |
+
+---
+
+## From-Scratch Setup
+
+Use this section when rebuilding the VM setup or adding LocalPlay to a fresh host. These steps assume the GCP VM exists and you can SSH into it with `gcloud compute ssh`.
+
+### 1. DNS
+
+In IONOS DNS for `revelryapp.me`, create or verify:
+
+| Host | Type | Value |
+|------|------|-------|
+| `gamesapi` | `A` | `136.115.33.75` |
+| `gamesapi-gamma` | `A` | `136.115.33.75` |
+
+Verify from local:
+
+```bash
+nslookup gamesapi.revelryapp.me
+nslookup gamesapi-gamma.revelryapp.me
+```
+
+### 2. Install VM packages
+
+On a fresh Debian/Ubuntu VM:
+
+```bash
+gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a
+
+sudo apt-get update
+sudo apt-get install -y docker.io nginx certbot python3-certbot-nginx sqlite3
+sudo systemctl enable --now docker
+sudo systemctl enable --now nginx
+sudo usermod -aG docker "$USER"
+exit
+```
+
+Open a new SSH session after adding the user to the `docker` group.
+
+### 3. Bootstrap the LocalPlay VM home
+
+The canonical LocalPlay home on the VM is `/home/revelry-games`.
+
+```bash
+./scripts/deploy-gcp.sh --bootstrap-vm --skip-build
+```
+
+This creates:
+
+```text
+/home/revelry-games/
+  app/
+    .env
+    .env.gamma
+  revelry-data/
+  revelry-backups/
+  revelry-data-gamma/
+  revelry-backups-gamma/
+```
+
+If `/home/revelry-games/app/.env` does not exist, the bootstrap script copies `/home/Avi/app/.env` when available. Otherwise create `/home/revelry-games/app/.env` manually before deploying.
+
+The gamma env is copied from production and then adjusted by bootstrap:
+
+```env
+ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me
+DB_DIR=/app/data
+CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/
+TRUST_PROXY_HEADERS=true
+```
+
+**Important:** The bootstrap copies production Stripe keys into gamma. You must manually replace them with test-mode keys (`sk_test_...`, `whsec_...`) in `/home/revelry-games/app/.env.gamma` before testing checkout, or you will charge real money.
+
+Production `.env` should also include `gamesapi.revelryapp.me` in `ALLOWED_ORIGINS` for backend-served SPA access:
+
+```env
+ALLOWED_ORIGINS=https://games.revelryapp.me,https://gamesapi.revelryapp.me
+TRUST_PROXY_HEADERS=true
+```
+
+### 4. Install nginx routes
+
+Production should proxy to `127.0.0.1:8000`; gamma should proxy to `127.0.0.1:8004`.
+
+Create `/etc/nginx/sites-available/revelry-gamesapi`:
+
+```nginx
+server {
+    server_name gamesapi.revelryapp.me;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400;
+    }
+
+    listen 80;
+}
+```
+
+Create `/etc/nginx/sites-available/revelry-gamesapi-gamma`:
+
+```nginx
+server {
+    server_name gamesapi-gamma.revelryapp.me;
+
+    location / {
+        proxy_pass http://127.0.0.1:8004;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400;
+    }
+
+    listen 80;
+}
+```
+
+Enable, test, reload, and issue certs:
+
+```bash
+sudo ln -sf /etc/nginx/sites-available/revelry-gamesapi /etc/nginx/sites-enabled/revelry-gamesapi
+sudo ln -sf /etc/nginx/sites-available/revelry-gamesapi-gamma /etc/nginx/sites-enabled/revelry-gamesapi-gamma
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx -d gamesapi.revelryapp.me
+sudo certbot --nginx -d gamesapi-gamma.revelryapp.me
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 5. Deploy both backend containers with bundled SPA
+
+From the repo root:
+
+```bash
+./scripts/deploy-gcp.sh --with-frontend
+./scripts/deploy-gcp.sh --gamma --with-frontend
+```
+
+The script builds the Docker images locally with `--platform linux/amd64`, uploads them to the VM, backs up SQLite, restarts only the target LocalPlay container, and checks `/health`.
+
+### 6. Verify from outside the VM
+
+```bash
+curl -sS -i https://gamesapi.revelryapp.me/health
+curl -sS -i https://gamesapi-gamma.revelryapp.me/health
+curl -sS -D - -o /dev/null https://gamesapi.revelryapp.me/
+curl -sS -D - -o /dev/null https://gamesapi-gamma.revelryapp.me/join/testroom
+curl -sS -i https://gamesapi.revelryapp.me/providers
+curl -sS -i https://gamesapi-gamma.revelryapp.me/providers
+```
+
+Expected:
+
+- `/health` returns JSON `200`
+- `/` and client routes like `/join/testroom` return `text/html`
+- API routes like `/providers` return JSON, not `index.html`
+
+### 7. Optional: deploy public IONOS frontend
+
+The IONOS frontend remains the canonical public game surface:
+
+```bash
+cd frontend
+VITE_BASE_PATH=/quiz/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npx vite build
+ssh u69414981@home420463025.1and1-data.host "rm -rf ~/revelryapp/games/quiz/assets"
+scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/quiz/
+```
 
 ---
 
@@ -103,7 +308,10 @@ This file is already deployed. Only re-upload it if the base path changes.
 
 ### Prerequisites
 - `gcloud` CLI installed and authenticated (`gcloud auth login`)
-- Docker installed on the VM (already done)
+- Docker installed locally
+- Docker installed on the VM
+- Node.js installed locally when using `--with-frontend`
+- `/home/revelry-games/app/.env` exists on the VM
 
 ### Preferred script deploy
 
@@ -114,7 +322,7 @@ Images are built with `--platform linux/amd64` because the GCP VM is AMD64 even 
 # One-time VM layout bootstrap
 ./scripts/deploy-gcp.sh --bootstrap-vm --skip-build
 
-# Production API/optional backend preview
+# Production API + backend-served SPA fallback
 ./scripts/deploy-gcp.sh --with-frontend
 
 # Gamma full-stack same-origin environment
@@ -141,71 +349,37 @@ Port notes:
 - `127.0.0.1:8003` is already used by the older `api-gamma.revelryapp.me` config.
 - LocalPlay gamma therefore uses `127.0.0.1:8004`.
 
-### Step 1: Copy backend files to the VM
+### Backend-served SPA behavior
+
+When deployed with `--with-frontend`, the container includes the Vite build under `/app/static`.
+
+Expected behavior:
+
+- `GET /` returns `index.html`
+- client routes like `/join/testroom` return `index.html`
+- static files like `/assets/index-*.js` return the real asset
+- missing assets under `/assets/*` return JSON `404`
+- API routes stay API routes and never fall through to the SPA
+
+Protected API prefixes include `/system`, `/providers`, `/quiz`, `/room`, `/ws`, `/mlt`, `/history`, `/auth`, `/checkout`, `/webhook`, `/tokens`, `/entitlements`, `/purchases`, `/admin`, `/health`, and `/sd`.
+
+The fallback route resolves candidate files under `/app/static` and rejects paths outside that directory to avoid directory traversal.
+
+### Verify
 
 ```bash
-cd backend
-
-# Copy all Python files, requirements, Dockerfile, and .env
-gcloud compute scp *.py requirements.txt Dockerfile \
-  revelry-backend:~/app/ \
-  --project=revelryapp --zone=us-central1-a
+curl -sS -i https://gamesapi.revelryapp.me/health
+curl -sS -i https://gamesapi-gamma.revelryapp.me/health
+curl -sS -D - -o /dev/null https://gamesapi.revelryapp.me/
+curl -sS -D - -o /dev/null https://gamesapi-gamma.revelryapp.me/
+curl -sS -i https://gamesapi.revelryapp.me/providers
 ```
 
-If `.env` needs updating:
-```bash
-gcloud compute scp .env \
-  revelry-backend:~/app/.env \
-  --project=revelryapp --zone=us-central1-a
-```
-
-### Step 2: SSH into the VM
+Check containers on the VM:
 
 ```bash
-gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a
-```
-
-### Step 3: Rebuild and restart the Docker container
-
-```bash
-cd ~/app
-
-# Stop and remove old container
-sudo docker stop revelry-backend
-sudo docker rm revelry-backend
-
-# Rebuild image
-sudo docker build -t revelry-backend .
-
-# Start new container
-sudo docker run -d \
-  --name revelry-backend \
-  --restart=unless-stopped \
-  --env-file .env \
-  -p 127.0.0.1:8000:8000 \
-  revelry-backend
-```
-
-### Step 4: Verify
-
-```bash
-# Check container is running
-sudo docker ps
-
-# Check logs
-sudo docker logs revelry-backend --tail 20
-
-# Test API locally on VM
-curl http://localhost:8000/providers
-```
-
-Then test from your browser: https://gamesapi.revelryapp.me/providers
-
-### Zero-downtime shortcut (restart only, no rebuild)
-
-If you only changed `.env` values (no code changes):
-```bash
-sudo docker restart revelry-backend
+gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --command \
+  'docker ps -a --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"'
 ```
 
 ---
@@ -220,7 +394,8 @@ Nginx runs on the VM as a reverse proxy. Each subdomain has its own config file:
 
 Key sections:
 - Listens on 443 (HTTPS) with Let's Encrypt certs
-- Proxies all requests to `http://127.0.0.1:8000`
+- Proxies production requests to `http://127.0.0.1:8000`
+- Proxies gamma requests to `http://127.0.0.1:8004`
 - WebSocket upgrade headers for `/ws/` paths
 - HTTP (port 80) redirects to HTTPS
 
@@ -345,7 +520,7 @@ sudo systemctl reload nginx
 
 ## Backend .env (Production)
 
-The production `.env` on the VM should have at minimum:
+The production `.env` lives at `/home/revelry-games/app/.env` on the VM and should have at minimum:
 
 ```env
 # AI Providers — at least one must be configured
@@ -357,10 +532,18 @@ DEFAULT_PROVIDER=gemini
 HOST=0.0.0.0
 PORT=8000
 ALLOWED_ORIGINS=https://revelryapp.me,https://www.revelryapp.me,https://games.revelryapp.me
+DB_DIR=/app/data
 
 # Game
 ROOM_TTL_SECONDS=1800
 LOG_LEVEL=INFO
+```
+
+Gamma env lives at `/home/revelry-games/app/.env.gamma`. Keep it separate from production because it has its own database volume and should use safe/test third-party credentials:
+
+```env
+ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me
+DB_DIR=/app/data
 ```
 
 Ollama and Stable Diffusion are NOT available on the production VM (no GPU).
@@ -369,56 +552,58 @@ Ollama and Stable Diffusion are NOT available on the production VM (no GPU).
 
 ## Quick Reference Commands
 
-### Full redeploy (both frontend and backend)
+### Full LocalPlay redeploy
 
 ```bash
 # From project root:
 
-# 1. Build frontend
-cd frontend
-VITE_BASE_PATH=/quiz/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npx vite build
-
-# 2. Deploy frontend
-ssh u69414981@home420463025.1and1-data.host "rm -rf ~/revelryapp/games/quiz/assets"
-scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/quiz/
-
-# 3. Deploy backend
-cd ../backend
-gcloud compute scp *.py requirements.txt Dockerfile \
-  revelry-backend:~/app/ \
-  --project=revelryapp --zone=us-central1-a
-
-# 4. Rebuild on VM
-gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a -- \
-  'cd ~/app && sudo docker stop revelry-backend && sudo docker rm revelry-backend && sudo docker build -t revelry-backend . && sudo docker run -d --name revelry-backend --restart=unless-stopped --env-file .env -p 127.0.0.1:8000:8000 revelry-backend'
-```
-
-### Full redeploy with backend-served preview
-
-```bash
-# 1. Deploy backend with frontend bundled for same-origin preview
+# Production backend + bundled SPA fallback
 ./scripts/deploy-gcp.sh --with-frontend
 
-# 2. Verify backend preview
-curl -s https://gamesapi.revelryapp.me/health
-curl -s https://gamesapi.revelryapp.me/ | head -3
+# Gamma backend + bundled SPA
+./scripts/deploy-gcp.sh --gamma --with-frontend
 
-# 3. Build and upload public IONOS frontend
+# Public IONOS frontend
 cd frontend
 VITE_BASE_PATH=/quiz/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npx vite build
 ssh u69414981@home420463025.1and1-data.host "rm -rf ~/revelryapp/games/quiz/assets"
 scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/quiz/
+```
+
+### Public IONOS frontend only
+
+```bash
+cd frontend
+VITE_BASE_PATH=/quiz/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npx vite build
+ssh u69414981@home420463025.1and1-data.host "rm -rf ~/revelryapp/games/quiz/assets"
+scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/quiz/
+```
+
+### Backend containers only
+
+```bash
+# Production
+./scripts/deploy-gcp.sh --with-frontend
+
+# Gamma
+./scripts/deploy-gcp.sh --gamma --with-frontend
 ```
 
 ### View backend logs
 ```bash
-gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a -- \
-  'sudo docker logs revelry-backend --tail 50 -f'
+gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --command \
+  'docker logs games-backend --tail 50 -f'
+
+gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --command \
+  'docker logs games-backend-gamma --tail 50 -f'
 ```
 
-### Check if backend is healthy
+### Check if backends are healthy
 ```bash
+curl -s https://gamesapi.revelryapp.me/health
+curl -s https://gamesapi-gamma.revelryapp.me/health
 curl -s https://gamesapi.revelryapp.me/providers | python3 -m json.tool
+curl -s https://gamesapi-gamma.revelryapp.me/providers | python3 -m json.tool
 ```
 
 ### Check IONOS disk usage
@@ -505,8 +690,12 @@ The e2-micro VM + 30GB disk in us-central1 is covered by GCP's Always Free tier,
 | Frontend 404 on refresh | `.htaccess` missing or wrong `RewriteBase` |
 | WebSocket fails to connect | Nginx config missing `Upgrade`/`Connection` headers |
 | CORS errors | `ALLOWED_ORIGINS` in backend `.env` doesn't include frontend domain |
-| Docker won't start | `sudo docker logs revelry-backend` for error details |
+| Docker won't start | `docker logs games-backend --tail 80` or `docker logs games-backend-gamma --tail 80` |
 | SSL cert expired | `sudo certbot renew && sudo systemctl reload nginx` |
 | Old JS bundles cached | Clear `assets/` dir before deploying, hard-refresh browser |
 | API suddenly unreachable | Home IP probably changed — update firewall rules (see section above) |
 | VM stopped unexpectedly | Billing cap may have triggered — re-link billing (see billing cap section) |
+| `gamesapi.revelryapp.me` returns 502 | Check `games-backend` is running and bound to `127.0.0.1:8000` |
+| `gamesapi-gamma.revelryapp.me` returns 502 | Check `games-backend-gamma` is running and bound to `127.0.0.1:8004` |
+| Container logs show `exec format error` | Rebuild through `scripts/deploy-gcp.sh`; images must be `linux/amd64` for the VM |
+| SPA route returns API JSON unexpectedly | Confirm the path is not under a protected API prefix |
