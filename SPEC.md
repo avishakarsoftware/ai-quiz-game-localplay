@@ -161,7 +161,7 @@ The backend CORS configuration explicitly allows these headers.
 
 ## Persistence
 
-The implemented system currently uses SQLite for durable state:
+The implemented system supports SQLite and Supabase for durable state:
 
 - Users and provider identities.
 - Spark wallets and token transactions.
@@ -169,14 +169,14 @@ The implemented system currently uses SQLite for durable state:
 - Legacy entitlements and free-usage tracking.
 - Pending token pickup after checkout return.
 
-Production SQLite lives under `/home/revelry-games/revelry-data`; gamma SQLite lives under `/home/revelry-games/revelry-data-gamma`.
+Production currently uses SQLite under `/home/revelry-games/revelry-data`. Gamma currently uses Supabase with the `games_gamma_` prefix.
 
 The planned Supabase migration is specified in `SPEC-SUPABASE-MIGRATION.md`. It uses the existing VibePix Supabase project as a shared database, with table/RPC prefixes to avoid collisions:
 
 - Production: `games_`.
 - Gamma: `games_gamma_`.
 
-The Supabase objects have been created in the shared project, but the running system still uses SQLite. Until `DB_BACKEND=supabase` is set in a runtime env, Supabase SQL and config defaults do not change live behavior.
+The Supabase objects have been created in the shared project. Gamma is the first Supabase-backed runtime; production remains SQLite until export/reconciliation and a separate cutover.
 
 ## Content Model
 

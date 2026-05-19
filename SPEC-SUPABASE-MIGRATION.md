@@ -54,7 +54,13 @@ Verified objects:
 - Gamma equivalents with the `games_gamma_` prefix.
 - RPCs: `ensure_wallet`, `debit_tokens`, `credit_tokens`, `credit_purchase`, `merge_wallet`, `grant_daily_bonus`, `grant_ad_reward`, `claim_device_usage`, `claim_user_usage`, `mark_webhook_processed`, with both prefixes.
 
-Runtime is still SQLite. No deployed LocalPlay environment uses these Supabase tables until `DB_BACKEND=supabase` and `SUPABASE_SERVICE_KEY` are set in that environment.
+Gamma now runs with `DB_BACKEND=supabase` and `TABLE_PREFIX=games_gamma_`. Production still runs with `DB_BACKEND=sqlite`.
+
+Gamma Supabase smoke test:
+
+- Generated quiz on `https://gamesapi-gamma.revelryapp.me`.
+- Verified wallet, token transactions, and idempotency row were written to `games_gamma_*`.
+- Retried the same idempotency key and verified no duplicate `spend_generate` transaction.
 
 The repository contains migration scaffolding:
 
@@ -63,9 +69,9 @@ The repository contains migration scaffolding:
 - `sql/games-schema.sql` is the rendered production SQL with the `games_` prefix.
 - `sql/games-gamma-schema.sql` is the rendered gamma SQL with the `games_gamma_` prefix.
 - `scripts/render-supabase-sql.py` regenerates both SQL files from the template.
-- `scripts/deploy-gcp.sh` validates that production uses `games_` and gamma uses `games_gamma_`; it does not switch either runtime to Supabase.
+- `scripts/deploy-gcp.sh` validates that production uses `games_` and gamma uses `games_gamma_`.
 
-Future SQL changes must still be applied deliberately; editing files in this repo does not automatically mutate Supabase. No deployed runtime changes persistence until a human sets `DB_BACKEND=supabase` and `SUPABASE_SERVICE_KEY` in the VM env.
+Future SQL changes must still be applied deliberately; editing files in this repo does not automatically mutate Supabase. Production must not be switched until export/reconciliation from SQLite to `games_*` has been done and gamma has soaked successfully.
 
 ## Current SQLite Surface
 

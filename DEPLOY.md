@@ -682,12 +682,12 @@ Ollama and Stable Diffusion are NOT available on the production VM (no GPU).
 
 ## Database Migration Status
 
-Production and gamma currently use SQLite:
+Production currently uses SQLite. Gamma currently uses Supabase:
 
 | Environment | Active backend | Active data |
 |-------------|----------------|-------------|
 | Production | `DB_BACKEND=sqlite` | `/home/revelry-games/revelry-data/revelry.db` |
-| Gamma | `DB_BACKEND=sqlite` | `/home/revelry-games/revelry-data-gamma/revelry.db` |
+| Gamma | `DB_BACKEND=supabase` | Supabase `games_gamma_*` tables |
 
 Supabase migration planning and SQL scaffolding live in `SPEC-SUPABASE-MIGRATION.md` and `sql/`.
 
@@ -696,7 +696,8 @@ As of 2026-05-19, the LocalPlay Supabase schema has been applied to the shared V
 - Project ref: `hosbtyylacluziugwjfd`.
 - Production tables/RPCs: `games_*`.
 - Gamma tables/RPCs: `games_gamma_*`.
-- Runtime is unchanged: both deployed environments still use SQLite until their VM env is explicitly switched.
+- Gamma runtime was switched and smoke-tested against Supabase on 2026-05-19.
+- Production runtime is unchanged and still uses SQLite.
 
 The Supabase project is shared with VibePix, so LocalPlay tables and RPCs must always use explicit prefixes:
 
@@ -741,11 +742,12 @@ curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/data
   -d "$body"
 ```
 
-Do not switch a runtime to Supabase until all of the following are true:
+Do not switch production to Supabase until all of the following are true:
 
-- `/home/revelry-games/app/.env.gamma` or `.env` has `SUPABASE_SERVICE_KEY` set.
-- Gamma has been tested first with `DB_BACKEND=supabase`.
-- A fresh SQLite backup exists for the environment being switched.
+- `/home/revelry-games/app/.env` has `SUPABASE_SERVICE_KEY` set.
+- Gamma has soaked with `DB_BACKEND=supabase`.
+- Production SQLite has been exported/reconciled into `games_*`.
+- A fresh production SQLite backup exists.
 
 The deploy script validates the prefix before deploy:
 
@@ -753,7 +755,13 @@ The deploy script validates the prefix before deploy:
 - Gamma must use `TABLE_PREFIX=games_gamma_`.
 - `DB_BACKEND=supabase` requires both `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`.
 
-Until a human explicitly flips `DB_BACKEND=supabase` in the VM env, these Supabase files do not affect live traffic.
+Gamma can be rolled back to SQLite by setting `/home/revelry-games/app/.env.gamma` back to `DB_BACKEND=sqlite` and redeploying:
+
+```bash
+./scripts/deploy-gcp.sh --gamma --with-frontend
+```
+
+Production is still isolated from this gamma migration.
 
 ---
 
