@@ -1085,3 +1085,76 @@ def mark_webhook_event_processed(event_id: str):
     cutoff = int(time.time()) - 7 * 86400
     conn.execute("DELETE FROM webhook_events WHERE processed_at < ?", (cutoff,))
     conn.commit()
+
+
+def get_admin_stats() -> dict:
+    """Return live admin stats without exposing storage internals."""
+    conn = _get_conn()
+    wallet_count = conn.execute("SELECT COUNT(*) as cnt FROM wallets").fetchone()["cnt"]
+    total_sparks = conn.execute("SELECT COALESCE(SUM(balance), 0) as total FROM wallets").fetchone()["total"]
+    paying_users = conn.execute("SELECT COUNT(*) as cnt FROM wallets WHERE lifetime_purchased > 0").fetchone()["cnt"]
+    purchase_count = conn.execute("SELECT COUNT(*) as cnt FROM token_transactions WHERE reason = 'purchase'").fetchone()["cnt"]
+    merge_count = conn.execute("SELECT COUNT(*) as cnt FROM token_transactions WHERE reason = 'merge_in'").fetchone()["cnt"]
+    users_count = conn.execute("SELECT COUNT(*) as cnt FROM users").fetchone()["cnt"]
+    return {
+        "wallet_count": wallet_count,
+        "total_sparks": total_sparks,
+        "paying_users": paying_users,
+        "purchase_count": purchase_count,
+        "merge_count": merge_count,
+        "users_count": users_count,
+    }
+
+
+if config.DB_BACKEND == "supabase":
+    import supabase_db as _supabase_db
+
+    _SUPABASE_EXPORTS = [
+        "init_db",
+        "create_entitlement",
+        "get_active_entitlement",
+        "decrement_entitlement",
+        "revoke_entitlement_by_stripe",
+        "activate_pending_entitlement",
+        "get_entitlement_by_stripe_session",
+        "check_and_increment_free_usage",
+        "get_free_usage_count",
+        "peek_free_usage",
+        "check_idempotency",
+        "record_idempotency",
+        "store_pending_token",
+        "pop_pending_token",
+        "find_or_create_user",
+        "get_user",
+        "merge_device_to_user",
+        "get_active_entitlement_for_user",
+        "get_user_free_usage_count",
+        "check_and_increment_user_free_usage",
+        "peek_user_free_usage",
+        "lookup_by_device",
+        "lookup_entitlement",
+        "admin_revoke",
+        "find_restorable_entitlement",
+        "admin_grant",
+        "lookup_by_user",
+        "lookup_user_by_email",
+        "_utc_date_str",
+        "get_or_create_wallet",
+        "get_wallet_balance",
+        "debit_tokens",
+        "credit_tokens",
+        "check_and_grant_daily_bonus",
+        "check_and_grant_ad_reward",
+        "has_ever_purchased",
+        "credit_purchase",
+        "merge_wallet",
+        "migrate_entitlements_to_wallets",
+        "admin_grant_tokens",
+        "admin_lookup_wallet",
+        "is_webhook_event_processed",
+        "get_refund_debits_for_session",
+        "mark_webhook_event_processed",
+        "get_admin_stats",
+    ]
+    for _name in _SUPABASE_EXPORTS:
+        globals()[_name] = getattr(_supabase_db, _name)

@@ -1317,17 +1317,7 @@ async def admin_stats(req: Request):
     total_mlt = len(mlt_scenarios)
 
     # Database stats
-    conn = db._get_conn()
-    wallet_count = conn.execute("SELECT COUNT(*) as cnt FROM wallets").fetchone()["cnt"]
-    total_sparks = conn.execute("SELECT COALESCE(SUM(balance), 0) as total FROM wallets").fetchone()["total"]
-    paying_users = conn.execute("SELECT COUNT(*) as cnt FROM wallets WHERE lifetime_purchased > 0").fetchone()["cnt"]
-    total_revenue = conn.execute(
-        "SELECT COUNT(*) as cnt FROM token_transactions WHERE reason = 'purchase'"
-    ).fetchone()["cnt"]
-    total_merges = conn.execute(
-        "SELECT COUNT(*) as cnt FROM token_transactions WHERE reason = 'merge_in'"
-    ).fetchone()["cnt"]
-    users_count = conn.execute("SELECT COUNT(*) as cnt FROM users").fetchone()["cnt"]
+    db_stats = db.get_admin_stats()
 
     # Rate limit pressure
     active_ips = len(_rate_limit_store)
@@ -1348,14 +1338,14 @@ async def admin_stats(req: Request):
             "mlt_in_memory": total_mlt,
         },
         "economy": {
-            "total_wallets": wallet_count,
-            "total_sparks_in_circulation": total_sparks,
-            "paying_users": paying_users,
-            "total_purchases": total_revenue,
-            "total_merges": total_merges,
+            "total_wallets": db_stats["wallet_count"],
+            "total_sparks_in_circulation": db_stats["total_sparks"],
+            "paying_users": db_stats["paying_users"],
+            "total_purchases": db_stats["purchase_count"],
+            "total_merges": db_stats["merge_count"],
         },
         "users": {
-            "signed_in_accounts": users_count,
+            "signed_in_accounts": db_stats["users_count"],
         },
         "rate_limiting": {
             "tracked_ips": active_ips,
