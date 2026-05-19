@@ -96,6 +96,11 @@ REMOTE_CONFIG_URL = os.getenv("REMOTE_CONFIG_URL", "")  # e.g. https://games.rev
 # --- Auth (Phase 2) ---
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID", "")  # e.g. "me.revelryapp.quiz"
+APPLE_CLIENT_IDS = [
+    client_id.strip()
+    for client_id in os.getenv("APPLE_CLIENT_IDS", APPLE_CLIENT_ID).split(",")
+    if client_id.strip()
+]
 SESSION_JWT_EXPIRY_DAYS = int(os.getenv("SESSION_JWT_EXPIRY_DAYS", "30"))
 
 # --- Logging ---

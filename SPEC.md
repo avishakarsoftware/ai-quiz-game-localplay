@@ -1031,6 +1031,9 @@ Current deployed infrastructure:
 - Production env should include `TRUST_PROXY_HEADERS=true`, `https://gamesapi.revelryapp.me`, the IONOS PWA origin, and the native/local origins the app can launch from: `capacitor://localhost`, `http://localhost`, `https://localhost`, `http://localhost:9200`, and `http://127.0.0.1:9200`.
 - Gamma env should include `CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/`, `TRUST_PROXY_HEADERS=true`, gamma origin plus local dev origins in `ALLOWED_ORIGINS`, and test Stripe keys before checkout testing.
 - AI model defaults can be overridden by both VM env and remote `config.json`. Keep `GEMINI_MODEL=gemini-2.5-flash-lite`, `GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite`, production `REMOTE_CONFIG_URL=https://games.revelryapp.me/quiz/config.json`, and gamma `REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json`. Free and premium generation intentionally use the same Flash Lite model.
+- Prod and gamma envs must set the browser auth client IDs used for backend token verification: `GOOGLE_CLIENT_ID=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com`, `APPLE_CLIENT_ID=me.revelryapp.quiz.web`, and `APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz`.
+- Google OAuth Web Client authorized JavaScript origins must include every SPA host: `https://games.revelryapp.me`, `https://gamesapi.revelryapp.me`, `https://gamesapi-gamma.revelryapp.me`, `http://localhost:5173`, `http://localhost:9200`, and `http://127.0.0.1:9200`.
+- Apple Sign in with Apple Service ID `me.revelryapp.quiz.web` must allow `games.revelryapp.me`, `gamesapi.revelryapp.me`, and `gamesapi-gamma.revelryapp.me` with matching `https://...` return URLs.
 
 Operational follow-up:
 

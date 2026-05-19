@@ -1041,6 +1041,9 @@ Gamma env requirements:
 - `GEMINI_MODEL=gemini-2.5-flash-lite`
 - `GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite`
 - `REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json`
+- `GOOGLE_CLIENT_ID=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com`
+- `APPLE_CLIENT_ID=me.revelryapp.quiz.web`
+- `APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz`
 - test Stripe keys and webhook secret
 - distinct mounted data directory; current gamma should set `DB_DIR=/app/data` and mount `/home/revelry-games/revelry-data-gamma:/app/data`
 - same Gemini key unless a separate quota is desired
@@ -1053,9 +1056,21 @@ Production env should include both user-facing and backend-preview origins:
 - `GEMINI_MODEL=gemini-2.5-flash-lite`
 - `GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite`
 - `REMOTE_CONFIG_URL=https://games.revelryapp.me/quiz/config.json`
+- `GOOGLE_CLIENT_ID=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com`
+- `APPLE_CLIENT_ID=me.revelryapp.quiz.web`
+- `APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz`
 - keep any existing `revelryapp.me` origins that are still needed for compatibility
 - CORS origins are scheme + host + optional port only; do not include `/quiz/`.
 - Deployed env vars and remote `config.json` override code defaults; free and premium model settings should both stay on `gemini-2.5-flash-lite`.
+
+OAuth provider consoles must also trust every SPA origin:
+
+- Google OAuth Web Client authorized JavaScript origins: `https://games.revelryapp.me`, `https://gamesapi.revelryapp.me`, `https://gamesapi-gamma.revelryapp.me`, `http://localhost:5173`, `http://localhost:9200`, `http://127.0.0.1:9200`
+- Google redirect URI compatibility entries, if used: the same web roots plus the Firebase handler `https://revelryapp.firebaseapp.com/__/auth/handler`
+- Apple Sign in with Apple Service ID `me.revelryapp.quiz.web` domains: `games.revelryapp.me`, `gamesapi.revelryapp.me`, `gamesapi-gamma.revelryapp.me`
+- Apple return URLs: `https://games.revelryapp.me`, `https://gamesapi.revelryapp.me`, `https://gamesapi-gamma.revelryapp.me`
+
+Backend-served builds leave `VITE_APPLE_REDIRECT_URI` blank so the Apple JS SDK uses the current origin. IONOS `/quiz/` builds may keep `VITE_APPLE_REDIRECT_URI=https://games.revelryapp.me`.
 
 ### Workflow
 

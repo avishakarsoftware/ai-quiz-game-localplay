@@ -141,6 +141,9 @@ TRUST_PROXY_HEADERS=true
 GEMINI_MODEL=gemini-2.5-flash-lite
 GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite
 REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json
+GOOGLE_CLIENT_ID=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com
+APPLE_CLIENT_ID=me.revelryapp.quiz.web
+APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz
 ```
 
 **Important:** The bootstrap copies production Stripe keys into gamma. You must manually replace them with test-mode keys (`sk_test_...`, `whsec_...`) in `/home/revelry-games/app/.env.gamma` before testing checkout, or you will charge real money.
@@ -150,9 +153,63 @@ Production `.env` should also include `gamesapi.revelryapp.me` in `ALLOWED_ORIGI
 ```env
 ALLOWED_ORIGINS=https://games.revelryapp.me,https://gamesapi.revelryapp.me,capacitor://localhost,http://localhost,https://localhost,http://localhost:9200,http://127.0.0.1:9200
 TRUST_PROXY_HEADERS=true
+GOOGLE_CLIENT_ID=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com
+APPLE_CLIENT_ID=me.revelryapp.quiz.web
+APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz
 ```
 
 Origins are scheme + host + optional port only; do not include `/quiz/` or other paths. Installed PWAs still use the web origin they were installed from, while Capacitor/native shells and local development need their own localhost-style origins.
+
+### 3a. Configure Google and Apple web sign-in origins
+
+Google and Apple must trust every browser origin that can host the SPA. This includes the IONOS customer URL and the backend-served prod/gamma URLs. Otherwise the browser sign-in popup can fail before the backend receives a token.
+
+Google Cloud Console: <https://console.cloud.google.com/apis/credentials>
+
+Open the Web OAuth client whose client ID matches `VITE_GOOGLE_CLIENT_ID`, then add these **Authorized JavaScript origins**:
+
+```text
+https://games.revelryapp.me
+https://gamesapi.revelryapp.me
+https://gamesapi-gamma.revelryapp.me
+http://localhost:5173
+http://localhost:9200
+http://127.0.0.1:9200
+```
+
+The current Google Identity Services popup flow primarily needs JavaScript origins, not redirect URIs. If redirect URIs are configured on the same client, keep the Firebase handler and add the same web roots for compatibility:
+
+```text
+https://revelryapp.firebaseapp.com/__/auth/handler
+https://games.revelryapp.me
+https://gamesapi.revelryapp.me
+https://gamesapi-gamma.revelryapp.me
+http://localhost:5173
+http://localhost:9200
+http://127.0.0.1:9200
+```
+
+Do not include `/quiz/` in Google OAuth origins or redirect roots.
+
+Apple Developer: <https://developer.apple.com/account/resources/identifiers/list>
+
+Open the web Sign in with Apple Service ID `me.revelryapp.quiz.web`, enable Sign in with Apple, and configure these domains:
+
+```text
+games.revelryapp.me
+gamesapi.revelryapp.me
+gamesapi-gamma.revelryapp.me
+```
+
+Configure these return URLs:
+
+```text
+https://games.revelryapp.me
+https://gamesapi.revelryapp.me
+https://gamesapi-gamma.revelryapp.me
+```
+
+Backend-served builds intentionally set `VITE_APPLE_REDIRECT_URI` to blank, so Apple JS falls back to `window.location.origin`. The IONOS build can keep `VITE_APPLE_REDIRECT_URI=https://games.revelryapp.me`.
 
 ### 4. Install nginx routes
 

@@ -59,8 +59,9 @@ def verify_google_token(id_token: str) -> Optional[dict]:
 
 def verify_apple_token(id_token: str) -> Optional[dict]:
     """Verify an Apple ID token using JWKS. Returns {"sub", "email"} or None."""
-    if not config.APPLE_CLIENT_ID:
-        logger.error("APPLE_CLIENT_ID not configured")
+    apple_client_ids = getattr(config, "APPLE_CLIENT_IDS", None) or ([config.APPLE_CLIENT_ID] if config.APPLE_CLIENT_ID else [])
+    if not apple_client_ids:
+        logger.error("APPLE_CLIENT_ID or APPLE_CLIENT_IDS not configured")
         return None
     try:
         jwks_client = _get_apple_jwks_client()
@@ -69,7 +70,7 @@ def verify_apple_token(id_token: str) -> Optional[dict]:
             id_token,
             signing_key.key,
             algorithms=["RS256"],
-            audience=config.APPLE_CLIENT_ID,
+            audience=apple_client_ids,
             issuer="https://appleid.apple.com",
         )
         sub = claims.get("sub")

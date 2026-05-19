@@ -257,4 +257,7 @@ CREATE UNIQUE INDEX idx_entitlements_google ON entitlements(google_order_id) WHE
 - Stripe test mode fully working
 - Google OAuth client ID configured (Google Cloud Console)
 - Apple Sign-In configured (Apple Developer Portal -> Certificates, Identifiers & Profiles)
+- Google OAuth Web Client authorized JavaScript origins must include each deployed SPA origin: `https://games.revelryapp.me`, `https://gamesapi.revelryapp.me`, `https://gamesapi-gamma.revelryapp.me`, `http://localhost:5173`, `http://localhost:9200`, and `http://127.0.0.1:9200`
+- Backend env must set `GOOGLE_CLIENT_ID` to the same web OAuth client ID used by `VITE_GOOGLE_CLIENT_ID`
+- Apple web sign-in uses Service ID `me.revelryapp.quiz.web`; backend env should set `APPLE_CLIENT_ID=me.revelryapp.quiz.web` and `APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz` so future native tokens can verify against the same backend
 - Admin API key set for support tooling endpoints

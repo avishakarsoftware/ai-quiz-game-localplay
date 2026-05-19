@@ -42,6 +42,9 @@ INCLUDE_FRONTEND=false
 SKIP_BUILD=false
 ENVIRONMENT="prod"
 BOOTSTRAP_VM=false
+GOOGLE_WEB_CLIENT_ID="${GOOGLE_WEB_CLIENT_ID:-458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com}"
+APPLE_WEB_CLIENT_ID="${APPLE_WEB_CLIENT_ID:-me.revelryapp.quiz.web}"
+APPLE_NATIVE_CLIENT_ID="${APPLE_NATIVE_CLIENT_ID:-me.revelryapp.quiz}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -128,6 +131,9 @@ bootstrap_vm_layout() {
             'GEMINI_MODEL=gemini-2.5-flash-lite' \
             'GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite' \
             'REMOTE_CONFIG_URL=https://games.revelryapp.me/quiz/config.json' \
+            'GOOGLE_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID' \
+            'APPLE_CLIENT_ID=$APPLE_WEB_CLIENT_ID' \
+            'APPLE_CLIENT_IDS=$APPLE_WEB_CLIENT_ID,$APPLE_NATIVE_CLIENT_ID' \
         ; do
             KEY=\${KV%%=*}
             sudo sh -c \"grep -q '^'\$KEY'=' $REMOTE_APP_DIR/.env && sed -i 's#^'\$KEY'=.*#\$KV#' $REMOTE_APP_DIR/.env || echo '\$KV' >> $REMOTE_APP_DIR/.env\"
@@ -142,6 +148,9 @@ bootstrap_vm_layout() {
             'GEMINI_MODEL=gemini-2.5-flash-lite' \
             'GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite' \
             'REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json' \
+            'GOOGLE_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID' \
+            'APPLE_CLIENT_ID=$APPLE_WEB_CLIENT_ID' \
+            'APPLE_CLIENT_IDS=$APPLE_WEB_CLIENT_ID,$APPLE_NATIVE_CLIENT_ID' \
         ; do
             KEY=\${KV%%=*}
             sudo sh -c \"grep -q '^'\$KEY'=' $REMOTE_APP_DIR/.env.gamma && sed -i 's#^'\$KEY'=.*#\$KV#' $REMOTE_APP_DIR/.env.gamma || echo '\$KV' >> $REMOTE_APP_DIR/.env.gamma\"
@@ -200,7 +209,13 @@ if [[ "$SKIP_BUILD" != "true" ]]; then
         info "Building frontend for backend-served deployment..."
         (
             cd "$FRONTEND_DIR"
-            VITE_BASE_PATH=/ VITE_API_URL= VITE_CAST_APP_ID="${VITE_CAST_APP_ID:-1BC9ACD8}" npx vite build
+            VITE_BASE_PATH=/ \
+                VITE_API_URL= \
+                VITE_CAST_APP_ID="${VITE_CAST_APP_ID:-1BC9ACD8}" \
+                VITE_GOOGLE_CLIENT_ID="${VITE_GOOGLE_CLIENT_ID:-$GOOGLE_WEB_CLIENT_ID}" \
+                VITE_APPLE_CLIENT_ID="${VITE_APPLE_CLIENT_ID:-$APPLE_WEB_CLIENT_ID}" \
+                VITE_APPLE_REDIRECT_URI= \
+                npx vite build
         )
 
         TEMP_BUILD_CONTEXT="$(mktemp -d)"
