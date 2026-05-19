@@ -1036,6 +1036,7 @@ games-backend-gamma  -> 127.0.0.1:8004 -> gamesapi-gamma.revelryapp.me
 Gamma env requirements:
 
 - `ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me,http://localhost:9200,http://127.0.0.1:9200`
+- `JWT_SECRET=<strong random secret>`
 - `CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/`
 - `TRUST_PROXY_HEADERS=true`
 - `GEMINI_MODEL=gemini-2.5-flash-lite`
@@ -1052,6 +1053,7 @@ Gamma env requirements:
 Production env should include both user-facing and backend-preview origins:
 
 - `ALLOWED_ORIGINS=https://games.revelryapp.me,https://gamesapi.revelryapp.me,capacitor://localhost,http://localhost,https://localhost,http://localhost:9200,http://127.0.0.1:9200`
+- `JWT_SECRET=<strong random secret>`
 - `TRUST_PROXY_HEADERS=true`
 - `GEMINI_MODEL=gemini-2.5-flash-lite`
 - `GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite`
@@ -1071,6 +1073,8 @@ OAuth provider consoles must also trust every SPA origin:
 - Apple return URLs: `https://games.revelryapp.me`, `https://gamesapi.revelryapp.me`, `https://gamesapi-gamma.revelryapp.me`
 
 Backend-served builds leave `VITE_APPLE_REDIRECT_URI` blank so the Apple JS SDK uses the current origin. IONOS `/quiz/` builds may keep `VITE_APPLE_REDIRECT_URI=https://games.revelryapp.me`.
+
+`JWT_SECRET` is required after provider token verification. Without it, Google/Apple can succeed but `/auth/signin` still fails because the backend cannot create the app session token.
 
 ### Workflow
 

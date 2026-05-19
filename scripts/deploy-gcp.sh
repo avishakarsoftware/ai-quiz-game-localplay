@@ -118,6 +118,13 @@ bootstrap_vm_layout() {
             sudo cp $REMOTE_APP_DIR/.env $REMOTE_APP_DIR/.env.gamma
         fi
 
+        for ENV_FILE in $REMOTE_APP_DIR/.env $REMOTE_APP_DIR/.env.gamma; do
+            if ! sudo grep -q '^JWT_SECRET=.' \"\$ENV_FILE\"; then
+                JWT_SECRET_VALUE=\$(openssl rand -hex 32)
+                sudo sh -c \"grep -q '^JWT_SECRET=' '\$ENV_FILE' && sed -i 's#^JWT_SECRET=.*#JWT_SECRET='\$JWT_SECRET_VALUE'#' '\$ENV_FILE' || echo 'JWT_SECRET='\$JWT_SECRET_VALUE >> '\$ENV_FILE'\"
+            fi
+        done
+
         # Production runs behind nginx and can also serve the bundled SPA at gamesapi.revelryapp.me.
         sudo sh -c \"grep -q '^TRUST_PROXY_HEADERS=' $REMOTE_APP_DIR/.env && sed -i 's#^TRUST_PROXY_HEADERS=.*#TRUST_PROXY_HEADERS=true#' $REMOTE_APP_DIR/.env || echo 'TRUST_PROXY_HEADERS=true' >> $REMOTE_APP_DIR/.env\"
         sudo sh -c \"grep -q '^DB_DIR=' $REMOTE_APP_DIR/.env && sed -i 's#^DB_DIR=.*#DB_DIR=/app/data#' $REMOTE_APP_DIR/.env || echo 'DB_DIR=/app/data' >> $REMOTE_APP_DIR/.env\"
