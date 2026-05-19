@@ -45,6 +45,7 @@ BOOTSTRAP_VM=false
 GOOGLE_WEB_CLIENT_ID="${GOOGLE_WEB_CLIENT_ID:-458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com}"
 APPLE_WEB_CLIENT_ID="${APPLE_WEB_CLIENT_ID:-me.revelryapp.quiz.web}"
 APPLE_NATIVE_CLIENT_ID="${APPLE_NATIVE_CLIENT_ID:-me.revelryapp.quiz}"
+SUPABASE_URL_DEFAULT="${SUPABASE_URL_DEFAULT:-https://hosbtyylacluziugwjfd.supabase.co}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -97,6 +98,49 @@ ssh_cmd() {
     gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --command "$1"
 }
 
+validate_remote_db_config() {
+    info "Checking remote database config..."
+    local expected_prefix="games_"
+    if [[ "$ENVIRONMENT" == "gamma" ]]; then
+        expected_prefix="games_gamma_"
+    fi
+    ssh_cmd "
+        set -e
+        env_file='$REMOTE_ENV_FILE'
+        get_env() {
+            grep -E \"^\$1=\" \"\$env_file\" 2>/dev/null | tail -n 1 | cut -d= -f2- || true
+        }
+        db_backend=\$(get_env DB_BACKEND)
+        table_prefix=\$(get_env TABLE_PREFIX)
+        supabase_url=\$(get_env SUPABASE_URL)
+        supabase_service_key=\$(get_env SUPABASE_SERVICE_KEY)
+
+        [ -z \"\$db_backend\" ] && db_backend='sqlite'
+        [ -z \"\$table_prefix\" ] && table_prefix='$expected_prefix'
+
+        if [ \"\$table_prefix\" != '$expected_prefix' ]; then
+            echo 'TABLE_PREFIX mismatch for $ENVIRONMENT: expected $expected_prefix, got '\"\$table_prefix\" >&2
+            exit 1
+        fi
+
+        if [ \"\$db_backend\" = 'supabase' ]; then
+            if [ -z \"\$supabase_url\" ]; then
+                echo 'DB_BACKEND=supabase requires SUPABASE_URL in $REMOTE_ENV_FILE' >&2
+                exit 1
+            fi
+            if [ -z \"\$supabase_service_key\" ]; then
+                echo 'DB_BACKEND=supabase requires SUPABASE_SERVICE_KEY in $REMOTE_ENV_FILE' >&2
+                exit 1
+            fi
+        elif [ \"\$db_backend\" != 'sqlite' ]; then
+            echo 'Unsupported DB_BACKEND in $REMOTE_ENV_FILE: '\"\$db_backend\" >&2
+            exit 1
+        fi
+
+        echo \"DB_BACKEND=\$db_backend TABLE_PREFIX=\$table_prefix\"
+    "
+}
+
 bootstrap_vm_layout() {
     info "Bootstrapping $REMOTE_BASE_DIR on VM..."
     ssh_cmd "
@@ -126,6 +170,9 @@ bootstrap_vm_layout() {
         done
 
         # Production runs behind nginx and can also serve the bundled SPA at gamesapi.revelryapp.me.
+        sudo sh -c \"grep -q '^DB_BACKEND=' $REMOTE_APP_DIR/.env || echo 'DB_BACKEND=sqlite' >> $REMOTE_APP_DIR/.env\"
+        sudo sh -c \"grep -q '^TABLE_PREFIX=' $REMOTE_APP_DIR/.env || echo 'TABLE_PREFIX=games_' >> $REMOTE_APP_DIR/.env\"
+        sudo sh -c \"grep -q '^SUPABASE_URL=' $REMOTE_APP_DIR/.env || echo 'SUPABASE_URL=$SUPABASE_URL_DEFAULT' >> $REMOTE_APP_DIR/.env\"
         sudo sh -c \"grep -q '^TRUST_PROXY_HEADERS=' $REMOTE_APP_DIR/.env && sed -i 's#^TRUST_PROXY_HEADERS=.*#TRUST_PROXY_HEADERS=true#' $REMOTE_APP_DIR/.env || echo 'TRUST_PROXY_HEADERS=true' >> $REMOTE_APP_DIR/.env\"
         sudo sh -c \"grep -q '^DB_DIR=' $REMOTE_APP_DIR/.env && sed -i 's#^DB_DIR=.*#DB_DIR=/app/data#' $REMOTE_APP_DIR/.env || echo 'DB_DIR=/app/data' >> $REMOTE_APP_DIR/.env\"
         PROD_ORIGINS_CSV='https://games.revelryapp.me,https://gamesapi.revelryapp.me,capacitor://localhost,http://localhost,https://localhost,http://localhost:9200,http://127.0.0.1:9200'
@@ -147,6 +194,9 @@ bootstrap_vm_layout() {
         done
 
         # Set gamma-specific env vars (upsert pattern: update if exists, append if not)
+        sudo sh -c \"grep -q '^DB_BACKEND=' $REMOTE_APP_DIR/.env.gamma || echo 'DB_BACKEND=sqlite' >> $REMOTE_APP_DIR/.env.gamma\"
+        sudo sh -c \"grep -q '^TABLE_PREFIX=' $REMOTE_APP_DIR/.env.gamma && sed -i 's#^TABLE_PREFIX=.*#TABLE_PREFIX=games_gamma_#' $REMOTE_APP_DIR/.env.gamma || echo 'TABLE_PREFIX=games_gamma_' >> $REMOTE_APP_DIR/.env.gamma\"
+        sudo sh -c \"grep -q '^SUPABASE_URL=' $REMOTE_APP_DIR/.env.gamma || echo 'SUPABASE_URL=$SUPABASE_URL_DEFAULT' >> $REMOTE_APP_DIR/.env.gamma\"
         for KV in \
             'ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me,http://localhost:9200,http://127.0.0.1:9200' \
             'DB_DIR=/app/data' \
@@ -196,6 +246,7 @@ if ! ssh_cmd "test -f $REMOTE_ENV_FILE" &>/dev/null; then
     error "Run ./scripts/deploy-gcp.sh --bootstrap-vm first, or create the env file manually."
     exit 1
 fi
+validate_remote_db_config
 
 if [[ "$BOOTSTRAP_VM" == "true" && "$SKIP_BUILD" == "true" && "$INCLUDE_FRONTEND" != "true" ]]; then
     info "Bootstrap complete; skipping deploy because --skip-build was provided without --with-frontend."

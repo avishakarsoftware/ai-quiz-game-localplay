@@ -27,6 +27,16 @@ PORT = int(os.getenv("PORT", "9100"))
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "")
 FRONTEND_DIST_DIR = os.getenv("FRONTEND_DIST_DIR", "/app/static")
 
+# --- Database ---
+# Default remains SQLite so Supabase migration scaffolding is inert until an
+# environment explicitly opts in with DB_BACKEND=supabase.
+DB_BACKEND = os.getenv("DB_BACKEND", "sqlite").strip().lower()
+TABLE_PREFIX = os.getenv("TABLE_PREFIX", "games_").strip()
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
+SUPABASE_TIMEOUT_SECONDS = float(os.getenv("SUPABASE_TIMEOUT_SECONDS", "10"))
+
 # --- Rate Limiting ---
 RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX_REQUESTS = 5  # max quiz generations per window per IP

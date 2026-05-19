@@ -119,6 +119,11 @@ Important settings:
   - `OLLAMA_MODEL`, `OLLAMA_URL`, `ANTHROPIC_MODEL`.
 - Server:
   - `HOST`, `PORT`, `ALLOWED_ORIGINS`, `FRONTEND_DIST_DIR`.
+- Persistence:
+  - `DB_BACKEND`, default `sqlite`.
+  - `TABLE_PREFIX`, default `games_`; gamma must use `games_gamma_`.
+  - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_ANON_KEY`, `SUPABASE_TIMEOUT_SECONDS`.
+  - Supabase settings are inert unless `DB_BACKEND=supabase`.
 - Rate limits:
   - `RATE_LIMIT_WINDOW`, `RATE_LIMIT_MAX_REQUESTS`.
   - `DAILY_QUIZ_LIMIT`.
@@ -153,6 +158,25 @@ Important headers:
 - `X-Idempotency-Key`: used on generation requests to avoid duplicate charges/results on retry.
 
 The backend CORS configuration explicitly allows these headers.
+
+## Persistence
+
+The implemented system currently uses SQLite for durable state:
+
+- Users and provider identities.
+- Spark wallets and token transactions.
+- Checkout/webhook idempotency.
+- Legacy entitlements and free-usage tracking.
+- Pending token pickup after checkout return.
+
+Production SQLite lives under `/home/revelry-games/revelry-data`; gamma SQLite lives under `/home/revelry-games/revelry-data-gamma`.
+
+The planned Supabase migration is specified in `SPEC-SUPABASE-MIGRATION.md`. It uses the existing VibePix Supabase project as a shared database, with table/RPC prefixes to avoid collisions:
+
+- Production: `games_`.
+- Gamma: `games_gamma_`.
+
+Until `DB_BACKEND=supabase` is set in a runtime env, Supabase SQL and config defaults do not change live behavior.
 
 ## Content Model
 

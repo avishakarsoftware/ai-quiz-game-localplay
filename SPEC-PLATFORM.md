@@ -82,6 +82,12 @@ The bridge should not leak LocalPlay internals into Revelry.
    - Persistent sessions and history should come before multi-instance realtime scaling.
    - Shared room state should be introduced only when growth requires it.
 
+7. **Database Isolation In Shared Infrastructure**
+   - The Supabase migration should reuse the shared VibePix Supabase project, but LocalPlay objects must be namespaced.
+   - Production database objects use the `games_` prefix.
+   - Gamma database objects use the `games_gamma_` prefix.
+   - SQLite remains the default runtime backend until gamma has proven the Supabase path.
+
 ## Core Concepts
 
 ### Game
