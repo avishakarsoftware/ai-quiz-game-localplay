@@ -124,6 +124,14 @@ bootstrap_vm_layout() {
         for ORIGIN in \$PROD_ORIGIN_LIST; do
             sudo sh -c \"if ! grep '^ALLOWED_ORIGINS=' $REMOTE_APP_DIR/.env | grep -q '\$ORIGIN'; then sed -i '/^ALLOWED_ORIGINS=/s|$|,'\$ORIGIN'|' $REMOTE_APP_DIR/.env; fi\"
         done
+        for KV in \
+            'GEMINI_MODEL=gemini-2.5-flash-lite' \
+            'GEMINI_PREMIUM_MODEL=gemini-2.5-flash' \
+            'REMOTE_CONFIG_URL=https://games.revelryapp.me/quiz/config.json' \
+        ; do
+            KEY=\${KV%%=*}
+            sudo sh -c \"grep -q '^'\$KEY'=' $REMOTE_APP_DIR/.env && sed -i 's#^'\$KEY'=.*#\$KV#' $REMOTE_APP_DIR/.env || echo '\$KV' >> $REMOTE_APP_DIR/.env\"
+        done
 
         # Set gamma-specific env vars (upsert pattern: update if exists, append if not)
         for KV in \
@@ -131,6 +139,9 @@ bootstrap_vm_layout() {
             'DB_DIR=/app/data' \
             'CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/' \
             'TRUST_PROXY_HEADERS=true' \
+            'GEMINI_MODEL=gemini-2.5-flash-lite' \
+            'GEMINI_PREMIUM_MODEL=gemini-2.5-flash' \
+            'REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json' \
         ; do
             KEY=\${KV%%=*}
             sudo sh -c \"grep -q '^'\$KEY'=' $REMOTE_APP_DIR/.env.gamma && sed -i 's#^'\$KEY'=.*#\$KV#' $REMOTE_APP_DIR/.env.gamma || echo '\$KV' >> $REMOTE_APP_DIR/.env.gamma\"

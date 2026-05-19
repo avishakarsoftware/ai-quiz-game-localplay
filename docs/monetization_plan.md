@@ -215,9 +215,10 @@ Current 24h cache TTL is too long for urgent incidents. Add:
 - **Foreground refresh:** On mobile, re-fetch config on every foreground resume (not just on launch). On web, re-fetch on visibility change (`document.visibilityState === 'visible'`). Respects `cache_ttl_seconds` — won't fetch more than once per TTL unless `force_config_refresh` is set.
 
 **15. Model Upgrade for Paid Users**
-- Free: `gemma-3-27b-it` (current default via Gemini API)
+- Free: `gemini-2.5-flash-lite` (current default via Gemini API)
 - Paid: `gemini-2.5-flash` — noticeably better quality, cheap (~$0.15/1M input tokens)
 - Backend checks active entitlement → selects model accordingly
+- Gotcha: deployed env vars and remote `config.json` override backend code defaults. Do not leave `gemma-3-27b-it` in env or `ai_models`; it returns `404 Not Found` from the backend's Gemini `generateContent` endpoint.
 
 **16. WebSocket Disconnect Grace Periods**
 
