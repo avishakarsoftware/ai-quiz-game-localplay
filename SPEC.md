@@ -176,7 +176,7 @@ The planned Supabase migration is specified in `SPEC-SUPABASE-MIGRATION.md`. It 
 - Production: `games_`.
 - Gamma: `games_gamma_`.
 
-Until `DB_BACKEND=supabase` is set in a runtime env, Supabase SQL and config defaults do not change live behavior.
+The Supabase objects have been created in the shared project, but the running system still uses SQLite. Until `DB_BACKEND=supabase` is set in a runtime env, Supabase SQL and config defaults do not change live behavior.
 
 ## Content Model
 

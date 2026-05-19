@@ -691,6 +691,13 @@ Production and gamma currently use SQLite:
 
 Supabase migration planning and SQL scaffolding live in `SPEC-SUPABASE-MIGRATION.md` and `sql/`.
 
+As of 2026-05-19, the LocalPlay Supabase schema has been applied to the shared VibePix/LearningCompanion Supabase project:
+
+- Project ref: `hosbtyylacluziugwjfd`.
+- Production tables/RPCs: `games_*`.
+- Gamma tables/RPCs: `games_gamma_*`.
+- Runtime is unchanged: both deployed environments still use SQLite until their VM env is explicitly switched.
+
 The Supabase project is shared with VibePix, so LocalPlay tables and RPCs must always use explicit prefixes:
 
 | Environment | Prefix |
@@ -705,9 +712,37 @@ Render SQL locally only:
 .venv/bin/python scripts/render-supabase-sql.py --prefix games_gamma_ --output sql/games-gamma-schema.sql
 ```
 
+Apply SQL using the same Management API pattern as VibePix:
+
+```bash
+TOKEN=$(security find-generic-password -s "Supabase CLI" -w | sed 's/^go-keyring-base64://' | base64 -d)
+
+body=$(jq -n --rawfile q sql/games-gamma-schema.sql '{query: $q}')
+curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/database/query" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "$body"
+
+body=$(jq -n --rawfile q sql/games-schema.sql '{query: $q}')
+curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/database/query" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "$body"
+```
+
+Verify applied objects:
+
+```bash
+QUERY="SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'games_%' ORDER BY tablename;"
+body=$(jq -n --arg q "$QUERY" '{query: $q}')
+curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/database/query" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "$body"
+```
+
 Do not switch a runtime to Supabase until all of the following are true:
 
-- The matching SQL file has been applied to Supabase and verified.
 - `/home/revelry-games/app/.env.gamma` or `.env` has `SUPABASE_SERVICE_KEY` set.
 - Gamma has been tested first with `DB_BACKEND=supabase`.
 - A fresh SQLite backup exists for the environment being switched.

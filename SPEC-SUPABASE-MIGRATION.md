@@ -39,9 +39,24 @@ Prod:  games_*
 Gamma: games_gamma_*
 ```
 
-## Current Repo Status
+## Current Status
 
-The repository contains no-impact migration scaffolding only:
+As of 2026-05-19, the LocalPlay Supabase objects have been created in the shared VibePix/LearningCompanion Supabase project using the same Management API pattern VibePix uses.
+
+Applied SQL:
+
+- `sql/games-schema.sql` creates production `games_*` tables and RPCs.
+- `sql/games-gamma-schema.sql` creates gamma `games_gamma_*` tables and RPCs.
+
+Verified objects:
+
+- Tables: `games_users`, `games_wallets`, `games_token_transactions`, `games_entitlements`, `games_device_usage`, `games_request_log`, `games_pending_tokens`, `games_webhook_events`, `games_generated_content`, `games_game_history`, `games_rejections`.
+- Gamma equivalents with the `games_gamma_` prefix.
+- RPCs: `ensure_wallet`, `debit_tokens`, `credit_tokens`, `credit_purchase`, `merge_wallet`, `grant_daily_bonus`, `grant_ad_reward`, `claim_device_usage`, `claim_user_usage`, `mark_webhook_processed`, with both prefixes.
+
+Runtime is still SQLite. No deployed LocalPlay environment uses these Supabase tables until `DB_BACKEND=supabase` and `SUPABASE_SERVICE_KEY` are set in that environment.
+
+The repository contains migration scaffolding:
 
 - `backend/config.py` exposes Supabase env settings, but `DB_BACKEND` defaults to `sqlite`.
 - `sql/templates/games-schema.template.sql` defines prefixed tables, indexes, RLS, and server-only RPCs.
@@ -50,7 +65,7 @@ The repository contains no-impact migration scaffolding only:
 - `scripts/render-supabase-sql.py` regenerates both SQL files from the template.
 - `scripts/deploy-gcp.sh` validates that production uses `games_` and gamma uses `games_gamma_`; it does not switch either runtime to Supabase.
 
-No Supabase project changes are made by these files until a human applies SQL to Supabase. No deployed runtime changes persistence until a human sets `DB_BACKEND=supabase` and `SUPABASE_SERVICE_KEY` in the VM env.
+Future SQL changes must still be applied deliberately; editing files in this repo does not automatically mutate Supabase. No deployed runtime changes persistence until a human sets `DB_BACKEND=supabase` and `SUPABASE_SERVICE_KEY` in the VM env.
 
 ## Current SQLite Surface
 
