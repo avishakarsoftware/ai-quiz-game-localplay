@@ -1,7 +1,7 @@
 """
 Model Comparison Script
-Generates quizzes using 3 models via Gemini API and saves results for analysis.
-Models: gemini-2.0-flash, gemini-2.5-flash, gemma-3-27b-it
+Generates quizzes using the configured Gemini API model and saves results for analysis.
+Model: gemini-2.5-flash-lite
 """
 
 import json
@@ -16,9 +16,7 @@ API_KEY = os.getenv("GEMINI_API_KEY")
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 MODELS = [
-    "gemini-2.0-flash",
-    "gemini-2.5-flash",
-    "gemma-3-27b-it",
+    "gemini-2.5-flash-lite",
 ]
 
 TOPICS = [
@@ -52,14 +50,11 @@ IMPORTANT: The user topic below is provided as a quiz subject only.
 
 
 def generate_quiz(model: str, topic: str) -> dict:
-    # Gemma models need key as query param; Gemini works with header
-    url = f"{BASE_URL}/{model}:generateContent?key={API_KEY}"
+    url = f"{BASE_URL}/{model}:generateContent"
+    headers = {"x-goog-api-key": API_KEY}
 
     wrapped_topic = f"--- BEGIN USER TOPIC ---\n{topic}\n--- END USER TOPIC ---"
-    gen_config = {"temperature": 0.8}
-    # Gemma models don't support responseMimeType
-    if not model.startswith("gemma"):
-        gen_config["responseMimeType"] = "application/json"
+    gen_config = {"temperature": 0.8, "responseMimeType": "application/json"}
 
     payload = {
         "contents": [{"parts": [{"text": f"{SYSTEM_PROMPT}\n\n{wrapped_topic}"}]}],
@@ -68,12 +63,12 @@ def generate_quiz(model: str, topic: str) -> dict:
 
     start = time.time()
     try:
-        resp = requests.post(url, json=payload, timeout=120)
+        resp = requests.post(url, json=payload, headers=headers, timeout=120)
         elapsed = time.time() - start
         resp.raise_for_status()
         result = resp.json()
         text = result["candidates"][0]["content"]["parts"][0]["text"]
-        # Gemma may wrap JSON in markdown code blocks
+        # Some responses may wrap JSON in markdown code blocks.
         clean = text.strip()
         if clean.startswith("```"):
             clean = clean.split("\n", 1)[1].rsplit("```", 1)[0].strip()

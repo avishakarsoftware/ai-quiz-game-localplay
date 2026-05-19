@@ -126,7 +126,7 @@ bootstrap_vm_layout() {
         done
         for KV in \
             'GEMINI_MODEL=gemini-2.5-flash-lite' \
-            'GEMINI_PREMIUM_MODEL=gemini-2.5-flash' \
+            'GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite' \
             'REMOTE_CONFIG_URL=https://games.revelryapp.me/quiz/config.json' \
         ; do
             KEY=\${KV%%=*}
@@ -140,7 +140,7 @@ bootstrap_vm_layout() {
             'CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/' \
             'TRUST_PROXY_HEADERS=true' \
             'GEMINI_MODEL=gemini-2.5-flash-lite' \
-            'GEMINI_PREMIUM_MODEL=gemini-2.5-flash' \
+            'GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite' \
             'REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json' \
         ; do
             KEY=\${KV%%=*}

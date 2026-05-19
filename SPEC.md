@@ -115,7 +115,7 @@ Important settings:
 - LLM providers:
   - `DEFAULT_PROVIDER`, default `gemini`.
   - `GEMINI_MODEL`, default `gemini-2.5-flash-lite`.
-  - `GEMINI_PREMIUM_MODEL`, default `gemini-2.5-flash`.
+  - `GEMINI_PREMIUM_MODEL`, default `gemini-2.5-flash-lite`.
   - `OLLAMA_MODEL`, `OLLAMA_URL`, `ANTHROPIC_MODEL`.
 - Server:
   - `HOST`, `PORT`, `ALLOWED_ORIGINS`, `FRONTEND_DIST_DIR`.
@@ -217,8 +217,8 @@ Provider support:
 Gemini handling includes:
 
 - Header auth for Gemini models.
-- Query-param API key for Gemma models.
-- `responseMimeType: application/json` for non-Gemma models.
+- Query-param API key for models that require it.
+- `responseMimeType: application/json` when supported by the selected model.
 - Structural filtering of Gemini `part.thought` response parts.
 - Regex fallback stripping of `<think>` / `<thinking>` blocks.
 
@@ -1030,7 +1030,7 @@ Current deployed infrastructure:
 - Production data lives in `/home/revelry-games/revelry-data`; gamma data lives in `/home/revelry-games/revelry-data-gamma`.
 - Production env should include `TRUST_PROXY_HEADERS=true`, `https://gamesapi.revelryapp.me`, the IONOS PWA origin, and the native/local origins the app can launch from: `capacitor://localhost`, `http://localhost`, `https://localhost`, `http://localhost:9200`, and `http://127.0.0.1:9200`.
 - Gamma env should include `CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/`, `TRUST_PROXY_HEADERS=true`, gamma origin plus local dev origins in `ALLOWED_ORIGINS`, and test Stripe keys before checkout testing.
-- AI model defaults can be overridden by both VM env and remote `config.json`. Keep `GEMINI_MODEL=gemini-2.5-flash-lite`, `GEMINI_PREMIUM_MODEL=gemini-2.5-flash`, production `REMOTE_CONFIG_URL=https://games.revelryapp.me/quiz/config.json`, and gamma `REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json`. Stale `gemma-3-27b-it` config causes Gemini `404 Not Found` generation failures.
+- AI model defaults can be overridden by both VM env and remote `config.json`. Keep `GEMINI_MODEL=gemini-2.5-flash-lite`, `GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite`, production `REMOTE_CONFIG_URL=https://games.revelryapp.me/quiz/config.json`, and gamma `REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json`. Free and premium generation intentionally use the same Flash Lite model.
 
 Operational follow-up:
 

@@ -155,18 +155,11 @@ async def _generate_gemini(prompt: str, difficulty: str, num_rounds: int, model_
 
     model = model_override or config.GEMINI_MODEL
     system_prompt = _build_system_prompt(difficulty, num_rounds)
-    is_gemma = model.startswith("gemma")
-    if is_gemma:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={config.GEMINI_API_KEY}"
-        headers = {}
-    else:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        headers = {"x-goog-api-key": config.GEMINI_API_KEY}
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    headers = {"x-goog-api-key": config.GEMINI_API_KEY}
 
     wrapped_topic = _wrap_user_topic(prompt)
-    gen_config: dict = {"temperature": 0.9}  # Slightly higher for creative statements
-    if not is_gemma:
-        gen_config["responseMimeType"] = "application/json"
+    gen_config: dict = {"temperature": 0.9, "responseMimeType": "application/json"}
     payload = {
         "contents": [{"parts": [{"text": f"{system_prompt}\n\n{wrapped_topic}"}]}],
         "generationConfig": gen_config,

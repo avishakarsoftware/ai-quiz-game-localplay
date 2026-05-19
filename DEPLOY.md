@@ -139,7 +139,7 @@ DB_DIR=/app/data
 CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/
 TRUST_PROXY_HEADERS=true
 GEMINI_MODEL=gemini-2.5-flash-lite
-GEMINI_PREMIUM_MODEL=gemini-2.5-flash
+GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite
 REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json
 ```
 
@@ -531,7 +531,7 @@ The production `.env` lives at `/home/revelry-games/app/.env` on the VM and shou
 # AI Providers — at least one must be configured
 GEMINI_API_KEY=<your-key>
 GEMINI_MODEL=gemini-2.5-flash-lite
-GEMINI_PREMIUM_MODEL=gemini-2.5-flash
+GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite
 DEFAULT_PROVIDER=gemini
 REMOTE_CONFIG_URL=https://games.revelryapp.me/quiz/config.json
 
@@ -561,11 +561,11 @@ DB_DIR=/app/data
 CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/
 TRUST_PROXY_HEADERS=true
 GEMINI_MODEL=gemini-2.5-flash-lite
-GEMINI_PREMIUM_MODEL=gemini-2.5-flash
+GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite
 REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json
 ```
 
-AI model gotcha: `backend/config.py` defaults to `gemini-2.5-flash-lite`, but deployed env vars and remote `config.json` override code defaults. If generation fails with Gemini `404 Not Found`, check both `GEMINI_MODEL`/`GEMINI_PREMIUM_MODEL` in the VM env and `ai_models` in `frontend/public/config.json`. `gemma-3-27b-it` is not valid for the backend's Gemini `generateContent` endpoint; use `gemini-2.5-flash-lite` for free/default generation and `gemini-2.5-flash` for premium.
+AI model gotcha: `backend/config.py` defaults to `gemini-2.5-flash-lite`, but deployed env vars and remote `config.json` override code defaults. If generation fails with Gemini `404 Not Found`, check `GEMINI_MODEL`, `GEMINI_PREMIUM_MODEL`, `REMOTE_CONFIG_URL`, and `ai_models` in `frontend/public/config.json`. Free and premium generation should both use `gemini-2.5-flash-lite`.
 
 Ollama and Stable Diffusion are NOT available on the production VM (no GPU).
 
@@ -720,4 +720,4 @@ The e2-micro VM + 30GB disk in us-central1 is covered by GCP's Always Free tier,
 | `gamesapi-gamma.revelryapp.me` returns 502 | Check `games-backend-gamma` is running and bound to `127.0.0.1:8004` |
 | Container logs show `exec format error` | Rebuild through `scripts/deploy-gcp.sh`; images must be `linux/amd64` for the VM |
 | SPA route returns API JSON unexpectedly | Confirm the path is not under a protected API prefix |
-| Generation fails with Gemini `404 Not Found` | Check VM `GEMINI_MODEL`, `GEMINI_PREMIUM_MODEL`, `REMOTE_CONFIG_URL`, and `frontend/public/config.json`; stale `gemma-3-27b-it` config overrides code defaults |
+| Generation fails with Gemini `404 Not Found` | Check VM `GEMINI_MODEL`, `GEMINI_PREMIUM_MODEL`, `REMOTE_CONFIG_URL`, and `frontend/public/config.json`; all model settings should be `gemini-2.5-flash-lite` |

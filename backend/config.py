@@ -86,7 +86,7 @@ FREE_TIER_LIMIT = int(os.getenv("FREE_TIER_LIMIT", "3"))
 
 # --- Premium / Payments ---
 JWT_SECRET = os.getenv("JWT_SECRET", "")
-GEMINI_PREMIUM_MODEL = os.getenv("GEMINI_PREMIUM_MODEL", "gemini-2.5-flash")
+GEMINI_PREMIUM_MODEL = os.getenv("GEMINI_PREMIUM_MODEL", "gemini-2.5-flash-lite")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")

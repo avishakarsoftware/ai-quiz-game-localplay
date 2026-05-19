@@ -164,12 +164,12 @@ When a generate request comes in (uses entitlement state machine from Phase 1):
 ```
 1. Has session JWT (signed in)?
    -> Check entitlements WHERE user_id = ? AND status = 'active'
-   -> If found: atomic decrement (with status transition), use premium model
+   -> If found: atomic decrement (with status transition), use configured generation model
    -> If not: atomic free-usage increment by user_id (SUM across devices)
 
 2. No session JWT (guest)?
    -> Check entitlements WHERE device_id = ? AND user_id IS NULL AND status = 'active'
-   -> If found: atomic decrement, use premium model
+   -> If found: atomic decrement, use configured generation model
    -> If not: atomic free-usage increment by device_id only
 ```
 

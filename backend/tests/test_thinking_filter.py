@@ -1,4 +1,4 @@
-"""Tests for Gemma 4 thinking-leak defense in quiz/mlt engines."""
+"""Tests for thinking-leak defense in quiz/mlt engines."""
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))

@@ -867,7 +867,7 @@ def check_and_grant_ad_reward(wallet_id: str) -> tuple[bool, int, int]:
 
 
 def has_ever_purchased(wallet_id: str) -> bool:
-    """Check if this wallet has ever purchased tokens (for premium model access)."""
+    """Check if this wallet has ever purchased tokens."""
     conn = _get_conn()
     row = conn.execute("SELECT lifetime_purchased FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
     return row is not None and row["lifetime_purchased"] > 0

@@ -1,7 +1,7 @@
 """
 Tests for backend fixes from code reviews:
 Round 1: Session tokens, fifty-fifty reconnect, spectator heartbeat
-Round 2: Gemma JSON parsing, daily limit race, IP behind proxy, import validation, eviction safety
+Round 2: model JSON parsing, daily limit race, IP behind proxy, import validation, eviction safety
 """
 import sys
 import os
@@ -548,8 +548,8 @@ class TestSpectatorHeartbeat:
 # ===========================================================================
 
 
-class TestGemmaJsonExtraction:
-    """Fix 1: Robust JSON extraction from Gemma output."""
+class TestJsonExtraction:
+    """Fix 1: Robust JSON extraction from model output."""
 
     def test_extract_json_from_markdown_block(self):
         """JSON wrapped in ```json ... ``` code block."""

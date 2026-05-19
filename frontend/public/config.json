@@ -31,7 +31,7 @@
   },
   "ai_models": {
     "free_model": "gemini-2.5-flash-lite",
-    "paid_model": "gemini-2.5-flash",
+    "paid_model": "gemini-2.5-flash-lite",
     "provider": "gemini"
   },
   "announcements": []

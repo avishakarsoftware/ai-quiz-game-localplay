@@ -1039,7 +1039,7 @@ Gamma env requirements:
 - `CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/`
 - `TRUST_PROXY_HEADERS=true`
 - `GEMINI_MODEL=gemini-2.5-flash-lite`
-- `GEMINI_PREMIUM_MODEL=gemini-2.5-flash`
+- `GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite`
 - `REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json`
 - test Stripe keys and webhook secret
 - distinct mounted data directory; current gamma should set `DB_DIR=/app/data` and mount `/home/revelry-games/revelry-data-gamma:/app/data`
@@ -1051,11 +1051,11 @@ Production env should include both user-facing and backend-preview origins:
 - `ALLOWED_ORIGINS=https://games.revelryapp.me,https://gamesapi.revelryapp.me,capacitor://localhost,http://localhost,https://localhost,http://localhost:9200,http://127.0.0.1:9200`
 - `TRUST_PROXY_HEADERS=true`
 - `GEMINI_MODEL=gemini-2.5-flash-lite`
-- `GEMINI_PREMIUM_MODEL=gemini-2.5-flash`
+- `GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite`
 - `REMOTE_CONFIG_URL=https://games.revelryapp.me/quiz/config.json`
 - keep any existing `revelryapp.me` origins that are still needed for compatibility
 - CORS origins are scheme + host + optional port only; do not include `/quiz/`.
-- Deployed env vars and remote `config.json` override code defaults; stale `gemma-3-27b-it` config causes Gemini `404 Not Found` generation failures.
+- Deployed env vars and remote `config.json` override code defaults; free and premium model settings should both stay on `gemini-2.5-flash-lite`.
 
 ### Workflow
 

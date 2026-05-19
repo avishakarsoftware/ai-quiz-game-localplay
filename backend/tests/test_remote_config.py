@@ -89,10 +89,10 @@ class TestRemoteConfigModelResolution:
     def test_returns_configured_models(self):
         import remote_config
         remote_config._cached_config = {
-            "ai_models": {"free_model": "gemini-2.5-flash-lite", "paid_model": "gemini-2.5-flash"}
+            "ai_models": {"free_model": "gemini-2.5-flash-lite", "paid_model": "gemini-2.5-flash-lite"}
         }
         assert remote_config.get_free_model() == "gemini-2.5-flash-lite"
-        assert remote_config.get_paid_model() == "gemini-2.5-flash"
+        assert remote_config.get_paid_model() == "gemini-2.5-flash-lite"
 
     def test_falls_back_to_gemini_model(self):
         import remote_config
