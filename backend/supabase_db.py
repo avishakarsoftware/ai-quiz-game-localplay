@@ -73,23 +73,6 @@ class SupabaseClient:
             params["limit"] = str(limit)
         return self._request("GET", f"/rest/v1/{self.table_name(table)}", params=params) or []
 
-    def count(self, table: str, *, filters: Optional[dict] = None) -> int:
-        params = {"select": "id"}
-        if filters:
-            params.update(filters)
-        url = f"{self.base_url}/rest/v1/{self.table_name(table)}"
-        headers = self._headers("count=exact")
-        headers["Range"] = "0-0"
-        with httpx.Client(timeout=self.timeout) as client:
-            response = client.get(url, params=params, headers=headers)
-        if response.status_code >= 400:
-            raise SupabaseDBError(f"GET count {self.table_name(table)} failed: {response.status_code} {response.text}")
-        content_range = response.headers.get("content-range", "")
-        if "/" not in content_range:
-            return 0
-        total = content_range.rsplit("/", 1)[1]
-        return 0 if total == "*" else int(total)
-
     def insert(self, table: str, row: dict, *, ignore_duplicates: bool = False) -> list[dict]:
         prefer = "return=representation"
         if ignore_duplicates:
@@ -566,20 +549,12 @@ def mark_webhook_event_processed(event_id: str):
 
 
 def get_admin_stats() -> dict:
-    sb = _sb()
-
-    # Exact counts avoid PostgREST's default row limit. Aggregate values still
-    # fetch wallet rows for now; move this whole block to an RPC before prod
-    # volume is high enough for that to matter.
-    wallet_agg = sb.select("wallets", select="balance,lifetime_purchased")
-    total_sparks = sum(int(row["balance"]) for row in wallet_agg)
-    paying_users = sum(1 for row in wallet_agg if int(row["lifetime_purchased"]) > 0)
-
+    result = _sb().rpc("admin_stats", {})
     return {
-        "wallet_count": sb.count("wallets"),
-        "total_sparks": total_sparks,
-        "paying_users": paying_users,
-        "purchase_count": sb.count("token_transactions", filters={"reason": "eq.purchase"}),
-        "merge_count": sb.count("token_transactions", filters={"reason": "eq.merge_in"}),
-        "users_count": sb.count("users"),
+        "wallet_count": int(result["wallet_count"]),
+        "total_sparks": int(result["total_sparks"]),
+        "paying_users": int(result["paying_users"]),
+        "purchase_count": int(result["purchase_count"]),
+        "merge_count": int(result["merge_count"]),
+        "users_count": int(result["users_count"]),
     }

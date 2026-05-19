@@ -361,9 +361,17 @@ ssh_cmd "docker run -d \
 
 # --- Step 7: Verify ---
 info "Waiting for container to start..."
-sleep 3
-
-HEALTH=$(ssh_cmd "curl -s -o /dev/null -w '%{http_code}' http://localhost:$HOST_PORT/health 2>/dev/null || echo 'fail'")
+HEALTH=$(ssh_cmd "
+    for i in \$(seq 1 20); do
+        CODE=\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:$HOST_PORT/health 2>/dev/null || echo 'fail')
+        if [ \"\$CODE\" = '200' ]; then
+            echo 200
+            exit 0
+        fi
+        sleep 1
+    done
+    echo \"\$CODE\"
+")
 if [[ "$HEALTH" == "200" ]]; then
     info "Health check passed!"
 else
@@ -374,8 +382,14 @@ fi
 
 # Verify DB is accessible
 DB_CHECK=$(ssh_cmd "
-    WALLETS=\$(sqlite3 $REMOTE_DATA_DIR/revelry.db 'SELECT COUNT(*) FROM wallets' 2>/dev/null || echo '?')
-    echo \"\${WALLETS} wallets in database\"
+    DB_BACKEND=\$(grep -E '^DB_BACKEND=' $REMOTE_ENV_FILE 2>/dev/null | tail -n 1 | cut -d= -f2- || true)
+    TABLE_PREFIX=\$(grep -E '^TABLE_PREFIX=' $REMOTE_ENV_FILE 2>/dev/null | tail -n 1 | cut -d= -f2- || true)
+    if [ \"\$DB_BACKEND\" = 'supabase' ]; then
+        echo \"Supabase backend active (TABLE_PREFIX=\$TABLE_PREFIX)\"
+    else
+        WALLETS=\$(sqlite3 $REMOTE_DATA_DIR/revelry.db 'SELECT COUNT(*) FROM wallets' 2>/dev/null || echo '?')
+        echo \"\${WALLETS} wallets in SQLite database\"
+    fi
 ")
 info "Post-deploy: $DB_CHECK"
 

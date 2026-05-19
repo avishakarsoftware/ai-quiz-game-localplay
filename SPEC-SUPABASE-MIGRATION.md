@@ -52,7 +52,7 @@ Verified objects:
 
 - Tables: `games_users`, `games_wallets`, `games_token_transactions`, `games_entitlements`, `games_device_usage`, `games_request_log`, `games_pending_tokens`, `games_webhook_events`, `games_generated_content`, `games_game_history`, `games_rejections`.
 - Gamma equivalents with the `games_gamma_` prefix.
-- RPCs: `ensure_wallet`, `debit_tokens`, `credit_tokens`, `credit_purchase`, `merge_wallet`, `grant_daily_bonus`, `grant_ad_reward`, `claim_device_usage`, `claim_user_usage`, `mark_webhook_processed`, with both prefixes.
+- RPCs: `ensure_wallet`, `debit_tokens`, `credit_tokens`, `credit_purchase`, `merge_wallet`, `grant_daily_bonus`, `grant_ad_reward`, `claim_device_usage`, `claim_user_usage`, `mark_webhook_processed`, `admin_stats`, with both prefixes.
 
 Gamma now runs with `DB_BACKEND=supabase` and `TABLE_PREFIX=games_gamma_`. Production still runs with `DB_BACKEND=sqlite`.
 
@@ -708,6 +708,8 @@ The helper should return:
 ```
 
 This removes the last known raw SQL call outside `db.py`.
+
+In Supabase mode, `get_admin_stats()` must call the prefixed `admin_stats` RPC so aggregate counts and sums happen in Postgres without PostgREST row-limit truncation.
 
 ### Content Persistence Phase 2
 

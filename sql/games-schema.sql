@@ -776,6 +776,22 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION games_admin_stats()
+RETURNS JSONB
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT jsonb_build_object(
+    'wallet_count', (SELECT COUNT(*) FROM games_wallets),
+    'total_sparks', (SELECT COALESCE(SUM(balance), 0) FROM games_wallets),
+    'paying_users', (SELECT COUNT(*) FROM games_wallets WHERE lifetime_purchased > 0),
+    'purchase_count', (SELECT COUNT(*) FROM games_token_transactions WHERE reason = 'purchase'),
+    'merge_count', (SELECT COUNT(*) FROM games_token_transactions WHERE reason = 'merge_in'),
+    'users_count', (SELECT COUNT(*) FROM games_users)
+  );
+$$;
+
 -- RPCs are server-only. Supabase service-role bypasses client RLS; anon and
 -- authenticated clients must not call these mutation functions directly.
 REVOKE EXECUTE ON FUNCTION games_ensure_wallet(TEXT, BOOLEAN, INTEGER) FROM PUBLIC, anon, authenticated;
@@ -788,6 +804,7 @@ REVOKE EXECUTE ON FUNCTION games_grant_ad_reward(TEXT, TEXT, INTEGER, INTEGER, I
 REVOKE EXECUTE ON FUNCTION games_claim_device_usage(TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION games_claim_user_usage(TEXT, TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION games_mark_webhook_processed(TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION games_admin_stats() FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION games_ensure_wallet(TEXT, BOOLEAN, INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION games_debit_tokens(TEXT, INTEGER, TEXT, TEXT) TO service_role;
@@ -799,3 +816,4 @@ GRANT EXECUTE ON FUNCTION games_grant_ad_reward(TEXT, TEXT, INTEGER, INTEGER, IN
 GRANT EXECUTE ON FUNCTION games_claim_device_usage(TEXT, INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION games_claim_user_usage(TEXT, TEXT, INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION games_mark_webhook_processed(TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION games_admin_stats() TO service_role;
