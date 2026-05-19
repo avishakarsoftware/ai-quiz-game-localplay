@@ -995,6 +995,7 @@ Gamma uses:
 - Separate Docker container on `127.0.0.1:8004`
 - Separate `.env` with test Stripe keys, gamma DB path
 - Same Gemini API key (free tier is fine for testing)
+- Canonical VM home under `/home/revelry-games`
 
 ### Nginx Requirements
 
@@ -1028,13 +1029,15 @@ Gamma should run as a separate container, not as a mode inside the production co
 Suggested VM container layout:
 
 ```text
-games-backend-prod   -> 127.0.0.1:8000 -> gamesapi.revelryapp.me
+games-backend        -> 127.0.0.1:8000 -> gamesapi.revelryapp.me
 games-backend-gamma  -> 127.0.0.1:8004 -> gamesapi-gamma.revelryapp.me
 ```
 
 Gamma env requirements:
 
-- `ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me`
+- `ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me,http://localhost:9200,http://127.0.0.1:9200`
+- `CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/`
+- `TRUST_PROXY_HEADERS=true`
 - test Stripe keys and webhook secret
 - distinct mounted data directory; current gamma should set `DB_DIR=/app/data` and mount `/home/revelry-games/revelry-data-gamma:/app/data`
 - same Gemini key unless a separate quota is desired
@@ -1042,8 +1045,10 @@ Gamma env requirements:
 
 Production env should include both user-facing and backend-preview origins:
 
-- `ALLOWED_ORIGINS=https://games.revelryapp.me,https://gamesapi.revelryapp.me`
+- `ALLOWED_ORIGINS=https://games.revelryapp.me,https://gamesapi.revelryapp.me,capacitor://localhost,http://localhost,https://localhost,http://localhost:9200,http://127.0.0.1:9200`
+- `TRUST_PROXY_HEADERS=true`
 - keep any existing `revelryapp.me` origins that are still needed for compatibility
+- CORS origins are scheme + host + optional port only; do not include `/quiz/`.
 
 ### Workflow
 
@@ -1078,16 +1083,17 @@ Done in repo:
 - `backend/main.py` conditionally serves the SPA and keeps API routes protected.
 - `backend/Dockerfile` includes `/app/static`.
 - `scripts/deploy-gcp.sh` supports `--with-frontend` and `--gamma --with-frontend`.
+- `scripts/deploy-gcp.sh` supports `--bootstrap-vm` for `/home/revelry-games` and builds VM images for `linux/amd64`.
 - `DEPLOY.md` documents the operational flow.
 - Backend tests cover the SPA serving edge cases.
 
-Remaining outside the repo:
+Deployed outside the repo:
 
-1. Add/verify DNS and SSL for `gamesapi-gamma.revelryapp.me`.
-2. Add nginx gamma server block and route it to `127.0.0.1:8004`.
-3. Bootstrap `/home/revelry-games` with `./scripts/deploy-gcp.sh --bootstrap-vm --skip-build`, or manually create `/home/revelry-games/app/.env.gamma` and `/home/revelry-games/revelry-data-gamma` on the VM.
-4. Run `./scripts/deploy-gcp.sh --gamma --with-frontend`.
-5. Verify gamma end-to-end.
+1. DNS and SSL exist for `gamesapi.revelryapp.me` and `gamesapi-gamma.revelryapp.me`.
+2. Nginx routes production to `127.0.0.1:8000` and gamma to `127.0.0.1:8004`.
+3. `/home/revelry-games` is the canonical LocalPlay VM home.
+4. `games-backend` and `games-backend-gamma` are deployed with bundled SPA assets.
+5. Production and gamma `/health`, root SPA HTML, client-route fallback, assets, and `/providers` API JSON have been smoke-tested.
 
 ## Infrastructure Roadmap
 

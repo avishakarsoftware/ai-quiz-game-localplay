@@ -145,9 +145,11 @@ TRUST_PROXY_HEADERS=true
 Production `.env` should also include `gamesapi.revelryapp.me` in `ALLOWED_ORIGINS` for backend-served SPA access:
 
 ```env
-ALLOWED_ORIGINS=https://games.revelryapp.me,https://gamesapi.revelryapp.me
+ALLOWED_ORIGINS=https://games.revelryapp.me,https://gamesapi.revelryapp.me,capacitor://localhost,http://localhost,https://localhost,http://localhost:9200,http://127.0.0.1:9200
 TRUST_PROXY_HEADERS=true
 ```
+
+Origins are scheme + host + optional port only; do not include `/quiz/` or other paths. Installed PWAs still use the web origin they were installed from, while Capacitor/native shells and local development need their own localhost-style origins.
 
 ### 4. Install nginx routes
 
@@ -531,19 +533,28 @@ DEFAULT_PROVIDER=gemini
 # Server
 HOST=0.0.0.0
 PORT=8000
-ALLOWED_ORIGINS=https://revelryapp.me,https://www.revelryapp.me,https://games.revelryapp.me
+ALLOWED_ORIGINS=https://revelryapp.me,https://www.revelryapp.me,https://games.revelryapp.me,https://gamesapi.revelryapp.me,capacitor://localhost,http://localhost,https://localhost,http://localhost:9200,http://127.0.0.1:9200
 DB_DIR=/app/data
+TRUST_PROXY_HEADERS=true
 
 # Game
 ROOM_TTL_SECONDS=1800
 LOG_LEVEL=INFO
 ```
 
+Include `https://gamesapi.revelryapp.me` in production `ALLOWED_ORIGINS` when using the backend-served SPA fallback, and keep PWA/native/local development origins that the app can actually launch from:
+
+```env
+ALLOWED_ORIGINS=https://revelryapp.me,https://www.revelryapp.me,https://games.revelryapp.me,https://gamesapi.revelryapp.me,capacitor://localhost,http://localhost,https://localhost,http://localhost:9200,http://127.0.0.1:9200
+```
+
 Gamma env lives at `/home/revelry-games/app/.env.gamma`. Keep it separate from production because it has its own database volume and should use safe/test third-party credentials:
 
 ```env
-ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me
+ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me,http://localhost:9200,http://127.0.0.1:9200
 DB_DIR=/app/data
+CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/
+TRUST_PROXY_HEADERS=true
 ```
 
 Ollama and Stable Diffusion are NOT available on the production VM (no GPU).

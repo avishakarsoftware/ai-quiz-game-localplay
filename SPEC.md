@@ -61,14 +61,14 @@ Current production shape:
 
 ```text
 Users -> games.revelryapp.me (IONOS CDN/static hosting) -> React/Vite frontend
-      -> gamesapi.revelryapp.me (GCP VM)                 -> FastAPI backend + WebSockets
+      -> gamesapi.revelryapp.me (GCP VM)                 -> FastAPI backend + WebSockets + optional frontend
       -> gamesapi-gamma.revelryapp.me (GCP VM)           -> FastAPI backend + WebSockets + frontend
 ```
 
 Production URLs:
 
 - Frontend: `https://games.revelryapp.me/quiz/`
-- Backend API: `https://gamesapi.revelryapp.me`
+- Backend API + SPA fallback: `https://gamesapi.revelryapp.me`
 - Gamma full stack: `https://gamesapi-gamma.revelryapp.me`
 - Player join: `https://games.revelryapp.me/quiz/join`
 - Spectator/TV: `https://games.revelryapp.me/quiz/spectator`
@@ -80,6 +80,10 @@ Backend hosting:
 - Dockerized FastAPI backend.
 - Nginx terminates HTTPS and proxies API and WebSocket requests to the backend.
 - Let's Encrypt certificates are managed with Certbot.
+- Production container: `games-backend` on `127.0.0.1:8000`, with data under `/home/revelry-games/revelry-data`.
+- Gamma container: `games-backend-gamma` on `127.0.0.1:8004`, with data under `/home/revelry-games/revelry-data-gamma`.
+- Canonical LocalPlay VM home: `/home/revelry-games`.
+- Older backup containers named `revelry-platform` and `revelry-gamma` may exist on the VM; the LocalPlay deploy script does not manage them.
 
 Frontend hosting:
 
@@ -94,6 +98,7 @@ Backend-served frontend:
 - Missing `/assets/*` files return JSON 404 instead of `index.html`.
 - This mode is for gamma, backend preview, and future container-hosted staging. IONOS remains the public production frontend.
 - The deploy script packages this mode with `./scripts/deploy-gcp.sh --with-frontend` or `./scripts/deploy-gcp.sh --gamma --with-frontend`.
+- Docker images are built for `linux/amd64` because the GCP VM is AMD64, including when deploying from Apple Silicon.
 
 Production notes:
 
@@ -1005,22 +1010,32 @@ Recommended migration order:
 
 ### Backend-Served SPA Status
 
-Repo implementation is complete:
+Repo implementation and VM rollout are complete:
 
 - `frontend/src/config.ts` supports empty `VITE_API_URL` for same-origin API and WebSocket traffic.
 - `backend/main.py` conditionally serves the SPA when a frontend build is present and remains API-only when it is absent.
 - `backend/Dockerfile` includes a `static/` directory in the image.
 - `scripts/deploy-gcp.sh --with-frontend` builds and packages `frontend/dist` into the backend image.
 - `scripts/deploy-gcp.sh --gamma --with-frontend` targets a separate gamma container, VM port, env file, and data directory.
+- `scripts/deploy-gcp.sh --bootstrap-vm --skip-build` creates `/home/revelry-games`, env files, and prod/gamma data and backup directories.
+- The deploy script builds images with `--platform linux/amd64` for the AMD64 GCP VM.
 - Backend tests cover root behavior, SPA fallback, API 404 protection, missing static assets, and path traversal.
 
-Remaining infrastructure work:
+Current deployed infrastructure:
 
-- Create or verify DNS and certificate for `gamesapi-gamma.revelryapp.me`.
-- Add/verify the nginx server block that proxies `gamesapi-gamma.revelryapp.me` to `127.0.0.1:8004` with WebSocket upgrade headers.
-- Bootstrap `/home/revelry-games` with `./scripts/deploy-gcp.sh --bootstrap-vm --skip-build`, or manually create `/home/revelry-games/app/.env.gamma` and `/home/revelry-games/revelry-data-gamma` on the VM. Gamma should set `DB_DIR=/app/data`.
-- Run `./scripts/deploy-gcp.sh --gamma --with-frontend`.
-- Smoke test `/health`, `/`, `/join`, `/spectator`, a built `/assets/*` file, and WebSocket room join on gamma.
+- `gamesapi.revelryapp.me` proxies to `games-backend` on `127.0.0.1:8000`.
+- `gamesapi-gamma.revelryapp.me` proxies to `games-backend-gamma` on `127.0.0.1:8004`.
+- Both containers are deployed with the backend-served SPA bundle.
+- `/home/revelry-games/app/.env` is production env; `/home/revelry-games/app/.env.gamma` is gamma env.
+- Production data lives in `/home/revelry-games/revelry-data`; gamma data lives in `/home/revelry-games/revelry-data-gamma`.
+- Production env should include `TRUST_PROXY_HEADERS=true`, `https://gamesapi.revelryapp.me`, the IONOS PWA origin, and the native/local origins the app can launch from: `capacitor://localhost`, `http://localhost`, `https://localhost`, `http://localhost:9200`, and `http://127.0.0.1:9200`.
+- Gamma env should include `CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/`, `TRUST_PROXY_HEADERS=true`, gamma origin plus local dev origins in `ALLOWED_ORIGINS`, and test Stripe keys before checkout testing.
+
+Operational follow-up:
+
+- Keep IONOS as the public production frontend unless a later product/deployment decision changes the URL strategy.
+- For every backend deploy, use `./scripts/deploy-gcp.sh --with-frontend` for production and `./scripts/deploy-gcp.sh --gamma --with-frontend` for gamma unless intentionally testing API-only mode.
+- After deploys, smoke test `/health`, `/`, `/join`, `/spectator`, a built `/assets/*` file, API JSON routes such as `/providers`, and WebSocket room join.
 
 ### Product Boundary
 

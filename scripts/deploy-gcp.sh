@@ -115,9 +115,19 @@ bootstrap_vm_layout() {
             sudo cp $REMOTE_APP_DIR/.env $REMOTE_APP_DIR/.env.gamma
         fi
 
+        # Production runs behind nginx and can also serve the bundled SPA at gamesapi.revelryapp.me.
+        sudo sh -c \"grep -q '^TRUST_PROXY_HEADERS=' $REMOTE_APP_DIR/.env && sed -i 's#^TRUST_PROXY_HEADERS=.*#TRUST_PROXY_HEADERS=true#' $REMOTE_APP_DIR/.env || echo 'TRUST_PROXY_HEADERS=true' >> $REMOTE_APP_DIR/.env\"
+        sudo sh -c \"grep -q '^DB_DIR=' $REMOTE_APP_DIR/.env && sed -i 's#^DB_DIR=.*#DB_DIR=/app/data#' $REMOTE_APP_DIR/.env || echo 'DB_DIR=/app/data' >> $REMOTE_APP_DIR/.env\"
+        PROD_ORIGINS_CSV='https://games.revelryapp.me,https://gamesapi.revelryapp.me,capacitor://localhost,http://localhost,https://localhost,http://localhost:9200,http://127.0.0.1:9200'
+        PROD_ORIGIN_LIST='https://games.revelryapp.me https://gamesapi.revelryapp.me capacitor://localhost http://localhost https://localhost http://localhost:9200 http://127.0.0.1:9200'
+        sudo sh -c \"if ! grep -q '^ALLOWED_ORIGINS=' $REMOTE_APP_DIR/.env; then echo 'ALLOWED_ORIGINS='\$PROD_ORIGINS_CSV >> $REMOTE_APP_DIR/.env; elif grep -q '^ALLOWED_ORIGINS=$' $REMOTE_APP_DIR/.env; then sed -i 's#^ALLOWED_ORIGINS=$#ALLOWED_ORIGINS='\$PROD_ORIGINS_CSV'#' $REMOTE_APP_DIR/.env; fi\"
+        for ORIGIN in \$PROD_ORIGIN_LIST; do
+            sudo sh -c \"if ! grep '^ALLOWED_ORIGINS=' $REMOTE_APP_DIR/.env | grep -q '\$ORIGIN'; then sed -i '/^ALLOWED_ORIGINS=/s|$|,'\$ORIGIN'|' $REMOTE_APP_DIR/.env; fi\"
+        done
+
         # Set gamma-specific env vars (upsert pattern: update if exists, append if not)
         for KV in \
-            'ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me' \
+            'ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me,http://localhost:9200,http://127.0.0.1:9200' \
             'DB_DIR=/app/data' \
             'CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/' \
             'TRUST_PROXY_HEADERS=true' \
