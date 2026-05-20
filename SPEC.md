@@ -26,7 +26,8 @@ Key files:
 - `backend/main.py`: REST API routes, room creation, content storage, imports/exports, auth/payment/history routes.
 - `backend/socket_manager.py`: WebSocket room lifecycle, player join/reconnect, organizer control messages, game state transitions, scoring.
 - `backend/config.py`: centralized environment variables and constants.
-- `backend/db.py`: SQLite persistence for wallets, users, checkout/webhook/idempotency data.
+- `backend/db.py`: persistence facade for wallets, users, checkout/webhook/idempotency data.
+- `backend/supabase_db.py`: Supabase/PostgREST implementation used by deployed prod/gamma.
 - `backend/tokens.py`: spark wallet and token economy.
 - `backend/quiz_engine.py`: LLM generation and validation for quiz content.
 - `backend/mlt_engine.py`: LLM generation and validation for WMLT content.
@@ -80,8 +81,8 @@ Backend hosting:
 - Dockerized FastAPI backend.
 - Nginx terminates HTTPS and proxies API and WebSocket requests to the backend.
 - Let's Encrypt certificates are managed with Certbot.
-- Production container: `games-backend` on `127.0.0.1:8000`, with data under `/home/revelry-games/revelry-data`.
-- Gamma container: `games-backend-gamma` on `127.0.0.1:8004`, with data under `/home/revelry-games/revelry-data-gamma`.
+- Production container: `games-backend` on `127.0.0.1:8000`, using Supabase `games_*` tables for durable state.
+- Gamma container: `games-backend-gamma` on `127.0.0.1:8004`, using Supabase `games_gamma_*` tables for durable state.
 - Canonical LocalPlay VM home: `/home/revelry-games`.
 - Older backup containers named `revelry-platform` and `revelry-gamma` may exist on the VM; the LocalPlay deploy script does not manage them.
 
@@ -155,7 +156,7 @@ Important headers:
 - `X-Platform`: `web`, `ios`, or `android` when available.
 - `X-App-Version`: app version when available.
 - `X-Build`: build number when available.
-- `X-Idempotency-Key`: used on generation requests to avoid duplicate charges/results on retry.
+- `X-Idempotency-Key` or `Idempotency-Key`: used on generation requests to avoid duplicate charges/results on retry.
 
 The backend CORS configuration explicitly allows these headers.
 
@@ -169,14 +170,17 @@ The implemented system supports SQLite and Supabase for durable state:
 - Legacy entitlements and free-usage tracking.
 - Pending token pickup after checkout return.
 
-Production currently uses SQLite under `/home/revelry-games/revelry-data`. Gamma currently uses Supabase with the `games_gamma_` prefix.
+Local development defaults to SQLite. Deployed production and gamma use Supabase:
+
+- Production: `DB_BACKEND=supabase`, `TABLE_PREFIX=games_`.
+- Gamma: `DB_BACKEND=supabase`, `TABLE_PREFIX=games_gamma_`.
 
 The planned Supabase migration is specified in `SPEC-SUPABASE-MIGRATION.md`. It uses the existing VibePix Supabase project as a shared database, with table/RPC prefixes to avoid collisions:
 
 - Production: `games_`.
 - Gamma: `games_gamma_`.
 
-The Supabase objects have been created in the shared project. Gamma is the first Supabase-backed runtime; production remains SQLite until export/reconciliation and a separate cutover.
+The Supabase objects have been created in the shared project. Gamma and production have both been cut over and smoke-tested. SQLite files remain useful for local development and rollback backups during the initial rollout window.
 
 ## Content Model
 
@@ -313,7 +317,7 @@ Validation requires:
 - `POST /quiz/generate`
   - Requires `X-Device-Id`.
   - Charges `COST_GENERATE` after successful generation.
-  - Supports idempotency through `X-Idempotency-Key`.
+  - Supports idempotency through `X-Idempotency-Key` or `Idempotency-Key`.
   - Body:
     - `prompt`
     - `difficulty`
@@ -360,7 +364,7 @@ Validation requires:
 - `POST /mlt/generate`
   - Requires `X-Device-Id`.
   - Charges `COST_GENERATE` after successful generation.
-  - Supports idempotency through `X-Idempotency-Key`.
+  - Supports idempotency through `X-Idempotency-Key` or `Idempotency-Key`.
   - Body:
     - `prompt`
     - `difficulty`, used as WMLT vibe.

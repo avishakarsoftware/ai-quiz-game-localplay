@@ -31,6 +31,20 @@ def _fresh_device_headers():
     return {"X-Device-Id": str(uuid.uuid4())}
 
 
+def _sample_quiz(title: str = "Test Quiz"):
+    return {
+        "quiz_title": title,
+        "questions": [
+            {
+                "id": 1,
+                "text": "Question?",
+                "options": ["A", "B"],
+                "answer_index": 0,
+            }
+        ],
+    }
+
+
 def _make_httpx_status_error(status_code: int, body: bytes = b"{}") -> httpx.HTTPStatusError:
     """Create an httpx.HTTPStatusError with the given status code."""
     request = httpx.Request("POST", "https://example.com")
@@ -102,6 +116,50 @@ class TestQuotaEndpoints:
             }, headers=_fresh_device_headers())
             assert res.status_code == 500
             assert "Failed" in res.json()["detail"]
+
+    def test_standard_idempotency_key_replays_without_double_charge(self):
+        import uuid
+
+        headers = _fresh_device_headers()
+        headers["Idempotency-Key"] = str(uuid.uuid4())
+        with patch('main.quiz_engine.generate_quiz', new_callable=AsyncMock) as mock_gen:
+            mock_gen.return_value = _sample_quiz()
+            first = client.post("/quiz/generate", json={
+                "prompt": "test topic",
+                "difficulty": "medium",
+                "num_questions": 5,
+            }, headers=headers)
+            second = client.post("/quiz/generate", json={
+                "prompt": "test topic",
+                "difficulty": "medium",
+                "num_questions": 5,
+            }, headers=headers)
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert second.json()["quiz_id"] == first.json()["quiz_id"]
+        assert mock_gen.await_count == 1
+
+    def test_cached_but_evicted_idempotency_does_not_regenerate_or_charge(self):
+        import uuid
+        import db
+
+        headers = _fresh_device_headers()
+        headers["X-Idempotency-Key"] = str(uuid.uuid4())
+        db.get_or_create_wallet(headers["X-Device-Id"], signup_bonus=True)
+        db.record_idempotency(headers["X-Idempotency-Key"], headers["X-Device-Id"], "expired-content")
+
+        with patch('main.quiz_engine.generate_quiz', new_callable=AsyncMock) as mock_gen:
+            mock_gen.return_value = _sample_quiz()
+            res = client.post("/quiz/generate", json={
+                "prompt": "test topic",
+                "difficulty": "medium",
+                "num_questions": 5,
+            }, headers=headers)
+
+        assert res.status_code == 409
+        assert mock_gen.await_count == 0
+        assert db.get_wallet_balance(headers["X-Device-Id"]) == 20
 
 
 # ---------------------------------------------------------------------------

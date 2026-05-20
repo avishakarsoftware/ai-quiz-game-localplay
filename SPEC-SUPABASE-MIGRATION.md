@@ -54,13 +54,22 @@ Verified objects:
 - Gamma equivalents with the `games_gamma_` prefix.
 - RPCs: `ensure_wallet`, `debit_tokens`, `credit_tokens`, `credit_purchase`, `merge_wallet`, `grant_daily_bonus`, `grant_ad_reward`, `claim_device_usage`, `claim_user_usage`, `mark_webhook_processed`, `admin_stats`, with both prefixes.
 
-Gamma now runs with `DB_BACKEND=supabase` and `TABLE_PREFIX=games_gamma_`. Production still runs with `DB_BACKEND=sqlite`.
+Gamma now runs with `DB_BACKEND=supabase` and `TABLE_PREFIX=games_gamma_`. Production now runs with `DB_BACKEND=supabase` and `TABLE_PREFIX=games_`.
 
 Gamma Supabase smoke test:
 
 - Generated quiz on `https://gamesapi-gamma.revelryapp.me`.
 - Verified wallet, token transactions, and idempotency row were written to `games_gamma_*`.
 - Retried the same idempotency key and verified no duplicate `spend_generate` transaction.
+
+Production Supabase cutover:
+
+- Cut over on 2026-05-19 PDT after stopping the production container and taking a final SQLite snapshot.
+- Final stopped SQLite snapshot was copied from `/home/revelry-games/revelry-backups/revelry_cutover_stopped_20260519_171643.db`.
+- Migration imported into `games_*`: `2` users, `7` wallets, `17` token transactions, `0` entitlements, `0` device-usage rows, `2` request-log rows, `0` pending tokens, and `0` webhook events.
+- Reconciled admin stats after import: `7` wallets, `158` total sparks, `0` paying users, `0` purchases, `2` merges, `2` users.
+- Deployed production with `DB_BACKEND=supabase` and verified `/health`, `/providers`, `/config.json`, live quiz generation, wallet writes, request-log writes, and retry idempotency.
+- Production retry smoke uses both `X-Idempotency-Key` and the standard `Idempotency-Key` header path; duplicate retries must return the same in-memory content while it is available and must not create another `spend_generate` transaction.
 
 The repository contains migration scaffolding:
 
@@ -71,7 +80,7 @@ The repository contains migration scaffolding:
 - `scripts/render-supabase-sql.py` regenerates both SQL files from the template.
 - `scripts/deploy-gcp.sh` validates that production uses `games_` and gamma uses `games_gamma_`.
 
-Future SQL changes must still be applied deliberately; editing files in this repo does not automatically mutate Supabase. Production must not be switched until export/reconciliation from SQLite to `games_*` has been done and gamma has soaked successfully.
+Future SQL changes must still be applied deliberately; editing files in this repo does not automatically mutate Supabase. Production and gamma are now on Supabase, but local development should keep SQLite as the default unless a test explicitly opts into Supabase.
 
 ## Current SQLite Surface
 
@@ -811,31 +820,29 @@ curl -s -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/datab
 13. Start prod with `DB_BACKEND=supabase`.
 14. Keep SQLite file as rollback backup.
 
-### Export
+### Export And Import
 
-Use a Python script to export each SQLite table to JSONL:
+Use the migration utility added for the production cutover:
 
-```text
-scripts/export-sqlite-to-jsonl.py
+```bash
+.venv/bin/python scripts/migrate-sqlite-to-supabase.py \
+  --sqlite /path/to/revelry.db \
+  --prefix games_ \
+  --supabase-url https://hosbtyylacluziugwjfd.supabase.co \
+  --service-key-file /path/to/supabase-service-key.txt \
+  --dry-run
+
+.venv/bin/python scripts/migrate-sqlite-to-supabase.py \
+  --sqlite /path/to/revelry.db \
+  --prefix games_ \
+  --supabase-url https://hosbtyylacluziugwjfd.supabase.co \
+  --service-key-file /path/to/supabase-service-key.txt \
+  --clear-target
 ```
 
-Outputs:
+The script reads SQLite directly, inserts through PostgREST with the configured prefix, strips SQLite-only transaction ids so Postgres owns the BIGSERIAL sequence, fills missing `updated_at` fields, and verifies row counts plus admin stats.
 
-```text
-/tmp/localplay-sqlite-export/
-  users.jsonl
-  wallets.jsonl
-  token_transactions.jsonl
-  entitlements.jsonl
-  device_usage.jsonl
-  request_log.jsonl
-  pending_tokens.jsonl
-  webhook_events.jsonl
-```
-
-### Import
-
-Use service-role Supabase REST inserts or SQL `COPY` through the management API.
+### Import Rules
 
 For production, imports must be idempotent:
 
@@ -1083,6 +1090,8 @@ Phase 1 is complete when:
 - Admin lookup/grant/stats work without direct SQLite access.
 - Prod and gamma data are isolated by table prefix in the shared Supabase project.
 - Rollback to SQLite remains documented and possible during the initial rollout window.
+
+Phase 1 status: complete as of the 2026-05-19 production cutover, with the caveat that generated quiz/MLT content is still process-memory backed and is tracked under Phase 2.
 
 Phase 2 is complete when:
 

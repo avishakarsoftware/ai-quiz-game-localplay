@@ -31,7 +31,11 @@ def get_platform(req: Request) -> str:
 
 def get_idempotency_key(req: Request) -> str:
     """Extract idempotency key from header."""
-    key = (req.headers.get("X-Idempotency-Key") or "").strip()
+    key = (
+        req.headers.get("X-Idempotency-Key")
+        or req.headers.get("Idempotency-Key")
+        or ""
+    ).strip()
     if key and _UUID_RE.match(key):
         return key
     return ""

@@ -161,9 +161,12 @@ The backend can also serve the built SPA from `/app/static` for gamma and backen
 
 ## Persistence
 
-The active runtime still uses SQLite by default. Production stores data at `/home/revelry-games/revelry-data/revelry.db`. Gamma is currently deployed with `DB_BACKEND=supabase` and stores durable data in the shared Supabase project's `games_gamma_*` tables.
+Local development still defaults to SQLite. The deployed production and gamma runtimes now use the shared VibePix/LearningCompanion Supabase project:
 
-Supabase migration planning is documented in [SPEC-SUPABASE-MIGRATION.md](SPEC-SUPABASE-MIGRATION.md). The generated SQL has been applied to the shared VibePix Supabase project. Prefixes are mandatory because the database is shared: `games_` for production and `games_gamma_` for gamma.
+- Production: `DB_BACKEND=supabase`, `TABLE_PREFIX=games_`.
+- Gamma: `DB_BACKEND=supabase`, `TABLE_PREFIX=games_gamma_`.
+
+The original VM SQLite files are kept as rollback backups under `/home/revelry-games/revelry-backups*`, but deployed prod/gamma wallet, auth, transaction, webhook, and idempotency writes now go to Supabase. Supabase migration details are documented in [SPEC-SUPABASE-MIGRATION.md](SPEC-SUPABASE-MIGRATION.md).
 
 Gamma convention: `https://gamesapi-gamma.revelryapp.me`.
 

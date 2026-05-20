@@ -348,11 +348,18 @@ async def generate_quiz(request: QuizRequest, req: Request):
         raise HTTPException(status_code=400, detail="X-Device-Id header is required")
     idem_key = tokens.get_idempotency_key(req)
 
-    # Idempotency: return cached result if this request was already processed
+    # Idempotency: return cached result if this request was already processed.
+    # If the generated content aged out of process memory, do not regenerate and
+    # charge again for the same idempotency key.
     if idem_key:
         cached_id = db.check_idempotency(idem_key, device_id)
-        if cached_id and cached_id in quizzes:
-            return {"quiz_id": cached_id, "quiz": _strip_answers(quizzes[cached_id])}
+        if cached_id:
+            if cached_id in quizzes:
+                return {"quiz_id": cached_id, "quiz": _strip_answers(quizzes[cached_id])}
+            raise HTTPException(
+                status_code=409,
+                detail="Request was already processed, but the generated quiz is no longer available. Please start a new request.",
+            )
 
     # Resolve wallet and check token balance
     wallet_id = tokens.get_wallet_id(req)
@@ -696,11 +703,18 @@ async def generate_mlt(request: MLTRequest, req: Request):
         raise HTTPException(status_code=400, detail="X-Device-Id header is required")
     idem_key = tokens.get_idempotency_key(req)
 
-    # Idempotency: return cached result if this request was already processed
+    # Idempotency: return cached result if this request was already processed.
+    # If the generated content aged out of process memory, do not regenerate and
+    # charge again for the same idempotency key.
     if idem_key:
         cached_id = db.check_idempotency(idem_key, device_id)
-        if cached_id and cached_id in mlt_scenarios:
-            return {"scenario_id": cached_id, "game": mlt_scenarios[cached_id]}
+        if cached_id:
+            if cached_id in mlt_scenarios:
+                return {"scenario_id": cached_id, "game": mlt_scenarios[cached_id]}
+            raise HTTPException(
+                status_code=409,
+                detail="Request was already processed, but the generated game is no longer available. Please start a new request.",
+            )
 
     # Resolve wallet and check token balance
     wallet_id = tokens.get_wallet_id(req)
@@ -899,7 +913,7 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Content-Type", "Authorization", "X-Device-Id", "X-Platform", "X-App-Version", "X-Build", "X-Idempotency-Key", "X-Session-Token"],
+    allow_headers=["Content-Type", "Authorization", "X-Device-Id", "X-Platform", "X-App-Version", "X-Build", "X-Idempotency-Key", "Idempotency-Key", "X-Session-Token"],
 )
 
 # Share allowed origins with WebSocket manager for origin validation
