@@ -98,6 +98,14 @@ make test-e2e
 
 Runs end-to-end tests with live quiz generation via Ollama. Tests the full flow: generate quiz → create room → play game → podium.
 
+### Frontend UX E2E Tests
+
+```bash
+make test-frontend-e2e
+```
+
+Runs Playwright browser checks from `frontend/e2e/`. The current suite covers the DrawingGame organizer prompt screen on desktop and mobile, including layout alignment, no horizontal overflow, no overlap with fixed menu/spark controls, and visual snapshots.
+
 ### All Tests
 
 ```bash
@@ -120,6 +128,7 @@ make lint
 | `make dev-frontend` | Start only the frontend dev server |
 | `make test` | Run unit + integration tests |
 | `make test-e2e` | Run E2E tests (requires Ollama) |
+| `make test-frontend-e2e` | Run Playwright frontend UX checks |
 | `make test-all` | Run all tests |
 | `make test-remote-prod` | Run live production smoke checks |
 | `make test-remote-gamma` | Run live gamma smoke checks |
@@ -199,6 +208,7 @@ LocalPlay/
 │       ├── test_websocket_integration.py # WebSocket integration tests
 │       └── test_e2e.py                  # E2E tests (live Ollama)
 ├── frontend/
+│   ├── e2e/                  # Playwright UX smoke tests + snapshots
 │   └── src/
 │       ├── pages/
 │       │   ├── OrganizerPage.tsx  # Game host view

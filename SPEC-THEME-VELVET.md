@@ -844,7 +844,7 @@ Before merging the theme implementation:
 - Google/Apple sign-in controls remain visible and usable in SettingsDrawer.
 - Token badge, purchase modal/error modal, maintenance overlay, and announcement banner remain readable.
 - IONOS `/quiz/` build loads with the correct base path and no broken asset URLs.
-- A Playwright or manual screenshot pass covers: narrow phone, desktop organizer, 1280x720 spectator, and a long-question/long-answer quiz.
+- Playwright or manual screenshot coverage includes: narrow phone, desktop organizer, 1280x720 spectator, and a long-question/long-answer quiz. The committed Playwright suite currently covers the DrawingGame organizer prompt screen on desktop and mobile, including fixed-control overlap and no horizontal overflow.
 - No text overlaps fixed controls, safe-area notches, or the settings/spark badges.
 - `rg "var\\(--text-quaternary|var\\(--bg-tertiary|answer-red|answer-blue|answer-yellow|answer-green" frontend/src` is either clean or every remaining hit is intentionally covered by a compatibility alias.
 - `prefers-reduced-motion` still leaves gameplay state clear.

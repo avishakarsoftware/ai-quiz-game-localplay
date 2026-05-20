@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend install test test-e2e test-remote-prod test-remote-gamma build lint clean
+.PHONY: dev dev-backend dev-frontend install test test-e2e test-frontend-e2e test-remote-prod test-remote-gamma build lint clean
 
 # Hot-reload development
 dev:
@@ -23,8 +23,13 @@ test:
 test-e2e:
 	cd backend && venv/bin/python3 -m pytest tests/test_e2e.py -v -s
 
+test-frontend-e2e:
+	cd frontend && npm run test:e2e
+
 test-all:
 	cd backend && venv/bin/python3 -m pytest tests/ -v
+	cd frontend && npm test -- --run
+	cd frontend && npm run test:e2e
 
 test-remote-prod:
 	.venv/bin/python scripts/smoke-remote.py --base-url https://gamesapi.revelryapp.me

@@ -1732,6 +1732,16 @@ body {
     cursor: not-allowed;
 }
 
+.drawing-prompt-back {
+    margin-left: 0;
+}
+
+@media (max-width: 640px) {
+    .drawing-prompt-back {
+        margin-top: 48px;
+    }
+}
+
 .provider-name {
     font-size: 11px;
     white-space: nowrap;

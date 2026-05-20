@@ -916,6 +916,7 @@ Recommended defaults:
 - Existing quiz and WMLT tests still pass.
 - DrawingGame has backend unit tests for generation, matching, draw-op authorization, and scoring.
 - DrawingGame has frontend tests for drawer/guesser/spectator prompt visibility.
+- DrawingGame organizer prompt UX has Playwright coverage on desktop and mobile for aligned controls, no horizontal overflow, no overlap with fixed menu/spark controls, and visual snapshots.
 
 ## Backlog After V1
 

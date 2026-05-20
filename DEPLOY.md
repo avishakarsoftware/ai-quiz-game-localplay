@@ -882,6 +882,20 @@ Stripe smoke should stay manual/test-mode unless explicitly doing a paid product
 - Gamma checkout must use Stripe test keys.
 - Production checkout should only be tested with an intentional real purchase/refund workflow.
 
+### Frontend UX smoke tests
+
+Run the local browser UX suite before deploying frontend-heavy changes, especially game-screen or theme changes:
+
+```bash
+make test-frontend-e2e
+```
+
+This runs Playwright against the local Vite dev server. The current coverage includes the DrawingGame organizer prompt screen on desktop and mobile, verifies the segmented controls stay aligned, checks there is no horizontal page overflow, and catches overlap with the fixed hamburger/spark controls. If an intentional visual change updates the page shape, refresh the snapshots from `frontend/`:
+
+```bash
+npm run test:e2e -- --update-snapshots
+```
+
 Manual curl spot checks:
 
 ```bash
