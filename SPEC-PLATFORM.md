@@ -823,6 +823,31 @@ Complexity: low-medium.
 
 Could reuse the existing Stable Diffusion image engine for generated images. If host-uploaded photos are supported, this becomes a platform for custom party games.
 
+### Scattergories
+
+Core loop:
+
+- AI generates a letter and a list of categories (e.g. letter "B" — animal, food, movie, city, celebrity).
+- Everyone simultaneously submits one answer per category that starts with the given letter.
+- Timer (60-90s for all categories).
+- Reveal: answers shown per category. Duplicate answers cancel out — only unique valid answers score.
+- Multiple rounds with different letters.
+
+Needs:
+
+- AI generates category lists (themed by vibe: party, kids, adults, work).
+- Random letter selection (weighted to avoid X, Q, Z unless hard mode).
+- Multi-field simultaneous submission (one text input per category, 5-8 categories per round).
+- Duplicate detection across players (case-insensitive, trimmed).
+- Scoring: 1 point per unique valid answer, 0 for duplicates, bonus for creative answers (optional group vote).
+- TV shows the grid of all answers per category with duplicates crossed out.
+
+Complexity: low-medium.
+
+Strong party fit — everyone knows the format. The "unique answers only" mechanic creates natural tension and laughs when multiple people write the same thing. AI category generation keeps it fresh.
+
+**Variant**: "Speed Scattergories" — one category at a time, shorter timer, first unique answer wins the round. Simpler to build, faster pace.
+
 ### Spy / Odd One Out
 
 Core loop:
@@ -1004,19 +1029,20 @@ Phase A — Low complexity, reuse existing flows:
 Phase B — Medium complexity, new patterns:
 
 5. **Acronym Game** — introduces "submit → anonymous reveal → vote" pattern.
-6. **Charades** — prompt display + guess matching, like drawing without canvas.
-7. **Spy / Odd One Out** — hidden roles, social deduction.
-8. **Chinese Whispers (text-only)** — first turn-based game, turn queue infrastructure.
-9. **Taboo** — team-based, clue-giver rotation.
+6. **Scattergories** — multi-field text submit, duplicate elimination scoring. Universally known format.
+7. **Charades** — prompt display + guess matching, like drawing without canvas.
+8. **Spy / Odd One Out** — hidden roles, social deduction.
+9. **Chinese Whispers (text-only)** — first turn-based game, turn queue infrastructure.
+10. **Taboo** — team-based, clue-giver rotation.
 
 Phase C — High complexity, new capabilities:
 
-10. **DrawingGame** — canvas + real-time stroke sync + guessing. Full spec in `SPEC-GAME-DRAWING.md`.
-11. **Chinese Whispers (drawing)** — reuses canvas from DrawingGame.
-12. **Mafia** — hidden roles, night/day phases, elimination.
-13. **Eye Spy** — photo upload + AI vision.
-14. **Photo Scavenger Hunt** — camera access + photo upload + voting.
-15. **Musical Chairs** — audio playback + buzzer timing.
+11. **DrawingGame** — canvas + real-time stroke sync + guessing. Full spec in `SPEC-GAME-DRAWING.md`.
+12. **Chinese Whispers (drawing)** — reuses canvas from DrawingGame.
+13. **Mafia** — hidden roles, night/day phases, elimination.
+14. **Eye Spy** — photo upload + AI vision.
+15. **Photo Scavenger Hunt** — camera access + photo upload + voting.
+16. **Musical Chairs** — audio playback + buzzer timing.
 
 ## Deployment Model
 
