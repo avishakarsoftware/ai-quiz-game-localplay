@@ -52,6 +52,17 @@ Current game support is centered on:
 
 DrawingGame should follow the existing pattern first, then carve out abstractions only where the code gets materially cleaner.
 
+Key integration points that need updating:
+
+- `RoomCreateRequest.validate_game_type` in `main.py` currently rejects anything other than `"quiz"` or `"wmlt"`. Add `"drawing"`.
+- `frontend/src/types.ts` `GameType` union: add `'drawing'`.
+- Room creation must accept a `drawing_id` field alongside existing `quiz_id` and `mlt_id`, then branch in `create_room()` the same way it currently branches for `mlt_id`.
+- Content storage in `main.py` needs `drawing_games: Dict[str, dict]` and `drawing_timestamps: Dict[str, float]`, matching the `quizzes`/`quiz_timestamps` and `mlt_scenarios`/`mlt_timestamps` pattern.
+- `content_owners` must be set for generated drawing content and checked during room creation, so anonymous/user ownership remains consistent with quiz and WMLT.
+- Eviction in `_evict_old_content()` must include drawing content, skip drawing IDs used by active rooms, and remove stale `content_owners` entries.
+- The backend-served SPA `API_PREFIXES` list must include `/drawing`, otherwise `/drawing/...` API routes can be swallowed by the SPA fallback.
+- Admin/system stats should include drawing content counts once drawing content is kept in memory.
+
 ## Game Rules
 
 ### Participants
@@ -119,9 +130,10 @@ Prompt constraints:
 - Matching should be forgiving:
   - case-insensitive
   - trim whitespace
-  - ignore punctuation
-  - simple singular/plural normalization
+  - strip punctuation and token-boundary articles ("a", "an", "the")
+  - simple singular/plural normalization on both guess and prompt: apply `ies` -> `y` first, then trailing `es`/`s`
   - support generated aliases where available
+  - do NOT use fuzzy/Levenshtein matching in v1 — false positives are worse than near-misses. Aliases cover common alternate phrasings
 - The drawer cannot guess.
 - Each guesser can score once per round.
 - Incorrect guesses may be shown as a rolling feed on player/TV surfaces, but do not need to persist.
@@ -525,12 +537,26 @@ Max ops per second per drawer: 30
 Max stored ops per round: 2500
 Max stroke width: 32
 Max color palette: fixed server-approved colors
+Max DRAW_OP message size: 2048 bytes
 ```
 
 If the drawer sends too many points:
 
 - Server may simplify or drop the op.
 - Client should batch points every 30-50ms.
+- Client should quantize coordinates before sending, either as small integers in canvas-normalized space or rounded decimals, so 80-point strokes reliably fit under the DRAW_OP envelope limit.
+
+**Important**: The current global WebSocket rate limit is `WS_RATE_LIMIT_PER_SEC = 10` messages/second (in `config.py`). Drawing requires ~30 ops/second for smooth strokes. The rate limiter must be relaxed for DRAW_OP messages specifically, or the drawer's game type must bypass the global limit with a separate drawing-specific rate counter. Do not raise the global limit — only exempt `DRAW_OP` from it while enforcing the drawing-specific 30 ops/sec cap.
+
+The current receive loop in `backend/socket_manager.py` applies the global rate limit before parsing the JSON message type. Drawing implementation must reorder that loop carefully:
+
+1. Enforce `MAX_WS_MESSAGE_SIZE`.
+2. Parse JSON once.
+3. Read `msg["type"]`.
+4. For `DRAW_OP`, enforce the 2048-byte DRAW_OP envelope limit and a separate `DRAW_OP` counter, for example `draw_op_timestamps`, capped at 30/sec.
+5. For every other message type, keep the existing global `msg_timestamps` behavior.
+
+Similarly, `MAX_WS_MESSAGE_SIZE = 4096` bytes is sufficient for DRAW_OP, but validate that the entire DRAW_OP envelope stays under 2048 bytes to leave headroom for other messages and avoid unusually large stroke batches.
 
 ### Reconnect
 
@@ -879,8 +905,9 @@ Recommended defaults:
 ## Acceptance Criteria
 
 - `drawing` appears in game select and can be generated.
+- Backend exposes drawing content routes under `/drawing/...`, and those routes are protected from the SPA fallback by `API_PREFIXES`.
 - Host can review generated prompts and create a room.
-- Room can start with at least 2 players.
+- Room can start with at least 2 players (add `MIN_DRAWING_PLAYERS = 2` in `config.py`, matching the WMLT pattern).
 - Drawer receives prompt; guessers and spectators do not.
 - Drawer strokes appear on guesser and spectator canvases.
 - Correct guesses are accepted by normalized prompt or alias.
