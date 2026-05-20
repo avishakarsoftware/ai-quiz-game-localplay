@@ -144,9 +144,15 @@ Phase 1 changes:
 - Local tests can continue using SQLite unless explicitly testing Supabase.
 - Atomic wallet/payment operations move to Postgres RPCs.
 
-### Phase 2: Persist Generated Content And Game History
+### Phase 2: Decide Generated Content And Game History Persistence
 
-Add Supabase tables for generated content, content ownership, and completed game history. This removes a major restart/durability weakness and is required before serious Cloud Run work.
+Generated quiz/WMLT content and completed game history are currently process-memory backed. Before serious Cloud Run or multi-instance work, decide whether these should remain process-local, move to a short-lived shared store, or be persisted longer term.
+
+This is not a requirement to save every generated quiz forever. The main question is restart and routing resilience:
+
+- Temporary active-content persistence with TTL could protect generate -> review -> room creation flows from container restarts.
+- Completed game history should only be persisted if it has product value for recent games, user history, analytics, support, or account/device migration.
+- Long-term generated-content retention needs explicit retention, cleanup, ownership, privacy, and user-facing UX decisions.
 
 ### Future Cloud Run Phase
 
@@ -1073,7 +1079,7 @@ Duplicate for `games_gamma_*`.
 16. Reconcile counts, balances, and sample wallets.
 17. Deploy prod with `DB_BACKEND=supabase`.
 18. Keep SQLite volume backups for rollback.
-19. Implement Phase 2 generated content/history persistence.
+19. Decide and, if needed, implement Phase 2 generated content/history persistence.
 20. Revisit Cloud Run only after Phase 2 and live room strategy are designed.
 
 ## Acceptance Criteria
@@ -1091,14 +1097,14 @@ Phase 1 is complete when:
 - Prod and gamma data are isolated by table prefix in the shared Supabase project.
 - Rollback to SQLite remains documented and possible during the initial rollout window.
 
-Phase 1 status: complete as of the 2026-05-19 production cutover, with the caveat that generated quiz/MLT content is still process-memory backed and is tracked under Phase 2.
+Phase 1 status: complete as of the 2026-05-19 production cutover, with the caveat that generated quiz/MLT content is still process-memory backed and the right Phase 2 persistence strategy is undecided.
 
 Phase 2 is complete when:
 
-- Generated quiz/MLT content survives backend restart.
-- Content ownership is enforced from Supabase.
-- Game history survives backend restart and is scoped by wallet/user.
-- In-memory generated content/history dictionaries are removed or treated only as optional caches.
+- Generated quiz/MLT content has an explicit product/ops decision: process-memory only, temporary TTL persistence, or longer-term persistence.
+- If temporary or longer-term persistence is chosen, content ownership and cleanup are enforced outside process memory.
+- Completed game history has an explicit product/ops decision and, if persisted, is scoped by wallet/user.
+- Any remaining in-memory generated content/history dictionaries are intentionally documented as authoritative state or optional caches.
 
 Cloud Run readiness is not achieved until:
 

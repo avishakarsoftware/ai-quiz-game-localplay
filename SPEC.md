@@ -994,6 +994,7 @@ Historical review notes were consolidated into this section and the platform spe
 - **Auth config startup checks:** Startup currently warns on short `JWT_SECRET`, but missing `JWT_SECRET` is fatal for sign-in. Add a deployment/startup warning that explicitly says Google/Apple sign-in is disabled when `JWT_SECRET`, `GOOGLE_CLIENT_ID`, or Apple audience config is absent.
 - **LocalPlay/Revelry session boundary:** Document and test that LocalPlay sessions are independent from the main Revelry app even if Google Cloud/Firebase infrastructure is shared.
 - **Google OAuth branding:** Google currently shows the main Revelry OAuth app name during sign-in because the web client lives in the main `revelryapp` Google Cloud project. If the user-facing label must say "Revelry Games" without changing the main Revelry app name, create a separate Google Cloud project/OAuth brand for Revelry Games and move the LocalPlay web client there.
+- **Ephemeral generated content strategy:** Decide whether generated quiz/WMLT content should remain process-memory only, be temporarily persisted with a short TTL, or be stored another way. This is about restart/multi-instance resilience, not a product requirement to save every generated quiz forever. Do not implement long-term generated-content storage until retention, cleanup, ownership, and user-facing value are clear.
 - **Spectator lifecycle:** `SpectatorPage` has reconnect/backoff handling and cleanup guards, but spectator reconnect behavior should be regression-tested when changing room join/leave UI. In particular, verify reconnect still works after manually leaving one spectator room and joining another in the same mounted page.
 - **Spectator/player client-id collision:** Spectators and players use different client id prefixes, so real collisions are unlikely. Still, room cleanup paths should avoid assuming a `client_id` can only ever belong to one connection map.
 - **Reset-room tests:** Older tests once sent `RESET_ROOM` with inline `quiz_data`; current backend expects a valid `content_id`. Keep reset-room tests aligned with the content-id flow.
@@ -1029,8 +1030,8 @@ Cloud Run notes for later:
 
 Required work before multi-instance hosting:
 
-- Move generated game content and ownership out of process memory.
-- Persist game history outside process memory.
+- Decide the generated game content strategy: process memory only, temporary TTL persistence, or another shared active-content store.
+- Decide whether completed game history has product value. Persist it only if needed for user history, analytics, support, or multi-instance correctness.
 - Decide where live room state belongs, likely Redis/Memorystore, Firestore, Cloud SQL, or another shared store.
 - Add a broadcast/routing strategy for WebSocket events if one room can span instances.
 - Make reconnect safe when a client lands on a different backend instance.
@@ -1040,7 +1041,7 @@ Required work before multi-instance hosting:
 Recommended migration order:
 
 1. Keep the current server deployment while adding games.
-2. Persist generated content and completed game history.
+2. Decide whether generated content and completed game history need temporary persistence, long-term persistence, or no persistence.
 3. Externalize live room state only when multi-instance scaling is actually needed.
 4. Add shared pub/sub or room routing for WebSocket fanout.
 5. Move to autoscaled infrastructure after the state model is no longer process-local.
