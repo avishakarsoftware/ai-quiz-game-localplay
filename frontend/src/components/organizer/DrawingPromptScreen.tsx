@@ -1,3 +1,4 @@
+import { type CSSProperties } from 'react';
 import { type AIProvider } from './PromptScreen';
 
 interface DrawingPromptScreenProps {
@@ -27,35 +28,52 @@ export default function DrawingPromptScreen({
     onGenerate,
     onBack,
 }: DrawingPromptScreenProps) {
+    const segmentGrid = (columns: number): CSSProperties => ({
+        display: 'grid',
+        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+        gap: 10,
+        width: '100%',
+    });
+    const segmentButton = (active: boolean): CSSProperties => ({
+        minHeight: 56,
+        padding: '0 12px',
+        borderRadius: 14,
+        fontSize: 18,
+        fontWeight: 800,
+        whiteSpace: 'nowrap',
+        boxShadow: active ? '0 12px 28px rgba(255, 45, 125, 0.28)' : undefined,
+    });
+
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
-            <div className="flex-1 flex flex-col justify-center py-8">
-                <button type="button" onClick={onBack} className="btn btn-secondary mb-6" style={{ alignSelf: 'flex-start' }}>Back</button>
-                <div className="text-center mb-8">
+            <div className="flex-1 flex flex-col justify-center py-8" style={{ maxWidth: 560, width: '100%', margin: '0 auto' }}>
+                <button type="button" onClick={onBack} className="btn btn-secondary mb-6" style={{ alignSelf: 'flex-start', minWidth: 92 }}>Back</button>
+                <div className="text-center mb-7">
                     <div className="hero-icon mb-4">🎨</div>
                     <h1 className="hero-title">Drawing Game</h1>
                     <p className="text-[--text-tertiary] mt-2">Generate drawable prompts for your group</p>
                 </div>
 
-                <div className="space-y-5">
+                <div className="space-y-5" style={{ width: '100%' }}>
                     <textarea
                         value={prompt}
                         onChange={(event) => setPrompt(event.target.value)}
                         placeholder="Theme, vibe, or topic"
                         maxLength={140}
                         className="input-field"
-                        style={{ minHeight: 140, resize: 'vertical' }}
+                        style={{ minHeight: 140, resize: 'vertical', width: '100%' }}
                     />
 
                     <div>
                         <p className="text-[--text-tertiary] text-sm font-semibold mb-2">Difficulty</p>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div style={segmentGrid(3)}>
                             {['easy', 'medium', 'hard'].map((value) => (
                                 <button
                                     key={value}
                                     type="button"
                                     onClick={() => setDifficulty(value)}
                                     className={`btn ${difficulty === value ? 'btn-primary' : 'btn-secondary'}`}
+                                    style={segmentButton(difficulty === value)}
                                 >
                                     {value[0].toUpperCase() + value.slice(1)}
                                 </button>
@@ -65,13 +83,14 @@ export default function DrawingPromptScreen({
 
                     <div>
                         <p className="text-[--text-tertiary] text-sm font-semibold mb-2">Prompts</p>
-                        <div className="grid grid-cols-5 gap-2">
+                        <div style={segmentGrid(5)}>
                             {[5, 8, 10, 15, 20].map((value) => (
                                 <button
                                     key={value}
                                     type="button"
                                     onClick={() => setNumPrompts(value)}
                                     className={`btn ${numPrompts === value ? 'btn-primary' : 'btn-secondary'}`}
+                                    style={segmentButton(numPrompts === value)}
                                 >
                                     {value}
                                 </button>

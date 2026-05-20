@@ -10,6 +10,13 @@ interface DrawingReviewScreenProps {
 }
 
 export default function DrawingReviewScreen({ game, timeLimit, setTimeLimit, onCreateRoom, onUpdateGame, onBack }: DrawingReviewScreenProps) {
+    const timeGrid = {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+        gap: 10,
+        width: '100%',
+    };
+
     const updatePrompt = (id: number, text: string) => {
         onUpdateGame({
             ...game,
@@ -19,8 +26,8 @@ export default function DrawingReviewScreen({ game, timeLimit, setTimeLimit, onC
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
-            <div className="py-6">
-                <button type="button" onClick={onBack} className="btn btn-secondary mb-5">Back</button>
+            <div className="py-6" style={{ maxWidth: 680, width: '100%', margin: '0 auto' }}>
+                <button type="button" onClick={onBack} className="btn btn-secondary mb-5" style={{ minWidth: 92 }}>Back</button>
                 <div className="text-center mb-6">
                     <div className="hero-icon mb-4">🎨</div>
                     <h1 className="hero-title">{game.game_title}</h1>
@@ -29,13 +36,14 @@ export default function DrawingReviewScreen({ game, timeLimit, setTimeLimit, onC
 
                 <div className="mb-6">
                     <p className="text-[--text-tertiary] text-sm font-semibold mb-2 text-center">Time per round</p>
-                    <div className="grid grid-cols-5 gap-2">
+                    <div style={timeGrid}>
                         {[15, 30, 45, 50, 60].map((value) => (
                             <button
                                 key={value}
                                 type="button"
                                 onClick={() => setTimeLimit(value)}
                                 className={`btn ${timeLimit === value ? 'btn-primary' : 'btn-secondary'}`}
+                                style={{ minHeight: 52, borderRadius: 14, fontSize: 17, fontWeight: 800 }}
                             >
                                 {value}s
                             </button>
