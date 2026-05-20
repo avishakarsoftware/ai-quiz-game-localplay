@@ -993,6 +993,29 @@ Complexity: low.
 
 Perfect for baby showers, weddings, New Year's parties. Could store predictions in Supabase for later reveal.
 
+### Rebus Puzzles
+
+Core loop:
+
+- AI generates rebus puzzles: combinations of images, symbols, or emoji that represent a word or phrase.
+- Each round shows a rebus on the TV/phone (e.g. 🌊 + 🐴 = "seahorse", 🔥 + 🪰 = "firefly").
+- Players type their guess. First correct answer scores highest (time-based).
+- Rounds are fast (15-30s each), many rounds per game.
+
+Needs:
+
+- AI generates rebus puzzles with answer + visual components. Each puzzle is a sequence of emoji or simple image descriptions that combine to form a word/phrase.
+- Display: show the emoji/images large on TV, smaller on phone.
+- Text guess input with forgiving matching (same as drawing game).
+- Scoring: time-based, similar to quiz.
+- Optional: difficulty tiers (easy = 2 emoji, hard = 4+ emoji with wordplay).
+
+Complexity: low-medium.
+
+Very visual and fun. Works great on TV. AI generation is the main challenge — the LLM needs to produce emoji sequences that actually make sense as rebus clues. Could also use AI-generated images (via Stable Diffusion or Gemini image generation) for richer visual puzzles.
+
+**Variant**: "Emoji Charades" — show only emoji, guess the movie/song/phrase. Even simpler than full rebus since it's just emoji selection, no image generation needed.
+
 ### Baby Shower / Wedding / Event Game Packs
 
 These aren't separate game types — they're **themed content packs** for existing game mechanics:
@@ -1028,21 +1051,22 @@ Phase A — Low complexity, reuse existing flows:
 
 Phase B — Medium complexity, new patterns:
 
-5. **Acronym Game** — introduces "submit → anonymous reveal → vote" pattern.
-6. **Scattergories** — multi-field text submit, duplicate elimination scoring. Universally known format.
-7. **Charades** — prompt display + guess matching, like drawing without canvas.
-8. **Spy / Odd One Out** — hidden roles, social deduction.
-9. **Chinese Whispers (text-only)** — first turn-based game, turn queue infrastructure.
-10. **Taboo** — team-based, clue-giver rotation.
+5. **Rebus Puzzles** — emoji/image display + text guess. Visual, fast rounds, great on TV.
+6. **Acronym Game** — introduces "submit → anonymous reveal → vote" pattern.
+7. **Scattergories** — multi-field text submit, duplicate elimination scoring. Universally known format.
+8. **Charades** — prompt display + guess matching, like drawing without canvas.
+9. **Spy / Odd One Out** — hidden roles, social deduction.
+10. **Chinese Whispers (text-only)** — first turn-based game, turn queue infrastructure.
+11. **Taboo** — team-based, clue-giver rotation.
 
 Phase C — High complexity, new capabilities:
 
-11. **DrawingGame** — canvas + real-time stroke sync + guessing. Full spec in `SPEC-GAME-DRAWING.md`.
-12. **Chinese Whispers (drawing)** — reuses canvas from DrawingGame.
-13. **Mafia** — hidden roles, night/day phases, elimination.
-14. **Eye Spy** — photo upload + AI vision.
-15. **Photo Scavenger Hunt** — camera access + photo upload + voting.
-16. **Musical Chairs** — audio playback + buzzer timing.
+12. **DrawingGame** — canvas + real-time stroke sync + guessing. Full spec in `SPEC-GAME-DRAWING.md`.
+13. **Chinese Whispers (drawing)** — reuses canvas from DrawingGame.
+14. **Mafia** — hidden roles, night/day phases, elimination.
+15. **Eye Spy** — photo upload + AI vision.
+16. **Photo Scavenger Hunt** — camera access + photo upload + voting.
+17. **Musical Chairs** — audio playback + buzzer timing.
 
 ## Deployment Model
 
