@@ -1047,6 +1047,8 @@ Infrastructure needed for image-heavy games:
 
 This is a platform capability, not a single game — once image display + generation works well, many game types benefit.
 
+See `SPEC-IMAGE-GAMES.md` for the implementation-ready image game platform spec, including media storage, provider architecture, APIs, safety, retention, and the recommended Image Quiz / Photo Round rollout path.
+
 ### Additional Game Evaluation Criteria
 
 Future games should be evaluated by:

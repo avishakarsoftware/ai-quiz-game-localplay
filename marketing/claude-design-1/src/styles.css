@@ -1,0 +1,778 @@
+/* LocalPlay Redesign — shared styles
+ *
+ * Structure:
+ *   - Reset
+ *   - Page chrome (intro, canvas grid)
+ *   - Theme variable blocks: .theme-salon / .theme-velvet / .theme-playground
+ *   - TV screens (1280×720 inside ChromeWindow)
+ *   - Phone screens (390×844 inside IOSDevice)
+ *   - Shared primitives (avatar, button, card)
+ */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  font-family: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: #1B1817;
+  color: #F4EEE4;
+  font-feature-settings: 'ss01', 'cv11';
+  -webkit-font-smoothing: antialiased;
+}
+
+#app { min-height: 100vh; }
+
+/* ════════════════════════════════════════════════════════════
+   PAGE INTRO — sits above the design canvas
+   ════════════════════════════════════════════════════════════ */
+.lp-intro {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 80px 60px 40px;
+  color: #F4EEE4;
+}
+.lp-intro-eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(244, 238, 228, 0.55);
+  margin-bottom: 24px;
+}
+.lp-intro-eyebrow span { color: #E0A87E; }
+.lp-intro h1 {
+  font-family: 'Newsreader', 'Hanken Grotesk', serif;
+  font-weight: 400;
+  font-size: 84px;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  margin-bottom: 28px;
+}
+.lp-intro h1 em {
+  font-style: italic;
+  color: #E0A87E;
+}
+.lp-intro p {
+  max-width: 720px;
+  font-size: 18px;
+  line-height: 1.55;
+  color: rgba(244, 238, 228, 0.75);
+  margin-bottom: 14px;
+}
+.lp-intro p + p { color: rgba(244, 238, 228, 0.55); font-size: 16px; }
+
+.lp-rule {
+  height: 1px;
+  background: rgba(244, 238, 228, 0.15);
+  margin: 48px 60px;
+  max-width: calc(1100px - 120px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ════════════════════════════════════════════════════════════
+   PROTOTYPE STAGE — TV + phone side-by-side
+   ════════════════════════════════════════════════════════════ */
+.lp-stage {
+  width: 100%;
+  padding: 40px 60px 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+}
+.lp-stage-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 1700px;
+  font-family: 'JetBrains Mono', monospace;
+  color: rgba(244, 238, 228, 0.5);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+.lp-stage-header strong {
+  color: #F4EEE4;
+  font-weight: 600;
+}
+.lp-stage-grid {
+  display: grid;
+  grid-template-columns: 1280px 402px;
+  gap: 32px;
+  align-items: start;
+}
+.lp-stage-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(244, 238, 228, 0.5);
+  padding: 0 0 10px;
+  display: flex;
+  justify-content: space-between;
+}
+.lp-stage-label span { color: rgba(244, 238, 228, 0.3); }
+
+/* ════════════════════════════════════════════════════════════
+   THEME: SALON  (editorial premium — warm cream paper)
+   ════════════════════════════════════════════════════════════ */
+.theme-salon {
+  --bg:        #F4EEE4;
+  --bg-2:      #EBE2D2;
+  --paper:     #FBF7EF;
+  --ink:       #1A1714;
+  --ink-2:     #3A3328;
+  --ink-mute:  #8A7C66;
+  --rule:      #D6CBB8;
+  --rule-2:    #1A1714;
+  --accent:    #B95536;   /* terracotta */
+  --accent-ink:#FFFCF6;
+  --olive:     #586A3B;
+  --plum:      #6E3F4D;
+  --gold:      #C99641;
+  --shadow:    0 1px 0 rgba(26,23,20,0.06), 0 12px 32px -16px rgba(26,23,20,0.18);
+  --font-display: 'Newsreader', 'Hanken Grotesk', serif;
+  --font-body:    'Hanken Grotesk', sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--bg);
+  letter-spacing: 0;
+}
+
+/* ════════════════════════════════════════════════════════════
+   THEME: VELVET (late-night lounge — midnight + neon)
+   ════════════════════════════════════════════════════════════ */
+.theme-velvet {
+  --bg:        #0A0612;
+  --bg-2:      #14091F;
+  --paper:     #1A0F2A;
+  --ink:       #F8EBD9;
+  --ink-2:     #E5D7C2;
+  --ink-mute:  rgba(248, 235, 217, 0.45);
+  --rule:      rgba(248, 235, 217, 0.10);
+  --rule-2:    rgba(248, 235, 217, 0.35);
+  --accent:    #FF2E7A;   /* hot magenta */
+  --accent-ink:#1A0612;
+  --olive:     #6DFFE6;   /* electric mint */
+  --plum:      #B57AFF;   /* lilac */
+  --gold:      #FFC76B;
+  --shadow:    0 0 40px -10px rgba(255,46,122,0.35), 0 20px 60px rgba(0,0,0,0.5);
+  --font-display: 'Bricolage Grotesque', sans-serif;
+  --font-body:    'Hanken Grotesk', sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 0%, rgba(255,46,122,0.15) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 60% at 80% 100%, rgba(109,255,230,0.10) 0%, transparent 60%),
+    var(--bg);
+}
+
+/* ════════════════════════════════════════════════════════════
+   THEME: PLAYGROUND (confident pop — paper white + bold ink)
+   ════════════════════════════════════════════════════════════ */
+.theme-playground {
+  --bg:        #F2EEE5;
+  --bg-2:      #E5DFCF;
+  --paper:     #FFFFFF;
+  --ink:       #0A0B0E;
+  --ink-2:     #2A2B30;
+  --ink-mute:  #6A6B72;
+  --rule:      #0A0B0E;
+  --rule-2:    #0A0B0E;
+  --accent:    #FF4D2D;   /* coral */
+  --accent-ink:#FFFFFF;
+  --olive:     #2D5BFF;   /* electric blue */
+  --plum:      #B985FF;
+  --gold:      #D6FF3F;   /* lime */
+  --shadow:    4px 4px 0 var(--ink);
+  --font-display: 'Bricolage Grotesque', sans-serif;
+  --font-body:    'Hanken Grotesk', sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background:
+    repeating-radial-gradient(circle at 0 0, transparent 0 38px, var(--bg-2) 38px 39px),
+    var(--bg);
+  background-size: 38px 38px, 100% 100%;
+}
+
+/* ════════════════════════════════════════════════════════════
+   THEME: ARCADE (CRT cabinet — near-black + neon, scanlines)
+   ════════════════════════════════════════════════════════════ */
+.theme-arcade {
+  --bg:        #07080C;
+  --bg-2:      #0E1119;
+  --paper:     #12161F;
+  --ink:       #E8FFE3;
+  --ink-2:     #BFEAB8;
+  --ink-mute:  rgba(232, 255, 227, 0.45);
+  --rule:      rgba(232, 255, 227, 0.14);
+  --rule-2:    rgba(232, 255, 227, 0.55);
+  --accent:    #38FF6B;   /* neon green */
+  --accent-ink:#07080C;
+  --olive:     #38FF6B;
+  --plum:      #FF3FE0;   /* hot pink */
+  --gold:      #00E0FF;   /* cyan */
+  --shadow:    0 0 0 1px var(--accent), 0 0 24px rgba(56,255,107,0.35);
+  --font-display: 'JetBrains Mono', monospace;
+  --font-body:    'JetBrains Mono', monospace;
+  --font-mono:    'JetBrains Mono', monospace;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--bg);
+  letter-spacing: 0.01em;
+}
+
+/* ════════════════════════════════════════════════════════════
+   THEME: GARDEN (botanical zine — sage paper + rose + forest)
+   ════════════════════════════════════════════════════════════ */
+.theme-garden {
+  --bg:        #EEF2E6;
+  --bg-2:      #DEE6D0;
+  --paper:     #F8FAF1;
+  --ink:       #1F2E22;
+  --ink-2:     #3D4F3E;
+  --ink-mute:  #6B7C66;
+  --rule:      #BFCDAE;
+  --rule-2:    #1F2E22;
+  --accent:    #C8506D;   /* dusty rose */
+  --accent-ink:#FFFCF6;
+  --olive:     #5A7A3E;   /* moss */
+  --plum:      #8B5E96;   /* iris */
+  --gold:      #D9A441;   /* honey */
+  --shadow:    0 1px 0 rgba(31,46,34,0.06), 0 14px 36px -18px rgba(31,46,34,0.2);
+  --font-display: 'Newsreader', 'Hanken Grotesk', serif;
+  --font-body:    'Hanken Grotesk', sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--bg);
+}
+
+/* ════════════════════════════════════════════════════════════
+   TV SCREENS — fill 1280×720
+   ════════════════════════════════════════════════════════════ */
+.tv {
+  position: relative;
+  width: 1280px;
+  height: 720px;
+  overflow: hidden;
+}
+
+/* Salon: paper-letter ratio with hairline outer frame */
+.theme-salon.tv {
+  background: var(--bg);
+}
+.theme-salon.tv::before {
+  content: '';
+  position: absolute;
+  inset: 24px;
+  border: 1px solid var(--rule);
+  pointer-events: none;
+}
+
+.theme-velvet.tv::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 30%, rgba(255,46,122,0.20) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 40% at 85% 75%, rgba(109,255,230,0.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.theme-playground.tv::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 6% 8%, var(--accent) 0 6px, transparent 6.5px),
+    radial-gradient(circle at 94% 92%, var(--olive) 0 6px, transparent 6.5px),
+    radial-gradient(circle at 92% 12%, var(--gold) 0 6px, transparent 6.5px);
+  pointer-events: none;
+}
+
+/* Arcade: CRT scanlines + faint vignette */
+.theme-arcade.tv {
+  background: var(--bg);
+}
+.theme-arcade.tv::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 2px,
+      rgba(232,255,227,0.04) 2px,
+      rgba(232,255,227,0.04) 3px
+    ),
+    radial-gradient(ellipse 70% 90% at 50% 50%, transparent 55%, rgba(0,0,0,0.5) 100%),
+    radial-gradient(ellipse 60% 40% at 50% 0%, rgba(56,255,107,0.10) 0%, transparent 70%);
+  pointer-events: none;
+}
+.theme-arcade.tv::after {
+  /* corner crosshairs — arcade UI tropes */
+  content: '';
+  position: absolute;
+  inset: 18px;
+  border: 1px solid var(--rule);
+  pointer-events: none;
+}
+
+/* Garden: torn-paper feel via two-tone deckle edge + subtle vine */
+.theme-garden.tv {
+  background:
+    linear-gradient(180deg, var(--bg) 0%, var(--bg) 60%, var(--bg-2) 100%);
+}
+.theme-garden.tv::before {
+  content: '';
+  position: absolute;
+  inset: 28px;
+  border: 1px solid var(--rule);
+  pointer-events: none;
+}
+
+/* ════════════════════════════════════════════════════════════
+   PHONE SCREENS — fill 390×740 (within IOSDevice content area)
+   ════════════════════════════════════════════════════════════ */
+.phone {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.theme-salon.phone   { background: var(--bg); color: var(--ink); }
+.theme-velvet.phone  {
+  background:
+    radial-gradient(ellipse 90% 50% at 50% 10%, rgba(255,46,122,0.20) 0%, transparent 70%),
+    var(--bg);
+  color: var(--ink);
+}
+.theme-playground.phone {
+  background:
+    repeating-radial-gradient(circle at 0 0, transparent 0 30px, var(--bg-2) 30px 31px),
+    var(--bg);
+  background-size: 30px 30px, 100% 100%;
+  color: var(--ink);
+}
+.theme-arcade.phone {
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 2px, rgba(232,255,227,0.05) 2px 3px),
+    radial-gradient(ellipse 90% 50% at 50% 10%, rgba(56,255,107,0.12) 0%, transparent 70%),
+    var(--bg);
+  color: var(--ink);
+}
+.theme-garden.phone {
+  background:
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+  color: var(--ink);
+}
+
+/* ════════════════════════════════════════════════════════════
+   SHARED PRIMITIVES (themed via CSS variables)
+   ════════════════════════════════════════════════════════════ */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.theme-velvet .display,
+.theme-playground .display { font-weight: 600; letter-spacing: -0.03em; }
+
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Avatar disc — emoji-first; the chip itself carries the theme styling, the
+   emoji glyph sits flat on top in its native colour. */
+.av {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+  line-height: 1;
+  overflow: hidden;
+}
+.av .av-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  /* Hairline neutralises the theme-tile colour so the emoji glyph is what
+     the eye reads, not the disc colour bleeding through emoji transparencies. */
+  filter: saturate(1.05);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Salon: warm cream tile, ink hairline ring */
+.theme-salon .av {
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  box-shadow: inset 0 0 0 3px var(--bg);
+}
+/* Velvet: dark tile, neon ring */
+.theme-velvet .av {
+  background: var(--bg-2);
+  box-shadow: 0 0 0 1.5px var(--accent), 0 0 16px rgba(255,46,122,0.35);
+}
+/* Playground: chunky black border, vivid hue tile (set inline by hue) */
+.theme-playground .av {
+  border: 2.5px solid var(--ink);
+  background: var(--av-pg-bg, var(--paper));
+}
+/* Arcade: dark tile, glowing accent ring */
+.theme-arcade .av {
+  background: var(--paper);
+  box-shadow: 0 0 0 1.5px var(--accent), 0 0 14px rgba(56,255,107,0.4);
+}
+/* Garden: soft paper tile, forest ink hairline */
+.theme-garden .av {
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  box-shadow: 0 1px 0 var(--rule);
+}
+
+/* Hairline */
+.hr {
+  height: 1px;
+  background: var(--rule);
+  width: 100%;
+}
+.theme-salon .hr-ink   { background: var(--rule-2); height: 1px; }
+.theme-velvet .hr-ink  { background: var(--rule-2); height: 1px; }
+.theme-playground .hr-ink { background: var(--rule-2); height: 2px; }
+
+/* Pill / chip */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 100px;
+  border: 1px solid var(--rule);
+  color: var(--ink-mute);
+  background: transparent;
+}
+.theme-salon .chip-accent   { border-color: var(--accent); color: var(--accent); }
+.theme-velvet .chip-accent  { border-color: var(--accent); color: var(--accent); background: rgba(255,46,122,0.08); }
+.theme-playground .chip-accent { border-color: var(--ink); color: var(--ink); background: var(--gold); }
+.theme-playground .chip { border-color: var(--ink); color: var(--ink); }
+.theme-arcade .chip { border-color: var(--rule-2); color: var(--ink); background: rgba(56,255,107,0.06); }
+.theme-arcade .chip-accent { border-color: var(--accent); color: var(--accent); background: rgba(56,255,107,0.12); box-shadow: 0 0 12px rgba(56,255,107,0.3); }
+.theme-garden .chip { border-color: var(--rule-2); color: var(--ink-2); }
+.theme-garden .chip-accent { border-color: var(--accent); color: var(--accent); background: rgba(200,80,109,0.08); }
+
+/* Button */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 24px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  border: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.btn:active { transform: translateY(1px); }
+
+.theme-salon .btn-primary {
+  background: var(--ink);
+  color: var(--bg);
+  border-radius: 6px;
+}
+.theme-salon .btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+}
+
+.theme-velvet .btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 100px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 13px;
+  box-shadow: 0 0 0 1px var(--accent), 0 0 24px rgba(255,46,122,0.4);
+}
+.theme-velvet .btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--rule-2);
+  border-radius: 100px;
+}
+
+.theme-playground .btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  font-weight: 700;
+}
+.theme-playground .btn-ghost {
+  background: var(--paper);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  font-weight: 700;
+}
+
+.theme-arcade .btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 13px;
+  box-shadow: 0 0 0 1px var(--accent), 0 0 24px rgba(56,255,107,0.45), 4px 4px 0 rgba(56,255,107,0.25);
+}
+.theme-arcade .btn-ghost {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 0;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 13px;
+}
+
+.theme-garden .btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 999px;
+  font-weight: 600;
+}
+.theme-garden .btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+}
+
+/* ════════════════════════════════════════════════════════════
+   QUIZ ANSWER GRID — used by TV and phone (themed)
+   ════════════════════════════════════════════════════════════ */
+.answer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 22px;
+  font-weight: 500;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  width: 100%;
+}
+.answer-glyph {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 14px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.theme-salon .answer {
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  color: var(--ink);
+}
+.theme-salon .answer-glyph {
+  background: var(--ink);
+  color: var(--bg);
+}
+.theme-salon .answer:hover { background: var(--bg-2); }
+.theme-salon .answer.correct {
+  background: var(--olive);
+  color: #FFFCF6;
+  border-color: var(--olive);
+}
+.theme-salon .answer.correct .answer-glyph { background: #FFFCF6; color: var(--olive); }
+.theme-salon .answer.wrong { opacity: 0.4; }
+
+.theme-velvet .answer {
+  background: #1F1430;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 14px;
+  color: var(--ink);
+}
+.theme-velvet .answer:hover { background: #261837; }
+.theme-velvet .answer-glyph {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.theme-velvet .answer.correct {
+  background: rgba(109, 255, 230, 0.16);
+  border-color: var(--olive);
+  color: var(--olive);
+  box-shadow: 0 0 24px rgba(109, 255, 230, 0.30);
+}
+.theme-velvet .answer.correct .answer-glyph { background: var(--olive); color: var(--bg); }
+.theme-velvet .answer.wrong { opacity: 0.35; }
+
+.theme-playground .answer {
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  font-weight: 600;
+}
+.theme-playground .answer-glyph {
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+}
+.theme-playground .answer.correct {
+  background: var(--gold);
+  border-color: var(--ink);
+}
+.theme-playground .answer.wrong { opacity: 0.45; }
+
+/* Arcade answers: terminal-style outlined boxes */
+.theme-arcade .answer {
+  background: var(--paper);
+  border: 1px solid var(--rule-2);
+  border-radius: 0;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+.theme-arcade .answer:hover {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent), 0 0 18px rgba(56,255,107,0.25);
+}
+.theme-arcade .answer-glyph {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 0;
+}
+.theme-arcade .answer.correct {
+  background: rgba(56,255,107,0.16);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 24px rgba(56,255,107,0.4);
+}
+.theme-arcade .answer.correct .answer-glyph { background: var(--accent); color: var(--bg); }
+.theme-arcade .answer.wrong { opacity: 0.32; }
+
+/* Garden answers: soft paper cards with forest hairline */
+.theme-garden .answer {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  color: var(--ink);
+}
+.theme-garden .answer:hover { background: var(--bg-2); }
+.theme-garden .answer-glyph {
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 999px;
+}
+.theme-garden .answer.correct {
+  background: rgba(90,122,62,0.16);
+  border-color: var(--olive);
+  color: var(--olive);
+}
+.theme-garden .answer.correct .answer-glyph { background: var(--olive); color: var(--paper); }
+.theme-garden .answer.wrong { opacity: 0.4; }
+
+/* ════════════════════════════════════════════════════════════
+   PROGRESS BAR (timer)
+   ════════════════════════════════════════════════════════════ */
+.progress {
+  position: relative;
+  height: 3px;
+  background: var(--rule);
+  width: 100%;
+  overflow: hidden;
+}
+.progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+}
+.theme-playground .progress { height: 8px; border: 2px solid var(--ink); }
+.theme-playground .progress-fill { background: var(--ink); }
+.theme-velvet .progress { height: 2px; background: rgba(255,255,255,0.08); }
+.theme-arcade .progress { height: 2px; background: rgba(232,255,227,0.10); }
+.theme-arcade .progress-fill { background: var(--accent); box-shadow: 0 0 12px rgba(56,255,107,0.55); }
+.theme-garden .progress { height: 2px; background: var(--rule); }
+.theme-garden .progress-fill { background: var(--olive); }
+
+/* ════════════════════════════════════════════════════════════
+   CANVAS POSTER LABELS — the artboard headers
+   ════════════════════════════════════════════════════════════ */
+.poster-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(244, 238, 228, 0.6);
+}
+.poster-label strong { color: #F4EEE4; font-weight: 600; }
+
+/* Small animations */
+@keyframes lp-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes lp-pulse   { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+.lp-fade-in { animation: lp-fade-in 0.4s ease both; }
+.lp-pulse   { animation: lp-pulse 1.2s ease-in-out infinite; }
+
+/* Skin for ChromeWindow content area — fill it */
+.lp-tv-wrap { width: 1280px; height: 720px; }
+
+/* Hide scroll on inner stuff */
+.no-scroll::-webkit-scrollbar { display: none; }
+.no-scroll { scrollbar-width: none; }
