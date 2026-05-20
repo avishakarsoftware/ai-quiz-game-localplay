@@ -1027,6 +1027,26 @@ These aren't separate game types — they're **themed content packs** for existi
 
 The event-specific value comes from themed AI prompts, not new game mechanics. The vibe/theme selector should support event types: "baby shower", "wedding", "birthday", "team building", "holiday party".
 
+### Image-Based Game Modes
+
+Many games can be enhanced or built around images instead of (or alongside) text:
+
+- **Image Quiz** — show an AI-generated or uploaded image as the question, players answer what it is or answer questions about it. The quiz engine already supports `image_prompt` and `image_url` per question — this is partially built.
+- **Spot the Difference** — show two similar images, players identify differences. Needs AI image generation with controlled variation.
+- **Rebus / Emoji Puzzles** — emoji or image combinations that represent a word (see Rebus section above).
+- **What's Wrong With This Picture?** — AI-generated scene with deliberate oddities, players identify them.
+- **Photo Round** — host uploads photos (from the party, from travels, etc.), quiz questions are about the photos. Same as quiz but with host-uploaded images.
+- **AI Art Guessing** — AI generates images from prompts, players guess what the original prompt was. Reverse image-to-text game.
+- **Meme Caption** — show an image (AI-generated or template), everyone writes a caption, vote on best (Caption This variant with guaranteed images).
+
+Infrastructure needed for image-heavy games:
+- Reliable image generation (Gemini image generation or Stable Diffusion on a GPU).
+- Image display component that works on phone and TV at appropriate resolutions.
+- Optional: host photo upload endpoint for user-supplied images.
+- The quiz system's existing `image_url` field can be reused for any game that shows an image with a question.
+
+This is a platform capability, not a single game — once image display + generation works well, many game types benefit.
+
 ### Additional Game Evaluation Criteria
 
 Future games should be evaluated by:
