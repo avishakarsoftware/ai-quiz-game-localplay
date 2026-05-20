@@ -10,6 +10,7 @@ import { AVATAR_COLORS } from '../components/LeaderboardBarChart.constants';
 import { soundManager } from '../utils/sound';
 import BonusSplash from '../components/BonusSplash';
 import PlayerChip from '../components/PlayerChip';
+import Avatar from '../components/Avatar';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
@@ -589,9 +590,7 @@ export default function SpectatorPage() {
                             <div className="podium-container" style={{ gap: 16, padding: '16px 0', position: 'relative', zIndex: 11 }}>
                                 {leaderboard[1] && (
                                     <div className={`podium-place podium-2 ${podiumReveal >= 2 ? '' : 'podium-hidden'}`}>
-                                        <div className="w-14 h-14 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: '#C0C0C0' }}>
-                                            <span style={{ fontSize: '2rem', lineHeight: 1 }}>{leaderboard[1].avatar || leaderboard[1].nickname.slice(0, 2).toUpperCase()}</span>
-                                        </div>
+                                        <div className="mb-2"><Avatar player={leaderboard[1]} size={56} decorative /></div>
                                         <p className="podium-name" style={{ fontSize: 18, maxWidth: 120 }}>{leaderboard[1].nickname}</p>
                                         <div className="podium-bar" style={{ width: 120, height: 100 }}>2</div>
                                         <p className="podium-score" style={{ fontSize: 16 }}><AnimatedNumber value={podiumReveal >= 2 ? leaderboard[1].score : 0} /></p>
@@ -600,9 +599,7 @@ export default function SpectatorPage() {
                                 {leaderboard[0] && (
                                     <div className={`podium-place podium-1 ${podiumReveal >= 3 ? '' : 'podium-hidden'} ${podiumReveal >= 4 && leaderboard.filter(p => p.score === leaderboard[0].score).length === 1 ? 'victory-glow' : ''}`}>
                                         {podiumReveal >= 4 && leaderboard.filter(p => p.score === leaderboard[0].score).length === 1 && <span className="crown-bounce" style={{ fontSize: 40, marginBottom: 4 }}>&#x1F451;</span>}
-                                        <div className="w-16 h-16 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: '#FFD700' }}>
-                                            <span style={{ fontSize: '2.5rem', lineHeight: 1 }}>{leaderboard[0].avatar || leaderboard[0].nickname.slice(0, 2).toUpperCase()}</span>
-                                        </div>
+                                        <div className="mb-2"><Avatar player={leaderboard[0]} size={68} you decorative /></div>
                                         <p className="podium-name" style={{ fontSize: 18, maxWidth: 120 }}>{leaderboard[0].nickname}</p>
                                         <div className="podium-bar" style={{ width: 120, height: 140 }}>1</div>
                                         <p className="podium-score" style={{ fontSize: 16 }}><AnimatedNumber value={podiumReveal >= 3 ? leaderboard[0].score : 0} /></p>
@@ -610,9 +607,7 @@ export default function SpectatorPage() {
                                 )}
                                 {leaderboard[2] && (
                                     <div className={`podium-place podium-3 ${podiumReveal >= 1 ? '' : 'podium-hidden'}`}>
-                                        <div className="w-14 h-14 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: '#CD7F32' }}>
-                                            <span style={{ fontSize: '2rem', lineHeight: 1 }}>{leaderboard[2].avatar || leaderboard[2].nickname.slice(0, 2).toUpperCase()}</span>
-                                        </div>
+                                        <div className="mb-2"><Avatar player={leaderboard[2]} size={56} decorative /></div>
                                         <p className="podium-name" style={{ fontSize: 18, maxWidth: 120 }}>{leaderboard[2].nickname}</p>
                                         <div className="podium-bar" style={{ width: 120, height: 70 }}>3</div>
                                         <p className="podium-score" style={{ fontSize: 16 }}><AnimatedNumber value={podiumReveal >= 1 ? leaderboard[2].score : 0} /></p>
@@ -625,7 +620,7 @@ export default function SpectatorPage() {
                                     <h3 className="text-2xl font-extrabold text-center mb-3">Awards</h3>
                                     <div style={{ display: 'flex', justifyContent: 'center', gap: 20, flexWrap: 'wrap' }}>
                                         {superlatives.map((s) => (
-                                            <div key={s.title} style={{ textAlign: 'center', padding: '12px 16px', background: 'var(--surface-secondary, rgba(255,255,255,0.05))', borderRadius: 12, minWidth: 130 }}>
+                                            <div key={s.title} style={{ textAlign: 'center', padding: '12px 16px', background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 8, minWidth: 130 }}>
                                                 <div style={{ fontSize: '2rem' }}>{s.icon}</div>
                                                 <div style={{ fontWeight: 700, fontSize: '0.85rem', marginTop: 4 }}>{s.title}</div>
                                                 <div style={{ fontSize: '1.3rem', marginTop: 4 }}>{s.avatar || '👤'}</div>

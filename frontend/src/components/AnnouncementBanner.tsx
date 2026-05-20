@@ -35,10 +35,12 @@ export default function AnnouncementBanner() {
           key={a.id}
           style={{
             margin: '0.5rem auto', maxWidth: 600, padding: '0.75rem 1rem',
-            borderRadius: 12, display: 'flex', alignItems: 'center', gap: '0.75rem',
+            borderRadius: 8, display: 'flex', alignItems: 'center', gap: '0.75rem',
             fontSize: '0.875rem',
-            background: a.type === 'warning' ? 'rgba(255, 180, 50, 0.15)' : 'rgba(100, 140, 255, 0.15)',
-            border: `1px solid ${a.type === 'warning' ? 'rgba(255, 180, 50, 0.3)' : 'rgba(100, 140, 255, 0.3)'}`,
+            background: 'var(--paper)',
+            border: `1px solid ${a.type === 'warning' ? 'rgba(255, 199, 107, 0.42)' : 'rgba(109, 255, 230, 0.32)'}`,
+            boxShadow: 'var(--shadow-soft)',
+            color: 'var(--ink)',
           }}
         >
           <span style={{ flex: 1 }}>{a.text}</span>

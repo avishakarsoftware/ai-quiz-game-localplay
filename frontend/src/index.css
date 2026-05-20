@@ -887,18 +887,18 @@ body {
 }
 
 .rank-1 {
-    background: #FFD700;
-    color: #000;
+    background: var(--gold);
+    color: var(--accent-ink);
 }
 
 .rank-2 {
-    background: #C0C0C0;
-    color: #000;
+    background: var(--plum);
+    color: var(--accent-ink);
 }
 
 .rank-3 {
-    background: #CD7F32;
-    color: #000;
+    background: var(--accent);
+    color: var(--accent-ink);
 }
 
 .rank-default {
@@ -911,7 +911,7 @@ body {
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    gap: 8px;
+    gap: 10px;
     padding: 24px 0;
 }
 
@@ -927,29 +927,31 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 8px 8px 0 0;
+    border-radius: 8px 8px 2px 2px;
     font-size: 24px;
     font-weight: 700;
-    color: rgba(0, 0, 0, 0.6);
+    color: var(--accent-ink);
+    border: 1px solid rgba(248, 235, 217, 0.18);
+    box-shadow: var(--shadow-soft);
     transform-origin: bottom;
     animation: podiumRise 0.6s ease-out both;
 }
 
 .podium-1 .podium-bar {
     height: 120px;
-    background: linear-gradient(135deg, #FFD700, #FFA500);
+    background: linear-gradient(180deg, var(--gold), var(--accent));
     animation-delay: 0.6s;
 }
 
 .podium-2 .podium-bar {
     height: 90px;
-    background: linear-gradient(135deg, #C0C0C0, #A0A0A0);
+    background: linear-gradient(180deg, var(--plum), rgba(181, 122, 255, 0.55));
     animation-delay: 0.3s;
 }
 
 .podium-3 .podium-bar {
     height: 60px;
-    background: linear-gradient(135deg, #CD7F32, #A0522D);
+    background: linear-gradient(180deg, var(--olive), rgba(109, 255, 230, 0.42));
     animation-delay: 0s;
 }
 
@@ -969,7 +971,7 @@ body {
     font-size: 14px;
     font-weight: 600;
     margin-bottom: 8px;
-    max-width: 80px;
+    max-width: 92px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -977,8 +979,10 @@ body {
 
 .podium-score {
     font-size: 13px;
-    color: var(--text-tertiary);
+    color: var(--gold);
     margin-top: 8px;
+    font-family: var(--font-mono);
+    font-weight: 800;
 }
 
 /* Settings Row */
@@ -987,8 +991,9 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: 12px 16px;
-    background: var(--bg-secondary);
-    border-radius: 10px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
 }
 
 .settings-input {
@@ -1149,10 +1154,10 @@ body {
 
 @keyframes victoryGlow {
     0%, 100% {
-        filter: drop-shadow(0 0 12px rgba(255, 215, 0, 0.3));
+        filter: drop-shadow(0 0 12px rgba(255, 199, 107, 0.35));
     }
     50% {
-        filter: drop-shadow(0 0 24px rgba(255, 215, 0, 0.6));
+        filter: drop-shadow(0 0 26px rgba(255, 46, 122, 0.60));
     }
 }
 
@@ -1166,7 +1171,7 @@ body {
 }
 
 .gold-shimmer {
-    background: linear-gradient(90deg, #FFD700, #FFF8DC, #FFD700, #FFA500, #FFD700);
+    background: linear-gradient(90deg, var(--gold), var(--ink), var(--gold), var(--accent), var(--gold));
     background-size: 200% auto;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -1183,6 +1188,8 @@ body {
     font-size: 20px;
     font-weight: 700;
     animation: fadeSlideUp 0.5s ease-out;
+    color: var(--ink);
+    text-shadow: var(--glow-accent);
 }
 
 /* Player card entrance */
@@ -1329,7 +1336,7 @@ body {
 
 /* Points glow card */
 .points-glow {
-    box-shadow: 0 0 30px rgba(38, 222, 129, 0.3);
+    box-shadow: var(--glow-mint);
 }
 
 /* Lobby join animations */
@@ -1338,7 +1345,7 @@ body {
     padding: 16px;
     width: 100%;
     background: var(--glass-bg);
-    border-radius: 16px;
+    border-radius: 8px;
     border: 1px solid var(--glass-border);
 }
 
@@ -1370,8 +1377,8 @@ body {
     gap: 8px;
     padding: 8px 16px;
     border-radius: 100px;
-    background: rgba(0, 184, 148, 0.12);
-    border: 1px solid rgba(0, 184, 148, 0.2);
+    background: rgba(109, 255, 230, 0.12);
+    border: 1px solid rgba(109, 255, 230, 0.25);
     animation: toastSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -1959,6 +1966,44 @@ body {
 /* Image generation ring */
 .image-gen-ring {
     animation: pulse 2s ease-in-out infinite;
+    filter: drop-shadow(0 0 20px rgba(255, 46, 122, 0.22));
+}
+
+.image-gen-card {
+    width: min(100%, 360px);
+    padding: 28px 24px;
+    border-radius: 8px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+    text-align: center;
+}
+
+.velvet-toggle {
+    min-width: 64px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--rule);
+    color: var(--ink-mute);
+    background: var(--paper-2);
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 800;
+    transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.velvet-toggle-on {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+    box-shadow: var(--glow-accent);
+}
+
+.velvet-toggle-off {
+    background: rgba(109, 255, 230, 0.14);
+    color: var(--olive);
+    border-color: rgba(109, 255, 230, 0.35);
+    box-shadow: var(--glow-mint);
 }
 
 /* Utility */
@@ -2213,23 +2258,23 @@ body {
 
 /* Game control buttons (organizer next/end) */
 .btn-game-next {
-    background: linear-gradient(135deg, #14532d, #166534);
-    color: #d1fae5;
-    box-shadow: 0 4px 14px rgba(20, 83, 45, 0.25);
+    background: var(--olive);
+    color: var(--accent-ink);
+    box-shadow: var(--glow-mint);
 }
 
 .btn-game-next:hover:not(:disabled) {
-    box-shadow: 0 6px 20px rgba(20, 83, 45, 0.35);
+    box-shadow: var(--shadow), var(--glow-mint);
 }
 
 .btn-game-end {
-    background: linear-gradient(135deg, #7f1d1d, #991b1b);
-    color: #fee2e2;
-    box-shadow: 0 4px 14px rgba(127, 29, 29, 0.25);
+    background: var(--accent);
+    color: var(--accent-ink);
+    box-shadow: var(--glow-accent);
 }
 
 .btn-game-end:hover:not(:disabled) {
-    box-shadow: 0 6px 20px rgba(127, 29, 29, 0.35);
+    box-shadow: var(--shadow), var(--glow-accent);
 }
 
 /* Screen hero section - consistent across all screens */
@@ -2263,18 +2308,19 @@ body {
     font-size: 40px;
     font-weight: 700;
     margin: 0 auto 16px;
+    border: 1px solid var(--rule-2);
 }
 
 .result-icon-correct {
-    background: rgba(38, 222, 129, 0.15);
+    background: rgba(109, 255, 230, 0.15);
     color: var(--accent-success);
-    box-shadow: 0 0 40px rgba(38, 222, 129, 0.2);
+    box-shadow: var(--glow-mint);
 }
 
 .result-icon-wrong {
-    background: rgba(255, 107, 107, 0.15);
+    background: rgba(255, 46, 122, 0.15);
     color: var(--accent-danger);
-    box-shadow: 0 0 40px rgba(255, 107, 107, 0.2);
+    box-shadow: var(--glow-accent);
 }
 
 /* Status screen - centered message with icon (connecting, error, etc.) */
@@ -2282,7 +2328,9 @@ body {
     width: 64px;
     height: 64px;
     border-radius: 50%;
-    background: var(--bg-secondary);
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow-soft);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2298,9 +2346,9 @@ body {
     border-radius: 100px;
     font-size: 13px;
     font-weight: 700;
-    background: linear-gradient(135deg, rgba(255, 215, 0, 0.25), rgba(255, 165, 0, 0.25));
-    color: #FFD700;
-    border: 1px solid rgba(255, 215, 0, 0.3);
+    background: rgba(255, 199, 107, 0.15);
+    color: var(--gold);
+    border: 1px solid rgba(255, 199, 107, 0.35);
     animation: bonusPulse 2s ease-in-out infinite;
 }
 

@@ -50,28 +50,28 @@ export default function ErrorModal({ title, message, upgradeAvailable, onDismiss
       style={{
         position: 'fixed', inset: 0, zIndex: 9000,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0, 0, 0, 0.85)', padding: '1rem',
+        background: 'rgba(10, 6, 18, 0.86)', padding: '1rem',
       }}
       onClick={onDismiss}
     >
       <div
         style={{
-          background: '#1e1e3a', borderRadius: 20,
+          background: 'var(--paper)', borderRadius: 8,
           padding: '2rem 1.5rem', maxWidth: 380, width: '100%', textAlign: 'center',
-          border: upgradeAvailable ? '2px solid rgba(255, 170, 50, 0.4)' : '1px solid rgba(255,255,255,0.1)',
+          border: upgradeAvailable ? '1px solid rgba(255, 199, 107, 0.45)' : '1px solid var(--rule)',
           boxShadow: upgradeAvailable
-            ? '0 0 40px rgba(255, 170, 50, 0.15), 0 8px 32px rgba(0,0,0,0.5)'
-            : '0 8px 32px rgba(0,0,0,0.5)',
+            ? 'var(--shadow), 0 0 36px rgba(255, 199, 107, 0.18)'
+            : 'var(--shadow)',
         }}
         onClick={e => e.stopPropagation()}
       >
         <div style={{ fontSize: '3rem', marginBottom: '0.75rem' }}>
           {upgradeAvailable ? '⚡' : '⚠️'}
         </div>
-        <h2 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '0.5rem', color: '#fff' }}>
+        <h2 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '0.5rem', color: 'var(--ink)' }}>
           {title}
         </h2>
-        <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.95rem', lineHeight: 1.5, marginBottom: '1.5rem' }}>
+        <p style={{ color: 'var(--ink-2)', fontSize: '0.95rem', lineHeight: 1.5, marginBottom: '1.5rem' }}>
           {message}
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -84,26 +84,26 @@ export default function ErrorModal({ title, message, upgradeAvailable, onDismiss
                   borderRadius: 10, padding: '8px 12px', marginBottom: 4,
                 }}>
                   <div style={{
-                    color: '#ff8a00', fontWeight: 800, fontSize: '0.75rem',
+                    color: 'var(--gold)', fontWeight: 800, fontSize: '0.75rem',
                     letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 4,
                   }}>
                     {promo.badge}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                     <span style={{
-                      color: 'rgba(255,255,255,0.4)', textDecoration: 'line-through',
+                      color: 'var(--ink-mute)', textDecoration: 'line-through',
                       fontSize: '1rem', fontWeight: 600,
                     }}>
                       {promo.original_amount}
                     </span>
                     <SparkCoin size={18} />
-                    <span style={{ color: '#FFD700', fontWeight: 800, fontSize: '1.3rem' }}>
+                    <span style={{ color: 'var(--gold)', fontWeight: 800, fontSize: '1.3rem' }}>
                       {promo.token_pack_amount}
                     </span>
-                    <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.85rem' }}>sparks</span>
+                    <span style={{ color: 'var(--ink-mute)', fontSize: '0.85rem' }}>sparks</span>
                   </div>
                   {countdown && (
-                    <div style={{ color: '#e52e71', fontSize: '0.7rem', fontWeight: 600, marginTop: 4 }}>
+                    <div style={{ color: 'var(--accent)', fontSize: '0.7rem', fontWeight: 600, marginTop: 4 }}>
                       {countdown}
                     </div>
                   )}
@@ -113,12 +113,12 @@ export default function ErrorModal({ title, message, upgradeAvailable, onDismiss
                 className="btn btn-glow"
                 onClick={onUpgrade}
                 style={{
-                  background: 'linear-gradient(135deg, #ff8a00, #e52e71)',
-                  color: '#fff',
+                  background: 'var(--accent)',
+                  color: 'var(--accent-ink)',
                   fontWeight: 700,
                   fontSize: '1.1rem',
                   padding: '14px 24px',
-                  borderRadius: 12,
+                  borderRadius: 8,
                   border: 'none',
                   cursor: 'pointer',
                 }}
@@ -132,7 +132,7 @@ export default function ErrorModal({ title, message, upgradeAvailable, onDismiss
             onClick={onDismiss}
             style={{
               background: 'transparent',
-              color: 'rgba(255,255,255,0.5)',
+              color: 'var(--ink-mute)',
               fontWeight: 500,
               fontSize: '0.9rem',
               padding: '10px',

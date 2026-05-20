@@ -66,7 +66,7 @@ export default function MLTReviewScreen({
         >
             <div className="flex-1 py-6">
                 <div className="text-center mb-6">
-                    <h1 className="text-2xl font-bold">{game.game_title}</h1>
+                    <h1 className="hero-title">{game.game_title}</h1>
                     <p className="text-[--text-secondary] mt-1">
                         {game.statements.length} statements ready to go
                     </p>
@@ -149,17 +149,7 @@ export default function MLTReviewScreen({
                     </div>
                     <button
                         onClick={() => setShowVotes(!showVotes)}
-                        style={{
-                            minWidth: 60,
-                            padding: '6px 12px',
-                            fontSize: '0.875rem',
-                            fontWeight: 600,
-                            borderRadius: 8,
-                            border: 'none',
-                            color: '#fff',
-                            background: showVotes ? '#e74c3c' : '#2ecc71',
-                            cursor: 'pointer',
-                        }}
+                        className={`velvet-toggle ${showVotes ? 'velvet-toggle-on' : 'velvet-toggle-off'}`}
                     >
                         {showVotes ? 'OFF' : 'ON'}
                     </button>

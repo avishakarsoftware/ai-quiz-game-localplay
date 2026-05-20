@@ -10,6 +10,7 @@ import BonusSplash from '../components/BonusSplash';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
 import { AVATAR_COLORS } from '../components/LeaderboardBarChart.constants';
 import PlayerChip from '../components/PlayerChip';
+import Avatar from '../components/Avatar';
 
 type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
@@ -851,9 +852,7 @@ export default function PlayerPage() {
                         <div className="podium-container" style={{ position: 'relative', zIndex: 11 }}>
                             {leaderboard[1] && (
                                 <div className="podium-place podium-2">
-                                    <div className="w-10 h-10 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: '#C0C0C0' }}>
-                                        <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>{leaderboard[1].avatar || leaderboard[1].nickname.slice(0, 2).toUpperCase()}</span>
-                                    </div>
+                                    <div className="mb-2"><Avatar player={leaderboard[1]} size={44} decorative /></div>
                                     <p className="podium-name">{leaderboard[1].nickname}</p>
                                     <div className="podium-bar">2</div>
                                     <p className="podium-score"><AnimatedNumber value={leaderboard[1].score} /></p>
@@ -862,9 +861,7 @@ export default function PlayerPage() {
                             {leaderboard[0] && (
                                 <div className="podium-place podium-1 victory-glow">
                                     <span className="crown-bounce text-2xl" style={{ marginBottom: 4 }}>&#x1F451;</span>
-                                    <div className="w-12 h-12 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: '#FFD700' }}>
-                                        <span style={{ fontSize: '1.5rem', lineHeight: 1 }}>{leaderboard[0].avatar || leaderboard[0].nickname.slice(0, 2).toUpperCase()}</span>
-                                    </div>
+                                    <div className="mb-2"><Avatar player={leaderboard[0]} size={54} you decorative /></div>
                                     <p className="podium-name">{leaderboard[0].nickname}</p>
                                     <div className="podium-bar">1</div>
                                     <p className="podium-score"><AnimatedNumber value={leaderboard[0].score} /></p>
@@ -872,9 +869,7 @@ export default function PlayerPage() {
                             )}
                             {leaderboard[2] && (
                                 <div className="podium-place podium-3">
-                                    <div className="w-10 h-10 rounded-full flex items-center justify-center mb-2" style={{ backgroundColor: '#CD7F32' }}>
-                                        <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>{leaderboard[2].avatar || leaderboard[2].nickname.slice(0, 2).toUpperCase()}</span>
-                                    </div>
+                                    <div className="mb-2"><Avatar player={leaderboard[2]} size={44} decorative /></div>
                                     <p className="podium-name">{leaderboard[2].nickname}</p>
                                     <div className="podium-bar">3</div>
                                     <p className="podium-score"><AnimatedNumber value={leaderboard[2].score} /></p>
@@ -931,7 +926,7 @@ export default function PlayerPage() {
                                 <h3 className="text-lg font-semibold text-center mb-3">Awards</h3>
                                 <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
                                     {superlatives.map((s) => (
-                                        <div key={s.title} style={{ textAlign: 'center', padding: '10px 12px', background: 'var(--surface-secondary, rgba(255,255,255,0.05))', borderRadius: 10, minWidth: 100, maxWidth: 140 }}>
+                                        <div key={s.title} style={{ textAlign: 'center', padding: '10px 12px', background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 8, minWidth: 100, maxWidth: 140 }}>
                                             <div style={{ fontSize: '1.5rem' }}>{s.icon}</div>
                                             <div style={{ fontWeight: 700, fontSize: '0.7rem', marginTop: 2 }}>{s.title}</div>
                                             <div style={{ fontSize: '1.1rem', marginTop: 2 }}>{s.avatar || '👤'}</div>
