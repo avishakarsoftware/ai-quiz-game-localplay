@@ -2,11 +2,22 @@
 
 ## Overview
 
-Replace the current "game show purple" aesthetic with **Velvet** — a late-night lounge theme with midnight purple, neon magenta, and electric mint. This is a frontend-only change. No backend, WebSocket protocol, or API changes.
+Replace the current "game show purple" aesthetic with **Velvet** — a late-night lounge theme with midnight purple, neon magenta, electric mint, and warm cream text. This is primarily a frontend change. Backend APIs and WebSocket message contracts should stay unchanged; a small frontend-only `INTRO` presentation state is allowed.
 
 The redesign also introduces a proper **TV host surface** (reworked SpectatorPage) alongside the existing phone player and organizer views.
 
-Source of truth: `marketing/claude-design-1/` — specifically `src/screens.jsx`, `src/styles.css`, and `src/data.jsx`.
+Design reference: `marketing/claude-design-1/` — specifically `src/screens.jsx`, `src/styles.css`, and `src/data.jsx`.
+
+Important: the marketing prototype is visual guidance, not production code. Recreate the intent inside LocalPlay's existing React/TypeScript structure, accessibility patterns, route model, auth/payment UX, and game state machines. Do not copy prototype-only fake games, demo data, URLs, or timing assumptions into production unless the current backend supports them.
+
+## Implementation Principles
+
+- Preserve current product behavior first: quiz and WMLT must remain playable from organizer, player, and spectator views.
+- Ship this as a design-system migration plus screen-by-screen restyle, not as a rewrite of gameplay logic.
+- Keep visual density appropriate to each surface: player phone screens are direct controls, organizer screens are operational controls, spectator screens are TV presentation.
+- Maintain mobile safe areas, installable PWA behavior, and IONOS `/quiz/` base path.
+- Keep all text legible at current supported breakpoints. Validate narrow phones, desktop organizer, and 1280×720 TV.
+- Avoid adding backend persistence or new WebSocket messages as part of this theme work.
 
 ---
 
@@ -14,7 +25,7 @@ Source of truth: `marketing/claude-design-1/` — specifically `src/screens.jsx`
 
 ### CSS Variable Contract
 
-Replace the current variables in `index.css` with the Velvet token set. The old variables (`--bg-primary`, `--accent-primary`, `--glass-bg`, etc.) are replaced entirely — no backward compatibility needed.
+Add the Velvet token set in `index.css`, then keep a compatibility layer for the existing variable names while the screen migration is in progress. The current app references `--bg-primary`, `--accent-primary`, `--glass-bg`, `--text-tertiary`, and similar names in many components and Tailwind arbitrary values. Removing them up front will create invisible text and broken colors.
 
 ```css
 :root {
@@ -48,12 +59,40 @@ Replace the current variables in `index.css` with the Velvet token set. The old 
   --font-display: 'Bricolage Grotesque', sans-serif;
   --font-body:    'Hanken Grotesk', sans-serif;
   --font-mono:    'JetBrains Mono', monospace;
+
+  /* Temporary compatibility aliases. Delete only after rg confirms no usage. */
+  --bg-primary: var(--bg);
+  --bg-secondary: var(--bg-2);
+  --bg-tertiary: rgba(248, 235, 217, 0.08);
+  --bg-elevated: var(--paper);
+  --bg-gradient: none;
+  --glass-bg: var(--paper);
+  --glass-border: var(--rule);
+  --glass-blur: blur(0px);
+  --accent-primary: var(--accent);
+  --accent-secondary: var(--plum);
+  --accent-success: var(--olive);
+  --accent-warning: var(--gold);
+  --accent-danger: var(--accent);
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-2);
+  --text-tertiary: var(--ink-mute);
+  --text-quaternary: rgba(248, 235, 217, 0.28);
+  --separator: var(--rule);
 }
 ```
 
+Exit criterion for removing aliases:
+
+```bash
+rg "var\\(--(bg-primary|bg-secondary|bg-tertiary|bg-elevated|bg-gradient|glass-bg|glass-border|glass-blur|accent-primary|accent-secondary|accent-success|accent-warning|accent-danger|text-primary|text-secondary|text-tertiary|text-quaternary|separator)" frontend/src
+```
+
+Remove an alias only when the search no longer finds production usage.
+
 ### Background Treatment
 
-The page background uses radial gradient blooms instead of the current solid purple:
+The page background uses two broad radial gradient washes instead of the current solid purple. Keep them subtle; they should read as ambient lighting, not decorative orbs.
 
 ```css
 body {
@@ -92,7 +131,9 @@ Phone surface:
 
 ### Font Loading
 
-Add to `index.html` `<head>`:
+Preferred implementation: self-host font files under `frontend/public/fonts/` and define `@font-face` in `index.css` so the PWA remains stable and avoids a third-party runtime dependency. If self-hosting is not done in the first implementation pass, Google Fonts may be used temporarily in `index.html`, but track a follow-up to self-host before release.
+
+Temporary Google Fonts option:
 
 ```html
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -119,15 +160,15 @@ Add to `index.html` `<head>`:
 | `--glass-border` | `--rule` | |
 | `--separator` | `--rule` | |
 
-### What Dies
+### What Gets Deprecated
 
-- Glassmorphism (`backdrop-filter: blur`, semi-transparent white backgrounds)
-- `--bg-gradient` radial purple gradient
-- `--bg-tertiary`, `--bg-elevated`, `--glass-blur`, `--text-quaternary` (no Velvet equivalents)
-- System font stack (replaced with Hanken Grotesk / Bricolage Grotesque)
-- Colored answer buttons (red/blue/yellow/green) → unified dark cards with glyph badges
-- `ANSWER_STYLES` in `types.ts` (the `bg`, `shape`, and `className` fields): replace with letter glyphs (A/B/C/D) in neutral `.answer-glyph` badges. The shapes (▲/◆/●/■) and per-answer color classes (`answer-red`, `answer-blue`, etc.) are no longer used.
-- 31 existing `@keyframes` in `index.css`: audit each. Keep functional animations (timer pulse, score pop), replace decorative ones (glow, shimmer) with Velvet equivalents, remove unused.
+- Glassmorphism as a dominant visual language (`backdrop-filter: blur`, semi-transparent white panels). A very subtle overlay is allowed only for drawer/backdrop readability.
+- The current purple-heavy `--bg-gradient`.
+- Direct use of old token names in components. Keep aliases during migration, then remove once all references are converted.
+- System font stack as the primary brand typography. Keep native fallbacks after Hanken/Bricolage/JetBrains.
+- Colored answer buttons (red/blue/yellow/green). Replace with unified dark cards and neutral letter glyph badges.
+- `ANSWER_STYLES` as a visual source of truth. Do not delete it until all components/tests stop importing it; instead introduce an answer-label helper (`A/B/C/D`) and migrate callers.
+- Existing `@keyframes` in `index.css`: audit each. Keep functional animations (timer pulse, score pop), replace decorative ones with Velvet equivalents, remove unused.
 
 ---
 
@@ -139,9 +180,10 @@ Emoji rendered inside a disc. Current code likely renders emoji inline; this nee
 
 ```tsx
 type AvatarProps = {
-  player: { name: string; avatar: string; hue?: number };
+  player: { name?: string; nickname?: string; avatar?: string; hue?: number };
   size?: number;       // default 32
   you?: boolean;       // accent ring + glow
+  fallbackText?: string;
 };
 ```
 
@@ -149,6 +191,8 @@ type AvatarProps = {
 - Round `<span>` with `width`/`height` = size, `border-radius: 50%`
 - Background: `var(--bg-2)`
 - Emoji child `<span>` at ~62% of disc size
+- If no emoji exists, fall back to initials derived from `nickname`, `name`, or `fallbackText`
+- Include an accessible label for the player name when the avatar is not purely decorative
 - Default ring: `box-shadow: 0 0 0 1.5px var(--accent), 0 0 16px rgba(255,46,122,0.35)`
 - "You" ring: `box-shadow: 0 0 0 2px var(--accent), 0 0 24px rgba(255,46,122,0.65)`
 
@@ -172,7 +216,7 @@ Avatar + name pill. Used in lobby rosters and inline references.
 
 ```tsx
 type PlayerChipProps = {
-  player: { name: string; avatar: string };
+  player: { name?: string; nickname?: string; avatar?: string };
   you?: boolean;
 };
 ```
@@ -200,10 +244,10 @@ The component already exists at `components/TimerRing.tsx`. Update the styling:
 
 ### Answer Cards
 
-Replace the current colored answer buttons (`.answer-red`, `.answer-blue`, etc.) with a unified card style:
+Replace the current colored answer buttons (`.answer-red`, `.answer-blue`, etc.) with a unified card style. Use semantic class names that do not conflict with native answer elements, for example `.answer-card` and `.answer-glyph`; keep `.answer` only if implementation confirms no existing CSS or tests depend on it.
 
 ```css
-.answer {
+.answer-card {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -217,7 +261,7 @@ Replace the current colored answer buttons (`.answer-red`, `.answer-blue`, etc.)
   cursor: pointer;
   transition: background 0.15s;
 }
-.answer:hover { background: #261837; }
+.answer-card:hover { background: #261837; }
 
 /* Glyph badge (A, B, C, D) */
 .answer-glyph {
@@ -237,21 +281,21 @@ Replace the current colored answer buttons (`.answer-red`, `.answer-blue`, etc.)
 }
 
 /* States */
-.answer.selected {
+.answer-card.selected {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.answer.correct {
+.answer-card.correct {
   background: rgba(109, 255, 230, 0.16);
   border-color: var(--olive);
   color: var(--olive);
   box-shadow: 0 0 24px rgba(109, 255, 230, 0.30);
 }
-.answer.correct .answer-glyph {
+.answer-card.correct .answer-glyph {
   background: var(--olive);
   color: var(--bg);
 }
-.answer.wrong { opacity: 0.35; }
+.answer-card.wrong { opacity: 0.35; }
 ```
 
 **Phone answer cards:** `font-size: 16px`, `padding: 14px 16px`
@@ -418,7 +462,7 @@ PhoneHeader (eyebrow nav bar)
 - Progress bar (2px): `padding: 0 24px 16px`
 - Question: `padding: 8px 24px 16px`, eyebrow "· {topic}", display text (22px, line-height 1.2)
 - Answer grid: flex column, gap 10px, padding 8px 24px 16px
-  - Each: `.answer` card (16px font, 14px 16px padding) with `.answer-glyph`
+  - Each: `.answer-card` (16px font, 14px 16px padding) with `.answer-glyph`
   - Selected: outline 2px accent
   - Revealing: `.correct` (mint glow) / `.wrong` (opacity 0.35)
   - Player's choice: eyebrow "· your pick"
@@ -508,6 +552,8 @@ TVHeader (eyebrow nav with game info + room code)
 
 This is a new screen for when the TV is waiting / no game selected.
 
+Implementation note: the current production backend only supports `quiz` and `wmlt`. The library may visually preview future games as disabled/coming-soon cards, but selectable cards must be limited to supported `GameType` values until the backend implements the new games.
+
 - Header: eyebrow row with "LocalPlay", session info, host name, spark count
 - Title: display (80px): "Pick a game" ("game" italic accent)
 - Eyebrow: "· Six rooms, all played locally…"
@@ -516,6 +562,17 @@ This is a new screen for when the TV is waiting / no game selected.
   - Chapter number eyebrow, optional badge chip
   - Display name (36px), tagline (14px, ink-2)
   - Footer: eyebrow player count + pace, display arrow (20px, italic, accent) "→"
+
+Current supported cards:
+
+| Game | ID | Enabled |
+|---|---|---|
+| Trivia | `quiz` | Yes |
+| Most Likely To | `wmlt` | Yes |
+| Pictionary | `pictionary` | Disabled / Coming soon |
+| Taboo | `taboo` | Disabled / Coming soon |
+| Whispers | `whispers` | Disabled / Coming soon |
+| Bluff | `fibbage` or future backend id | Disabled / Coming soon |
 
 ### TV: Lobby
 
@@ -640,6 +697,25 @@ TV podium reveals positions 3rd → 2nd → 1st with ~300ms delay between each:
 Intro screen: number transitions at 1s ticks. Each number scales in (optional):
 - `transform: scale(1.1) → scale(1)` over 200ms
 
+### Reduced Motion
+
+Add a global reduced-motion policy:
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+```
+
+For gameplay-critical moments, prefer replacing motion with static state changes rather than hiding information. Timer countdowns and score changes must still be visible.
+
 ---
 
 ## Phase 6: Screen-by-Screen Migration Checklist
@@ -666,7 +742,7 @@ Intro screen: number transitions at 1s ticks. Each number scales in (optional):
 |---|---|---|
 | JOIN | `pages/PlayerPage.tsx` | Restyle join form. Replace hero icon. Velvet input fields + pill button. |
 | LOBBY | `pages/PlayerPage.tsx` | New layout: centered self-avatar, player chips, "waiting" pulse. |
-| INTRO (new) | `pages/PlayerPage.tsx` | Add intro countdown state between LOBBY and QUESTION. 3-2-1 display. |
+| INTRO (optional) | `pages/PlayerPage.tsx` | Add intro countdown state between LOBBY and QUESTION only if it does not reduce answer time. 3-2-1 display. |
 | QUESTION | `pages/PlayerPage.tsx` | New answer cards (no color coding). Glyph badges. Power-up pills. |
 | WAITING | `pages/PlayerPage.tsx` | Restyle with Velvet tokens. |
 | RESULT | `pages/PlayerPage.tsx` | Points display in olive/ink-mute. Eyebrow correct/wrong. |
@@ -683,7 +759,7 @@ Intro screen: number transitions at 1s ticks. Each number scales in (optional):
 | LEADERBOARD | `pages/SpectatorPage.tsx` | Full rebuild: standings list with progress bars. |
 | PODIUM | `pages/SpectatorPage.tsx` | Full rebuild: podium bars + awards strip. |
 | LIBRARY (new) | `pages/SpectatorPage.tsx` | New: game catalog grid when no game is active. |
-| INTRO (new) | `pages/SpectatorPage.tsx` | New: round countdown with giant display number. |
+| INTRO (optional) | `pages/SpectatorPage.tsx` | Round countdown with giant display number, subject to the same timing guardrails as PlayerPage. |
 
 ### Global Components
 
@@ -706,32 +782,22 @@ Intro screen: number transitions at 1s ticks. Each number scales in (optional):
 
 ## Implementation Order
 
-1. **CSS variable swap** — Replace all variables in `index.css`. Load Google Fonts. Remove glassmorphism. Test that nothing is invisible/unreadable.
-2. **Avatar component** — Build `<Avatar>` with size prop and "you" ring.
-3. **PlayerChip component** — Build `<PlayerChip>` using Avatar.
-4. **Answer cards** — Replace colored answer buttons with unified `.answer` card style.
-5. **Buttons** — Update `.btn-primary` and add `.btn-ghost`. Pill shapes, uppercase, glow.
-6. **Eyebrow utility** — Add `.eyebrow` class.
-7. **Phone Join/Lobby** — Restyle with new components.
-8. **Phone Question + Result** — New answer cards, power-up pills, result display.
-9. **Phone Leaderboard** — Replace Recharts with standings list.
-10. **Phone Podium** — New podium grid + awards + play again.
-11. **Phone Intro** — Add 3-2-1 countdown state.
-12. **Organizer screens** — GameSelect, Prompt, Review, Lobby, Question, Leaderboard, Podium.
-13. **TV Lobby** — 2-column grid with QR + roster.
-14. **TV Question** — Topic strip, TimerRing, 2×2 grid.
-15. **TV Leaderboard** — Standings with progress bars.
-16. **TV Podium** — Bars + awards strip.
-17. **TV Intro** — Giant countdown.
-18. **TV Library** — Game catalog grid (when games are ready).
-19. **Animation pass** — lp-fade-in, leaderboard bar growth, podium reveal, countdown.
-20. **Global components** — SettingsDrawer, TokenBadge, SparkCoin, ErrorModal, BonusSplash, Fireworks.
+1. **Token foundation** — Add Velvet tokens plus compatibility aliases in `index.css`. Load fonts, preferably self-hosted. Verify current screens remain readable before deeper refactors.
+2. **Shared primitives** — Build `<Avatar>`, `<PlayerChip>`, `.eyebrow`, `.display`, `.num`, `.answer-card`, `.answer-glyph`, `.btn-ghost`, and restyle existing button classes without changing behavior.
+3. **Answer migration** — Migrate quiz answer rendering away from `ANSWER_STYLES` shapes/colors to letter glyph badges. Keep `ANSWER_STYLES` exported until all imports/tests are gone.
+4. **Phone core path** — Restyle JOIN, LOBBY, QUESTION, WAITING/RESULT, LEADERBOARD, PODIUM in `PlayerPage.tsx`.
+5. **Organizer control surfaces** — Restyle GameSelect, Prompt, MLT prompt, Loading, Review, MLT review, ImageGeneration, Lobby, Question, Leaderboard, Podium. Keep host controls clear and operational.
+6. **Spectator TV surface** — Rework SpectatorPage LOBBY, QUESTION, LEADERBOARD, PODIUM as the polished TV view.
+7. **Optional INTRO state** — Add local presentation countdown only after the core restyle is stable and only if timing does not steal answer time. See the INTRO section below.
+8. **Global components** — SettingsDrawer, TokenBadge, SparkCoin, ErrorModal, BonusSplash, Fireworks, AnnouncementBanner, MaintenanceOverlay, SignInNudge, CastButton.
+9. **Animation pass** — Add subtle fade/pulse/bar/podium motion, respecting reduced-motion preferences.
+10. **Cleanup** — Remove unused old token aliases, answer color classes, keyframes, and any compatibility code only after `rg` and tests confirm no references.
 
 ---
 
 ## INTRO State Machine Change
 
-The only state machine change in this redesign. Both PlayerPage and SpectatorPage need an `INTRO` state between `LOBBY` and `QUESTION`.
+This is the only allowed state-machine change in this redesign, and it is optional. Both PlayerPage and SpectatorPage may add an `INTRO` presentation state between `LOBBY` and `QUESTION`, but it must not reduce real answer time or require backend timing changes.
 
 **Current flow:**
 ```
@@ -743,11 +809,13 @@ GAME_STARTING → stay in LOBBY → first QUESTION arrives → QUESTION state
 GAME_STARTING → INTRO state (3-2-1 countdown, ~2.5s) → first QUESTION arrives → QUESTION state
 ```
 
-Implementation:
+Implementation guardrails:
 - On `GAME_STARTING` message: transition to `INTRO` instead of staying in `LOBBY`
-- INTRO screen runs a local 3-step countdown (3 → 2 → 1 → "Go." at 1s ticks)
+- INTRO screen runs a local countdown (`3` -> `2` -> `1` -> `Go.`)
 - When the first `QUESTION` message arrives, transition to `QUESTION` regardless of countdown progress (the backend is the source of truth for timing)
 - No backend changes needed — `GAME_STARTING` is already sent
+- If the backend sends `QUESTION` immediately enough that users lose visible answer time, skip or shorten the intro rather than delaying question rendering.
+- Respect `prefers-reduced-motion`: show a static "Get ready" screen or skip the countdown.
 
 Add `'INTRO'` to the `PlayerState` and spectator state types.
 
@@ -765,13 +833,29 @@ For this redesign:
 
 This means the Organizer and TV views diverge more than they do today. The Organizer is for the host's phone/laptop; the TV is for the room's screen.
 
+## Implementation Acceptance Criteria
+
+Before merging the theme implementation:
+
+- `npm run build` and `npm test` pass in `frontend/`.
+- Backend tests still pass if any shared types or route assumptions changed.
+- Existing quiz flow works on phone player, organizer, and spectator: join -> lobby -> question -> answer -> result/leaderboard -> podium.
+- Existing WMLT flow works on phone player, organizer, and spectator.
+- Google/Apple sign-in controls remain visible and usable in SettingsDrawer.
+- Token badge, purchase modal/error modal, maintenance overlay, and announcement banner remain readable.
+- IONOS `/quiz/` build loads with the correct base path and no broken asset URLs.
+- A Playwright or manual screenshot pass covers: narrow phone, desktop organizer, 1280x720 spectator, and a long-question/long-answer quiz.
+- No text overlaps fixed controls, safe-area notches, or the settings/spark badges.
+- `rg "var\\(--text-quaternary|var\\(--bg-tertiary|answer-red|answer-blue|answer-yellow|answer-green" frontend/src` is either clean or every remaining hit is intentionally covered by a compatibility alias.
+- `prefers-reduced-motion` still leaves gameplay state clear.
+
 ---
 
 ## What This Spec Does NOT Cover
 
 - New game implementations (Pictionary, Taboo, Whispers, Bluff) — those have their own game-specific screens built when the games are built. The theme system supports them.
-- Backend changes — none needed.
-- WebSocket protocol changes — none needed.
+- Backend API or WebSocket protocol changes.
 - Theme switching — this spec ships Velvet as the only theme. Multi-theme support can be added later by wrapping variables in `[data-theme="velvet"]` selectors.
 - Drawing canvas for Pictionary — separate component, separate spec.
 - Recharts dependency decision — the LeaderboardBarChart currently uses Recharts. This can either be replaced with pure CSS bars (matching the TV leaderboard spec) or kept with updated colors. Decide during implementation.
+- Long-term generated-content persistence, Cloud Run readiness, or multi-instance room state.
