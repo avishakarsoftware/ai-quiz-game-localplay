@@ -9,8 +9,9 @@ import Fireworks from '../components/Fireworks';
 import BonusSplash from '../components/BonusSplash';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
 import { AVATAR_COLORS } from '../components/LeaderboardBarChart.constants';
+import PlayerChip from '../components/PlayerChip';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'QUESTION' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
 interface PlayerQuestion {
     id: number;
@@ -51,6 +52,7 @@ export default function PlayerPage() {
     const [teamLeaderboard, setTeamLeaderboard] = useState<TeamLeaderboardEntry[]>([]);
     const [myRank, setMyRank] = useState(0);
     const [error, setError] = useState('');
+    const [introCount, setIntroCount] = useState(3);
     const [lobbyPlayers, setLobbyPlayers] = useState<PlayerInfo[]>([]);
     const [powerUps, setPowerUps] = useState<PowerUps>({ double_points: true, fifty_fifty: true });
     const [hiddenOptions, setHiddenOptions] = useState<number[]>([]);
@@ -75,6 +77,13 @@ export default function PlayerPage() {
         wsRef.current?.close();
         wsRef.current = null;
     }, []);
+
+    useEffect(() => {
+        if (state !== 'INTRO') return;
+        setIntroCount(3);
+        const timers = [1, 2].map((tick) => window.setTimeout(() => setIntroCount(3 - tick), tick * 1000));
+        return () => timers.forEach(window.clearTimeout);
+    }, [state]);
 
     // Auto-rejoin if we have a saved session (e.g. page refresh)
     useEffect(() => {
@@ -179,7 +188,7 @@ export default function PlayerPage() {
             if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED' || msg.type === 'PLAYER_RECONNECTED') {
                 if (msg.players) setLobbyPlayers(msg.players);
             }
-            if (msg.type === 'GAME_STARTING') setState('LOBBY');
+            if (msg.type === 'GAME_STARTING') setState('INTRO');
             if (msg.type === 'QUESTION') {
                 if (msg.game_type === 'wmlt' || msg.statement) {
                     setGameType('wmlt');
@@ -470,16 +479,12 @@ export default function PlayerPage() {
                                     {lobbyPlayers.map((player, i) => {
                                         const isSelf = player.nickname === nickname;
                                         return (
-                                            <div key={player.nickname} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 9999, background: isSelf ? 'rgba(var(--accent-primary-rgb, 99,102,241), 0.2)' : 'var(--bg-secondary)', boxShadow: isSelf ? 'inset 0 0 0 1px var(--accent-primary)' : 'none' }}>
-                                                <div
-                                                    style={{ width: 36, height: 36, minWidth: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }}
-                                                >
-                                                    <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>{player.avatar || player.nickname.slice(0, 2).toUpperCase()}</span>
-                                                </div>
-                                                <span style={{ fontSize: '1rem', fontWeight: isSelf ? 700 : 500, color: isSelf ? 'var(--accent-primary)' : undefined }}>
-                                                    {player.nickname}{isSelf ? ' \u2605' : ''}
-                                                </span>
-                                            </div>
+                                            <PlayerChip
+                                                key={player.nickname}
+                                                player={player}
+                                                you={isSelf}
+                                                style={{ animationDelay: `${i * 0.06}s` }}
+                                            />
                                         );
                                     })}
                                 </div>
@@ -497,6 +502,15 @@ export default function PlayerPage() {
                                     style={{ animationDelay: `${i * 0.15}s` }} />
                             ))}
                         </div>
+                    </div>
+                )}
+
+                {/* INTRO */}
+                {state === 'INTRO' && (
+                    <div className="intro-screen animate-in">
+                        <div className="intro-kicker">Room {roomCode}</div>
+                        <h1 className="intro-title">Get Ready</h1>
+                        <div className="intro-count" aria-live="polite">{introCount}</div>
                     </div>
                 )}
 
@@ -635,7 +649,7 @@ export default function PlayerPage() {
                                     className={`answer-btn answer-stagger ${ANSWER_STYLES[i].className} ${selectedAnswer === i ? 'selected' : ''} ${selectedAnswer !== null && selectedAnswer !== i ? 'dimmed' : ''} ${hiddenOptions.includes(i) ? 'hidden-option' : ''}`}
                                     style={{ animationDelay: `${0.15 + i * 0.08}s` }}
                                 >
-                                    <span className="text-4xl opacity-50 mr-3 flex-shrink-0">{ANSWER_STYLES[i].shape}</span>
+                                    <span className="answer-label">{String.fromCharCode(65 + i)}</span>
                                     <span className="min-w-0" style={{ fontSize: opt.length > 50 ? 13 : opt.length > 30 ? 14 : 16 }}>{opt}</span>
                                 </button>
                             ))}

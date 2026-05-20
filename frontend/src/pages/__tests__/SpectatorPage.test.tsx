@@ -176,8 +176,8 @@ describe('SpectatorPage', () => {
             // Sending PING should not change state or throw
             simulateWsMessage({ type: 'PING' });
 
-            // Should still be on LOBBY (INTRO maps to LOBBY)
-            expect(screen.getByText('Join the Quiz!')).toBeInTheDocument();
+            // Should stay on the presentation intro state
+            expect(screen.getByText('Quiz Incoming')).toBeInTheDocument();
         });
     });
 

@@ -9,6 +9,7 @@ import LeaderboardBarChart from '../components/LeaderboardBarChart';
 import { AVATAR_COLORS } from '../components/LeaderboardBarChart.constants';
 import { soundManager } from '../utils/sound';
 import BonusSplash from '../components/BonusSplash';
+import PlayerChip from '../components/PlayerChip';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
@@ -146,7 +147,7 @@ export default function SpectatorPage() {
                     setTimeRemaining(msg.time_remaining ?? msg.time_limit);
                     setIsBonus(msg.is_bonus || false);
                 }
-                setGameState(msg.state === 'INTRO' ? 'LOBBY' : msg.state);
+                setGameState(String(msg.state || 'LOBBY'));
             }
             else if (msg.type === 'PLAYER_JOINED') {
                 setPlayerCount(msg.player_count);
@@ -160,7 +161,7 @@ export default function SpectatorPage() {
                 setPlayerCount(msg.player_count);
                 setPlayers(msg.players || []);
             }
-            else if (msg.type === 'GAME_STARTING') { /* stay on LOBBY until first QUESTION arrives */ }
+            else if (msg.type === 'GAME_STARTING') { setGameState('INTRO'); }
             else if (msg.type === 'QUESTION') {
                 if (msg.game_type) setGameType(msg.game_type);
                 setQuestionNumber(msg.question_number);
@@ -416,17 +417,22 @@ export default function SpectatorPage() {
                             {players.length > 0 && (
                                 <div className="spectator-player-list" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12, maxWidth: 672 }}>
                                     {players.map((player, i) => (
-                                        <div key={player.nickname} style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: '10px 20px', borderRadius: 9999, background: 'var(--bg-secondary)' }}>
-                                            <div
-                                                style={{ width: 44, height: 44, minWidth: 44, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }}
-                                            >
-                                                <span style={{ fontSize: '1.8rem', lineHeight: 1 }}>{player.avatar || player.nickname.slice(0, 2).toUpperCase()}</span>
-                                            </div>
-                                            <span style={{ fontSize: '1.25rem', fontWeight: 500 }}>{player.nickname}</span>
-                                        </div>
+                                        <PlayerChip
+                                            key={player.nickname}
+                                            player={player}
+                                            style={{ animationDelay: `${i * 0.05}s` }}
+                                        />
                                     ))}
                                 </div>
                             )}
+                        </div>
+                    )}
+
+                    {gameState === 'INTRO' && (
+                        <div className="intro-screen animate-in">
+                            <div className="intro-kicker">Room {roomCode}</div>
+                            <h1 className="intro-title">{gameType === 'wmlt' ? 'Round Incoming' : 'Quiz Incoming'}</h1>
+                            <div className="intro-count" aria-label="Starting soon">3</div>
                         </div>
                     )}
 
@@ -498,7 +504,7 @@ export default function SpectatorPage() {
                                     <div className={question.options.length === 2 ? 'answer-grid-tf' : 'answer-grid'} style={{ gap: '16px' }}>
                                         {question.options.map((opt, i) => (
                                             <div key={i} className={`answer-btn ${ANSWER_STYLES[i].className}`} style={{ height: 100, fontSize: 20, overflow: 'hidden' }}>
-                                                <span className="text-5xl opacity-50 mr-4" style={{ flexShrink: 0 }}>{ANSWER_STYLES[i].shape}</span>
+                                                <span className="answer-label">{String.fromCharCode(65 + i)}</span>
                                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt}</span>
                                             </div>
                                         ))}

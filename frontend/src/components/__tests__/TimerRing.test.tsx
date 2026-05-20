@@ -10,19 +10,19 @@ describe('TimerRing', () => {
     it('uses primary color when remaining > 10', () => {
         const { container } = render(<TimerRing remaining={20} total={30} />);
         const progressCircle = container.querySelectorAll('circle')[1];
-        expect(progressCircle).toHaveAttribute('stroke', 'var(--accent-primary)');
+        expect(progressCircle).toHaveAttribute('stroke', 'var(--accent)');
     });
 
     it('uses warning color when remaining <= 10', () => {
         const { container } = render(<TimerRing remaining={8} total={30} />);
         const progressCircle = container.querySelectorAll('circle')[1];
-        expect(progressCircle).toHaveAttribute('stroke', 'var(--accent-warning)');
+        expect(progressCircle).toHaveAttribute('stroke', 'var(--gold)');
     });
 
     it('uses danger color when remaining <= 5', () => {
         const { container } = render(<TimerRing remaining={3} total={30} />);
         const progressCircle = container.querySelectorAll('circle')[1];
-        expect(progressCircle).toHaveAttribute('stroke', 'var(--accent-danger)');
+        expect(progressCircle).toHaveAttribute('stroke', 'var(--accent)');
     });
 
     it('adds timer-critical class when remaining <= 5 and > 0', () => {

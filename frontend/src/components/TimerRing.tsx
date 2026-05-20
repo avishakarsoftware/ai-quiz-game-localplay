@@ -11,9 +11,9 @@ export default function TimerRing({ remaining, total, size = 80 }: TimerRingProp
     const progress = remaining / total;
     const dashOffset = circumference * (1 - progress);
 
-    const color = remaining <= 5 ? 'var(--accent-danger)'
-        : remaining <= 10 ? 'var(--accent-warning)'
-        : 'var(--accent-primary)';
+    const color = remaining <= 5 ? 'var(--accent)'
+        : remaining <= 10 ? 'var(--gold)'
+        : 'var(--accent)';
 
     const critical = remaining <= 5 && remaining > 0;
 
@@ -28,7 +28,7 @@ export default function TimerRing({ remaining, total, size = 80 }: TimerRingProp
                     cy={size / 2}
                     r={radius}
                     fill="none"
-                    stroke="var(--bg-tertiary)"
+                    stroke="var(--rule)"
                     strokeWidth={strokeWidth}
                 />
                 <circle
@@ -46,7 +46,7 @@ export default function TimerRing({ remaining, total, size = 80 }: TimerRingProp
             </svg>
             <span
                 className={`absolute font-bold tabular-nums ${critical ? 'timer-number-pulse' : ''}`}
-                style={{ fontSize: size * 0.35, color }}
+                style={{ fontSize: size * 0.35, color, fontFamily: 'var(--font-mono)' }}
             >
                 {remaining}
             </span>

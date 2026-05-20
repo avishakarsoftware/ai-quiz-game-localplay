@@ -86,7 +86,7 @@ export default function GameQuestionScreen({
                         {question.options.map((opt, i) => (
                             <div key={i} className={`answer-btn answer-stagger ${ANSWER_STYLES[i].className}`}
                                 style={{ animationDelay: `${0.2 + i * 0.08}s` }}>
-                                <span className="text-4xl opacity-50 mr-3">{ANSWER_STYLES[i].shape}</span>
+                                <span className="answer-label">{String.fromCharCode(65 + i)}</span>
                                 <span>{opt}</span>
                             </div>
                         ))}
