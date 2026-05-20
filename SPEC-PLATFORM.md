@@ -746,7 +746,240 @@ Complexity: low.
 
 Great "get to know you" game. Minimal AI involvement (optional inspiration prompts). Could be even simpler than Word Association as it needs no AI generation at all.
 
-### Additional Game Ideas
+### Hot Takes / Would You Rather
+
+Core loop:
+
+- AI generates divisive opinion pairs ("pineapple on pizza: yes or no", "teleport or fly?").
+- Everyone votes, live vote bars fill up on TV, then reveal the split.
+- Optional: host picks a side to defend, group debates, then re-votes.
+
+Needs:
+
+- AI generates pairs/statements with two clear sides.
+- Binary vote (reuses WMLT voting flow almost entirely).
+- TV shows live vote bars filling up — visually engaging.
+
+Complexity: low.
+
+Nearly identical to WMLT in flow — submit vote, reveal results. The content shape is different (opinion pair vs "most likely to" statement) but the round lifecycle is the same.
+
+### Never Have I Ever
+
+Core loop:
+
+- AI generates "Never have I ever…" statements (or players submit their own).
+- Everyone taps "I have" or "I haven't" — reveal who did what.
+- Scoring: minority group gets points (rare experiences = interesting).
+
+Needs:
+
+- Statement generation (AI) or player-submitted statements.
+- Binary vote ("I have" / "I haven't") — simpler than WMLT multi-player voting.
+- Reveal: show who's in each group, highlight the minority.
+- Optional: anonymous mode where only counts are shown, not names.
+
+Complexity: low.
+
+Great for baby showers ("Never have I ever changed a diaper at 3am"), weddings, team building. Works with any group size.
+
+**Event customization**: The vibe/theme system (like WMLT's party/spicy/wholesome/work) maps directly — "baby shower", "wedding", "office team building" vibes would produce appropriate statements.
+
+### Acronym Game
+
+Core loop:
+
+- AI generates a random 3-5 letter acronym (e.g. "B.R.T.").
+- Everyone invents what it stands for ("Big Red Tomato", "Babies Rule Tuesday").
+- Anonymous reveal, group votes on funniest.
+
+Needs:
+
+- AI generates acronyms (trivial generation — could even be random letters).
+- Text submission (simultaneous, hidden until reveal).
+- Anonymous reveal with voting.
+- Scoring: votes received.
+
+Complexity: low-medium.
+
+Exercises the "submit → anonymous reveal → vote on best" pattern that Caption This and other creative games will reuse.
+
+### Caption This
+
+Core loop:
+
+- AI generates an image (using existing Stable Diffusion engine or a prompt-based image), or host uploads a photo.
+- Everyone writes a caption.
+- Anonymous reveal, vote on best.
+
+Needs:
+
+- Image display (already supported via quiz question images).
+- Text submission (simultaneous, hidden until reveal).
+- Anonymous reveal with voting.
+- Optional: host photo upload endpoint.
+
+Complexity: low-medium.
+
+Could reuse the existing Stable Diffusion image engine for generated images. If host-uploaded photos are supported, this becomes a platform for custom party games.
+
+### Spy / Odd One Out
+
+Core loop:
+
+- Everyone gets the same location/word except one spy.
+- Players take turns asking questions to find the spy.
+- Spy tries to figure out the location from the questions.
+- At the end: everyone votes on who the spy is, spy guesses the location.
+
+Needs:
+
+- Private per-player state (existing WS supports this — spy gets different content).
+- AI generates location + related questions/hints.
+- Question round (sequential or timed discussion).
+- Voting round (who is the spy?).
+- Spy's counter-guess.
+- Scoring: spy wins if not caught or guesses correctly, villagers win if they catch the spy.
+
+Complexity: medium.
+
+Enormous replay value. Hidden roles + social deduction without the full complexity of Mafia.
+
+### Charades (AI-Prompted)
+
+Core loop:
+
+- AI generates charades prompts on the actor's phone (only they see it).
+- Actor performs, everyone else guesses via text input.
+- Timer on TV, correct guessers + actor both score.
+- Rotate actor each round.
+
+Needs:
+
+- Prompt generation (same as drawing prompts but optimized for acting).
+- Private prompt display (actor only).
+- Text guess input with forgiving matching (same as drawing game).
+- Timer + guess acceptance flow (very similar to drawing game without the canvas).
+
+Complexity: medium.
+
+Essentially the drawing game minus the canvas. Could share the guess matching, scoring, and rotation infrastructure.
+
+### Mafia / Werewolf (Simplified)
+
+Core loop:
+
+- AI assigns roles: mafia (1-2), detective, doctor, villagers.
+- Night phase: mafia picks a target (phone tap), detective investigates, doctor protects.
+- Day phase: discussion, then everyone votes to eliminate.
+- Eliminated players become spectators.
+- Game ends when all mafia are eliminated or mafia equals/outnumbers villagers.
+
+Needs:
+
+- Private role assignment per player.
+- Night phase: sequential private actions (mafia target, detective investigate, doctor protect).
+- Day phase: timed discussion + voting.
+- Elimination tracking.
+- TV shows the public narrative ("Last night, someone was attacked…") without revealing roles.
+- Role reveal at game end.
+
+Complexity: medium-high.
+
+Strong demand — everyone knows Mafia. The phone-as-role-card eliminates the need for a physical moderator. AI can narrate the night events on TV.
+
+**Key architecture need**: This is the first game where eliminated players exist as spectators mid-game. The room model needs a "dead players" concept.
+
+### Eye Spy (Photo-Based)
+
+Core loop:
+
+- Host takes a photo of the room → uploads to the game.
+- AI vision (Gemini multimodal) generates questions about the photo ("find something red", "count the chairs", "what brand is the laptop?").
+- Players answer on their phones.
+- Scoring: speed + correctness.
+
+Needs:
+
+- Photo upload endpoint (host camera → server).
+- AI vision API call (Gemini 2.5 Flash supports image input).
+- Question generation from image analysis.
+- Quiz-style answer rounds.
+
+Complexity: high.
+
+Novel and room-contextual — every game is unique to the physical space. Strong "wow" factor. Could also work with pre-loaded images for remote play.
+
+### Photo Scavenger Hunt
+
+Core loop:
+
+- AI generates a list of things to find/photograph ("something older than you", "the weirdest thing in this room", "a hidden snack").
+- Players take photos with their phone camera, submit them.
+- Group votes on best photo per prompt.
+- Scoring: votes received + completion bonus.
+
+Needs:
+
+- Camera access on player phones.
+- Photo upload + display.
+- Voting round per prompt.
+- Timer per hunt item.
+
+Complexity: high.
+
+Gets people moving around. Works great at parties, team events, weddings. The AI generation makes every hunt unique.
+
+### Musical Chairs (Digital Judge)
+
+Core loop:
+
+- Phone plays music, random stop.
+- Last person to tap "I'M SITTING" after the music stops is eliminated.
+- Repeat until one player remains.
+
+Needs:
+
+- Audio playback (server-controlled music start/stop via WS).
+- Fast tap input ("buzzer" button).
+- Elimination tracking.
+- TV shows countdown + eliminated players.
+
+Complexity: low.
+
+Very simple technically — just audio control + tap timing. But relies on the physical game happening alongside.
+
+### Predictions (Event-Specific)
+
+Core loop:
+
+- Host creates prediction prompts ("What will the baby's first word be?", "How much will the baby weigh?", "What time will the bride cry?").
+- Everyone submits predictions.
+- Revealed later (or voted on for funniest/most likely).
+
+Needs:
+
+- Host-authored prompts (or AI-generated based on event type).
+- Text submission per prompt.
+- Reveal/voting round.
+- Optional: results can be checked weeks/months later.
+
+Complexity: low.
+
+Perfect for baby showers, weddings, New Year's parties. Could store predictions in Supabase for later reveal.
+
+### Baby Shower / Wedding / Event Game Packs
+
+These aren't separate game types — they're **themed content packs** for existing game mechanics:
+
+- **How Well Do You Know the Parents/Couple?** — Custom quiz (already supported via quiz import). Need a friendlier "create your own questions" flow.
+- **Baby Name Battle** — AI generates unusual baby names, group votes (Hot Takes variant).
+- **Price is Right (Baby/Wedding Edition)** — Show products, guess the price. Needs numeric input (quiz variant with closest-wins scoring).
+- **Predictions** — See above.
+
+The event-specific value comes from themed AI prompts, not new game mechanics. The vibe/theme selector should support event types: "baby shower", "wedding", "birthday", "team building", "holiday party".
+
+### Additional Game Evaluation Criteria
 
 Future games should be evaluated by:
 
@@ -757,15 +990,33 @@ Future games should be evaluated by:
 - Can results become a memory?
 - Does it work standalone and from Revelry?
 - Does it reuse infrastructure already built for another game?
+- Can it work for event-specific contexts (baby showers, weddings, team building)?
 
 ### Recommended Build Order
 
-1. **Word Association** — simplest new submission game, simultaneous play, reuses WMLT-like flow.
-2. **Two Truths and a Lie** — player-authored content, sequential reveal, no AI generation needed.
-3. **Chinese Whispers (text-only)** — first turn-based game, exercises turn queue infrastructure.
-4. **Taboo** — team-based, uses existing team infrastructure, medium complexity.
-5. **Chinese Whispers (drawing)** — builds canvas component.
-6. **DrawingGame** — reuses canvas from Chinese Whispers, adds real-time stroke sync + guessing.
+Phase A — Low complexity, reuse existing flows:
+
+1. **Two Truths and a Lie** — player-authored content, sequential reveal, no AI needed.
+2. **Hot Takes / Would You Rather** — reuses WMLT voting flow almost entirely.
+3. **Never Have I Ever** — binary vote, AI-generated statements, works for any event type.
+4. **Word Association** — simultaneous text submit, majority matching.
+
+Phase B — Medium complexity, new patterns:
+
+5. **Acronym Game** — introduces "submit → anonymous reveal → vote" pattern.
+6. **Charades** — prompt display + guess matching, like drawing without canvas.
+7. **Spy / Odd One Out** — hidden roles, social deduction.
+8. **Chinese Whispers (text-only)** — first turn-based game, turn queue infrastructure.
+9. **Taboo** — team-based, clue-giver rotation.
+
+Phase C — High complexity, new capabilities:
+
+10. **DrawingGame** — canvas + real-time stroke sync + guessing. Full spec in `SPEC-GAME-DRAWING.md`.
+11. **Chinese Whispers (drawing)** — reuses canvas from DrawingGame.
+12. **Mafia** — hidden roles, night/day phases, elimination.
+13. **Eye Spy** — photo upload + AI vision.
+14. **Photo Scavenger Hunt** — camera access + photo upload + voting.
+15. **Musical Chairs** — audio playback + buzzer timing.
 
 ## Deployment Model
 
