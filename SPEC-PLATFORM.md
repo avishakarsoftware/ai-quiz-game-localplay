@@ -42,7 +42,7 @@ Revelry is a party lifecycle app. It owns:
 - A Games tab that can launch LocalPlay sessions.
 - Displaying LocalPlay results inside party memories/history.
 
-Revelry should not own LocalPlay game rules. It should not need to know how Pictionary, Chinese Whispers, Taboo, Quiz, or WMLT score a round.
+Revelry should not own LocalPlay game rules. It should not need to know how DrawingGame, Chinese Whispers, Taboo, Quiz, or WMLT score a round.
 
 ### Integration Bridge Owns
 
@@ -96,7 +96,7 @@ A game is a playable format, such as:
 
 - Quiz
 - Who's Most Likely To
-- Pictionary
+- DrawingGame
 - Chinese Whispers
 - Word Association
 - Taboo variants
@@ -120,8 +120,8 @@ Example shape:
 
 ```json
 {
-  "id": "pictionary",
-  "title": "Pictionary",
+  "id": "drawing",
+  "title": "Drawing Game",
   "short_description": "Draw prompts while your friends guess.",
   "category": "creative",
   "min_players": 3,
@@ -161,14 +161,14 @@ Suggested fields:
 ```json
 {
   "id": "session_uuid",
-  "game_type": "pictionary",
+  "game_type": "drawing",
   "source_app": "localplay",
   "external_context": null,
   "host_user_id": "optional",
   "host_display_name": "optional",
   "room_code": "ABC123",
   "status": "draft",
-  "title": "Birthday Pictionary",
+  "title": "Birthday Drawing Game",
   "created_at": 0,
   "started_at": null,
   "completed_at": null,
@@ -299,7 +299,7 @@ backend/
     catalog.py
     quiz.py
     wmlt.py
-    pictionary.py
+    drawing.py
     chinese_whispers.py
     taboo.py
     word_association.py
@@ -330,7 +330,7 @@ frontend/src/games/
     OrganizerRound.tsx
     Results.tsx
   wmlt/
-  pictionary/
+  drawing/
   chinese-whispers/
 ```
 
@@ -370,7 +370,7 @@ Game-specific player actions:
 
 - Quiz: answer.
 - WMLT: vote.
-- Pictionary: draw or guess.
+- DrawingGame: draw or guess.
 - Chinese Whispers: submit phrase or drawing.
 - Taboo: give clues, guess, skip, mark taboo violation.
 - Word Association: submit word, vote, match, or rank depending on variant.
@@ -417,7 +417,7 @@ Examples:
 
 - Quiz: questions, options, answers, image prompts.
 - WMLT: statements.
-- Pictionary: drawable prompts, difficulty tiers, optional forbidden words.
+- DrawingGame: drawable prompts, difficulty tiers, optional aliases.
 - Chinese Whispers: seed phrases or image prompts.
 - Taboo: target words, forbidden words, clue difficulty.
 - Word Association: seed words, category packs, scoring prompts.
@@ -664,7 +664,7 @@ Needs:
 - Private per-player prompts (each player sees only the previous step).
 - Submission timer per turn.
 - Chain assembly and reveal sequence animation.
-- For drawing variant: canvas component (shared with Pictionary).
+- For drawing variant: canvas component (shared with DrawingGame).
 
 Complexity: medium (text-only) to high (with drawing).
 
@@ -672,7 +672,9 @@ Very strong party fit. Text-only version is viable without a canvas and should s
 
 **Key architecture difference**: This is the first turn-based game. Quiz and WMLT are simultaneous (all players act in the same round window). Chinese Whispers requires a turn queue — the socket_manager needs to track whose turn it is and send prompts to one player at a time while others wait.
 
-### Pictionary
+### DrawingGame
+
+Detailed implementation spec: `SPEC-GAME-DRAWING.md`.
 
 Core loop:
 
@@ -763,7 +765,7 @@ Future games should be evaluated by:
 3. **Chinese Whispers (text-only)** — first turn-based game, exercises turn queue infrastructure.
 4. **Taboo** — team-based, uses existing team infrastructure, medium complexity.
 5. **Chinese Whispers (drawing)** — builds canvas component.
-6. **Pictionary** — reuses canvas from Chinese Whispers, adds real-time stroke sync + guessing.
+6. **DrawingGame** — reuses canvas from Chinese Whispers, adds real-time stroke sync + guessing.
 
 ## Deployment Model
 
@@ -1187,7 +1189,7 @@ Spectator/TV display needs vary by game:
 - **WMLT**: Show statement, vote counts, round podium. (Already built.)
 - **Word Association**: Show seed word, then reveal all submissions grouped. Great for TV.
 - **Chinese Whispers**: Show the chain reveal sequence. The best spectator experience — watching the chain degrade is the fun.
-- **Pictionary**: Show the drawing canvas in real-time + guess stream. Ideal for TV/Chromecast.
+- **DrawingGame**: Show the drawing canvas in real-time + guess stream. Ideal for TV/Chromecast.
 - **Taboo**: Public spectator view should show timer, score, team, and safe round state. Do not show target/forbidden words on a shared TV by default because the guessing team may see it. A private host/judge view can show the hidden card.
 - **Two Truths and a Lie**: Show statements, vote distribution, reveal which was the lie.
 
@@ -1212,7 +1214,7 @@ These need: turn queue, active-player tracking, per-player private prompts, and 
 
 ### Role-Based / Turn-Led (one player has a special role)
 
-- Pictionary (one drawer, others guess simultaneously)
+- DrawingGame (one drawer, others guess simultaneously)
 - Taboo (one clue-giver, team guesses)
 
 These need: role assignment, private role prompts, simultaneous actions from other players, and role rotation. They are not fully sequential because non-active players still act during the turn.
@@ -1225,7 +1227,7 @@ The socket_manager currently mainly handles simultaneous games. Sequential and r
 - `ROLE_ASSIGNED` messages for role-led games.
 - `WAITING_FOR_TURN` state on the player frontend.
 
-This is the main infrastructure investment needed before Chinese Whispers or Pictionary.
+This is the main infrastructure investment needed before Chinese Whispers or DrawingGame.
 
 ## Open Design Questions
 
@@ -1246,7 +1248,7 @@ This is the main infrastructure investment needed before Chinese Whispers or Pic
 - How should native app deep links route between Revelry and LocalPlay?
   - **Recommendation**: Stable LocalPlay universal links. The exact path can change, but links should support app-open when installed and browser fallback when not. Existing `/quiz/join` style links are legacy-compatible examples, not the final platform shape.
 - **New: How should we handle games that need a canvas/drawing?**
-  - Build a shared `<DrawingCanvas>` component that handles touch/mouse input, undo, color picker, and exports strokes as compact events. Reuse across Chinese Whispers (drawing variant) and Pictionary. Don't build it until the first drawing game is in scope.
+  - Build a shared `<DrawingCanvas>` component that handles touch/mouse input, undo, color picker, and exports strokes as compact events. Reuse across Chinese Whispers (drawing variant) and DrawingGame. Don't build it until the first drawing game is in scope. See `SPEC-GAME-DRAWING.md`.
 
 ## Near-Term Recommended Work
 
@@ -1261,4 +1263,4 @@ This is the main infrastructure investment needed before Chinese Whispers or Pic
 9. Add a lightweight `GameSession` persistence model once the third game exposes the repeated room/session needs clearly.
 10. Persist completed results in the normalized result shape.
 11. **Add Chinese Whispers (text-only)** — first true private-turn game, builds turn-queue infrastructure.
-12. Add drawing games (Chinese Whispers drawing variant, then Pictionary) after the turn-queue and session/result model are solid.
+12. Add drawing games (Chinese Whispers drawing variant, then DrawingGame) after the turn-queue and session/result model are solid.
