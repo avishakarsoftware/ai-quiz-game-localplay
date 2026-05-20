@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from fastapi.testclient import TestClient
 import main
 from main import app, quizzes
+from media_store import media_store
 import config
 
 
@@ -15,8 +16,10 @@ import config
 def clear_state():
     """Clear in-memory state before each test."""
     quizzes.clear()
+    media_store.clear()
     yield
     quizzes.clear()
+    media_store.clear()
 
 
 client = TestClient(app)
@@ -85,6 +88,15 @@ class TestFrontendStaticServing:
         assert res.status_code == 404
         assert res.headers["content-type"].startswith("application/json")
 
+    def test_media_route_stays_json_404_with_frontend_build(self, tmp_path, monkeypatch):
+        (tmp_path / "index.html").write_text("<html><body>SPA</body></html>")
+        monkeypatch.setattr(main, "FRONTEND_DIST_DIR", tmp_path)
+
+        res = client.get("/media/not-real")
+
+        assert res.status_code == 404
+        assert res.headers["content-type"].startswith("application/json")
+
     def test_static_file_path_traversal_falls_back_to_index(self, tmp_path, monkeypatch):
         (tmp_path / "index.html").write_text("<html><body>SPA</body></html>")
         monkeypatch.setattr(main, "FRONTEND_DIST_DIR", tmp_path)
@@ -92,6 +104,54 @@ class TestFrontendStaticServing:
         response = main._frontend_file_response("../../etc/passwd")
 
         assert response.path == tmp_path / "index.html"
+
+
+class TestMediaEndpoints:
+    def test_media_status(self, monkeypatch):
+        async def available():
+            return True
+
+        monkeypatch.setattr(main.image_engine, "is_available", available)
+
+        res = client.get("/media/status")
+
+        assert res.status_code == 200
+        body = res.json()
+        assert body["generation_available"] is True
+        assert body["storage_backend"] == "memory"
+        assert body["providers"][0]["id"] == "stable_diffusion"
+
+    def test_quiz_image_generation_creates_media_asset(self, monkeypatch):
+        import base64
+
+        async def available():
+            return True
+
+        async def generate_image(prompt, style="vibrant"):
+            assert prompt
+            return base64.b64encode(
+                b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01'
+                b'\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00'
+            ).decode()
+
+        monkeypatch.setattr(main.image_engine, "is_available", available)
+        monkeypatch.setattr(main.image_engine, "generate_image", generate_image)
+        qid = seed_quiz()
+
+        res = client.post(
+            "/quiz/generate-images",
+            json={"quiz_id": qid, "question_id": 1},
+            headers={"X-Device-Id": "media-test-wallet"},
+        )
+
+        assert res.status_code == 200
+        asset = res.json()["asset"]
+        assert asset["url"].startswith("/media/img_")
+        assert main.quizzes[qid]["questions"][0]["image_url"] == asset["url"]
+
+        media_res = client.get(asset["url"])
+        assert media_res.status_code == 200
+        assert media_res.headers["content-type"] == "image/png"
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +185,41 @@ class TestQuizGet:
     def test_get_nonexistent_quiz(self):
         res = client.get("/quiz/nonexistent")
         assert res.status_code == 404
+
+
+class TestQuizModes:
+    def test_generate_accepts_quiz_variant_mode(self, monkeypatch):
+        captured = {}
+
+        async def fake_generate(prompt, difficulty, num_questions, provider, model_override=None, mode="classic"):
+            captured["mode"] = mode
+            return {
+                "quiz_title": "Rebus Rush",
+                "questions": [
+                    {"id": 1, "text": "🌊 + 🐴", "options": ["Seahorse", "Ocean Pony", "Beach Ride", "Water Polo"], "answer_index": 0},
+                ],
+            }
+
+        monkeypatch.setattr(main.quiz_engine, "generate_quiz", fake_generate)
+
+        res = client.post(
+            "/quiz/generate",
+            json={"prompt": "animals", "difficulty": "easy", "num_questions": 5, "mode": "rebus", "provider": "gemini"},
+            headers={"X-Device-Id": "11111111-1111-1111-1111-111111111111"},
+        )
+
+        assert res.status_code == 200
+        assert captured["mode"] == "rebus"
+        assert "answer_index" not in res.json()["quiz"]["questions"][0]
+
+    def test_generate_rejects_invalid_quiz_variant_mode(self):
+        res = client.post(
+            "/quiz/generate",
+            json={"prompt": "animals", "difficulty": "easy", "num_questions": 5, "mode": "nope"},
+            headers={"X-Device-Id": "11111111-1111-1111-1111-111111111112"},
+        )
+
+        assert res.status_code == 422
 
 
 class TestQuizUpdate:

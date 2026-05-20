@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
-import { API_URL, WS_URL } from '../config';
+import { WS_URL } from '../config';
 import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
@@ -12,6 +12,8 @@ import { AVATAR_COLORS } from '../components/LeaderboardBarChart.constants';
 import PlayerChip from '../components/PlayerChip';
 import Avatar from '../components/Avatar';
 import DrawingCanvas from '../components/DrawingCanvas';
+import GameImage from '../components/media/GameImage';
+import { mediaUrl } from '../utils/media';
 
 type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
@@ -755,8 +757,10 @@ export default function PlayerPage() {
                             </div>
                         </div>
 
-                        <div className={`question-card mb-4 question-enter ${currentQuestion.image_url ? 'has-image' : ''}`}
-                            style={currentQuestion.image_url ? { backgroundImage: `url(${API_URL}${currentQuestion.image_url})` } : undefined}>
+                        <div className={`question-card mb-4 question-enter ${currentQuestion.image_url ? 'has-image' : ''}`}>
+                            {currentQuestion.image_url && (
+                                <GameImage src={mediaUrl(currentQuestion.image_url)} alt={currentQuestion.text} mode="question" />
+                            )}
                             <p className="question-text">{currentQuestion.text}</p>
                         </div>
 

@@ -5,16 +5,24 @@ A multiplayer quiz game powered by local AI (Ollama). The organizer gives a prom
 ## Features
 
 - 🤖 **AI-Generated Questions** via Ollama (local LLM) or cloud providers (Gemini, Anthropic)
+- 🧩 **Quiz variant games** including Rebus Rush, Emoji Charades, Fact or Fiction, Timeline Twist, and Odd One Out
 - 📱 **Mobile-First PWA** for players
 - ⚡ **Real-time WebSocket** gameplay
 - 🏆 **Fastest-finger scoring** (more points for quicker answers)
 - 🔥 **Streak bonuses** (1.5x at 3 correct, 2x at 5 correct)
 - 🎯 **Bonus rounds** (~30% of questions award 2x points)
 - 💪 **Power-ups** (Double Points, 50/50)
+- 🖼️ **Reusable image media layer** for generated quiz images and future image-based games
 - 👥 **Team mode** with averaged team scores
 - 📲 **QR Code + Room Code** for easy joining
 - 🏅 **Animated podium** with fireworks and team standings
 - 📺 **Spectator mode** for big-screen display
+
+## Image Media Layer
+
+Phase 0 of the image-game platform is implemented. Existing quiz image generation now creates shared in-memory media assets, exposes them through `/media/{asset_id}`, and renders them through the reusable frontend `GameImage` component on organizer, player, and spectator screens.
+
+Uploads, persisted Supabase Storage, thumbnails, standalone `/media/generate`, and image-native game modes are still future phases; see `SPEC-IMAGE-GAMES.md`.
 
 ## Quick Start
 
@@ -182,6 +190,16 @@ The original VM SQLite files are kept as rollback backups under `/home/revelry-g
 Gamma convention: `https://gamesapi-gamma.revelryapp.me`.
 
 Backend-served prod/gamma SPA origins must also be registered in Google Cloud OAuth and Apple Developer for browser sign-in. See [DEPLOY.md](DEPLOY.md) for the exact origins and redirect roots.
+
+## Product Specs
+
+- [SPEC-PLATFORM.md](SPEC-PLATFORM.md) — shared LocalPlay platform direction.
+- [SPEC-CUSTOM-QUIZ-AUTHORING.md](SPEC-CUSTOM-QUIZ-AUTHORING.md) — host-created custom quizzes inside the app.
+- [SPEC-GAME-QUIZ-VARIANTS.md](SPEC-GAME-QUIZ-VARIANTS.md) — five quiz-runtime game variants.
+- [SPEC-IMAGE-GAMES.md](SPEC-IMAGE-GAMES.md) — shared image media layer and image-based game modes.
+- [SPEC-GAME-DRAWING.md](SPEC-GAME-DRAWING.md) — DrawingGame.
+- [SPEC-SUPABASE-MIGRATION.md](SPEC-SUPABASE-MIGRATION.md) — Supabase migration and persistence plan.
+- [SPEC-THEME-VELVET.md](SPEC-THEME-VELVET.md) — Velvet visual system.
 
 ## Tech Stack
 

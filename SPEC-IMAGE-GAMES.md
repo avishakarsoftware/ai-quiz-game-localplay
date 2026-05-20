@@ -17,16 +17,17 @@ LocalPlay already has partial image support:
 - `image_engine.py` can talk to a local Stable Diffusion server and returns base64 PNG data.
 - Generated quiz images are stored in process memory as `quiz_images`.
 - `/quiz/{quiz_id}/image/{question_id}` serves generated image bytes.
-- Host, player, and spectator question cards can display `image_url`.
+- `/media/status` and `/media/{asset_id}` now exist as the Phase 0 shared media namespace.
+- Quiz image generation now also creates in-memory media assets and attaches `/media/{asset_id}` URLs when rooms start.
+- Host, player, and spectator question cards display image content through the reusable `GameImage` component.
 - Remote config has an `enable_image_generation` feature flag.
 
 Current limitations:
 
 - Image generation depends on a local Stable Diffusion endpoint and is not reliable on the current VM unless that service is running.
 - Images are not persisted in Supabase or object storage.
-- Images are stored as base64 strings in backend memory.
+- Phase 0 images are still stored as base64 strings in backend memory.
 - No host upload endpoint exists.
-- Image display is embedded in question cards rather than using a reusable media component.
 - No provider abstraction exists for Gemini image generation, Gemini vision analysis, or future storage backends.
 - No moderation or upload safety pipeline exists.
 
@@ -235,6 +236,9 @@ Storage access:
 
 ### Status
 
+Implemented in Phase 0. This is the lightweight capability endpoint for feature
+checks and smoke tests.
+
 ```http
 GET /media/status
 ```
@@ -243,18 +247,22 @@ Response:
 
 ```json
 {
-  "upload_available": true,
+  "upload_available": false,
   "generation_available": true,
   "providers": [
-    {"id": "gemini_image", "name": "Gemini Image", "available": true},
-    {"id": "stable_diffusion", "name": "Stable Diffusion", "available": false}
+    {"id": "stable_diffusion", "name": "Stable Diffusion", "available": true}
   ],
   "max_upload_bytes": 5242880,
-  "allowed_mime_types": ["image/png", "image/jpeg", "image/webp"]
+  "allowed_mime_types": ["image/png", "image/jpeg", "image/webp"],
+  "storage_backend": "memory"
 }
 ```
 
 ### Generate Image Asset
+
+Future Phase 1/2 endpoint. Phase 0 does not expose standalone generation here;
+existing quiz image generation still enters through `/quiz/generate-images` and
+now stores the result as an in-memory media asset.
 
 ```http
 POST /media/generate
@@ -290,6 +298,8 @@ Response:
 
 ### Upload Image Asset
 
+Future Phase 2 endpoint. There is no host upload flow in Phase 0.
+
 ```http
 POST /media/upload
 Content-Type: multipart/form-data
@@ -315,6 +325,9 @@ Backend behavior:
 
 ### Fetch Image Asset
 
+Implemented in Phase 0 for generated quiz images stored by the in-memory media
+store. Thumbnail variants are future work.
+
 ```http
 GET /media/{asset_id}
 GET /media/{asset_id}?variant=thumb
@@ -330,6 +343,9 @@ Rules:
   - Owner/private assets: `private, max-age=300`.
 
 ### Delete Image Asset
+
+Future Phase 1/2 endpoint. Phase 0 assets are removed with in-memory quiz/room
+eviction.
 
 ```http
 DELETE /media/{asset_id}
@@ -707,28 +723,47 @@ Future user-facing controls:
 - "Clear recent media".
 - "Save this game pack" if content persistence becomes a premium feature.
 
-## Backend Implementation Plan
+## Implementation Status
 
-1. Add `backend/media_models.py` for `ImageAsset` validation helpers.
+Phase 0 is implemented:
+
+1. `backend/media_store.py` provides an in-memory `ImageAsset` store.
+2. `/media/status` reports upload/generation capability and storage backend.
+3. `/media/{asset_id}` serves generated quiz images with explicit image bytes and cache headers.
+4. `/media` is protected in `API_PREFIXES` so backend-served SPA fallback cannot intercept asset requests.
+5. `/quiz/generate-images` still preserves the legacy response shape while also creating `image_asset_id`, `image_url`, and `image_alt`.
+6. `create_room()` converts generated quiz images into media URLs for room payloads.
+7. Legacy `/quiz/{quiz_id}/image/{question_id}` still works and falls back to old in-memory image storage.
+8. `scripts/smoke-remote.py` checks `/media/status`.
+
+Remaining backend work:
+
+1. Add `backend/media_models.py` if the asset schema needs shared Pydantic validation beyond the current dataclass.
 2. Add `backend/media_engine.py` with provider abstraction.
-3. Add `backend/media_store.py` with in-memory and Supabase Storage implementations.
-4. Add `media_assets` table SQL for `games_` and `games_gamma_`.
-5. Add `/media/status`, `/media/generate`, `/media/upload`, `/media/{asset_id}`, and `DELETE /media/{asset_id}`.
-6. Route `/quiz/generate-images` through media engine/store.
-7. Add `image_asset_id` alongside existing `image_url` in quiz content.
-8. Update `create_room()` to attach image URLs for any game content with `image_asset_id`.
-9. Add cleanup script for expired media.
-10. Add admin stats for ready/failed/deleted media assets.
+3. Add Supabase Storage implementation and `games_` / `games_gamma_` media metadata SQL.
+4. Add standalone `/media/generate`.
+5. Add host upload endpoint at `/media/upload`.
+6. Add `DELETE /media/{asset_id}`.
+7. Add cleanup script for expired persisted media.
+8. Add admin stats for ready/failed/deleted media assets.
 
-## Frontend Implementation Plan
+## Frontend Implementation Status
 
-1. Add `frontend/src/components/media/GameImage.tsx`.
-2. Replace direct `backgroundImage` question-card image display with `GameImage` where possible.
-3. Add host image status and picker components.
-4. Add upload flow behind `MEDIA_ENABLE_UPLOADS`/remote config.
-5. Add Image Quiz mode toggle in Quiz prompt/review flow.
-6. Add Photo Round once upload endpoint is stable.
-7. Add Playwright coverage for:
+Phase 0 is implemented:
+
+1. `frontend/src/components/media/GameImage.tsx` handles loading, ready, and error states.
+2. `frontend/src/utils/media.ts` resolves media URLs for same-origin and IONOS-hosted frontends.
+3. Organizer, player, and spectator question screens use `GameImage` for attached images.
+4. CSS defines stable image aspect ratios, skeleton loading, and error presentation.
+5. Vitest component coverage verifies loading, loaded, and error behavior.
+
+Remaining frontend work:
+
+1. Add host image status and picker components.
+2. Add upload flow behind `MEDIA_ENABLE_UPLOADS`/remote config.
+3. Add Image Quiz mode toggle in Quiz prompt/review flow.
+4. Add Photo Round once upload endpoint is stable.
+5. Add Playwright coverage for:
    - image question on organizer/player/spectator
    - image load failure
    - mobile no-overflow
@@ -738,9 +773,9 @@ Future user-facing controls:
 
 Backend-served SPA fallback must protect:
 
-- `/media` — **must be added to `API_PREFIXES` in `main.py`** (currently missing; `/sd` and `/quiz` are already listed)
+- `/media` — **must stay listed in `API_PREFIXES` in `main.py`** (`/sd` and `/quiz` are also listed)
 
-If `/media` is not in `API_PREFIXES`, `/media/...` asset requests will return `index.html` instead of image bytes. This is a required implementation step, not just a note.
+If `/media` is removed from `API_PREFIXES`, `/media/...` asset requests will return `index.html` instead of image bytes. Keep this covered by tests.
 
 ## Deployment Notes
 
@@ -770,19 +805,22 @@ IONOS:
 
 Backend tests:
 
-- Upload rejects unsupported MIME types.
-- Upload rejects oversized files.
-- Upload strips/normalizes metadata.
-- Generated image success inserts metadata and stores object.
+- `/media/status` returns capability metadata.
+- `/media/{asset_id}` returns image bytes and cache headers.
+- `/media` is protected from SPA fallback.
+- Quiz image generation creates media assets while preserving legacy behavior.
+- Upload rejects unsupported MIME types. Future Phase 2.
+- Upload rejects oversized files. Future Phase 2.
+- Upload strips/normalizes metadata. Future Phase 2.
+- Generated image success inserts persisted metadata and stores object. Future Phase 1.
 - Generated image failure does not charge sparks.
 - Media fetch requires authorization for unattached owner-only assets.
 - Media fetch works for assets attached to active rooms.
 - Expired/deleted assets return 404.
-- `/media` is protected from SPA fallback.
 
 Frontend tests:
 
-- `GameImage` loading, ready, and error states.
+- `GameImage` loading, ready, and error states. Implemented.
 - Image Quiz review shows image thumbnails and missing-image warnings.
 - Player/spectator image questions render without text overlap.
 - Playwright visual checks for phone and TV layouts.
@@ -799,8 +837,10 @@ Remote smoke:
 Phase 0:
 
 - Existing quiz image generation still works when provider is available.
-- Quiz image URLs use shared media rendering semantics or are ready to migrate.
+- Quiz image URLs use shared media rendering semantics.
 - Image UI has stable dimensions and graceful failure.
+- `/media/status` and `/media/{asset_id}` exist.
+- `/media` is listed in `API_PREFIXES`.
 - `/sd/status` remains backward-compatible until replaced by `/media/status`.
 
 Phase 1:
@@ -834,4 +874,3 @@ First image game:
 - Caption/voting game state machine.
 - Coordinate-tap input for Spot the Difference.
 - Public sharing/export only after explicit privacy review.
-

@@ -31,7 +31,8 @@ requires_ollama = pytest.mark.skipif(
 )
 
 from fastapi.testclient import TestClient
-from main import app, quizzes, quiz_images, game_history, mlt_scenarios, content_owners
+from main import app, quizzes, quiz_images, quiz_image_assets, game_history, mlt_scenarios, content_owners
+from media_store import media_store
 from socket_manager import socket_manager
 import db
 import config
@@ -86,6 +87,8 @@ def clear_state():
     _teardown_rooms()
     quizzes.clear()
     quiz_images.clear()
+    quiz_image_assets.clear()
+    media_store.clear()
     game_history.clear()
     mlt_scenarios.clear()
     content_owners.clear()
@@ -98,6 +101,8 @@ def clear_state():
     _teardown_rooms()
     quizzes.clear()
     quiz_images.clear()
+    quiz_image_assets.clear()
+    media_store.clear()
     game_history.clear()
     mlt_scenarios.clear()
     content_owners.clear()

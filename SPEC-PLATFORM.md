@@ -1020,7 +1020,7 @@ Very visual and fun. Works great on TV. AI generation is the main challenge — 
 
 These aren't separate game types — they're **themed content packs** for existing game mechanics:
 
-- **How Well Do You Know the Parents/Couple?** — Custom quiz (already supported via quiz import). Need a friendlier "create your own questions" flow.
+- **How Well Do You Know the Parents/Couple?** — Custom quiz (already supported via quiz import). Needs the friendlier in-app authoring flow described in `SPEC-CUSTOM-QUIZ-AUTHORING.md`.
 - **Baby Name Battle** — AI generates unusual baby names, group votes (Hot Takes variant).
 - **Price is Right (Baby/Wedding Edition)** — Show products, guess the price. Needs numeric input (quiz variant with closest-wins scoring).
 - **Predictions** — See above.
@@ -1038,6 +1038,18 @@ Many games can be enhanced or built around images instead of (or alongside) text
 - **Photo Round** — host uploads photos (from the party, from travels, etc.), quiz questions are about the photos. Same as quiz but with host-uploaded images.
 - **AI Art Guessing** — AI generates images from prompts, players guess what the original prompt was. Reverse image-to-text game.
 - **Meme Caption** — show an image (AI-generated or template), everyone writes a caption, vote on best (Caption This variant with guaranteed images).
+
+### Quiz Variant Game Modes
+
+Five quiz-runtime variants are specified in `SPEC-GAME-QUIZ-VARIANTS.md` and implemented as host-facing game cards that generate mode-specific quiz content while reusing the existing quiz room lifecycle:
+
+- **Rebus Rush** — decode emoji/symbol rebus clues.
+- **Emoji Charades** — guess movies, songs, sayings, places, and phrases from emoji clues.
+- **Fact or Fiction** — true/false claim rounds.
+- **Timeline Twist** — chronology/order questions.
+- **Odd One Out** — identify the item that breaks the pattern.
+
+These are intentionally `quiz_variant` modes in Phase 0. They can graduate to dedicated backend game types later if they need custom scoring, typed answers, or bespoke result screens.
 
 Infrastructure needed for image-heavy games:
 - Reliable image generation (Gemini image generation or Stable Diffusion on a GPU).

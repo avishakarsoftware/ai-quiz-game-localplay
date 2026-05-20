@@ -7,6 +7,7 @@ import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPendi
 import { apiHeaders, apiUrl, generateIdempotencyKey } from '../utils/api';
 import GameSelectScreen from '../components/organizer/GameSelectScreen';
 import PromptScreen, { type AIProvider } from '../components/organizer/PromptScreen';
+import QuizVariantPromptScreen from '../components/organizer/QuizVariantPromptScreen';
 import MLTPromptScreen from '../components/organizer/MLTPromptScreen';
 import DrawingPromptScreen from '../components/organizer/DrawingPromptScreen';
 import LoadingScreen from '../components/organizer/LoadingScreen';
@@ -22,8 +23,9 @@ import PodiumScreen from '../components/organizer/PodiumScreen';
 import BonusSplash from '../components/BonusSplash';
 import ErrorModal from '../components/ErrorModal';
 import { useRemoteConfigContext } from '../context/RemoteConfigContext';
+import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
 
 export default function OrganizerPage() {
     const { config: remoteConfig } = useRemoteConfigContext();
@@ -81,7 +83,7 @@ export default function OrganizerPage() {
     // Listen for home navigation from hamburger menu
     useEffect(() => {
         const handler = () => {
-            if (stateRef.current === 'PROMPT' || stateRef.current === 'MLT_PROMPT' || stateRef.current === 'DRAWING_PROMPT' || stateRef.current === 'SELECT_GAME') {
+            if (stateRef.current === 'PROMPT' || stateRef.current === 'QUIZ_VARIANT_PROMPT' || stateRef.current === 'MLT_PROMPT' || stateRef.current === 'DRAWING_PROMPT' || stateRef.current === 'SELECT_GAME') {
                 setState('SELECT_GAME');
             }
         };
@@ -270,10 +272,14 @@ export default function OrganizerPage() {
     }, []);
 
     const handleGameSelect = (type: GameType) => {
+        window.dispatchEvent(new CustomEvent('close-settings'));
         setGameType(type);
         if (type === 'wmlt') setDifficulty('party');
         else setDifficulty('medium');
-        setState(type === 'wmlt' ? 'MLT_PROMPT' : type === 'drawing' ? 'DRAWING_PROMPT' : 'PROMPT');
+        if (type === 'wmlt') setState('MLT_PROMPT');
+        else if (type === 'drawing') setState('DRAWING_PROMPT');
+        else if (type === 'quiz') setState('PROMPT');
+        else setState('QUIZ_VARIANT_PROMPT');
     };
 
     const generateQuiz = async () => {
@@ -286,24 +292,30 @@ export default function OrganizerPage() {
             const res = await fetch(apiUrl('/quiz/generate'), {
                 method: 'POST',
                 headers: apiHeaders({ 'X-Idempotency-Key': generateIdempotencyKey() }),
-                body: JSON.stringify({ prompt, difficulty, num_questions: numQuestions, provider }),
+                body: JSON.stringify({
+                    prompt,
+                    difficulty,
+                    num_questions: numQuestions,
+                    provider,
+                    mode: getGameModeConfig(gameType).mode || 'classic',
+                }),
             });
             if (res.status === 402) {
                 track('paywall_hit', { source: 'quiz' });
                 setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: true });
-                setState('PROMPT');
+                setState(gameType === 'quiz' ? 'PROMPT' : 'QUIZ_VARIANT_PROMPT');
                 return;
             }
             if (res.status === 503) {
                 track('quota_error', { source: 'quiz' });
                 setErrorModal({ title: 'Daily Limit Reached', message: 'Daily generation limit reached. Try again tomorrow or buy a spark pack!', upgradeAvailable: true });
-                setState('PROMPT');
+                setState(gameType === 'quiz' ? 'PROMPT' : 'QUIZ_VARIANT_PROMPT');
                 return;
             }
             if (res.status === 429) {
                 const err = await res.json().catch(() => ({ detail: 'Too many requests. Please wait a minute.' }));
                 setErrorModal({ title: 'Rate Limited', message: err.detail || 'Too many requests.' });
-                setState('PROMPT');
+                setState(gameType === 'quiz' ? 'PROMPT' : 'QUIZ_VARIANT_PROMPT');
                 return;
             }
             const data = await res.json();
@@ -311,16 +323,16 @@ export default function OrganizerPage() {
                 setQuiz(data.quiz);
                 setContentId(data.quiz_id);
                 setTotalQuestions(data.quiz.questions.length);
-                track('quiz_generated', { topic: prompt, difficulty, num_questions: numQuestions, provider });
+                track('quiz_generated', { topic: prompt, difficulty, num_questions: numQuestions, provider, mode: getGameModeConfig(gameType).mode || 'classic' });
                 window.dispatchEvent(new CustomEvent('refresh-sparks'));
                 setState('REVIEW');
             } else {
                 setErrorModal({ title: 'Generation Failed', message: 'Failed to generate quiz. Please try a different topic.' });
-                setState('PROMPT');
+                setState(gameType === 'quiz' ? 'PROMPT' : 'QUIZ_VARIANT_PROMPT');
             }
         } catch {
             setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
-            setState('PROMPT');
+            setState(gameType === 'quiz' ? 'PROMPT' : 'QUIZ_VARIANT_PROMPT');
         }
     };
 
@@ -554,7 +566,7 @@ export default function OrganizerPage() {
                     type: 'RESET_ROOM',
                     content_id: contentId,
                     time_limit: timeLimit,
-                    game_type: gameType,
+                    game_type: runtimeGameType(gameType),
                 }));
                 return;
             }
@@ -564,13 +576,13 @@ export default function OrganizerPage() {
         try {
             const body: Record<string, unknown> = {
                 time_limit: timeLimit,
-                game_type: gameType,
+                game_type: runtimeGameType(gameType),
             };
             if (gameType === 'wmlt') {
                 body.mlt_id = contentId;
             } else if (gameType === 'drawing') {
                 body.drawing_id = contentId;
-            } else {
+            } else if (isQuizRuntimeGame(gameType)) {
                 body.quiz_id = contentId;
             }
 
@@ -651,6 +663,23 @@ export default function OrganizerPage() {
                     />
                 )}
 
+                {state === 'QUIZ_VARIANT_PROMPT' && (
+                    <QuizVariantPromptScreen
+                        config={getGameModeConfig(gameType)}
+                        prompt={prompt}
+                        setPrompt={setPrompt}
+                        difficulty={difficulty}
+                        setDifficulty={setDifficulty}
+                        numQuestions={numQuestions}
+                        setNumQuestions={setNumQuestions}
+                        provider={provider}
+                        setProvider={setProvider}
+                        providers={providers}
+                        onGenerate={generateQuiz}
+                        onBack={() => setState('SELECT_GAME')}
+                    />
+                )}
+
                 {state === 'MLT_PROMPT' && (
                     <MLTPromptScreen
                         prompt={prompt}
@@ -695,7 +724,7 @@ export default function OrganizerPage() {
                         onGenerateImages={generateImages}
                         onCreateRoom={createRoom}
                         onUpdateQuiz={updateQuiz}
-                        onBack={() => setState('PROMPT')}
+                        onBack={() => setState(gameType === 'quiz' ? 'PROMPT' : 'QUIZ_VARIANT_PROMPT')}
                     />
                 )}
 

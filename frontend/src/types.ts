@@ -42,7 +42,9 @@ export interface GameHistoryEntry {
     completed_at: number;
 }
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing';
+export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
+
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;

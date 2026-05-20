@@ -52,6 +52,12 @@ export default function SettingsDrawer() {
         return () => window.removeEventListener('open-settings', handler);
     }, []);
 
+    useEffect(() => {
+        const handler = () => setOpen(false);
+        window.addEventListener('close-settings', handler);
+        return () => window.removeEventListener('close-settings', handler);
+    }, []);
+
     // Clear errors when drawer reopens
     useEffect(() => {
         if (open) setSignInError('');

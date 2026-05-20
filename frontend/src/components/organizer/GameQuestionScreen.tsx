@@ -1,4 +1,5 @@
 import { type Question, type GameType, ANSWER_STYLES } from '../../types';
+import GameImage from '../media/GameImage';
 
 interface GameQuestionScreenProps {
     question?: Question;
@@ -78,8 +79,8 @@ export default function GameQuestionScreen({
             ) : question ? (
                 /* Quiz: show question + answer options */
                 <>
-                    <div className={`question-card mb-6 question-enter ${imageUrl ? 'has-image' : ''}`}
-                        style={imageUrl ? { backgroundImage: `url(${imageUrl})` } : undefined}>
+                    <div className={`question-card mb-6 question-enter ${imageUrl ? 'has-image' : ''}`}>
+                        {imageUrl && <GameImage src={imageUrl} alt={question.text} mode="question" />}
                         <p className="question-text">{question.text}</p>
                     </div>
 

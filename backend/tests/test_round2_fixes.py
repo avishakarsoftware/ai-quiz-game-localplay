@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from fastapi.testclient import TestClient
 from main import app, quizzes, quiz_images
+from media_store import media_store
 import config
 import db
 
@@ -114,6 +115,26 @@ class TestImageBase64Safety:
         assert res.headers["content-type"] == "image/png"
         quizzes.pop(quiz_id, None)
         quiz_images.pop(quiz_id, None)
+
+    def test_media_asset_route_returns_png(self):
+        import base64
+        png_b64 = base64.b64encode(
+            b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01'
+            b'\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00'
+        ).decode()
+        asset = media_store.create_generated_image(
+            png_b64,
+            owner_wallet_id="test-wallet",
+            provider="stable_diffusion",
+            prompt="tiny white square",
+        )
+
+        res = client.get(asset.url)
+
+        assert res.status_code == 200
+        assert res.headers["content-type"] == "image/png"
+        assert res.headers["cache-control"] == "private, max-age=300"
+        media_store.delete(asset.id)
 
 
 class TestDBIndexes:

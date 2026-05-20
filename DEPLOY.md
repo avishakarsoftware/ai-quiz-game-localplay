@@ -890,7 +890,7 @@ Run the local browser UX suite before deploying frontend-heavy changes, especial
 make test-frontend-e2e
 ```
 
-This runs Playwright against the local Vite dev server. The current coverage includes the DrawingGame organizer prompt screen on desktop and mobile, verifies the segmented controls stay aligned, checks there is no horizontal page overflow, and catches overlap with the fixed hamburger/spark controls. If an intentional visual change updates the page shape, refresh the snapshots from `frontend/`:
+This runs Playwright against the local Vite dev server. The current coverage includes the DrawingGame organizer prompt screen and quiz-variant prompt screens on desktop and mobile, verifies segmented controls stay aligned, checks there is no horizontal page overflow, catches overlap with the fixed hamburger/spark controls, and verifies variant generation sends the expected `mode`. If an intentional visual change updates the page shape, refresh the snapshots from `frontend/`:
 
 ```bash
 npm run test:e2e -- --update-snapshots
@@ -903,7 +903,13 @@ curl -s https://gamesapi.revelryapp.me/health
 curl -s https://gamesapi-gamma.revelryapp.me/health
 curl -s https://gamesapi.revelryapp.me/providers | python3 -m json.tool
 curl -s https://gamesapi-gamma.revelryapp.me/providers | python3 -m json.tool
+curl -s https://gamesapi.revelryapp.me/media/status | python3 -m json.tool
+curl -s https://gamesapi-gamma.revelryapp.me/media/status | python3 -m json.tool
 ```
+
+`/media/status` is the Phase 0 image-platform smoke check. It should return
+JSON, not `index.html`; that confirms `/media` is still protected from the
+backend-served SPA fallback.
 
 ### Check IONOS disk usage
 ```bash

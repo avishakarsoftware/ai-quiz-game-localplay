@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
-import { WS_URL, API_URL } from '../config';
+import { WS_URL } from '../config';
 import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
@@ -12,6 +12,8 @@ import BonusSplash from '../components/BonusSplash';
 import PlayerChip from '../components/PlayerChip';
 import Avatar from '../components/Avatar';
 import DrawingCanvas from '../components/DrawingCanvas';
+import GameImage from '../components/media/GameImage';
+import { mediaUrl } from '../utils/media';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
@@ -554,7 +556,10 @@ export default function SpectatorPage() {
                             ) : question ? (
                                 <>
                                     <div className={`question-card mb-4 ${question.image_url ? 'has-image' : ''}`}
-                                        style={{ padding: '32px 48px', fontSize: '24px', ...(question.image_url ? { backgroundImage: `url(${API_URL}${question.image_url})` } : {}) }}>
+                                        style={{ padding: '32px 48px', fontSize: '24px' }}>
+                                        {question.image_url && (
+                                            <GameImage src={mediaUrl(question.image_url)} alt={question.text} mode="tv" />
+                                        )}
                                         <p className="question-text" style={{ fontSize: '32px', fontWeight: 700 }}>{question.text}</p>
                                     </div>
                                     <div className={question.options.length === 2 ? 'answer-grid-tf' : 'answer-grid'} style={{ gap: '16px' }}>

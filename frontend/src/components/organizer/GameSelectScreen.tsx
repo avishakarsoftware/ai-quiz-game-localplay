@@ -1,29 +1,9 @@
 import { type GameType } from '../../types';
+import { GAME_MODE_CONFIGS } from '../../gameModes';
 
 interface GameSelectScreenProps {
     onSelect: (gameType: GameType) => void;
 }
-
-const GAME_TYPES = [
-    {
-        id: 'quiz' as GameType,
-        icon: '⚡',
-        title: 'AI Quiz',
-        description: 'Test knowledge with AI-generated trivia questions',
-    },
-    {
-        id: 'wmlt' as GameType,
-        icon: '🎯',
-        title: 'Most Likely To',
-        description: 'Vote on who\'s most likely to do hilarious things',
-    },
-    {
-        id: 'drawing' as GameType,
-        icon: '🎨',
-        title: 'Drawing Game',
-        description: 'Draw secret prompts while everyone races to guess',
-    },
-];
 
 export default function GameSelectScreen({ onSelect }: GameSelectScreenProps) {
     return (
@@ -38,7 +18,7 @@ export default function GameSelectScreen({ onSelect }: GameSelectScreenProps) {
                 </div>
 
                 <div className="space-y-4">
-                    {GAME_TYPES.map((game) => (
+                    {GAME_MODE_CONFIGS.map((game) => (
                         <button
                             key={game.id}
                             onClick={() => onSelect(game.id)}

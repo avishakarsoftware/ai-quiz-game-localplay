@@ -86,6 +86,12 @@ def smoke(base_url: str, *, skip_generate: bool = False) -> None:
     check(gemini and gemini.get("available"), "Gemini provider is not available")
     print("ok /providers gemini available")
 
+    media_status = request("GET", api(base_url, "/media/status"), timeout=30)
+    check(media_status.status == 200, f"/media/status returned {media_status.status}: {media_status.text}")
+    check(isinstance(media_status.body, dict), "/media/status did not return JSON")
+    check("providers" in media_status.body, "/media/status missing providers")
+    print("ok /media/status")
+
     config = request("GET", api(base_url, "/config.json"), timeout=30)
     check(config.status == 200, f"/config.json returned {config.status}: {config.text}")
     ai_models = config.body.get("ai_models", {}) if isinstance(config.body, dict) else {}

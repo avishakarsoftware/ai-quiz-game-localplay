@@ -21,11 +21,12 @@ import socket as socketlib
 import config
 config.setup_logging()
 
-from quiz_engine import quiz_engine, _sanitize_quiz, _validate_quiz, DailyLimitExceeded, AIQuotaExceeded
+from quiz_engine import quiz_engine, _sanitize_quiz, _validate_quiz, VALID_QUIZ_MODES, DailyLimitExceeded, AIQuotaExceeded
 from mlt_engine import mlt_engine, _sanitize_mlt, _validate_mlt
 from drawing_engine import drawing_engine, _sanitize_drawing_game
 from socket_manager import socket_manager
 from image_engine import image_engine
+from media_store import media_store
 import tokens
 import db
 import auth
@@ -42,6 +43,7 @@ API_PREFIXES = (
     "/entitlements",
     "/health",
     "/history",
+    "/media",
     "/mlt",
     "/providers",
     "/purchases",
@@ -194,6 +196,7 @@ def _check_llm_budget() -> bool:
 quizzes: Dict[str, dict] = {}  # quiz_id -> quiz_data
 quiz_timestamps: Dict[str, float] = {}  # quiz_id -> creation time
 quiz_images: Dict[str, Dict[int, str]] = {}  # quiz_id -> {question_id: base64_image}
+quiz_image_assets: Dict[str, Dict[int, str]] = {}  # quiz_id -> {question_id: media asset id}
 
 # MLT (Most Likely To) storage
 mlt_scenarios: Dict[str, dict] = {}  # scenario_id -> {game_title, statements}
@@ -227,6 +230,7 @@ def _evict_old_content():
         quizzes.pop(qid, None)
         quiz_timestamps.pop(qid, None)
         quiz_images.pop(qid, None)
+        quiz_image_assets.pop(qid, None)
         content_owners.pop(qid, None)
     # Evict oldest non-active quizzes until under limit
     if len(quizzes) >= config.MAX_QUIZZES:
@@ -237,6 +241,7 @@ def _evict_old_content():
                 quizzes.pop(qid, None)
                 quiz_timestamps.pop(qid, None)
                 quiz_images.pop(qid, None)
+                quiz_image_assets.pop(qid, None)
                 content_owners.pop(qid, None)
 
     # Evict MLT scenarios
@@ -285,6 +290,7 @@ class QuizRequest(BaseModel):
     difficulty: str = "medium"
     num_questions: int = config.DEFAULT_NUM_QUESTIONS
     provider: str = ""
+    mode: str = "classic"
 
     @field_validator('prompt')
     @classmethod
@@ -328,6 +334,14 @@ class QuizRequest(BaseModel):
             raise ValueError(f'Number of questions must be {config.MIN_QUESTIONS}-{config.MAX_QUESTIONS}')
         return v
 
+    @field_validator('mode')
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        v = (v or "classic").lower().strip()
+        if v not in VALID_QUIZ_MODES:
+            raise ValueError(f'Mode must be one of: {", ".join(VALID_QUIZ_MODES)}')
+        return v
+
 
 class RoomCreateRequest(BaseModel):
     quiz_id: str = ""      # For quiz game
@@ -354,6 +368,25 @@ class RoomCreateRequest(BaseModel):
 class ImageGenerateRequest(BaseModel):
     quiz_id: str
     question_id: Optional[int] = None  # If None, generate for all questions
+
+
+def _store_quiz_image_asset(quiz_id: str, question: dict, image_b64: str, wallet_id: str):
+    """Store a generated quiz image in the shared media layer and legacy map."""
+    qid = int(question["id"])
+    quiz_images.setdefault(quiz_id, {})[qid] = image_b64
+    asset = media_store.create_generated_image(
+        image_b64,
+        owner_wallet_id=wallet_id,
+        provider="stable_diffusion",
+        prompt=question.get("image_prompt") or question.get("text") or "",
+        alt_text=question.get("text") or question.get("image_prompt") or "Generated quiz image",
+        ttl_seconds=config.QUIZ_TTL_SECONDS,
+    )
+    quiz_image_assets.setdefault(quiz_id, {})[qid] = asset.id
+    question["image_asset_id"] = asset.id
+    question["image_url"] = asset.url
+    question["image_alt"] = asset.alt_text
+    return asset
 
 
 @app.get("/providers")
@@ -399,7 +432,14 @@ async def generate_quiz(request: QuizRequest, req: Request):
     provider = request.provider or remote_config.get_provider()
     model_override = remote_config.get_paid_model() if tokens.use_premium_model(wallet_id) else remote_config.get_free_model()
     try:
-        quiz_data = await quiz_engine.generate_quiz(request.prompt, request.difficulty, request.num_questions, provider, model_override=model_override)
+        quiz_data = await quiz_engine.generate_quiz(
+            request.prompt,
+            request.difficulty,
+            request.num_questions,
+            provider,
+            model_override=model_override,
+            mode=request.mode,
+        )
     except DailyLimitExceeded:
         raise HTTPException(status_code=429, detail="Daily quiz limit reached. Please try again tomorrow!")
     except AIQuotaExceeded:
@@ -500,7 +540,7 @@ async def delete_question(quiz_id: str, question_id: int, req: Request):
 
 @app.post("/quiz/generate-images")
 async def generate_quiz_images(request: ImageGenerateRequest, req: Request):
-    """Generate images for quiz questions using Stable Diffusion"""
+    """Generate images for quiz questions using the shared media layer."""
     wallet_id = tokens.get_wallet_id(req)
     if not wallet_id:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -523,20 +563,34 @@ async def generate_quiz_images(request: ImageGenerateRequest, req: Request):
 
         image = await image_engine.generate_image(question.get("image_prompt", question["text"]))
         if image:
-            if request.quiz_id not in quiz_images:
-                quiz_images[request.quiz_id] = {}
-            quiz_images[request.quiz_id][request.question_id] = image
-            return {"status": "success", "question_id": request.question_id}
+            asset = _store_quiz_image_asset(request.quiz_id, question, image, wallet_id)
+            return {"status": "success", "question_id": request.question_id, "asset": asset.to_dict()}
         raise HTTPException(status_code=500, detail="Image generation failed")
     else:
-        images = await image_engine.generate_quiz_images(quiz["questions"])
-        quiz_images[request.quiz_id] = images
-        return {"status": "success", "generated_count": len(images)}
+        generated_count = 0
+        assets = []
+        for question in quiz["questions"]:
+            prompt = question.get("image_prompt") or question.get("text")
+            if not prompt:
+                continue
+            image = await image_engine.generate_image(prompt)
+            if image:
+                asset = _store_quiz_image_asset(request.quiz_id, question, image, wallet_id)
+                assets.append(asset.to_dict())
+                generated_count += 1
+        return {"status": "success", "generated_count": generated_count, "assets": assets}
 
 
 @app.get("/quiz/{quiz_id}/image/{question_id}")
 async def get_question_image(quiz_id: str, question_id: int):
-    """Get the generated image for a specific question"""
+    """Legacy quiz image route. New code should prefer /media/{asset_id}."""
+    asset_id = quiz_image_assets.get(quiz_id, {}).get(question_id)
+    if asset_id:
+        asset = media_store.get_asset(asset_id)
+        image_bytes = media_store.get_image_bytes(asset_id)
+        if asset and image_bytes:
+            return Response(content=image_bytes, media_type=asset.mime_type)
+
     if quiz_id not in quiz_images or question_id not in quiz_images[quiz_id]:
         raise HTTPException(status_code=404, detail="Image not found")
 
@@ -546,6 +600,36 @@ async def get_question_image(quiz_id: str, question_id: int):
     except Exception:
         raise HTTPException(status_code=500, detail="Corrupt image data")
     return Response(content=image_bytes, media_type="image/png")
+
+
+@app.get("/media/status")
+async def media_status():
+    """Report shared media platform capabilities."""
+    sd_available = await image_engine.is_available()
+    return {
+        "upload_available": False,
+        "generation_available": sd_available,
+        "providers": [
+            {"id": "stable_diffusion", "name": "Stable Diffusion", "available": sd_available},
+        ],
+        "max_upload_bytes": config.MAX_IMAGE_SIZE_BYTES,
+        "allowed_mime_types": ["image/png"],
+        "storage_backend": "memory",
+    }
+
+
+@app.get("/media/{asset_id}")
+async def get_media_asset(asset_id: str):
+    """Serve a generated image asset from the shared media namespace."""
+    asset = media_store.get_asset(asset_id)
+    image_bytes = media_store.get_image_bytes(asset_id)
+    if not asset or image_bytes is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return Response(
+        content=image_bytes,
+        media_type=asset.mime_type,
+        headers={"Cache-Control": "private, max-age=300"},
+    )
 
 
 @app.get("/sd/status")
@@ -600,6 +684,14 @@ async def create_room(request: RoomCreateRequest, req: Request):
     # Attach image URLs to quiz data if available (quiz only)
     if request.game_type == "quiz" and content_id in quiz_images:
         for question in game_data["questions"]:
+            asset_id = quiz_image_assets.get(content_id, {}).get(question["id"])
+            if asset_id:
+                asset = media_store.get_asset(asset_id)
+                if asset:
+                    question["image_asset_id"] = asset.id
+                    question["image_url"] = asset.url
+                    question["image_alt"] = asset.alt_text
+                    continue
             if question["id"] in quiz_images[content_id]:
                 question["image_url"] = f"/quiz/{content_id}/image/{question['id']}"
 

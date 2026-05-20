@@ -773,13 +773,14 @@ class TestQuizEvictionSafety:
 
     def test_eviction_skips_active_quiz(self):
         """Quizzes used by active rooms should not be evicted."""
-        from main import quizzes, quiz_timestamps, quiz_images, _evict_old_content
+        from main import quizzes, quiz_timestamps, quiz_images, quiz_image_assets, _evict_old_content
         from socket_manager import socket_manager
 
         # Clear state
         quizzes.clear()
         quiz_timestamps.clear()
         quiz_images.clear()
+        quiz_image_assets.clear()
 
         # Add an "active" quiz referenced by a room
         quizzes["active-quiz"] = make_quiz()
@@ -809,12 +810,13 @@ class TestQuizEvictionSafety:
 
     def test_eviction_removes_inactive_quiz(self):
         """Quizzes not used by any room should be evicted normally."""
-        from main import quizzes, quiz_timestamps, quiz_images, _evict_old_content
+        from main import quizzes, quiz_timestamps, quiz_images, quiz_image_assets, _evict_old_content
         import config as cfg
 
         quizzes.clear()
         quiz_timestamps.clear()
         quiz_images.clear()
+        quiz_image_assets.clear()
 
         quizzes["old-quiz"] = make_quiz()
         quiz_timestamps["old-quiz"] = 1.0
