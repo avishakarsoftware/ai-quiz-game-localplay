@@ -981,22 +981,6 @@ body {
     margin-top: 8px;
 }
 
-/* Player Chips */
-.player-chip {
-    display: inline-block;
-    padding: 6px 14px;
-    background: var(--bg-tertiary);
-    border-radius: 100px;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-secondary);
-}
-
-.player-chip-self {
-    background: var(--accent-primary);
-    color: white;
-}
-
 /* Settings Row */
 .settings-row {
     display: flex;
