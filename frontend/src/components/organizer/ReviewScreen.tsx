@@ -185,20 +185,19 @@ export default function ReviewScreen({
                                     <p className="text-sm font-medium mb-3">{q.text}</p>
                                     <div className={`grid gap-2 ${q.options.length === 2 ? 'grid-cols-1' : 'grid-cols-2'}`}>
                                         {q.options.map((opt, j) => {
-                                            const style = ANSWER_STYLES[j];
                                             const isCorrect = showAnswers && j === q.answer_index;
                                             return (
                                                 <div
                                                     key={j}
                                                     className={`review-option ${isCorrect ? 'review-option-correct' : ''}`}
                                                     style={{
-                                                        backgroundColor: `${style.bg}33`,
-                                                        border: isCorrect ? `2px solid ${style.bg}` : '2px solid transparent',
+                                                        backgroundColor: isCorrect ? 'rgba(109, 255, 230, 0.16)' : 'rgba(248, 235, 217, 0.06)',
+                                                        border: isCorrect ? '1px solid var(--olive)' : '1px solid var(--rule)',
                                                     }}
                                                 >
-                                                    <span className="text-xl">{style.shape}</span>
+                                                    <span className="answer-label" style={{ marginRight: 0 }}>{String.fromCharCode(65 + j)}</span>
                                                     <span className="truncate">{opt}</span>
-                                                    {isCorrect && <span className="ml-auto text-xs font-bold" style={{ color: style.bg }}>✓</span>}
+                                                    {isCorrect && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--olive)' }}>✓</span>}
                                                 </div>
                                             );
                                         })}

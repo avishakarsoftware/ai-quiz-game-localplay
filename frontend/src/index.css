@@ -69,6 +69,7 @@
     --text-tertiary: var(--ink-mute);
     --text-quaternary: rgba(248, 235, 217, 0.28);
     --separator: var(--rule);
+    --border-primary: var(--rule);
 }
 
 
@@ -1628,9 +1629,9 @@ body {
 }
 
 .suggestion-chip:hover {
-    background: rgba(255, 255, 255, 0.2);
-    border-color: rgba(255, 255, 255, 0.4);
-    color: white;
+    background: rgba(255, 46, 122, 0.14);
+    border-color: var(--accent);
+    color: var(--ink);
 }
 
 /* Difficulty selector */
@@ -1646,10 +1647,10 @@ body {
     align-items: center;
     gap: 4px;
     padding: 12px 8px;
-    border-radius: 12px;
-    background: var(--glass-bg);
-    border: 2px solid transparent;
-    color: rgba(255, 255, 255, 0.6);
+    border-radius: 8px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    color: var(--ink-mute);
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
@@ -1658,14 +1659,14 @@ body {
 
 .difficulty-option.active {
     border-color: var(--accent-primary);
-    background: var(--accent-primary);
-    color: white;
+    background: rgba(255, 46, 122, 0.18);
+    color: var(--ink);
     font-weight: 600;
-    box-shadow: 0 4px 16px rgba(108, 92, 231, 0.4);
+    box-shadow: var(--glow-accent);
 }
 
 .difficulty-option:not(.active):hover {
-    background: var(--bg-tertiary);
+    background: var(--paper-2);
 }
 
 /* Time preset selector */
@@ -1677,10 +1678,10 @@ body {
 .time-preset-option {
     flex: 1;
     padding: 10px 4px;
-    border-radius: 12px;
-    background: var(--glass-bg);
-    border: 2px solid transparent;
-    color: rgba(255, 255, 255, 0.6);
+    border-radius: 8px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    color: var(--ink-mute);
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
@@ -1690,13 +1691,13 @@ body {
 
 .time-preset-option.active {
     border-color: var(--accent-primary);
-    background: var(--accent-primary);
-    color: white;
-    box-shadow: 0 4px 16px rgba(108, 92, 231, 0.4);
+    background: rgba(255, 46, 122, 0.18);
+    color: var(--ink);
+    box-shadow: var(--glow-accent);
 }
 
 .time-preset-option:not(.active):hover {
-    background: var(--bg-tertiary);
+    background: var(--paper-2);
 }
 
 /* AI Provider selector */
@@ -1712,10 +1713,10 @@ body {
     align-items: center;
     gap: 4px;
     padding: 12px 8px;
-    border-radius: 12px;
-    background: var(--glass-bg);
-    border: 2px solid transparent;
-    color: rgba(255, 255, 255, 0.6);
+    border-radius: 8px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    color: var(--ink-mute);
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
@@ -1725,14 +1726,14 @@ body {
 
 .provider-option.active {
     border-color: var(--accent-primary);
-    background: var(--accent-primary);
-    color: white;
+    background: rgba(255, 46, 122, 0.18);
+    color: var(--ink);
     font-weight: 600;
-    box-shadow: 0 4px 16px rgba(108, 92, 231, 0.4);
+    box-shadow: var(--glow-accent);
 }
 
 .provider-option:not(.active):not(.unavailable):hover {
-    background: var(--bg-tertiary);
+    background: var(--paper-2);
 }
 
 .provider-option.unavailable {
@@ -1807,7 +1808,7 @@ body {
 
 /* Glow button variant */
 .btn-glow {
-    box-shadow: 0 4px 24px rgba(162, 155, 254, 0.5), 0 0 60px rgba(255, 255, 255, 0.1);
+    box-shadow: var(--glow-accent), 0 0 60px rgba(109, 255, 230, 0.08);
 }
 
 /* Loading screen rings */
@@ -1829,23 +1830,23 @@ body {
 .ring-outer {
     width: 120px;
     height: 120px;
-    border-top-color: var(--accent-primary);
-    border-right-color: var(--accent-primary);
+    border-top-color: var(--accent);
+    border-right-color: var(--accent);
     animation: spin 2s linear infinite;
 }
 
 .ring-middle {
     width: 90px;
     height: 90px;
-    border-bottom-color: var(--accent-secondary);
-    border-left-color: var(--accent-secondary);
+    border-bottom-color: var(--olive);
+    border-left-color: var(--olive);
     animation: spin 1.5s linear infinite reverse;
 }
 
 .ring-inner {
     width: 60px;
     height: 60px;
-    border-top-color: var(--accent-warning);
+    border-top-color: var(--gold);
     animation: spin 1s linear infinite;
 }
 
@@ -1883,20 +1884,20 @@ body {
     width: 200px;
     height: 3px;
     border-radius: 2px;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.25), transparent);
+    background: linear-gradient(90deg, transparent, var(--accent), var(--olive), transparent);
 }
 
 /* Review question card */
 .review-question-card {
-    background: var(--glass-bg);
-    border-radius: 16px;
+    background: var(--paper);
+    border-radius: 8px;
     border: 1px solid var(--glass-border);
     transition: background 0.2s, transform 0.2s;
     position: relative;
 }
 
 .review-question-card:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--paper-2);
     transform: translateY(-1px);
 }
 
@@ -1911,8 +1912,9 @@ body {
     font-size: 13px;
     font-weight: 700;
     flex-shrink: 0;
-    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-    color: white;
+    background: var(--accent);
+    color: var(--accent-ink);
+    box-shadow: var(--glow-accent);
 }
 
 /* Review card action buttons - float top-right */
@@ -1929,26 +1931,26 @@ body {
     width: 30px;
     height: 30px;
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.12);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(248, 235, 217, 0.08);
+    border: 1px solid var(--rule);
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--ink-mute);
     cursor: pointer;
     transition: all 0.15s;
 }
 
 .review-action-btn:hover {
     background: var(--accent-primary);
-    color: white;
+    color: var(--accent-ink);
     border-color: var(--accent-primary);
 }
 
 .review-action-delete:hover {
     background: var(--accent-danger);
-    color: white;
+    color: var(--accent-ink);
     border-color: var(--accent-danger);
 }
 
@@ -1958,7 +1960,7 @@ body {
     align-items: center;
     gap: 6px;
     padding: 8px 12px;
-    border-radius: 10px;
+    border-radius: 8px;
     font-size: 12px;
     font-weight: 600;
     color: var(--text-secondary);
@@ -1966,8 +1968,8 @@ body {
 }
 
 .review-option-correct {
-    color: white;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    color: var(--ink);
+    box-shadow: var(--glow-mint);
 }
 
 /* Image generation ring */
@@ -2146,7 +2148,9 @@ body {
     height: 36px;
     border-radius: 50%;
     border: none;
-    background: var(--bg-secondary);
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    color: var(--ink);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -2158,7 +2162,7 @@ body {
 
 .shuffle-btn:hover {
     opacity: 1;
-    background: var(--bg-tertiary);
+    background: var(--paper-2);
     transform: rotate(90deg) scale(1.1);
 }
 
@@ -2173,19 +2177,19 @@ body {
     gap: 16px;
     width: 100%;
     padding: 20px;
-    background: var(--bg-secondary);
+    background: var(--paper);
     border: 1px solid var(--border-primary);
-    border-radius: 16px;
+    border-radius: 8px;
     cursor: pointer;
     transition: all 0.2s ease;
     text-align: left;
 }
 
 .game-select-card:hover {
-    background: var(--bg-tertiary);
+    background: var(--paper-2);
     border-color: var(--accent-primary);
     transform: translateY(-2px);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow);
 }
 
 .game-select-card:active {
