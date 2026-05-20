@@ -121,6 +121,8 @@ make lint
 | `make test` | Run unit + integration tests |
 | `make test-e2e` | Run E2E tests (requires Ollama) |
 | `make test-all` | Run all tests |
+| `make test-remote-prod` | Run live production smoke checks |
+| `make test-remote-gamma` | Run live gamma smoke checks |
 | `make build` | Build frontend for production |
 | `make lint` | TypeScript type checking |
 | `make clean` | Remove build artifacts and `__pycache__` |

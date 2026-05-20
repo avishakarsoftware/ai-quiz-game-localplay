@@ -989,7 +989,7 @@ Historical review notes were consolidated into this section and the platform spe
 - **Sign-in wallet merge verification:** A newly signed-in gamma user showed `0 sparks`. Verify whether guest sparks should merge into the signed-in wallet in all flows, including existing-user re-sign-in and repeated merge rejection paths.
 - **Signed-in balance refresh:** After sign-in, confirm the header spark balance refreshes from the signed-in session and does not keep stale guest-wallet state.
 - **Show answers control:** The organizer/player "show answers" UI currently appears to do nothing. Trace the intended answer-reveal state, WebSocket message, and client rendering path, then add regression coverage.
-- **Apple web sign-in regression coverage:** Apple sign-in has been verified on gamma and the IONOS production frontend. Add automated or manual smoke coverage so Service ID/domain/return URL regressions are caught after auth or deploy changes.
+- **Apple web sign-in regression coverage:** Apple sign-in has been verified on gamma and the IONOS production frontend. Manual smoke coverage is documented in `DEPLOY.md`; add browser automation later if we can provide stable test account/session handling for provider popups.
 - **Provider sign-in diagnostics:** Add a narrow admin/debug view or structured log event for sign-in attempts that reports provider, origin, audience, verification stage, and sanitized failure reason without logging tokens.
 - **Auth config startup checks:** Startup currently warns on short `JWT_SECRET`, but missing `JWT_SECRET` is fatal for sign-in. Add a deployment/startup warning that explicitly says Google/Apple sign-in is disabled when `JWT_SECRET`, `GOOGLE_CLIENT_ID`, or Apple audience config is absent.
 - **LocalPlay/Revelry session boundary:** Document and test that LocalPlay sessions are independent from the main Revelry app even if Google Cloud/Firebase infrastructure is shared.
@@ -1075,13 +1075,13 @@ Current deployed infrastructure:
 - Browser sign-in is direct Google Identity Services / Apple Sign-In, not Firebase Auth. The provider returns an ID token, the LocalPlay backend verifies it, and the backend mints a LocalPlay session JWT.
 - A successful signed-in state is visible in the menu as **Signed in**, account/email prefix, and a **Sign Out** button.
 - LocalPlay sessions are independent from the main Revelry app session even if Google Cloud/Firebase project infrastructure is shared.
-- Verified browser sign-in: Google on gamma; Apple on gamma and IONOS production. Production Google is configured on the IONOS bundle and production backend but should still be smoke-tested before release.
+- Verified browser sign-in: Google on gamma; Apple on gamma and IONOS production. Production Google is configured on the IONOS bundle and production backend and should be manually smoke-tested after auth/OAuth changes.
 
 Operational follow-up:
 
 - Keep IONOS as the public production frontend unless a later product/deployment decision changes the URL strategy.
 - For every backend deploy, use `./scripts/deploy-gcp.sh --with-frontend` for production and `./scripts/deploy-gcp.sh --gamma --with-frontend` for gamma unless intentionally testing API-only mode.
-- After deploys, smoke test `/health`, `/`, `/join`, `/spectator`, a built `/assets/*` file, API JSON routes such as `/providers`, and WebSocket room join.
+- After deploys, run `make test-remote-prod` or `make test-remote-gamma`. These cover `/health`, provider/config, SPA root, auth guards, iOS checkout guard, live generation, idempotent retry, and token balance. Manually smoke Google/Apple browser sign-in and Stripe checkout as described in `DEPLOY.md`.
 
 ### Product Boundary
 

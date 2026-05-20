@@ -848,6 +848,42 @@ gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --c
 ```
 
 ### Check if backends are healthy
+
+```bash
+curl -sS -i https://gamesapi.revelryapp.me/health
+curl -sS -i https://gamesapi-gamma.revelryapp.me/health
+```
+
+### Remote smoke tests
+
+Run these after prod/gamma deploys and after auth/provider/DNS changes:
+
+```bash
+# Production: health, provider/config, SPA root, auth guards, iOS checkout guard,
+# live generation, idempotent retry, and token balance no-double-charge check.
+make test-remote-prod
+
+# Gamma equivalent.
+make test-remote-gamma
+
+# Lower-impact variant when you do not want to spend a live LLM call:
+.venv/bin/python scripts/smoke-remote.py --base-url https://gamesapi.revelryapp.me --skip-generate
+```
+
+Manual provider sign-in smoke is still required for the browser popup flows:
+
+- Google: open the SPA, sign in, verify the menu shows **Signed in**, account/email prefix, and **Sign Out**.
+- Apple: same as Google; verify Apple returns to the same host.
+- IONOS production frontend: repeat on `https://games.revelryapp.me/quiz/`.
+- Backend-served prod/gamma: repeat on `https://gamesapi.revelryapp.me` and `https://gamesapi-gamma.revelryapp.me` when those origins have changed.
+
+Stripe smoke should stay manual/test-mode unless explicitly doing a paid production checkout:
+
+- Gamma checkout must use Stripe test keys.
+- Production checkout should only be tested with an intentional real purchase/refund workflow.
+
+Manual curl spot checks:
+
 ```bash
 curl -s https://gamesapi.revelryapp.me/health
 curl -s https://gamesapi-gamma.revelryapp.me/health
