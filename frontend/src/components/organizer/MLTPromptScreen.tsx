@@ -68,7 +68,7 @@ export default function MLTPromptScreen({
     numRounds, setNumRounds, provider, setProvider,
     providers, onGenerate, onBack,
 }: MLTPromptScreenProps) {
-    const { tokenStatus, loading: tokenLoading } = useTokenBalance();
+    const { tokenStatus } = useTokenBalance();
     const swipeProgress = useSwipeBack(onBack);
 
     const shuffleTheme = () => {

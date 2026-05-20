@@ -46,6 +46,9 @@ TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "false").lower() == "true
 
 # --- WebSocket Security ---
 WS_RATE_LIMIT_PER_SEC = 10  # max messages per second per client
+DRAW_OP_RATE_LIMIT_PER_SEC = 30  # drawing strokes need a separate higher cap
+MAX_DRAW_OP_MESSAGE_SIZE = 2048  # bytes
+MAX_DRAW_OPS_PER_SYNC = 500
 MAX_WS_MESSAGE_SIZE = 4096  # bytes
 MAX_AVATAR_LENGTH = 10  # emoji avatars only
 MAX_TEAM_NAME_LENGTH = 30
@@ -70,6 +73,7 @@ VALID_DIFFICULTIES = ("easy", "medium", "hard")
 # --- Player / history limits ---
 MAX_PLAYERS_PER_ROOM = 100
 MIN_WMLT_PLAYERS = 2  # WMLT minimum players
+MIN_DRAWING_PLAYERS = 2  # DrawingGame minimum players
 MAX_GAME_HISTORY = 1000
 
 # --- Streak bonus ---

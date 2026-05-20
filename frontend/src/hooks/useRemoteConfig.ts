@@ -21,10 +21,9 @@ function mergeWithDefaults(data: Partial<RemoteConfig>): RemoteConfig {
     feature_flags: { ...DEFAULT_CONFIG.feature_flags, ...data.feature_flags },
     announcements: Array.isArray(data.announcements)
       ? data.announcements
-          .filter((a): a is Record<string, unknown> =>
-            !!a && typeof a === 'object' && typeof (a as Record<string, unknown>).id === 'string' && typeof (a as Record<string, unknown>).text === 'string'
-          )
-          .map(a => ({
+          .map((item) => item as unknown as Record<string, unknown>)
+          .filter((a) => typeof a.id === 'string' && typeof a.text === 'string')
+          .map((a) => ({
             id: a.id as string,
             text: a.text as string,
             type: (a.type === 'info' || a.type === 'warning' ? a.type : 'info') as 'info' | 'warning',

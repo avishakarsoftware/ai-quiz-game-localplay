@@ -42,7 +42,7 @@ export interface GameHistoryEntry {
     completed_at: number;
 }
 
-export type GameType = 'quiz' | 'wmlt';
+export type GameType = 'quiz' | 'wmlt' | 'drawing';
 
 export interface MLTStatement {
     id: number;
@@ -52,6 +52,27 @@ export interface MLTStatement {
 export interface MLTGame {
     game_title: string;
     statements: MLTStatement[];
+}
+
+export interface DrawingPrompt {
+    id: number;
+    text: string;
+    aliases?: string[];
+    difficulty?: 'easy' | 'medium' | 'hard';
+}
+
+export interface DrawingGame {
+    game_title: string;
+    prompts: DrawingPrompt[];
+}
+
+export interface DrawOperation {
+    kind: 'stroke' | 'clear' | 'undo';
+    points?: [number, number][];
+    color?: string;
+    width?: number;
+    seq?: number;
+    drawer?: string;
 }
 
 export interface PowerUps {

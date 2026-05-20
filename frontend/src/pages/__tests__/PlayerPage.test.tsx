@@ -1,4 +1,4 @@
-import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock react-router-dom before importing PlayerPage
@@ -51,7 +51,9 @@ class MockWebSocket {
     readyState = 1;
     close = vi.fn();
     send = vi.fn();
-    constructor(public url: string) {
+    url: string;
+    constructor(url: string) {
+        this.url = url;
         MockWebSocket.instances.push(this);
     }
 }

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL, API_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
@@ -11,6 +11,7 @@ import { soundManager } from '../utils/sound';
 import BonusSplash from '../components/BonusSplash';
 import PlayerChip from '../components/PlayerChip';
 import Avatar from '../components/Avatar';
+import DrawingCanvas from '../components/DrawingCanvas';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
@@ -50,6 +51,11 @@ export default function SpectatorPage() {
     const [showFullscreenPrompt, setShowFullscreenPrompt] = useState(true);
     const [wmltRoundResult, setWmltRoundResult] = useState<{ winner: string; winners: string[]; round_podium: { nickname: string; avatar: string; vote_count: number; voters: string[] }[]; unanimous: boolean; show_votes: boolean; statement: string } | null>(null);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
+    const [drawingDrawer, setDrawingDrawer] = useState('');
+    const [drawingOps, setDrawingOps] = useState<DrawOperation[]>([]);
+    const [correctGuessers, setCorrectGuessers] = useState<string[]>([]);
+    const [guessLog, setGuessLog] = useState<{ nickname: string; guess: string; correct?: boolean }[]>([]);
+    const [drawingRoundPrompt, setDrawingRoundPrompt] = useState('');
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -126,7 +132,7 @@ export default function SpectatorPage() {
         };
 
         ws.onmessage = (event) => {
-            let msg: Record<string, unknown>;
+            let msg: any;
             try { msg = JSON.parse(event.data); } catch { return; }
             if (msg.type === 'PING') return; // heartbeat — no action needed
             if (msg.type === 'SPECTATOR_SYNC') {
@@ -138,7 +144,12 @@ export default function SpectatorPage() {
                 if (msg.game_type) setGameType(msg.game_type);
                 // Handle mid-question sync
                 if (msg.state === 'QUESTION') {
-                    if (msg.game_type === 'wmlt' && msg.statement) {
+                    if (msg.game_type === 'drawing') {
+                        setDrawingDrawer(msg.drawer || '');
+                        setDrawingOps(msg.drawing_ops || []);
+                        setCorrectGuessers(msg.correct_guessers || []);
+                        setGuessLog(msg.guess_log || []);
+                    } else if (msg.game_type === 'wmlt' && msg.statement) {
                         setCurrentStatement(msg.statement);
                         setVotePlayers(msg.players || []);
                     } else if (msg.question) {
@@ -173,6 +184,11 @@ export default function SpectatorPage() {
                 if (msg.game_type === 'wmlt' || msg.statement) {
                     setCurrentStatement(msg.statement);
                     setVotePlayers(msg.players || []);
+                } else if (msg.game_type === 'drawing') {
+                    setDrawingDrawer(msg.drawer || '');
+                    setDrawingOps(msg.drawing_ops || []);
+                    setCorrectGuessers(msg.correct_guessers || []);
+                    setGuessLog(msg.guess_log || []);
                 } else {
                     setQuestion(msg.question);
                 }
@@ -180,9 +196,25 @@ export default function SpectatorPage() {
                 setGameState('QUESTION');
             }
             else if (msg.type === 'TIMER') setTimeRemaining(msg.remaining);
+            else if (msg.type === 'DRAW_OP') {
+                const op = msg.op as DrawOperation;
+                if (op.kind === 'clear') setDrawingOps([]);
+                else if (op.kind === 'undo') setDrawingOps(prev => prev.slice(0, -1));
+                else setDrawingOps(prev => [...prev, op].slice(-500));
+            }
+            else if (msg.type === 'GUESS_ACCEPTED') {
+                setCorrectGuessers(msg.correct_guessers || []);
+            }
+            else if (msg.type === 'GUESS_LOG') {
+                setGuessLog(msg.guess_log || []);
+            }
             else if (msg.type === 'QUESTION_OVER') {
                 setLeaderboard(msg.leaderboard);
-                if (msg.game_type === 'wmlt') {
+                if (msg.game_type === 'drawing') {
+                    setDrawingRoundPrompt(msg.prompt || '');
+                    setCorrectGuessers(msg.correct_guessers || []);
+                    setWmltRoundResult(null);
+                } else if (msg.game_type === 'wmlt') {
                     setWmltRoundResult({
                         winner: msg.winner,
                         winners: msg.winners || [msg.winner],
@@ -226,6 +258,11 @@ export default function SpectatorPage() {
                 setShowBonusSplash(false);
                 setCurrentStatement(null);
                 setVotePlayers([]);
+                setDrawingDrawer('');
+                setDrawingOps([]);
+                setCorrectGuessers([]);
+                setGuessLog([]);
+                setDrawingRoundPrompt('');
                 if (msg.game_type) setGameType(msg.game_type);
                 setGameState('LOBBY');
             }
@@ -393,7 +430,7 @@ export default function SpectatorPage() {
                     {gameState === 'LOBBY' && (
                         <div className="flex-1 flex flex-col items-center justify-center animate-in">
                             <h1 className="hero-title mb-8" style={{ fontSize: '3.5rem' }}>
-                                {gameType === 'wmlt' ? 'Join the Game!' : 'Join the Quiz!'}
+                                {gameType === 'drawing' ? 'Join the Drawing Game!' : gameType === 'wmlt' ? 'Join the Game!' : 'Join the Quiz!'}
                             </h1>
 
                             <div className="flex items-center justify-center gap-12 mb-8">
@@ -432,12 +469,12 @@ export default function SpectatorPage() {
                     {gameState === 'INTRO' && (
                         <div className="intro-screen animate-in">
                             <div className="intro-kicker">Room {roomCode}</div>
-                            <h1 className="intro-title">{gameType === 'wmlt' ? 'Round Incoming' : 'Quiz Incoming'}</h1>
+                            <h1 className="intro-title">{gameType === 'drawing' ? 'Draw Incoming' : gameType === 'wmlt' ? 'Round Incoming' : 'Quiz Incoming'}</h1>
                             <div className="intro-count" aria-label="Starting soon">3</div>
                         </div>
                     )}
 
-                    {gameState === 'QUESTION' && (question || currentStatement) && (
+                    {gameState === 'QUESTION' && (question || currentStatement || gameType === 'drawing') && (
                         showBonusSplash ? (
                             <BonusSplash onComplete={() => setShowBonusSplash(false)} />
                         ) : (
@@ -445,7 +482,7 @@ export default function SpectatorPage() {
                             <div className="py-4" style={{ flexShrink: 0 }}>
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-2xl font-bold text-[--text-tertiary]">
-                                        {gameType === 'wmlt' ? 'Round' : 'Q'}{questionNumber}/{totalQuestions}
+                                        {gameType === 'wmlt' || gameType === 'drawing' ? 'Round' : 'Q'}{questionNumber}/{totalQuestions}
                                     </span>
                                     <div className="flex items-center gap-3">
                                         {isBonus && <span className="bonus-badge" style={{ fontSize: 16 }}>2X BONUS</span>}
@@ -466,7 +503,25 @@ export default function SpectatorPage() {
                                 </div>
                             </div>
 
-                            {gameType === 'wmlt' && currentStatement ? (
+                            {gameType === 'drawing' ? (
+                                <>
+                                    <div className="text-center mb-4">
+                                        <p className="text-[--text-tertiary] text-xl">Drawing now</p>
+                                        <h2 className="text-4xl font-extrabold">{drawingDrawer}</h2>
+                                        <p className="text-[--accent-success] text-lg mt-2">{correctGuessers.length} correct guess{correctGuessers.length === 1 ? '' : 'es'}</p>
+                                    </div>
+                                    <DrawingCanvas ops={drawingOps} height={Math.min(560, Math.max(380, window.innerHeight * 0.58))} />
+                                    {guessLog.length > 0 && (
+                                        <div className="text-center text-[--text-tertiary] text-lg mt-4">
+                                            {guessLog.slice(-4).map((item, index) => (
+                                                <span key={`${item.nickname}-${item.guess}-${index}`} style={{ margin: '0 10px' }}>
+                                                    {item.nickname}: {item.guess}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
+                            ) : gameType === 'wmlt' && currentStatement ? (
                                 <>
                                     <div className="question-card mb-4" style={{ padding: '48px', fontSize: '24px' }}>
                                         <p className="question-text" style={{ fontSize: '36px', fontWeight: 700, textAlign: 'center' }}>
@@ -517,7 +572,22 @@ export default function SpectatorPage() {
                     )}
 
                     {gameState === 'LEADERBOARD' && (
-                        wmltRoundResult ? (
+                        gameType === 'drawing' ? (
+                            <div className="flex-1 flex flex-col animate-in" style={{ minHeight: 0, overflow: 'hidden' }}>
+                                <div className="text-center" style={{ flexShrink: 0, padding: '16px 0' }}>
+                                    <p style={{ color: 'var(--text-tertiary)', fontSize: '1.2rem', marginBottom: 8 }}>Round {questionNumber} of {totalQuestions}</p>
+                                    <div style={{ fontSize: '3rem', marginBottom: 4 }}>🎨</div>
+                                    <h2 style={{ fontSize: '2.8rem', fontWeight: 800 }}>{drawingRoundPrompt}</h2>
+                                    <p style={{ color: 'var(--text-secondary)', fontSize: '1.2rem' }}>
+                                        {correctGuessers.length ? `${correctGuessers.join(', ')} guessed it` : 'No correct guesses'}
+                                    </p>
+                                </div>
+                                <div className="w-full max-w-3xl mx-auto" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                                    <LeaderboardBarChart leaderboard={leaderboard} maxEntries={8} size="large" />
+                                </div>
+                                <p className="text-center" style={{ color: 'var(--text-tertiary)', fontSize: '1rem', padding: '12px 0' }}>Waiting for host...</p>
+                            </div>
+                        ) : wmltRoundResult ? (
                             /* WMLT: show vote bar chart, no points leaderboard */
                             <div className="flex-1 flex flex-col animate-in" style={{ minHeight: 0, overflow: 'hidden' }}>
                                 <div className="text-center" style={{ flexShrink: 0, padding: '16px 0' }}>

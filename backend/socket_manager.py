@@ -22,7 +22,7 @@ class Room:
         self.room_code = room_code
         self.quiz = game_data  # generic game content (quiz or WMLT)
         self.content_id = content_id
-        self.game_type = game_type  # "quiz" or "wmlt"
+        self.game_type = game_type  # "quiz", "wmlt", or "drawing"
         self.time_limit = time_limit
         self.organizer_token = organizer_token  # secret token for organizer auth
         self.players: Dict[str, dict] = {}  # socket_id -> {nickname, score, prev_rank, streak, ...}
@@ -59,6 +59,13 @@ class Room:
         self.votes: Dict[str, str] = {}  # nickname -> voted_for_nickname (per-round)
         self.show_votes: bool = True  # Show vote breakdown after each round
         self.mlt_round_history: List[dict] = []  # per-round vote data for superlatives
+        # DrawingGame state
+        self.drawer_order: List[str] = []
+        self.current_drawer: str = ""
+        self.correct_guessers: set = set()
+        self.drawing_ops: List[dict] = []
+        self.guess_log: List[dict] = []
+        self.draw_op_timestamps: Dict[str, list] = {}
 
     def reset_for_new_game(self, new_game_data: dict, new_time_limit: int,
                            game_type: Optional[str] = None,
@@ -102,6 +109,12 @@ class Room:
         self.bonus_questions = set()
         self.mlt_round_history.clear()
         self.msg_timestamps.clear()
+        self.drawer_order = []
+        self.current_drawer = ""
+        self.correct_guessers = set()
+        self.drawing_ops = []
+        self.guess_log = []
+        self.draw_op_timestamps.clear()
 
         for nickname in self.power_ups:
             self.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
@@ -119,6 +132,8 @@ class Room:
         """Total number of rounds (questions for quiz, statements for WMLT)."""
         if self.game_type == "wmlt":
             return len(self.quiz.get("statements", []))
+        if self.game_type == "drawing":
+            return len(self.quiz.get("prompts", []))
         return len(self.quiz.get("questions", []))
 
     def current_round_data(self) -> Optional[dict]:
@@ -128,6 +143,8 @@ class Room:
             return None
         if self.game_type == "wmlt":
             return self.quiz["statements"][idx]
+        if self.game_type == "drawing":
+            return self.quiz["prompts"][idx]
         return self.quiz["questions"][idx]
 
     def game_title(self) -> str:
@@ -144,9 +161,11 @@ class Room:
         if client_id in self.spectators:
             self.spectators.pop(client_id, None)
             self.msg_timestamps.pop(client_id, None)
+            self.draw_op_timestamps.pop(client_id, None)
             return
         self.connections.pop(client_id, None)
         self.msg_timestamps.pop(client_id, None)
+        self.draw_op_timestamps.pop(client_id, None)
         if client_id in self.players:
             nickname = self.players[client_id]["nickname"]
             if self.state in ("LOBBY",):
@@ -348,6 +367,12 @@ class SocketManager:
                     if room.game_type == "wmlt":
                         sync["statement"] = round_data
                         sync["vote_count"] = len(room.votes)
+                    elif room.game_type == "drawing":
+                        sync["drawing_prompt"] = {k: v for k, v in round_data.items() if k != "aliases"}
+                        sync["drawer"] = room.current_drawer
+                        sync["drawing_ops"] = room.drawing_ops[-config.MAX_DRAW_OPS_PER_SYNC:]
+                        sync["correct_guessers"] = list(room.correct_guessers)
+                        sync["guess_log"] = room.guess_log[-10:]
                     else:
                         sync["question"] = {k: v for k, v in round_data.items() if k != "answer_index"}
                     sync["time_limit"] = room.time_limit
@@ -411,21 +436,33 @@ class SocketManager:
                     await websocket.send_json({"type": "ERROR", "message": "Message too large"})
                     continue
 
-                # Per-client rate limiting
-                now = time.time()
-                timestamps = room.msg_timestamps.setdefault(client_id, [])
-                timestamps[:] = [t for t in timestamps if now - t < 1.0]
-                if len(timestamps) >= config.WS_RATE_LIMIT_PER_SEC:
-                    await websocket.send_json({"type": "ERROR", "message": "Too many messages"})
-                    continue
-                timestamps.append(now)
-
                 try:
                     message = json.loads(data)
                 except json.JSONDecodeError:
                     logger.warning("Malformed JSON from client %s: %s", client_id, data[:100])
                     await websocket.send_json({"type": "ERROR", "message": "Invalid message format"})
                     continue
+
+                msg_type = message.get("type") if isinstance(message, dict) else None
+                now = time.time()
+                if room.game_type == "drawing" and msg_type == "DRAW_OP":
+                    if len(data) > config.MAX_DRAW_OP_MESSAGE_SIZE:
+                        await websocket.send_json({"type": "ERROR", "message": "Drawing message too large"})
+                        continue
+                    timestamps = room.draw_op_timestamps.setdefault(client_id, [])
+                    timestamps[:] = [t for t in timestamps if now - t < 1.0]
+                    if len(timestamps) >= config.DRAW_OP_RATE_LIMIT_PER_SEC:
+                        await websocket.send_json({"type": "ERROR", "message": "Too many drawing messages"})
+                        continue
+                    timestamps.append(now)
+                else:
+                    # Per-client rate limiting for non-drawing messages
+                    timestamps = room.msg_timestamps.setdefault(client_id, [])
+                    timestamps[:] = [t for t in timestamps if now - t < 1.0]
+                    if len(timestamps) >= config.WS_RATE_LIMIT_PER_SEC:
+                        await websocket.send_json({"type": "ERROR", "message": "Too many messages"})
+                        continue
+                    timestamps.append(now)
 
                 room.touch()
                 # Revoke organizer privileges if this socket was replaced by a newer organizer
@@ -489,6 +526,13 @@ class SocketManager:
                 sync["statement"] = round_data
                 sync["vote_count"] = len(room.votes)
                 sync["voted_count"] = len(room.votes)
+            elif room.game_type == "drawing":
+                sync["drawing_prompt"] = round_data
+                sync["drawer"] = room.current_drawer
+                sync["drawing_ops"] = room.drawing_ops[-config.MAX_DRAW_OPS_PER_SYNC:]
+                sync["correct_guessers"] = list(room.correct_guessers)
+                sync["guess_log"] = room.guess_log[-10:]
+                sync["answered_count"] = len(room.correct_guessers)
             else:
                 sync["question"] = round_data
                 sync["answered_count"] = len(room.answered_players)
@@ -528,6 +572,14 @@ class SocketManager:
                                 "message": f"Most Likely To needs at least {config.MIN_WMLT_PLAYERS} players to start",
                             })
                             return
+                    elif room.game_type == "drawing":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_DRAWING_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Drawing Game needs at least {config.MIN_DRAWING_PLAYERS} players to start",
+                            })
+                            return
                     spent, _ = token_module.spend_room(room.wallet_id)
                     if not spent:
                         await self._send_to_client(room, client_id, {
@@ -536,7 +588,7 @@ class SocketManager:
                         })
                         return
                     room.locked = True
-                    if room.game_type != "wmlt":
+                    if room.game_type == "quiz":
                         self._select_bonus_questions(room)
                     room.state = "INTRO"
                     await room.broadcast({"type": "GAME_STARTING"})
@@ -589,7 +641,7 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt") else room.game_type
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing") else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
 
                     # Validate time_limit
@@ -600,9 +652,11 @@ class SocketManager:
                     new_time_limit = max(5, min(60, new_time_limit))
 
                     # Validate content BEFORE charging
-                    from main import quizzes, mlt_scenarios
+                    from main import quizzes, mlt_scenarios, drawing_games
                     if new_game_type == "wmlt":
                         new_game_data = mlt_scenarios.get(new_content_id)
+                    elif new_game_type == "drawing":
+                        new_game_data = drawing_games.get(new_content_id)
                     else:
                         new_game_data = quizzes.get(new_content_id)
 
@@ -732,6 +786,8 @@ class SocketManager:
                                     {"nickname": p["nickname"], "avatar": p.get("avatar", "")}
                                     for p in room.players.values()
                                 ]
+                            elif room.game_type == "drawing":
+                                state_info.update(self._drawing_player_state(room, nickname, round_data))
                             else:
                                 player_question = {k: v for k, v in round_data.items() if k != "answer_index"}
                                 state_info["question"] = player_question
@@ -810,6 +866,8 @@ class SocketManager:
                                     {"nickname": p["nickname"], "avatar": p.get("avatar", "")}
                                     for p in room.players.values()
                                 ]
+                            elif room.game_type == "drawing":
+                                state_info.update(self._drawing_player_state(room, player_data["nickname"], round_data))
                             else:
                                 player_question = {k: v for k, v in round_data.items() if k != "answer_index"}
                                 state_info["question"] = player_question
@@ -916,9 +974,15 @@ class SocketManager:
                 if all_voted:
                     await self.end_question(room)
 
+            elif msg_type == "DRAW_OP" and room.game_type == "drawing":
+                await self._handle_draw_op(room, client_id, message)
+
+            elif msg_type == "GUESS" and room.game_type == "drawing":
+                await self._handle_drawing_guess(room, client_id, message)
+
             elif msg_type == "ANSWER":
-                if room.game_type == "wmlt":
-                    return  # WMLT uses VOTE, not ANSWER
+                if room.game_type in ("wmlt", "drawing"):
+                    return  # WMLT uses VOTE; DrawingGame uses GUESS
                 if client_id not in room.players:
                     return
                 answer_index = message.get("answer_index")
@@ -1045,6 +1109,174 @@ class SocketManager:
                             "remove_indices": remove,
                         })
 
+    def _drawing_player_state(self, room: Room, nickname: str, prompt: Optional[dict]) -> dict:
+        is_drawer = nickname == room.current_drawer
+        return {
+            "drawing_prompt": prompt if is_drawer else ({k: v for k, v in (prompt or {}).items() if k not in ("text", "aliases")}),
+            "drawer": room.current_drawer,
+            "is_drawer": is_drawer,
+            "drawing_ops": room.drawing_ops[-config.MAX_DRAW_OPS_PER_SYNC:],
+            "correct_guessers": list(room.correct_guessers),
+            "guess_log": room.guess_log[-10:],
+        }
+
+    def _ensure_drawer_order(self, room: Room):
+        current = room.player_nicknames()
+        if not room.drawer_order:
+            room.drawer_order = current[:]
+        for nickname in current:
+            if nickname not in room.drawer_order:
+                room.drawer_order.append(nickname)
+        room.drawer_order = [n for n in room.drawer_order if n in set(current) or n in room.disconnected_players]
+
+    def _drawer_for_round(self, room: Room) -> str:
+        self._ensure_drawer_order(room)
+        if not room.drawer_order:
+            return ""
+        return room.drawer_order[room.current_question_index % len(room.drawer_order)]
+
+    async def _broadcast_drawing_question(self, room: Room, prompt: dict, is_bonus: bool):
+        base = {
+            "type": "QUESTION",
+            "question_number": room.current_question_index + 1,
+            "total_questions": room.total_rounds(),
+            "time_limit": room.time_limit,
+            "is_bonus": is_bonus,
+            "game_type": "drawing",
+            "drawer": room.current_drawer,
+            "correct_guessers": [],
+            "drawing_ops": [],
+            "guess_log": [],
+        }
+        for client_id, ws in list(room.connections.items()):
+            if client_id not in room.players:
+                continue
+            nickname = room.players[client_id]["nickname"]
+            payload = dict(base)
+            payload["is_drawer"] = nickname == room.current_drawer
+            payload["drawing_prompt"] = prompt if payload["is_drawer"] else {"id": prompt.get("id"), "difficulty": prompt.get("difficulty")}
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                room._remove_connection(client_id)
+        await room.send_to_organizer({
+            **base,
+            "drawing_prompt": prompt,
+            "is_drawer": False,
+        })
+        for ws in list(room.spectators.values()):
+            try:
+                await ws.send_json({
+                    **base,
+                    "drawing_prompt": {"id": prompt.get("id"), "difficulty": prompt.get("difficulty")},
+                    "is_drawer": False,
+                })
+            except Exception:
+                pass
+
+    def _valid_draw_op(self, op: dict) -> bool:
+        if not isinstance(op, dict):
+            return False
+        if op.get("kind") not in ("stroke", "clear", "undo"):
+            return False
+        if op.get("kind") in ("clear", "undo"):
+            return True
+        points = op.get("points")
+        if not isinstance(points, list) or len(points) == 0 or len(points) > 80:
+            return False
+        width = op.get("width", 4)
+        if not isinstance(width, (int, float)) or width <= 0 or width > 32:
+            return False
+        color = op.get("color", "#ffffff")
+        if not isinstance(color, str) or not re.match(r"^#[0-9a-fA-F]{6}$", color):
+            return False
+        for point in points:
+            if not isinstance(point, list) or len(point) != 2:
+                return False
+            x, y = point
+            if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+                return False
+            if x < 0 or x > 1 or y < 0 or y > 1:
+                return False
+        return True
+
+    async def _handle_draw_op(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players or room.state != "QUESTION":
+            return
+        nickname = room.players[client_id]["nickname"]
+        if nickname != room.current_drawer:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": "Only the drawer can draw"})
+            return
+        op = message.get("op")
+        if not self._valid_draw_op(op):
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": "Invalid drawing operation"})
+            return
+        op = dict(op)
+        op["drawer"] = nickname
+        op["seq"] = len(room.drawing_ops) + 1
+        if op["kind"] == "clear":
+            room.drawing_ops.clear()
+        elif op["kind"] == "undo":
+            if room.drawing_ops:
+                room.drawing_ops.pop()
+        else:
+            room.drawing_ops.append(op)
+            if len(room.drawing_ops) > config.MAX_DRAW_OPS_PER_SYNC:
+                room.drawing_ops = room.drawing_ops[-config.MAX_DRAW_OPS_PER_SYNC:]
+        await room.broadcast({"type": "DRAW_OP", "op": op})
+
+    async def _handle_drawing_guess(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players or room.state != "QUESTION":
+            return
+        nickname = room.players[client_id]["nickname"]
+        if nickname == room.current_drawer or nickname in room.correct_guessers:
+            return
+        raw_guess = message.get("guess", "")
+        guess = (raw_guess if isinstance(raw_guess, str) else "").strip()[:80]
+        if not guess:
+            return
+        prompt = room.current_round_data()
+        if not prompt:
+            return
+        from drawing_engine import is_correct_guess
+        correct = is_correct_guess(guess, prompt)
+        if correct:
+            elapsed = max(0, time.time() - room.question_start_time)
+            time_remaining = max(0, room.time_limit - elapsed)
+            points = 300 + round(600 * (time_remaining / max(1, room.time_limit)))
+            async with room.lock:
+                if nickname in room.correct_guessers:
+                    return
+                room.correct_guessers.add(nickname)
+                room.answered_players.add(client_id)
+                room.players[client_id]["score"] += points
+                drawer_id = next((cid for cid, p in room.players.items() if p["nickname"] == room.current_drawer), None)
+                if drawer_id:
+                    room.players[drawer_id]["score"] += 200
+                all_guessed = len(room.correct_guessers) >= max(0, len(room.players) - 1)
+            room.guess_log.append({"nickname": nickname, "guess": guess, "correct": True})
+            await self._send_to_client(room, client_id, {"type": "GUESS_RESULT", "correct": True, "points": points})
+            await room.broadcast({
+                "type": "GUESS_ACCEPTED",
+                "nickname": nickname,
+                "correct_guessers": list(room.correct_guessers),
+                "guess": guess,
+            })
+            await room.send_to_organizer({
+                "type": "ANSWER_COUNT",
+                "answered": len(room.correct_guessers),
+                "total": max(0, len(room.players) - 1),
+            })
+            if all_guessed:
+                if drawer_id:
+                    room.players[drawer_id]["score"] += 500
+                await self.end_question(room)
+        else:
+            room.guess_log.append({"nickname": nickname, "guess": guess, "correct": False})
+            room.guess_log = room.guess_log[-20:]
+            await self._send_to_client(room, client_id, {"type": "GUESS_RESULT", "correct": False, "points": 0})
+            await room.broadcast({"type": "GUESS_LOG", "guess_log": room.guess_log[-10:]})
+
     def get_team_leaderboard(self, room: Room) -> List[dict]:
         """Aggregate player scores by team. Solo players use their nickname."""
         team_scores: Dict[str, list] = {}
@@ -1124,6 +1356,9 @@ class SocketManager:
 
         room.answered_players = set()
         room.votes = {}  # Clear WMLT votes for new round
+        room.correct_guessers = set()
+        room.drawing_ops = []
+        room.guess_log = []
 
         # Clear per-question power-up state from previous question
         for pups in room.power_ups.values():
@@ -1152,6 +1387,12 @@ class SocketManager:
                     for p in room.players.values()
                 ],
             })
+        elif room.game_type == "drawing":
+            prompt = room.current_round_data()
+            if not prompt:
+                return
+            room.current_drawer = self._drawer_for_round(room)
+            await self._broadcast_drawing_question(room, prompt, is_bonus)
         else:
             question = room.current_round_data()
             if not question:
@@ -1204,6 +1445,9 @@ class SocketManager:
         if room.game_type == "wmlt":
             await self._end_wmlt_round(room)
             return
+        if room.game_type == "drawing":
+            await self._end_drawing_round(room)
+            return
 
         # Reset streak for players who didn't answer
         for cid, player in room.players.items():
@@ -1222,6 +1466,31 @@ class SocketManager:
             "leaderboard": current_leaderboard,
             "previous_leaderboard": room.previous_leaderboard,
             "is_final": is_final
+        })
+
+    async def _end_drawing_round(self, room: Room):
+        prompt = room.current_round_data()
+        if not prompt:
+            return
+        current_leaderboard = self.get_leaderboard_with_changes(room)
+        is_final = room.current_question_index >= room.total_rounds() - 1
+        room.answer_log.append({
+            "question_index": room.current_question_index,
+            "game_type": "drawing",
+            "prompt": prompt.get("text", ""),
+            "drawer": room.current_drawer,
+            "correct_guessers": list(room.correct_guessers),
+            "guess_log": room.guess_log[-20:],
+        })
+        await room.broadcast({
+            "type": "QUESTION_OVER",
+            "game_type": "drawing",
+            "prompt": prompt.get("text", ""),
+            "drawer": room.current_drawer,
+            "correct_guessers": list(room.correct_guessers),
+            "leaderboard": current_leaderboard,
+            "previous_leaderboard": room.previous_leaderboard,
+            "is_final": is_final,
         })
 
     async def _end_wmlt_round(self, room: Room):

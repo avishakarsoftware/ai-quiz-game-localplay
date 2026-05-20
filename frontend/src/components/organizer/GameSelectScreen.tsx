@@ -17,6 +17,12 @@ const GAME_TYPES = [
         title: 'Most Likely To',
         description: 'Vote on who\'s most likely to do hilarious things',
     },
+    {
+        id: 'drawing' as GameType,
+        icon: '🎨',
+        title: 'Drawing Game',
+        description: 'Draw secret prompts while everyone races to guess',
+    },
 ];
 
 export default function GameSelectScreen({ onSelect }: GameSelectScreenProps) {

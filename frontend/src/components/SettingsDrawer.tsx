@@ -30,7 +30,7 @@ const APPLE_CLIENT_ID = import.meta.env.VITE_APPLE_CLIENT_ID || '';
 const APPLE_REDIRECT_URI = import.meta.env.VITE_APPLE_REDIRECT_URI || '';
 
 function isNativePlatform(): boolean {
-    const cap = (window as Record<string, unknown>).Capacitor as Record<string, unknown> | undefined;
+    const cap = (window as unknown as Record<string, unknown>).Capacitor as Record<string, unknown> | undefined;
     return typeof cap?.isNativePlatform === 'function' && (cap.isNativePlatform as () => boolean)();
 }
 
@@ -202,7 +202,8 @@ export default function SettingsDrawer() {
                     ? { scopes: ['email'] }
                     : { scopes: ['email'] },
             });
-            const idToken = result.result?.idToken;
+            const nativeResult = result.result as { idToken?: string } | undefined;
+            const idToken = nativeResult?.idToken;
             if (!idToken) throw new Error('No ID token received');
             await signIn(provider, idToken);
         } catch (err: unknown) {

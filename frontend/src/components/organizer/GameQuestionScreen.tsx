@@ -27,8 +27,9 @@ export default function GameQuestionScreen({
         : 'var(--accent-primary)';
 
     const isWMLT = gameType === 'wmlt';
-    const progressLabel = isWMLT ? 'voted' : 'answered';
-    const roundLabel = isWMLT ? 'Round' : 'Q';
+    const isDrawing = gameType === 'drawing';
+    const progressLabel = isWMLT ? 'voted' : isDrawing ? 'guessed' : 'answered';
+    const roundLabel = isWMLT || isDrawing ? 'Round' : 'Q';
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
@@ -69,7 +70,7 @@ export default function GameQuestionScreen({
                 </div>
             )}
 
-            {isWMLT ? (
+            {isWMLT || isDrawing ? (
                 /* WMLT: show statement */
                 <div className="question-card mb-6 question-enter">
                     <p className="question-text">{statementText || 'Loading...'}</p>
@@ -98,7 +99,7 @@ export default function GameQuestionScreen({
                 <div className="mt-auto pb-6 space-y-3" style={{ paddingTop: 32 }}>
                     {onNextQuestion && (
                         <button onClick={onNextQuestion} className="btn btn-game-next w-full" style={{ height: 56, fontSize: 18 }}>
-                            {isWMLT ? 'Next Round' : 'Next Question'} &rarr;
+                            {isWMLT || isDrawing ? 'Next Round' : 'Next Question'} &rarr;
                         </button>
                     )}
                     {onEndQuiz && (

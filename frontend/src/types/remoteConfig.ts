@@ -21,6 +21,8 @@ export interface RemoteConfig {
     min_supported_version?: string;
   };
   pricing: {
+    pass_price?: string;
+    duration_hours?: number;
     token_pack_price: string;
     token_pack_amount: number;
     label: string;

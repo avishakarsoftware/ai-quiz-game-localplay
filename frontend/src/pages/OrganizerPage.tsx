@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type MLTGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry } from '../types';
+import { type Quiz, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending } from '../utils/storage';
@@ -8,9 +8,11 @@ import { apiHeaders, apiUrl, generateIdempotencyKey } from '../utils/api';
 import GameSelectScreen from '../components/organizer/GameSelectScreen';
 import PromptScreen, { type AIProvider } from '../components/organizer/PromptScreen';
 import MLTPromptScreen from '../components/organizer/MLTPromptScreen';
+import DrawingPromptScreen from '../components/organizer/DrawingPromptScreen';
 import LoadingScreen from '../components/organizer/LoadingScreen';
 import ReviewScreen from '../components/organizer/ReviewScreen';
 import MLTReviewScreen from '../components/organizer/MLTReviewScreen';
+import DrawingReviewScreen from '../components/organizer/DrawingReviewScreen';
 import ImageGenerationScreen from '../components/organizer/ImageGenerationScreen';
 import LobbyScreen from '../components/organizer/LobbyScreen';
 import GameQuestionScreen from '../components/organizer/GameQuestionScreen';
@@ -21,7 +23,7 @@ import BonusSplash from '../components/BonusSplash';
 import ErrorModal from '../components/ErrorModal';
 import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'MLT_PROMPT' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
 
 export default function OrganizerPage() {
     const { config: remoteConfig } = useRemoteConfigContext();
@@ -32,6 +34,7 @@ export default function OrganizerPage() {
     const [numQuestions, setNumQuestions] = useState(10);
     const [quiz, setQuiz] = useState<Quiz | null>(null);
     const [mltGame, setMltGame] = useState<MLTGame | null>(null);
+    const [drawingGame, setDrawingGame] = useState<DrawingGame | null>(null);
     const [contentId, setContentId] = useState('');
     const [roomCode, setRoomCode] = useState('');
     const [timeLimit, setTimeLimit] = useState(15);
@@ -55,6 +58,7 @@ export default function OrganizerPage() {
     const [currentStatement, setCurrentStatement] = useState('');
     const [showVotes, setShowVotes] = useState(true);
     const [wmltRoundResult, setWmltRoundResult] = useState<{ winner: string; winners: string[]; round_podium: { nickname: string; avatar: string; vote_count: number; voters: string[] }[]; unanimous: boolean; show_votes: boolean; statement: string } | null>(null);
+    const [drawingRoundResult, setDrawingRoundResult] = useState<{ prompt: string; drawer: string; correct_guessers: string[] } | null>(null);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -77,7 +81,7 @@ export default function OrganizerPage() {
     // Listen for home navigation from hamburger menu
     useEffect(() => {
         const handler = () => {
-            if (stateRef.current === 'PROMPT' || stateRef.current === 'MLT_PROMPT' || stateRef.current === 'SELECT_GAME') {
+            if (stateRef.current === 'PROMPT' || stateRef.current === 'MLT_PROMPT' || stateRef.current === 'DRAWING_PROMPT' || stateRef.current === 'SELECT_GAME') {
                 setState('SELECT_GAME');
             }
         };
@@ -148,6 +152,10 @@ export default function OrganizerPage() {
             if (msg.statement) {
                 setCurrentStatement((msg.statement as { text: string }).text);
             }
+            if (msg.game_type === 'drawing') {
+                setGameType('drawing');
+                setAnsweredCount(0);
+            }
             setState('QUESTION');
         }
         else if (msg.type === 'TIMER') setTimeRemaining(msg.remaining as number);
@@ -164,8 +172,17 @@ export default function OrganizerPage() {
                     show_votes: msg.show_votes as boolean ?? true,
                     statement: msg.statement as string || '',
                 });
+                setDrawingRoundResult(null);
+            } else if (msg.game_type === 'drawing') {
+                setDrawingRoundResult({
+                    prompt: msg.prompt as string || '',
+                    drawer: msg.drawer as string || '',
+                    correct_guessers: (msg.correct_guessers as string[]) || [],
+                });
+                setWmltRoundResult(null);
             } else {
                 setWmltRoundResult(null);
+                setDrawingRoundResult(null);
             }
             setState('LEADERBOARD');
         }
@@ -215,6 +232,9 @@ export default function OrganizerPage() {
                 } else if (quizData.statements) {
                     setMltGame(quizData as unknown as MLTGame);
                     setTotalQuestions((quizData.statements as unknown[]).length);
+                } else if (quizData.prompts) {
+                    setDrawingGame(quizData as unknown as DrawingGame);
+                    setTotalQuestions((quizData.prompts as unknown[]).length);
                 }
             }
             if (msg.state === 'LOBBY' || msg.state === 'INTRO') {
@@ -253,7 +273,7 @@ export default function OrganizerPage() {
         setGameType(type);
         if (type === 'wmlt') setDifficulty('party');
         else setDifficulty('medium');
-        setState(type === 'wmlt' ? 'MLT_PROMPT' : 'PROMPT');
+        setState(type === 'wmlt' ? 'MLT_PROMPT' : type === 'drawing' ? 'DRAWING_PROMPT' : 'PROMPT');
     };
 
     const generateQuiz = async () => {
@@ -317,7 +337,6 @@ export default function OrganizerPage() {
                 body: JSON.stringify({ prompt, difficulty, num_rounds: numQuestions, provider }),
             });
             if (res.status === 402) {
-                const err = await res.json().catch(() => ({ detail: 'Not enough sparks.' }));
                 track('paywall_hit', { source: 'mlt' });
                 setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: true });
                 setState('MLT_PROMPT');
@@ -350,6 +369,54 @@ export default function OrganizerPage() {
         } catch {
             setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
             setState('MLT_PROMPT');
+        }
+    };
+
+    const generateDrawing = async () => {
+        if (remoteConfig.operations.kill_generate) {
+            setErrorModal({ title: 'Temporarily Unavailable', message: 'Game generation is temporarily disabled. Please try again later.' });
+            return;
+        }
+        setState('LOADING');
+        try {
+            const res = await fetch(apiUrl('/drawing/generate'), {
+                method: 'POST',
+                headers: apiHeaders({ 'X-Idempotency-Key': generateIdempotencyKey() }),
+                body: JSON.stringify({ prompt, difficulty, num_prompts: numQuestions, provider }),
+            });
+            if (res.status === 402) {
+                track('paywall_hit', { source: 'drawing' });
+                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: true });
+                setState('DRAWING_PROMPT');
+                return;
+            }
+            if (res.status === 503) {
+                track('quota_error', { source: 'drawing' });
+                setErrorModal({ title: 'Daily Limit Reached', message: 'Daily generation limit reached. Try again tomorrow or buy a spark pack!', upgradeAvailable: true });
+                setState('DRAWING_PROMPT');
+                return;
+            }
+            if (res.status === 429) {
+                const err = await res.json().catch(() => ({ detail: 'Too many requests. Please wait a minute.' }));
+                setErrorModal({ title: 'Rate Limited', message: err.detail || 'Too many requests.' });
+                setState('DRAWING_PROMPT');
+                return;
+            }
+            const data = await res.json();
+            if (data.game) {
+                setDrawingGame(data.game);
+                setContentId(data.drawing_id);
+                setTotalQuestions(data.game.prompts.length);
+                track('drawing_generated', { topic: prompt, difficulty, num_prompts: numQuestions, provider });
+                window.dispatchEvent(new CustomEvent('refresh-sparks'));
+                setState('DRAWING_REVIEW');
+            } else {
+                setErrorModal({ title: 'Generation Failed', message: 'Failed to generate drawing prompts. Please try a different topic.' });
+                setState('DRAWING_PROMPT');
+            }
+        } catch {
+            setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
+            setState('DRAWING_PROMPT');
         }
     };
 
@@ -425,6 +492,25 @@ export default function OrganizerPage() {
         }
     };
 
+    const updateDrawingGame = async (updated: DrawingGame) => {
+        setDrawingGame(updated);
+        setTotalQuestions(updated.prompts.length);
+        try {
+            const res = await fetch(apiUrl(`/drawing/${contentId}`), {
+                method: 'PUT',
+                headers: apiHeaders(),
+                body: JSON.stringify(updated),
+            });
+            if (res.status === 403) {
+                setErrorModal({ title: 'Permission Denied', message: "You don't have permission to modify this content." });
+            } else if (!res.ok) {
+                console.error('Failed to save DrawingGame update:', res.status);
+            }
+        } catch (err) {
+            console.error('Failed to save DrawingGame update:', err);
+        }
+    };
+
     const connectWs = useCallback((code: string) => {
         if (wsRef.current) {
             wsRef.current.onclose = null;
@@ -482,6 +568,8 @@ export default function OrganizerPage() {
             };
             if (gameType === 'wmlt') {
                 body.mlt_id = contentId;
+            } else if (gameType === 'drawing') {
+                body.drawing_id = contentId;
             } else {
                 body.quiz_id = contentId;
             }
@@ -579,6 +667,22 @@ export default function OrganizerPage() {
                     />
                 )}
 
+                {state === 'DRAWING_PROMPT' && (
+                    <DrawingPromptScreen
+                        prompt={prompt}
+                        setPrompt={setPrompt}
+                        difficulty={difficulty}
+                        setDifficulty={setDifficulty}
+                        numPrompts={numQuestions}
+                        setNumPrompts={setNumQuestions}
+                        provider={provider}
+                        setProvider={setProvider}
+                        providers={providers}
+                        onGenerate={generateDrawing}
+                        onBack={() => setState('SELECT_GAME')}
+                    />
+                )}
+
                 {state === 'LOADING' && <LoadingScreen />}
 
                 {state === 'REVIEW' && quiz && (
@@ -605,6 +709,17 @@ export default function OrganizerPage() {
                         onCreateRoom={createRoom}
                         onUpdateGame={updateMLTGame}
                         onBack={() => setState('MLT_PROMPT')}
+                    />
+                )}
+
+                {state === 'DRAWING_REVIEW' && drawingGame && (
+                    <DrawingReviewScreen
+                        game={drawingGame}
+                        timeLimit={timeLimit}
+                        setTimeLimit={setTimeLimit}
+                        onCreateRoom={createRoom}
+                        onUpdateGame={updateDrawingGame}
+                        onBack={() => setState('DRAWING_PROMPT')}
                     />
                 )}
 
@@ -641,6 +756,20 @@ export default function OrganizerPage() {
                             gameType="wmlt"
                             statementText={currentStatement}
                         />
+                    ) : gameType === 'drawing' ? (
+                        <GameQuestionScreen
+                            questionNumber={currentQuestion}
+                            totalQuestions={totalQuestions}
+                            timeRemaining={timeRemaining}
+                            timeLimit={timeLimit}
+                            answeredCount={answeredCount}
+                            playerCount={Math.max(0, playerCount - 1)}
+                            isBonus={false}
+                            onNextQuestion={nextQuestion}
+                            onEndQuiz={endQuiz}
+                            gameType="drawing"
+                            statementText="Drawing round in progress"
+                        />
                     ) : currentQ ? (
                         <GameQuestionScreen
                             question={currentQ}
@@ -659,7 +788,29 @@ export default function OrganizerPage() {
                 )}
 
                 {state === 'LEADERBOARD' && (
-                    gameType === 'wmlt' && wmltRoundResult ? (
+                    gameType === 'drawing' && drawingRoundResult ? (
+                        <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
+                            <div className="flex-1 flex flex-col justify-center text-center">
+                                <div className="hero-icon mb-4">🎨</div>
+                                <p className="text-[--text-tertiary] text-sm mb-2">Round {currentQuestion} of {totalQuestions}</p>
+                                <h2 className="hero-title mb-4">{drawingRoundResult.prompt}</h2>
+                                <p className="text-[--text-secondary] mb-2">Drawer: <strong>{drawingRoundResult.drawer}</strong></p>
+                                <p className="text-[--text-secondary]">
+                                    {drawingRoundResult.correct_guessers.length
+                                        ? `${drawingRoundResult.correct_guessers.join(', ')} guessed it`
+                                        : 'No correct guesses this round'}
+                                </p>
+                            </div>
+                            <div className="pb-4 space-y-2">
+                                <button onClick={nextQuestion} className="btn btn-primary btn-glow w-full">
+                                    {currentQuestion >= totalQuestions ? 'Show Results' : 'Next Round'}
+                                </button>
+                                <button onClick={endQuiz} className="btn btn-secondary w-full">
+                                    End Game
+                                </button>
+                            </div>
+                        </div>
+                    ) : gameType === 'wmlt' && wmltRoundResult ? (
                         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
                             <div className="flex-1 flex flex-col py-6">
                                 <div className="text-center mb-4">

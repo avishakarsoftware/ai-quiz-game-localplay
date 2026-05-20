@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { API_URL, WS_URL } from '../config';
-import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -11,6 +11,7 @@ import LeaderboardBarChart from '../components/LeaderboardBarChart';
 import { AVATAR_COLORS } from '../components/LeaderboardBarChart.constants';
 import PlayerChip from '../components/PlayerChip';
 import Avatar from '../components/Avatar';
+import DrawingCanvas from '../components/DrawingCanvas';
 
 type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
@@ -66,6 +67,15 @@ export default function PlayerPage() {
     const [selectedVote, setSelectedVote] = useState<string | null>(null);
     const [voteResult, setVoteResult] = useState<{ winner: string; winners: string[]; winner_votes: number; votes: Record<string, string[]>; unanimous: boolean; round_podium: { nickname: string; avatar: string; vote_count: number; voters: string[] }[]; show_votes: boolean } | null>(null);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
+    // DrawingGame state
+    const [drawingPrompt, setDrawingPrompt] = useState('');
+    const [drawingDrawer, setDrawingDrawer] = useState('');
+    const [isDrawer, setIsDrawer] = useState(false);
+    const [drawingOps, setDrawingOps] = useState<DrawOperation[]>([]);
+    const [guess, setGuess] = useState('');
+    const [correctGuessers, setCorrectGuessers] = useState<string[]>([]);
+    const [guessLog, setGuessLog] = useState<{ nickname: string; guess: string; correct?: boolean }[]>([]);
+    const [drawingRoundPrompt, setDrawingRoundPrompt] = useState('');
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const submittedRef = useRef(false);
@@ -113,7 +123,7 @@ export default function PlayerPage() {
         };
 
         ws.onmessage = (event) => {
-            let msg: Record<string, unknown>;
+            let msg: any;
             try { msg = JSON.parse(event.data); } catch { return; }
             if (msg.type === 'ERROR') {
                 setError(msg.message as string);
@@ -155,7 +165,16 @@ export default function PlayerPage() {
                 if (msg.state === 'LOBBY') {
                     setState('LOBBY');
                 } else if (msg.state === 'QUESTION') {
-                    if (msg.statement) {
+                    if (msg.game_type === 'drawing') {
+                        setGameType('drawing');
+                        const promptData = msg.drawing_prompt as { text?: string } | undefined;
+                        setDrawingPrompt(promptData?.text || '');
+                        setDrawingDrawer(msg.drawer as string || '');
+                        setIsDrawer(Boolean(msg.is_drawer));
+                        setDrawingOps((msg.drawing_ops as DrawOperation[]) || []);
+                        setCorrectGuessers((msg.correct_guessers as string[]) || []);
+                        setGuessLog((msg.guess_log as { nickname: string; guess: string; correct?: boolean }[]) || []);
+                    } else if (msg.statement) {
                         // WMLT reconnection
                         setCurrentStatement((msg.statement as { text: string }).text);
                         setVotePlayers(msg.players as PlayerInfo[] || []);
@@ -191,7 +210,17 @@ export default function PlayerPage() {
             }
             if (msg.type === 'GAME_STARTING') setState('INTRO');
             if (msg.type === 'QUESTION') {
-                if (msg.game_type === 'wmlt' || msg.statement) {
+                if (msg.game_type === 'drawing') {
+                    setGameType('drawing');
+                    const promptData = msg.drawing_prompt as { text?: string } | undefined;
+                    setDrawingPrompt(promptData?.text || '');
+                    setDrawingDrawer(msg.drawer as string || '');
+                    setIsDrawer(Boolean(msg.is_drawer));
+                    setDrawingOps((msg.drawing_ops as DrawOperation[]) || []);
+                    setCorrectGuessers((msg.correct_guessers as string[]) || []);
+                    setGuessLog((msg.guess_log as { nickname: string; guess: string; correct?: boolean }[]) || []);
+                    setGuess('');
+                } else if (msg.game_type === 'wmlt' || msg.statement) {
                     setGameType('wmlt');
                     setCurrentStatement((msg.statement as { text: string }).text);
                     setVotePlayers(msg.players as PlayerInfo[] || []);
@@ -234,6 +263,31 @@ export default function PlayerPage() {
                     soundManager.hapticsWrong();
                 }
             }
+            if (msg.type === 'DRAW_OP') {
+                const op = msg.op as DrawOperation;
+                if (!op) return;
+                if (op.kind === 'clear') setDrawingOps([]);
+                else if (op.kind === 'undo') setDrawingOps(prev => prev.slice(0, -1));
+                else setDrawingOps(prev => [...prev, op].slice(-500));
+            }
+            if (msg.type === 'GUESS_RESULT') {
+                if (msg.correct) {
+                    setPointsEarned((msg.points as number) || 0);
+                    setIsCorrect(true);
+                    setState('WAITING');
+                    soundManager.play('correct');
+                    soundManager.hapticsCorrect();
+                } else {
+                    setError('Not quite. Keep guessing!');
+                    window.setTimeout(() => setError(''), 1200);
+                }
+            }
+            if (msg.type === 'GUESS_ACCEPTED') {
+                setCorrectGuessers((msg.correct_guessers as string[]) || []);
+            }
+            if (msg.type === 'GUESS_LOG') {
+                setGuessLog((msg.guess_log as { nickname: string; guess: string; correct?: boolean }[]) || []);
+            }
             if (msg.type === 'VOTE_CONFIRMED') {
                 setSelectedVote(msg.voted_for as string);
                 setState('WAITING');
@@ -247,7 +301,10 @@ export default function PlayerPage() {
                 }
             }
             if (msg.type === 'QUESTION_OVER') {
-                if (msg.game_type === 'wmlt') {
+                if (msg.game_type === 'drawing') {
+                    setDrawingRoundPrompt(msg.prompt as string || '');
+                    setCorrectGuessers((msg.correct_guessers as string[]) || []);
+                } else if (msg.game_type === 'wmlt') {
                     setVoteResult({
                         winner: msg.winner as string,
                         winners: (msg.winners as string[]) || [msg.winner as string],
@@ -309,6 +366,14 @@ export default function PlayerPage() {
                 setSelectedVote(null);
                 setVoteResult(null);
                 setCurrentStatement('');
+                setDrawingPrompt('');
+                setDrawingDrawer('');
+                setIsDrawer(false);
+                setDrawingOps([]);
+                setGuess('');
+                setCorrectGuessers([]);
+                setGuessLog([]);
+                setDrawingRoundPrompt('');
                 if (msg.game_type) setGameType(msg.game_type as GameType);
                 if (msg.players) setLobbyPlayers(msg.players as PlayerInfo[]);
                 setState('LOBBY');
@@ -345,6 +410,17 @@ export default function PlayerPage() {
         soundManager.hapticsSelect();
         setSelectedVote(votedFor);
         wsRef.current?.send(JSON.stringify({ type: 'VOTE', voted_for: votedFor }));
+    };
+
+    const sendDrawOp = (op: DrawOperation) => {
+        wsRef.current?.send(JSON.stringify({ type: 'DRAW_OP', op }));
+    };
+
+    const submitGuess = () => {
+        const value = guess.trim();
+        if (!value) return;
+        wsRef.current?.send(JSON.stringify({ type: 'GUESS', guess: value }));
+        setGuess('');
     };
 
     const activatePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
@@ -519,6 +595,65 @@ export default function PlayerPage() {
                 {state === 'QUESTION' && (
                     showBonusSplash ? (
                         <BonusSplash onComplete={() => setShowBonusSplash(false)} />
+                    ) : gameType === 'drawing' ? (
+                    <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom">
+                        <div className="py-4 stagger-in" style={{ animationDelay: '0s' }}>
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-[--text-tertiary] text-sm">Round {questionNumber}/{totalQuestions}</span>
+                                <span className={`font-bold tabular-nums ${timeRemaining <= 5 ? 'timer-number-pulse' : ''}`}
+                                    style={{ color: timeRemaining <= 5 ? 'var(--accent-danger)' : timeRemaining <= 10 ? 'var(--accent-warning)' : 'var(--accent-primary)' }}>
+                                    {timeRemaining}s
+                                </span>
+                            </div>
+                            <div className="question-timer-bar">
+                                <div
+                                    className="question-timer-fill"
+                                    style={{
+                                        width: `${(timeRemaining / timeLimit) * 100}%`,
+                                        background: timeRemaining <= 5 ? 'var(--accent-danger)' : timeRemaining <= 10 ? 'var(--accent-warning)' : 'var(--accent-primary)',
+                                    }}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="mb-3 text-center">
+                            {isDrawer ? (
+                                <>
+                                    <p className="text-[--text-tertiary] text-sm">You are drawing</p>
+                                    <h2 className="text-2xl font-extrabold">{drawingPrompt}</h2>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="text-[--text-tertiary] text-sm">Guess what <strong>{drawingDrawer}</strong> is drawing</p>
+                                    <p className="text-[--accent-success] text-sm">{correctGuessers.length} correct</p>
+                                </>
+                            )}
+                        </div>
+
+                        <DrawingCanvas ops={drawingOps} drawable={isDrawer} onDrawOp={sendDrawOp} height={Math.min(420, Math.max(300, window.innerHeight * 0.42))} />
+
+                        {!isDrawer && (
+                            <div className="mt-4 flex gap-2">
+                                <input
+                                    value={guess}
+                                    onChange={(event) => setGuess(event.target.value)}
+                                    onKeyDown={(event) => { if (event.key === 'Enter') submitGuess(); }}
+                                    placeholder="Type your guess"
+                                    className="input-field"
+                                    maxLength={80}
+                                />
+                                <button type="button" onClick={submitGuess} className="btn btn-primary">Guess</button>
+                            </div>
+                        )}
+
+                        {guessLog.length > 0 && (
+                            <div className="mt-3 text-center text-[--text-tertiary] text-sm">
+                                {guessLog.slice(-3).map((item, index) => (
+                                    <div key={`${item.nickname}-${item.guess}-${index}`}>{item.nickname}: {item.guess}</div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                     ) : gameType === 'wmlt' ? (
                     /* WMLT Voting UI */
                     <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom">
@@ -750,7 +885,16 @@ export default function PlayerPage() {
                 {state === 'RESULT' && (
                     <div className="min-h-dvh flex flex-col items-center container-responsive safe-top safe-bottom animate-in">
                         <div className="text-center py-6">
-                            {gameType === 'wmlt' && voteResult ? (
+                            {gameType === 'drawing' ? (
+                                <>
+                                    <div style={{ fontSize: '2.5rem', marginBottom: 4 }}>🎨</div>
+                                    <p className="text-[--text-tertiary] text-sm">The prompt was</p>
+                                    <h2 className="text-2xl font-extrabold">{drawingRoundPrompt}</h2>
+                                    <p className="text-[--text-secondary] text-sm mt-2">
+                                        {correctGuessers.length ? `${correctGuessers.join(', ')} guessed it` : 'No correct guesses'}
+                                    </p>
+                                </>
+                            ) : gameType === 'wmlt' && voteResult ? (
                                 <>
                                     {/* Crown + winner(s) */}
                                     <div style={{ fontSize: '2.5rem', marginBottom: 4 }}>👑</div>

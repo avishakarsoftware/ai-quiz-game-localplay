@@ -240,7 +240,7 @@ export default function PromptScreen({
     numQuestions, setNumQuestions, provider, setProvider,
     providers, onGenerate,
 }: PromptScreenProps) {
-    const { tokenStatus, loading: tokenLoading } = useTokenBalance();
+    const { tokenStatus } = useTokenBalance();
 
     const shuffleTopic = () => {
         let next: string;

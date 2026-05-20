@@ -167,12 +167,13 @@ describe('SettingsDrawer (signed in)', () => {
     });
 
     it('shows signed-in state with sign out button', async () => {
-        vi.mocked(await import('../../context/AuthContext')).useAuth = vi.fn(() => ({
+        const authModule = vi.mocked(await import('../../context/AuthContext')) as unknown as { useAuth: ReturnType<typeof vi.fn> };
+        authModule.useAuth = vi.fn(() => ({
             user: { id: '1', provider: 'google', email: 'test@test.com' },
             loading: false,
             signIn: vi.fn(),
             signOut: vi.fn(),
-        })) as ReturnType<typeof vi.fn>;
+        }));
 
         const user = userEvent.setup();
         render(<SettingsDrawer />);

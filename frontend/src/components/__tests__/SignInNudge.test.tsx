@@ -3,7 +3,12 @@ import userEvent from '@testing-library/user-event';
 import SignInNudge from '../SignInNudge';
 
 // Default: no user signed in
-const mockUseAuth = vi.fn(() => ({
+const mockUseAuth = vi.fn<() => {
+    user: { id: string; provider: string; email: string } | null;
+    loading: boolean;
+    signIn: ReturnType<typeof vi.fn>;
+    signOut: ReturnType<typeof vi.fn>;
+}>(() => ({
     user: null,
     loading: false,
     signIn: vi.fn(),

@@ -23,6 +23,7 @@ config.setup_logging()
 
 from quiz_engine import quiz_engine, _sanitize_quiz, _validate_quiz, DailyLimitExceeded, AIQuotaExceeded
 from mlt_engine import mlt_engine, _sanitize_mlt, _validate_mlt
+from drawing_engine import drawing_engine, _sanitize_drawing_game
 from socket_manager import socket_manager
 from image_engine import image_engine
 import tokens
@@ -37,6 +38,7 @@ API_PREFIXES = (
     "/admin",
     "/auth",
     "/checkout",
+    "/drawing",
     "/entitlements",
     "/health",
     "/history",
@@ -197,6 +199,10 @@ quiz_images: Dict[str, Dict[int, str]] = {}  # quiz_id -> {question_id: base64_i
 mlt_scenarios: Dict[str, dict] = {}  # scenario_id -> {game_title, statements}
 mlt_timestamps: Dict[str, float] = {}  # scenario_id -> creation time
 
+# DrawingGame storage
+drawing_games: Dict[str, dict] = {}  # drawing_id -> {game_title, prompts}
+drawing_timestamps: Dict[str, float] = {}  # drawing_id -> creation time
+
 # Content ownership: content_id -> wallet_id of creator
 content_owners: Dict[str, str] = {}
 
@@ -209,7 +215,7 @@ def _check_content_owner(content_id: str, wallet_id: str):
 
 
 def _evict_old_content():
-    """Evict oldest quizzes/MLT scenarios if storage limit exceeded, and expire stale ones."""
+    """Evict oldest generated content if storage limit exceeded, and expire stale items."""
     # Content IDs currently in use by active rooms — never evict these
     active_content_ids = {room.content_id for room in socket_manager.rooms.values() if room.content_id}
     now = time.time()
@@ -248,6 +254,22 @@ def _evict_old_content():
                 mlt_scenarios.pop(sid, None)
                 mlt_timestamps.pop(sid, None)
                 content_owners.pop(sid, None)
+
+    # Evict DrawingGame prompt sets
+    expired_drawing = [did for did, ts in drawing_timestamps.items()
+                       if now - ts > config.QUIZ_TTL_SECONDS and did not in active_content_ids]
+    for did in expired_drawing:
+        drawing_games.pop(did, None)
+        drawing_timestamps.pop(did, None)
+        content_owners.pop(did, None)
+    if len(drawing_games) >= config.MAX_QUIZZES:
+        for did in sorted(drawing_timestamps, key=drawing_timestamps.get):
+            if len(drawing_games) < config.MAX_QUIZZES:
+                break
+            if did not in active_content_ids:
+                drawing_games.pop(did, None)
+                drawing_timestamps.pop(did, None)
+                content_owners.pop(did, None)
 
 def generate_room_code() -> str:
     """Generate a unique 6-character room code, checking for collisions."""
@@ -310,6 +332,7 @@ class QuizRequest(BaseModel):
 class RoomCreateRequest(BaseModel):
     quiz_id: str = ""      # For quiz game
     mlt_id: str = ""       # For MLT game
+    drawing_id: str = ""   # For DrawingGame
     game_type: str = "quiz"
     time_limit: int = 15
 
@@ -323,8 +346,8 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt"):
-            raise ValueError('game_type must be "quiz" or "wmlt"')
+        if v not in ("quiz", "wmlt", "drawing"):
+            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
         return v
 
 
@@ -541,6 +564,13 @@ async def create_room(request: RoomCreateRequest, req: Request):
         content_id = request.mlt_id
         if not game_data.get("statements"):
             raise HTTPException(status_code=422, detail="Game has no statements")
+    elif request.game_type == "drawing":
+        if request.drawing_id not in drawing_games:
+            raise HTTPException(status_code=404, detail="Drawing game not found")
+        game_data = drawing_games[request.drawing_id]
+        content_id = request.drawing_id
+        if not game_data.get("prompts"):
+            raise HTTPException(status_code=422, detail="Drawing game has no prompts")
     else:
         if request.quiz_id not in quizzes:
             raise HTTPException(status_code=404, detail="Quiz not found")
@@ -554,6 +584,7 @@ async def create_room(request: RoomCreateRequest, req: Request):
     if not wallet_id:
         raise HTTPException(status_code=400, detail="Device ID required")
     tokens.ensure_wallet(wallet_id)
+    _check_content_owner(content_id, wallet_id)
 
     # Enforce max rooms limit
     if len(socket_manager.rooms) >= config.MAX_ROOMS:
@@ -856,6 +887,176 @@ async def import_mlt(request: MLTImportRequest, req: Request):
     content_owners[scenario_id] = wallet_id
     logger.info("MLT imported: %s ('%s') owner=%s", scenario_id, mlt_data.get("game_title", "Untitled"), wallet_id[:8])
     return {"scenario_id": scenario_id, "game": mlt_scenarios[scenario_id]}
+
+
+# --- DrawingGame Endpoints ---
+
+
+class DrawingRequest(BaseModel):
+    prompt: str
+    difficulty: str = "medium"
+    num_prompts: int = config.DEFAULT_NUM_QUESTIONS
+    provider: str = ""
+
+    @field_validator('prompt')
+    @classmethod
+    def validate_prompt(cls, v: str) -> str:
+        v = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', v)
+        v = re.sub(r'<[^>]+>', '', v).strip()
+        if not v or len(v) > config.MAX_PROMPT_LENGTH:
+            raise ValueError(f'Prompt must be 1-{config.MAX_PROMPT_LENGTH} characters')
+        lower_v = v.lower()
+        injection_patterns = [
+            r'ignore\s+(all\s+)?previous\s+instructions',
+            r'ignore\s+(all\s+)?above',
+            r'disregard\s+(all\s+)?previous',
+            r'you\s+are\s+now\s+(?:a|an|in)',
+            r'new\s+instructions?\s*:',
+            r'system\s*:\s*',
+            r'<\s*/?script',
+            r'javascript\s*:',
+        ]
+        for pattern in injection_patterns:
+            if re.search(pattern, lower_v):
+                raise ValueError('Prompt contains disallowed content')
+        return v
+
+    @field_validator('difficulty')
+    @classmethod
+    def validate_difficulty(cls, v: str) -> str:
+        v = v.lower().strip()
+        if v not in config.VALID_DIFFICULTIES:
+            raise ValueError(f'Difficulty must be one of: {", ".join(config.VALID_DIFFICULTIES)}')
+        return v
+
+    @field_validator('num_prompts')
+    @classmethod
+    def validate_num_prompts(cls, v: int) -> int:
+        if v < config.MIN_QUESTIONS or v > config.MAX_QUESTIONS:
+            raise ValueError(f'Number of prompts must be {config.MIN_QUESTIONS}-{config.MAX_QUESTIONS}')
+        return v
+
+
+@app.post("/drawing/generate")
+async def generate_drawing(request: DrawingRequest, req: Request):
+    client_ip = _get_client_ip(req)
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating.")
+    device_id = tokens.get_device_id(req)
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    idem_key = tokens.get_idempotency_key(req)
+
+    if idem_key:
+        cached_id = db.check_idempotency(idem_key, device_id)
+        if cached_id:
+            if cached_id in drawing_games:
+                return {"drawing_id": cached_id, "game": drawing_games[cached_id]}
+            raise HTTPException(
+                status_code=409,
+                detail="Request was already processed, but the generated drawing game is no longer available. Please start a new request.",
+            )
+
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    tokens.ensure_wallet(wallet_id)
+    if not tokens.can_generate(wallet_id):
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
+
+    if not _check_llm_budget():
+        raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
+
+    await remote_config.get_config()
+    provider = request.provider or remote_config.get_provider()
+    model_override = remote_config.get_paid_model() if tokens.use_premium_model(wallet_id) else remote_config.get_free_model()
+    try:
+        drawing_data = await drawing_engine.generate_prompts(
+            request.prompt,
+            request.difficulty,
+            request.num_prompts,
+            provider,
+            model_override=model_override,
+        )
+    except DailyLimitExceeded:
+        raise HTTPException(status_code=429, detail="Daily generation limit reached. Please try again tomorrow!")
+    except AIQuotaExceeded:
+        raise HTTPException(status_code=503, detail="Free tier limit reached. Upgrade for unlimited games.")
+    if not drawing_data:
+        raise HTTPException(status_code=500, detail="Failed to generate drawing prompts")
+
+    spent, _ = tokens.spend_generate(wallet_id)
+    if not spent:
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
+
+    _evict_old_content()
+    drawing_id = str(uuid.uuid4())
+    drawing_games[drawing_id] = drawing_data
+    drawing_timestamps[drawing_id] = time.time()
+    content_owners[drawing_id] = wallet_id
+    if idem_key:
+        db.record_idempotency(idem_key, device_id, drawing_id)
+    logger.info("DrawingGame created: %s ('%s') owner=%s", drawing_id, drawing_data.get("game_title", "Untitled"), wallet_id[:8])
+    return {"drawing_id": drawing_id, "game": drawing_data}
+
+
+@app.get("/drawing/{drawing_id}")
+async def get_drawing(drawing_id: str):
+    if drawing_id not in drawing_games:
+        raise HTTPException(status_code=404, detail="Drawing game not found")
+    return drawing_games[drawing_id]
+
+
+class DrawingUpdateRequest(BaseModel):
+    game_title: str
+    prompts: list
+
+    @field_validator('prompts')
+    @classmethod
+    def validate_prompts(cls, v: list) -> list:
+        if len(v) == 0:
+            raise ValueError('Must have at least 1 prompt')
+        for p in v:
+            if not isinstance(p, dict) or "id" not in p or "text" not in p:
+                raise ValueError('Each prompt must have id and text')
+            if not isinstance(p["text"], str) or not p["text"].strip():
+                raise ValueError('Prompt text must be a non-empty string')
+            aliases = p.get("aliases", [])
+            if aliases is not None and (not isinstance(aliases, list) or not all(isinstance(a, str) for a in aliases)):
+                raise ValueError('Aliases must be a list of strings')
+        return v
+
+
+@app.put("/drawing/{drawing_id}")
+async def update_drawing(drawing_id: str, request: DrawingUpdateRequest, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if drawing_id not in drawing_games:
+        raise HTTPException(status_code=404, detail="Drawing game not found")
+    _check_content_owner(drawing_id, wallet_id)
+    drawing_data = _sanitize_drawing_game({"game_title": request.game_title, "prompts": request.prompts})
+    drawing_games[drawing_id] = drawing_data
+    logger.info("DrawingGame updated: %s ('%s'), %d prompts", drawing_id, drawing_data["game_title"], len(drawing_data["prompts"]))
+    return {"drawing_id": drawing_id, "game": drawing_games[drawing_id]}
+
+
+@app.delete("/drawing/{drawing_id}/prompt/{prompt_id}")
+async def delete_drawing_prompt(drawing_id: str, prompt_id: int, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if drawing_id not in drawing_games:
+        raise HTTPException(status_code=404, detail="Drawing game not found")
+    _check_content_owner(drawing_id, wallet_id)
+    game = drawing_games[drawing_id]
+    remaining = [p for p in game["prompts"] if p["id"] != prompt_id]
+    if len(remaining) == len(game["prompts"]):
+        raise HTTPException(status_code=404, detail="Prompt not found")
+    if len(remaining) == 0:
+        raise HTTPException(status_code=400, detail="Cannot delete the last prompt")
+    game["prompts"] = remaining
+    return {"drawing_id": drawing_id, "game": game}
 
 
 # --- Game History ---
@@ -1329,6 +1530,7 @@ async def admin_stats(req: Request):
     # Content in memory
     total_quizzes = len(quizzes)
     total_mlt = len(mlt_scenarios)
+    total_drawing = len(drawing_games)
 
     # Database stats
     db_stats = db.get_admin_stats()
@@ -1350,6 +1552,7 @@ async def admin_stats(req: Request):
         "content": {
             "quizzes_in_memory": total_quizzes,
             "mlt_in_memory": total_mlt,
+            "drawing_in_memory": total_drawing,
         },
         "economy": {
             "total_wallets": db_stats["wallet_count"],
