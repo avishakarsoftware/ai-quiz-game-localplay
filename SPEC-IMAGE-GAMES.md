@@ -15,6 +15,7 @@ LocalPlay already has partial image support:
 - Quiz questions can include `image_prompt` and `image_url`.
 - The organizer can call `/quiz/generate-images`.
 - `image_engine.py` can talk to a local Stable Diffusion server and returns base64 PNG data.
+- Stable Diffusion is a local/development capability only; gamma and production should not assume it is available.
 - Generated quiz images are stored in process memory as `quiz_images`.
 - `/quiz/{quiz_id}/image/{question_id}` serves generated image bytes.
 - `/media/status` and `/media/{asset_id}` now exist as the Phase 0 shared media namespace.
@@ -30,6 +31,7 @@ Current limitations:
 - No host upload endpoint exists.
 - No provider abstraction exists for Gemini image generation, Gemini vision analysis, or future storage backends.
 - No moderation or upload safety pipeline exists.
+- Gamma and production need host upload plus persisted media storage for custom quiz question images; they should not rely on local Stable Diffusion.
 
 ## Goals
 

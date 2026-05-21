@@ -13,7 +13,7 @@ This is the friendlier path for party/event games such as:
 - Classroom review games.
 - Manually curated pub-quiz rounds.
 
-The goal is not to replace AI generation. The goal is to make host-authored quizzes feel first-class, fast, and durable, while still reusing the existing quiz room lifecycle, scoring, player screens, spectator screens, and image media layer.
+The goal is not to replace AI generation. The goal is to make host-authored quizzes feel first-class, fast, visual, and durable, while still reusing the existing quiz room lifecycle, scoring, player screens, spectator screens, and image media layer.
 
 ## Current State
 
@@ -36,6 +36,8 @@ Current gaps:
 - There is no durable custom quiz library for signed-in hosts.
 - There is no autosave or draft state.
 - There is no question-builder UX for adding/reordering questions.
+- There is no host upload flow for attaching images to custom quiz questions.
+- Current Stable Diffusion image generation is local/dev-only and should not be treated as available in gamma or production.
 - There is no friendly CSV/paste import.
 - There is no way to duplicate a past custom quiz pack.
 
@@ -46,7 +48,9 @@ Current gaps:
 - A guest host can create and run a quiz without signing in, with clear copy that saving across devices requires sign-in.
 - The authoring UI should be touch-friendly on tablet/laptop and usable on mobile in a pinch.
 - The quiz runtime should remain unchanged: once a custom quiz is launched, players should not care whether it was AI-generated, imported, or manually authored.
-- Custom quizzes should support optional images once the image media layer reaches upload/persistence phases.
+- Custom quizzes should support optional per-question images through host upload in gamma and production.
+- Uploaded question images should be durable enough for saved quiz packs and reliable enough for organizer, player, and spectator display.
+- AI image generation is an optional enhancement and must not block custom quiz images; local Stable Diffusion is only a development/local capability unless a production-safe cloud image provider is configured.
 - Existing import/export should remain compatible.
 
 ## Non-Goals For V1
@@ -59,6 +63,7 @@ Current gaps:
 - No question types beyond multiple-choice and true/false.
 - No complex scoring modes such as closest numeric answer or free-text grading.
 - No mandatory persistence for anonymous users beyond local browser drafts.
+- No dependence on Stable Diffusion for gamma or production custom quiz images.
 
 ## User Experience
 
@@ -120,7 +125,13 @@ Question editor fields:
 - Correct answer selector.
 - Optional explanation/host note.
 - Optional time limit override.
-- Optional image attachment placeholder, hidden or disabled until upload is available.
+- Optional image attachment:
+  - Upload image from device.
+  - Replace image.
+  - Remove image.
+  - Edit alt text.
+  - Show upload progress and validation errors.
+  - Hide AI image generation unless a provider is available for the current environment.
 
 Controls:
 
@@ -520,8 +531,13 @@ Question:
 Image:
 
 - Optional.
+- Host upload is the primary production/gamma path for custom quiz images.
+- `image_asset_id` is the durable reference for saved packs.
+- `image_url` is a backend-served `/media/{asset_id}` URL or short-lived signed URL derived from the asset; durable saved packs should not rely on arbitrary external URLs.
+- `image_alt` should default to the question text but remain editable for accessibility.
 - If `image_asset_id` is present, server must verify ownership or active attachment rights.
 - If `image_url` is external, reject for durable saved packs unless explicitly allowed.
+- Uploads must use the media safety rules from `SPEC-IMAGE-GAMES.md`: size/type validation, content sniffing, metadata stripping, normalized dimensions/format, private ownership, and retention controls.
 
 ## Persistence Strategy
 
@@ -549,6 +565,27 @@ Use Supabase tables above.
   - Offline/local only
   - Save failed, retry
 
+### Image Persistence
+
+Custom quiz question images require persisted media before they are enabled in gamma or production.
+
+Required behavior:
+
+- Upload through the backend, not directly from the browser to public storage.
+- Store image objects in Supabase Storage or an equivalent durable backend.
+- Store media metadata in the shared media asset model from `SPEC-IMAGE-GAMES.md`.
+- Save `image_asset_id` on `games_quiz_questions`.
+- Resolve `image_url` when reading/materializing packs so the quiz runtime receives the same shape as generated quizzes.
+- Keep uploaded images private by default; expose them through `/media/{asset_id}` or signed URLs only when the requesting wallet owns the pack or the image is attached to an active room.
+- Strip EXIF and normalize oversized uploads before storage.
+- If a media asset is missing, deleted, or expired, the editor should show a repair state and the runtime should degrade to a text-only question instead of crashing.
+
+Stable Diffusion note:
+
+- Existing Stable Diffusion integration is local-only and may be useful for development/demo image generation.
+- Gamma and production should report image generation unavailable unless a cloud image provider is explicitly configured.
+- Host upload must work independently of image generation availability.
+
 ### Offline/PWA Behavior
 
 Custom authoring should be PWA-friendly:
@@ -571,7 +608,8 @@ Conflict policy for V1:
   - HTML-escape on render.
   - Store plain text, not markup.
   - Enforce length limits server-side.
-- If image upload is enabled later, reuse the image media safety rules from `SPEC-IMAGE-GAMES.md`.
+- Treat uploaded images as private party content by default.
+- Reuse the image media safety rules from `SPEC-IMAGE-GAMES.md`.
 - Admin logs should include pack ID and owner wallet prefix, not full question text unless debugging explicitly requires it.
 
 ## Spark Economy
@@ -583,12 +621,13 @@ Charge sparks only for optional AI assist actions:
 - Generate questions into a custom quiz.
 - Rewrite question.
 - Suggest wrong answers.
-- Generate image for a question.
+- Generate image for a question, only when a production-safe image provider is configured.
 
 Recommended behavior:
 
 - Show spark cost on the AI assist button.
 - Never charge for typing, editing, deleting, reordering, importing, exporting, duplicating, or launching a manual quiz.
+- Never charge for uploading a host-provided image unless a separate storage/quota product decision is made.
 
 ## Import And Paste Helpers
 
@@ -676,12 +715,40 @@ Acceptance:
 - Gamma and production data are isolated by table prefix.
 - Anonymous drafts remain local and do not leak into another user account.
 
-### Phase 2: Quality Helpers
+### Phase 2: Question Image Upload And Attachment
+
+Backend:
+
+1. Add persisted media asset storage from `SPEC-IMAGE-GAMES.md`.
+2. Add host upload endpoint, e.g. `POST /media/upload`.
+3. Validate uploaded type, decoded dimensions, and file size.
+4. Strip EXIF and normalize to a web-safe image format.
+5. Store media metadata with wallet ownership.
+6. Allow quiz pack questions to attach/detach owned media assets.
+7. Materialize `image_asset_id`, `image_url`, and `image_alt` into runtime quiz questions.
+8. Ensure `/media/{asset_id}` works for IONOS frontend, backend-served gamma, active rooms, and owner-only editor preview.
+
+Frontend:
+
+1. Add image attachment controls to `CustomQuizQuestionEditor`.
+2. Show upload progress, thumbnail preview, remove/replace actions, and alt text editing.
+3. Persist image attachments in saved packs.
+4. Preserve image attachments through duplicate, export/import where possible, and materialize/start flow.
+5. Show missing-image repair states in the editor.
+
+Acceptance:
+
+- Host can create a custom quiz with at least one uploaded question image in gamma and production.
+- Uploaded image questions render for organizer, player, and spectator views.
+- Starting a room does not require Stable Diffusion or any local image generator.
+- Missing or failed image assets degrade gracefully to text-only questions.
+- Uploaded images survive backend container restart.
+
+### Phase 3: Quality Helpers
 
 - CSV import.
 - Paste import.
 - AI assist buttons.
-- Question image attachment once host upload is available.
 - Pack thumbnails.
 - Last played and play count.
 - Better mobile bulk editing.
@@ -692,16 +759,22 @@ Backend tests:
 
 - Pack ownership enforced.
 - Question validation rejects empty text/options and invalid answer index.
+- Question image attachment verifies media ownership.
+- Durable saved packs reject arbitrary external image URLs.
 - Reorder is atomic and compacts positions.
 - Duplicate creates independent question rows.
 - Export matches existing quiz JSON shape.
 - Materialize creates runtime quiz compatible with `/room/create`.
+- Materialize includes `image_asset_id`, `image_url`, and `image_alt` for attached images.
+- Missing image assets degrade without breaking `/room/create`.
 - Gamma table prefix does not touch production tables.
 
 Frontend tests:
 
 - Create custom quiz from blank.
 - Add/edit/delete/duplicate/reorder questions.
+- Upload/remove/replace a question image.
+- Question image preview uses `GameImage` loading and error states.
 - Inline validation disables start until valid.
 - Manual creation does not call generation endpoints.
 - Local draft survives refresh.
@@ -718,16 +791,21 @@ Remote smoke:
 
 - Gamma custom quiz create/start flow.
 - Signed-in save/load flow after Phase 1.
+- Gamma custom quiz upload-image/start flow after Phase 2.
+- `/media/status` reports upload availability accurately and does not imply Stable Diffusion is available in gamma/prod.
 
 ## Deployment Notes
 
 - Phase 0 requires only frontend deployment plus existing backend endpoints.
 - Phase 1 requires Supabase migrations before enabling durable library UI.
+- Phase 2 requires persisted media storage before enabling uploaded question images in gamma/prod.
+- Stable Diffusion should remain disabled/unavailable in gamma and production unless explicitly replaced by a production-safe cloud provider. Host-uploaded images are the required prod/gamma path.
 - Keep feature flag:
 
 ```text
 custom_quiz_authoring_enabled=true
 custom_quiz_library_enabled=false
+custom_quiz_image_upload_enabled=false
 custom_quiz_ai_assist_enabled=false
 ```
 
@@ -743,12 +821,10 @@ custom_quiz_ai_assist_enabled=false
 
 ## Backlog
 
-- Durable signed-in quiz library.
 - CSV import.
 - Paste import.
 - AI assist for wrong answers and rewrites.
 - Save AI-generated quiz as custom pack.
-- Question image upload/attachment.
 - Pack duplication.
 - Pack archive/restore.
 - Pack search.
