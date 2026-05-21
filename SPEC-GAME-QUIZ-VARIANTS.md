@@ -229,6 +229,7 @@ Validation:
 - Add optional mode-aware validation:
   - `fact_fiction`: all options are exactly `True`, `False`.
   - others: at least most questions have 4 options.
+- After provider output is validated and sanitized, backend shuffles each 4-option multiple-choice question and rewrites `answer_index` to the new correct option position. This is required because LLMs frequently put the correct answer first, especially for Rebus Rush and Emoji Charades. Two-option questions are not shuffled; `fact_fiction` keeps `["True", "False"]` order for clarity.
 
 Mode-aware validation can be warning-only in V1 so generation does not fail too aggressively.
 

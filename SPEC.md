@@ -276,6 +276,8 @@ Validation requires:
 - Options count is either 2 or 4.
 - `answer_index` is an integer within option bounds.
 
+After provider output passes validation and sanitization, the backend shuffles every 4-option multiple-choice question and rewrites `answer_index` to match the shuffled correct answer. This prevents LLM ordering bias where the correct answer is usually option A. Two-option questions are not shuffled; Fact/Fiction questions keep the exact `["True", "False"]` order.
+
 Quiz API responses strip `answer_index` before returning quiz data to clients except export/import and server-internal room data.
 
 ### WMLT Content Shape

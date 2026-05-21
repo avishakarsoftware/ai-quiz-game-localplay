@@ -3,6 +3,7 @@ import asyncio
 import httpx
 import json
 import logging
+import random
 from datetime import date
 from typing import Optional
 
@@ -165,6 +166,32 @@ def _sanitize_quiz(quiz_data: dict) -> dict:
     return quiz_data
 
 
+def _shuffle_question_options(quiz_data: dict, mode: str = "classic") -> dict:
+    """Shuffle multiple-choice options and keep answer_index aligned."""
+    if _normalize_quiz_mode(mode) == "fact_fiction":
+        return quiz_data
+
+    for q in quiz_data.get("questions", []):
+        options = q.get("options")
+        answer_index = q.get("answer_index")
+        if not isinstance(options, list) or len(options) != 4:
+            continue
+        if not isinstance(answer_index, int) or not (0 <= answer_index < len(options)):
+            continue
+
+        correct_answer = options[answer_index]
+        indexed_options = list(enumerate(options))
+        random.shuffle(indexed_options)
+        q["options"] = [option for _, option in indexed_options]
+        q["answer_index"] = next(
+            idx for idx, (original_idx, _) in enumerate(indexed_options)
+            if original_idx == answer_index
+        )
+        if q["options"][q["answer_index"]] != correct_answer:
+            logger.warning("Option shuffle answer mismatch for question %s", q.get("id"))
+    return quiz_data
+
+
 def _validate_quiz(quiz_data: dict, attempt: int, mode: str = "classic") -> bool:
     if not isinstance(quiz_data, dict):
         logger.warning("Attempt %d: LLM returned non-dict type: %s", attempt, type(quiz_data).__name__)
@@ -214,6 +241,7 @@ async def _generate_ollama(prompt: str, difficulty: str, num_questions: int, mod
             quiz_data = json.loads(result['response'])
             if _validate_quiz(quiz_data, attempt, mode):
                 quiz_data = _sanitize_quiz(quiz_data)
+                quiz_data = _shuffle_question_options(quiz_data, mode)
                 logger.info("Quiz generated via Ollama: '%s' with %d questions",
                             quiz_data.get("quiz_title", "Untitled"), len(quiz_data["questions"]))
                 return quiz_data
@@ -266,6 +294,7 @@ async def _generate_gemini(prompt: str, difficulty: str, num_questions: int, mod
             quiz_data = json.loads(text)
             if _validate_quiz(quiz_data, attempt, mode):
                 quiz_data = _sanitize_quiz(quiz_data)
+                quiz_data = _shuffle_question_options(quiz_data, mode)
                 logger.info("Quiz generated via Gemini: '%s' with %d questions",
                             quiz_data.get("quiz_title", "Untitled"), len(quiz_data["questions"]))
                 return quiz_data
@@ -326,6 +355,7 @@ async def _generate_claude(prompt: str, difficulty: str, num_questions: int, mod
             quiz_data = json.loads(text)
             if _validate_quiz(quiz_data, attempt, mode):
                 quiz_data = _sanitize_quiz(quiz_data)
+                quiz_data = _shuffle_question_options(quiz_data, mode)
                 logger.info("Quiz generated via Claude: '%s' with %d questions",
                             quiz_data.get("quiz_title", "Untitled"), len(quiz_data["questions"]))
                 return quiz_data
