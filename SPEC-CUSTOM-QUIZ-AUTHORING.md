@@ -533,11 +533,11 @@ Image:
 - Optional.
 - Host upload is the primary production/gamma path for custom quiz images.
 - `image_asset_id` is the durable reference for saved packs.
-- `image_url` is a backend-served `/media/{asset_id}` URL or short-lived signed URL derived from the asset; durable saved packs should not rely on arbitrary external URLs.
+- `image_url` is a backend-served `/media/{asset_id}` URL or an IONOS CDN URL derived from the asset; durable saved packs should not rely on arbitrary external URLs.
 - `image_alt` should default to the question text but remain editable for accessibility.
 - If `image_asset_id` is present, server must verify ownership or active attachment rights.
 - If `image_url` is external, reject for durable saved packs unless explicitly allowed.
-- Uploads must use the media safety rules from `SPEC-IMAGE-GAMES.md`: size/type validation, content sniffing, metadata stripping, normalized dimensions/format, private ownership, and retention controls.
+- Uploads must use the media safety rules from `SPEC-IMAGE-GAMES.md`: signed IONOS upload paths, size/type validation, content sniffing, metadata stripping, normalized dimensions/format, ownership metadata, and retention controls.
 
 ## Persistence Strategy
 
@@ -571,12 +571,13 @@ Custom quiz question images require persisted media before they are enabled in g
 
 Required behavior:
 
-- Upload through the backend, not directly from the browser to public storage.
-- Store image objects in Supabase Storage or an equivalent durable backend.
+- Request a signed upload target from the backend before uploading.
+- Upload image files to IONOS media storage through the signed PHP handler described in `SPEC-IMAGE-GAMES.md` and `DEPLOY.md`.
 - Store media metadata in the shared media asset model from `SPEC-IMAGE-GAMES.md`.
 - Save `image_asset_id` on `games_quiz_questions`.
 - Resolve `image_url` when reading/materializing packs so the quiz runtime receives the same shape as generated quizzes.
-- Keep uploaded images private by default; expose them through `/media/{asset_id}` or signed URLs only when the requesting wallet owns the pack or the image is attached to an active room.
+- Keep uploaded images private in product UX and metadata; the underlying IONOS file URLs are public CDN-style bearer URLs with unguessable UUID paths.
+- Expose images through `/media/{asset_id}` or direct `https://media.revelryapp.me/apps/localplay/...` URLs only after ownership/attachment checks.
 - Strip EXIF and normalize oversized uploads before storage.
 - If a media asset is missing, deleted, or expired, the editor should show a repair state and the runtime should degrade to a text-only question instead of crashing.
 
@@ -720,13 +721,13 @@ Acceptance:
 Backend:
 
 1. Add persisted media asset storage from `SPEC-IMAGE-GAMES.md`.
-2. Add host upload endpoint, e.g. `POST /media/upload`.
+2. Add host upload signing endpoint, e.g. `POST /media/upload-url`, plus finalize endpoint.
 3. Validate uploaded type, decoded dimensions, and file size.
 4. Strip EXIF and normalize to a web-safe image format.
-5. Store media metadata with wallet ownership.
+5. Store image bytes on IONOS and media metadata with wallet ownership in Supabase.
 6. Allow quiz pack questions to attach/detach owned media assets.
 7. Materialize `image_asset_id`, `image_url`, and `image_alt` into runtime quiz questions.
-8. Ensure `/media/{asset_id}` works for IONOS frontend, backend-served gamma, active rooms, and owner-only editor preview.
+8. Ensure `/media/{asset_id}` and/or direct IONOS CDN URLs work for IONOS frontend, backend-served gamma, active rooms, and owner-only editor preview.
 
 Frontend:
 
@@ -743,6 +744,7 @@ Acceptance:
 - Starting a room does not require Stable Diffusion or any local image generator.
 - Missing or failed image assets degrade gracefully to text-only questions.
 - Uploaded images survive backend container restart.
+- Uploaded image files are stored on IONOS, not Supabase Storage or the GCP VM filesystem.
 
 ### Phase 3: Quality Helpers
 
@@ -798,7 +800,7 @@ Remote smoke:
 
 - Phase 0 requires only frontend deployment plus existing backend endpoints.
 - Phase 1 requires Supabase migrations before enabling durable library UI.
-- Phase 2 requires persisted media storage before enabling uploaded question images in gamma/prod.
+- Phase 2 requires IONOS media storage before enabling uploaded question images in gamma/prod.
 - Stable Diffusion should remain disabled/unavailable in gamma and production unless explicitly replaced by a production-safe cloud provider. Host-uploaded images are the required prod/gamma path.
 - Keep feature flag:
 

@@ -22,7 +22,7 @@ A multiplayer quiz game powered by local AI (Ollama). The organizer gives a prom
 
 Phase 0 of the image-game platform is implemented. Existing quiz image generation now creates shared in-memory media assets, exposes them through `/media/{asset_id}`, and renders them through the reusable frontend `GameImage` component on organizer, player, and spectator screens.
 
-Uploads, persisted Supabase Storage, thumbnails, standalone `/media/generate`, and image-native game modes are still future phases; see `SPEC-IMAGE-GAMES.md`.
+Uploads, persisted IONOS media storage, thumbnails, standalone `/media/generate`, and image-native game modes are still future phases; see `SPEC-IMAGE-GAMES.md`.
 
 ## Quick Start
 

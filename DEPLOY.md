@@ -57,6 +57,9 @@ curl -sS -i https://gamesapi-gamma.revelryapp.me/health
   app/           → app.revelryapp.me (platform frontend, future)
   games/         → games.revelryapp.me
     quiz/        → games.revelryapp.me/quiz (quiz game)
+  media/         → media.revelryapp.me
+    apps/
+      localplay/ → future LocalPlay uploaded/generated game images
 ```
 
 ## Credentials & Access
@@ -796,6 +799,110 @@ Prod or gamma can be rolled back to SQLite during the initial rollout window by 
 ```
 
 Rollback caveat: writes accepted by Supabase after cutover must be replayed manually into SQLite if you need a fully current rollback database.
+
+---
+
+## Media Uploads (IONOS)
+
+LocalPlay image files should be stored on IONOS, not Supabase Storage and not the GCP VM filesystem. Supabase remains the metadata store for media asset rows and quiz-pack question references.
+
+This should follow the Revelry media-upload pattern:
+
+1. Frontend calls the LocalPlay backend for a signed upload target, e.g. `POST /media/upload-url`.
+2. Backend validates wallet/content ownership and generates:
+   - `asset_id`
+   - relative IONOS path
+   - short expiry
+   - HMAC token using `MEDIA_UPLOAD_SECRET`
+3. Frontend uploads `multipart/form-data` directly to the IONOS PHP handler.
+4. PHP validates CORS, expiry, HMAC, path prefix, extension, MIME type, and upload status.
+5. PHP writes the image under the LocalPlay media directory.
+6. Frontend calls a finalize endpoint, e.g. `POST /media/{asset_id}/finalize`, so backend metadata becomes `ready`.
+7. Runtime quiz questions use `image_asset_id`, `image_url`, and `image_alt`; `image_url` may be `/media/{asset_id}` or a direct `media.revelryapp.me` URL.
+
+Recommended public URL and server layout:
+
+```text
+Public base URL:
+https://media.revelryapp.me/apps/localplay/
+
+IONOS server:
+~/revelryapp/media/apps/localplay/
+  upload.php
+  delete.php
+  .htaccess
+  .upload_secret
+  prod/
+    quiz-packs/{pack_id}/{question_id}/{asset_id}.webp
+    generated/{asset_id}.webp
+    uploaded/{wallet_id}/{asset_id}.webp
+    thumbs/{asset_id}.webp
+  gamma/
+    quiz-packs/{pack_id}/{question_id}/{asset_id}.webp
+    generated/{asset_id}.webp
+    uploaded/{wallet_id}/{asset_id}.webp
+    thumbs/{asset_id}.webp
+```
+
+Planned repo source:
+
+```text
+ionos/media/upload.php
+ionos/media/delete.php
+ionos/media/.htaccess
+```
+
+Deploy PHP handlers only from repo source:
+
+```bash
+scp ionos/media/upload.php u69414981@home420463025.1and1-data.host:~/revelryapp/media/apps/localplay/upload.php
+scp ionos/media/delete.php u69414981@home420463025.1and1-data.host:~/revelryapp/media/apps/localplay/delete.php
+scp ionos/media/.htaccess u69414981@home420463025.1and1-data.host:~/revelryapp/media/apps/localplay/.htaccess
+```
+
+The IONOS secret file must match backend env:
+
+```text
+IONOS:   ~/revelryapp/media/apps/localplay/.upload_secret
+Backend: MEDIA_UPLOAD_SECRET
+```
+
+Recommended backend env once uploads are implemented:
+
+```env
+MEDIA_STORAGE_BACKEND=ionos
+MEDIA_CDN_BASE_URL=https://media.revelryapp.me/apps/localplay
+MEDIA_UPLOAD_URL=https://media.revelryapp.me/apps/localplay/upload.php
+MEDIA_DELETE_URL=https://media.revelryapp.me/apps/localplay/delete.php
+MEDIA_UPLOAD_SECRET=<same value as .upload_secret>
+MEDIA_ENABLE_UPLOADS=false
+```
+
+CORS:
+
+- `upload.php` should allow `POST, OPTIONS` from:
+  - `https://games.revelryapp.me`
+  - `https://gamesapi.revelryapp.me`
+  - `https://gamesapi-gamma.revelryapp.me`
+  - local dev origins such as `http://localhost:9200` and `http://127.0.0.1:9200`
+  - Capacitor origins if native upload is enabled
+- `.htaccess` should allow reads for image files across web/PWA/native surfaces. Like Revelry, this can be `Access-Control-Allow-Origin: *` because the files are public CDN-style bearer URLs protected by unguessable UUID paths, not auth cookies.
+
+Path validation:
+
+- PHP handlers must reject `..`, absolute paths, and unknown prefixes.
+- LocalPlay paths should start with `prod/` or `gamma/`.
+- Backend-generated paths should use UUID-like asset names, never user-provided filenames.
+- Delete should be best-effort: signed `delete.php` removes the IONOS file, while backend metadata is soft-deleted.
+
+Operational notes:
+
+- Deploying or editing live IONOS PHP files should be treated as a production operation.
+- Check disk usage before enabling broad uploads:
+
+```bash
+ssh u69414981@home420463025.1and1-data.host "du -sh ~/revelryapp/media/apps/localplay/"
+```
 
 ---
 

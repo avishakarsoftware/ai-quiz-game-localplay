@@ -38,7 +38,7 @@ Current limitations:
 - Provide a reusable image asset model for quizzes, drawing-adjacent games, caption games, and future visual modes.
 - Support both AI-generated images and host-uploaded images.
 - Keep game content and image assets owned by a wallet/session.
-- Avoid exposing service-role Supabase credentials to the browser.
+- Avoid exposing Supabase service-role keys or IONOS upload secrets to the browser.
 - Work in same-origin backend-served SPA mode and IONOS-hosted frontend mode.
 - Keep the initial VM deployment safe and simple.
 - Make future Cloud Run migration easier by removing in-memory image dependencies.
@@ -52,7 +52,7 @@ Current limitations:
 - No permanent storage guarantee for user uploads without a retention policy.
 - No AI moderation of live drawings.
 - No high-volume or unlimited image generation.
-- No direct browser writes to Supabase Storage.
+- No direct browser writes to Supabase or arbitrary public storage.
 - No separate Firebase dependency.
 
 ## Product Principle
@@ -87,12 +87,14 @@ Purpose: make image assets survive process restarts and support Cloud Run later.
 
 Scope:
 
-- Store image files in Supabase Storage using the existing shared Supabase project.
-- Store image metadata in `games_generated_content` or a new `games_media_assets` table.
+- Store image files on the IONOS media CDN, matching the Revelry media-upload pattern.
+- Store image metadata in `games_generated_content` or a new `games_media_assets` table in Supabase.
 - Use prefix isolation:
-  - Production tables/buckets/paths: `games_*`.
-  - Gamma tables/buckets/paths: `games_gamma_*`.
-- Backend signs or proxies reads so the browser never needs service-role access.
+  - Production tables: `games_*`.
+  - Gamma tables: `games_gamma_*`.
+  - Production/gamma media paths must include an environment segment so assets cannot collide.
+- Backend signs upload paths so the browser can upload directly to IONOS without giving it any server secret.
+- Backend can proxy, redirect, or return CDN URLs for reads, while `/media/{asset_id}` remains the stable app-facing asset URL.
 - Add cleanup jobs or manual retention scripts.
 
 ### Phase 2: Host Uploads
@@ -156,7 +158,7 @@ export interface ImageAsset {
 
 Rules:
 
-- `url` must be an app URL, not a raw service-role storage URL.
+- `url` must be an app-controlled URL, such as `/media/{asset_id}` or a generated IONOS CDN URL.
 - `prompt` may be omitted for uploaded photos.
 - `alt_text` should be generated or provided for accessibility where possible.
 - `status='failed'` should include an internal error log, but not expose provider internals to players.
@@ -179,8 +181,9 @@ CREATE TABLE games_media_assets (
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
   bytes INTEGER NOT NULL,
-  storage_bucket TEXT,
+  storage_backend TEXT,
   storage_path TEXT,
+  public_url TEXT,
   prompt TEXT,
   alt_text TEXT,
   safety_status TEXT NOT NULL DEFAULT 'unchecked',
@@ -204,35 +207,57 @@ CREATE TABLE games_gamma_media_assets (...same columns...);
 
 This can also be represented as `games_generated_content` rows with `content_type='media_asset'`, but a dedicated table is cleaner once uploads exist.
 
-### Supabase Storage
+### IONOS Media Storage
 
-Use one shared bucket if Supabase project policy allows it:
+Image files should be stored on IONOS, not Supabase Storage.
+
+Use the same high-level pattern as Revelry:
+
+1. Frontend asks the LocalPlay backend for a signed upload target.
+2. Backend validates wallet/content ownership and creates an HMAC-signed relative path with a short expiry using `MEDIA_UPLOAD_SECRET`.
+3. Frontend posts the file directly to an IONOS PHP handler.
+4. The PHP handler validates CORS, HMAC, expiry, path prefix, extension, MIME type, and upload status, then writes the file to disk.
+5. Backend stores/updates metadata in `games_media_assets` and returns a stable `ImageAsset`.
+
+Recommended IONOS layout:
 
 ```text
-Bucket: localplay-media
+Public base URL: https://media.revelryapp.me/apps/localplay/
 
-games/
+IONOS server root:
+~/revelryapp/media/apps/localplay/
+
+prod/
   generated/{asset_id}.webp
   uploaded/{wallet_id}/{asset_id}.webp
+  quiz-packs/{pack_id}/{question_id}/{asset_id}.webp
   thumbs/{asset_id}.webp
 
-games_gamma/
+gamma/
   generated/{asset_id}.webp
   uploaded/{wallet_id}/{asset_id}.webp
+  quiz-packs/{pack_id}/{question_id}/{asset_id}.webp
   thumbs/{asset_id}.webp
 ```
 
-Alternative: separate buckets `games-media` and `games-gamma-media`. Separate path prefixes are simpler if bucket count should stay low; separate buckets are clearer if retention/lifecycle rules differ.
+The IONOS PHP handler should live in this repo before deployment, e.g. `ionos/media/upload.php`, and be deployed to:
 
-Recommendation: one `localplay-media` bucket with environment path prefixes.
+```text
+~/revelryapp/media/apps/localplay/upload.php
+~/revelryapp/media/apps/localplay/delete.php
+~/revelryapp/media/apps/localplay/.htaccess
+~/revelryapp/media/apps/localplay/.upload_secret
+```
 
 Storage access:
 
-- Bucket should be private.
-- Backend uploads with service-role key.
-- Backend serves images through `/media/{asset_id}` or returns short-lived signed URLs.
-- For same-origin simplicity, prefer backend proxy reads in V1.
-- Move to signed URLs when image traffic becomes meaningful.
+- Uploads require signed paths generated by the backend.
+- IONOS file reads are CDN-style public URLs with unguessable UUID paths.
+- Treat paths as bearer URLs: do not expose directory listings, do not use sequential names, and do not store sensitive images that require revocable per-view authorization.
+- Backend should store `storage_path` and `public_url` in metadata.
+- Backend may serve `/media/{asset_id}` by redirecting to the IONOS URL, proxying it, or returning the URL in API payloads.
+- The `.htaccess` for reads should set CORS headers that let the IONOS frontend, backend-served gamma/prod, and native webviews display/fetch images.
+- Delete should be best-effort through a signed IONOS delete handler plus a metadata soft-delete.
 
 ## API Surface
 
@@ -302,6 +327,69 @@ Response:
 
 Future Phase 2 endpoint. There is no host upload flow in Phase 0.
 
+Recommended API shape follows the Revelry signed IONOS upload pattern.
+
+```http
+POST /media/upload-url
+```
+
+Request:
+
+```json
+{
+  "purpose": "custom_quiz_question",
+  "pack_id": "qp_123",
+  "question_id": "q_1",
+  "mime_type": "image/jpeg",
+  "bytes": 123456,
+  "alt_text": "A birthday cake on a kitchen table"
+}
+```
+
+Response:
+
+```json
+{
+  "asset_id": "img_abc123",
+  "upload": {
+    "url": "https://media.revelryapp.me/apps/localplay/upload.php",
+    "path": "gamma/quiz-packs/qp_123/q_1/img_abc123.jpg",
+    "expires": 1779290300,
+    "token": "hmac"
+  },
+  "asset": {
+    "id": "img_abc123",
+    "status": "pending",
+    "url": "/media/img_abc123",
+    "mime_type": "image/jpeg"
+  }
+}
+```
+
+The frontend then uploads `multipart/form-data` directly to IONOS:
+
+```http
+POST https://media.revelryapp.me/apps/localplay/upload.php
+Content-Type: multipart/form-data
+```
+
+Fields:
+
+- `file`: required.
+- `path`: backend-generated relative path.
+- `expires`: backend-generated expiry.
+- `token`: backend-generated HMAC.
+
+After upload succeeds, the frontend calls a backend finalize endpoint so metadata can move from `pending` to `ready`:
+
+```http
+POST /media/{asset_id}/finalize
+```
+
+The backend may also finalize lazily by checking the expected IONOS URL on first attach/materialize.
+
+Legacy/direct backend multipart upload can exist for local development, but the production/gamma path should be signed browser-to-IONOS upload.
+
 ```http
 POST /media/upload
 Content-Type: multipart/form-data
@@ -322,6 +410,7 @@ Backend behavior:
 - Strip EXIF.
 - Normalize to WebP or JPEG.
 - Store original only if product need is clear.
+- Save image bytes to IONOS media storage, not Supabase Storage.
 - Insert asset metadata.
 - Return `ImageAsset`.
 
@@ -340,6 +429,7 @@ Rules:
 - For generated game content currently attached to an active room, players/spectators may view it.
 - For owner-only assets not attached to an active room, require wallet ownership.
 - Return `404` for deleted/missing assets.
+- If the asset is stored on IONOS, `/media/{asset_id}` may redirect to the CDN URL.
 - Set appropriate cache headers:
   - Immutable generated assets: `Cache-Control: public, max-age=31536000, immutable` if URL is content-addressed.
   - Owner/private assets: `private, max-age=300`.
@@ -354,6 +444,7 @@ DELETE /media/{asset_id}
 ```
 
 Owner only. Marks metadata deleted and removes storage object if not attached to retained game history.
+For IONOS-backed files, deletion should call a signed `delete.php` handler and tolerate missing files.
 
 ## Provider Architecture
 
@@ -378,9 +469,12 @@ Configuration:
 
 ```env
 ENABLE_IMAGE_GENERATION=true
-MEDIA_STORAGE_BACKEND=supabase
-MEDIA_BUCKET=localplay-media
-MEDIA_PATH_PREFIX=games_
+MEDIA_STORAGE_BACKEND=ionos
+MEDIA_CDN_BASE_URL=https://media.revelryapp.me/apps/localplay
+MEDIA_UPLOAD_URL=https://media.revelryapp.me/apps/localplay/upload.php
+MEDIA_DELETE_URL=https://media.revelryapp.me/apps/localplay/delete.php
+MEDIA_UPLOAD_SECRET=<shared with IONOS .upload_secret>
+MEDIA_PATH_PREFIX=prod
 MEDIA_MAX_UPLOAD_BYTES=5242880
 MEDIA_MAX_GENERATED_BYTES=5242880
 MEDIA_DEFAULT_PROVIDER=gemini_image
@@ -687,10 +781,11 @@ Uploaded photos:
 - Strip EXIF metadata.
 - Limit file size and dimensions.
 - Restrict MIME types.
-- Keep private by default.
+- Keep private by default in product UX and metadata.
 - Provide delete controls for owner.
 - Do not use uploaded photos for model training.
-- Do not show uploaded images in public URLs without authorization.
+- IONOS-hosted file URLs are public CDN-style bearer URLs; use unguessable UUID paths and do not create directory listings.
+- Do not place sensitive images in predictable paths.
 
 Generated images:
 
@@ -742,11 +837,11 @@ Remaining backend work:
 
 1. Add `backend/media_models.py` if the asset schema needs shared Pydantic validation beyond the current dataclass.
 2. Add `backend/media_engine.py` with provider abstraction.
-3. Add Supabase Storage implementation and `games_` / `games_gamma_` media metadata SQL.
+3. Add IONOS media upload signing plus `games_` / `games_gamma_` media metadata SQL.
 4. Add standalone `/media/generate`.
-5. Add host upload endpoint at `/media/upload`.
-6. Add `DELETE /media/{asset_id}`.
-7. Add cleanup script for expired persisted media.
+5. Add host upload URL endpoint at `/media/upload-url` and finalize endpoint at `/media/{asset_id}/finalize`.
+6. Add IONOS-backed `DELETE /media/{asset_id}`.
+7. Add cleanup script for expired persisted metadata and IONOS files.
 8. Add admin stats for ready/failed/deleted media assets.
 
 ## Frontend Implementation Status
@@ -784,24 +879,29 @@ If `/media` is removed from `API_PREFIXES`, `/media/...` asset requests will ret
 Gamma:
 
 - Use `games_gamma_` metadata rows.
-- Use `games_gamma/` storage path prefix.
+- Use `gamma/` IONOS media path prefix.
 - Test image upload/generation with non-sensitive sample images.
 - Do not point gamma to production-only paid image provider quota unless expected.
 
 Production:
 
 - Use `games_` metadata rows.
-- Use `games/` storage path prefix.
-- Keep bucket private.
+- Use `prod/` IONOS media path prefix.
 - Verify same-origin backend-served SPA and IONOS frontend can both display `/media/{asset_id}` URLs.
 
 IONOS:
 
 - The IONOS-hosted frontend should call backend API URLs through the existing API config.
 - Media URLs returned to the frontend must be absolute or API-relative in a way that works from IONOS.
+- Uploaded files live under `https://media.revelryapp.me/apps/localplay/`.
+- Deploy PHP handlers from repo source to `~/revelryapp/media/apps/localplay/`.
+- `MEDIA_UPLOAD_SECRET` in backend env must match `~/revelryapp/media/apps/localplay/.upload_secret`.
+- Upload handler CORS must include `https://games.revelryapp.me`, `https://gamesapi.revelryapp.me`, `https://gamesapi-gamma.revelryapp.me`, local dev origins, and Capacitor origins as needed.
+- Read `.htaccess` should allow image fetches from web/PWA/native surfaces.
 - Prefer returning full URLs when frontend is not same-origin:
   - `https://gamesapi.revelryapp.me/media/{asset_id}`
   - `https://gamesapi-gamma.revelryapp.me/media/{asset_id}`
+  - or direct CDN URLs such as `https://media.revelryapp.me/apps/localplay/prod/...`
 
 ## Testing Plan
 
@@ -814,7 +914,9 @@ Backend tests:
 - Upload rejects unsupported MIME types. Future Phase 2.
 - Upload rejects oversized files. Future Phase 2.
 - Upload strips/normalizes metadata. Future Phase 2.
-- Generated image success inserts persisted metadata and stores object. Future Phase 1.
+- Upload URL generation creates a pending media asset with a signed IONOS path. Future Phase 2.
+- Finalize marks uploaded IONOS media as ready after successful upload. Future Phase 2.
+- Generated image success inserts persisted metadata and stores the image on IONOS. Future Phase 1.
 - Generated image failure does not charge sparks.
 - Media fetch requires authorization for unattached owner-only assets.
 - Media fetch works for assets attached to active rooms.
@@ -849,14 +951,15 @@ Phase 1:
 
 - Generated images survive backend container restart.
 - Image metadata is isolated by `games_` vs `games_gamma_`.
-- Service-role key is never exposed to the frontend.
+- Upload signing secret is never exposed to the frontend.
+- Image bytes are stored on IONOS, not Supabase Storage.
 - Assets can be deleted or expired.
 
 Phase 2:
 
 - Host can upload an image and attach it to game content.
 - Uploaded image has metadata stripped and size/type validation.
-- IONOS production frontend can display uploaded media through the backend.
+- IONOS production frontend can display uploaded media through backend `/media/{asset_id}` or direct `media.revelryapp.me` URLs.
 
 First image game:
 
