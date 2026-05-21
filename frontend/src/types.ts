@@ -14,6 +14,27 @@ export interface Quiz {
     questions: Question[];
 }
 
+export interface QuizPack {
+    id: string;
+    owner_wallet_id: string;
+    title: string;
+    status: string;
+    question_count: number;
+    created_at: number;
+    updated_at: number;
+    questions?: Array<{
+        id: string;
+        position: number;
+        question_type: 'multiple_choice' | 'true_false';
+        text: string;
+        options: string[];
+        answer_index: number;
+        image_asset_id?: string;
+        image_url?: string;
+        image_alt?: string;
+    }>;
+}
+
 export interface PlayerInfo {
     nickname: string;
     avatar: string;

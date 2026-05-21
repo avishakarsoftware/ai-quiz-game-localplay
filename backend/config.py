@@ -59,6 +59,18 @@ MAX_QUIZZES = 100
 MAX_IMAGE_SIZE_BYTES = 2 * 1024 * 1024  # 2MB per image
 QUIZ_TTL_SECONDS = 3600  # 1 hour
 
+# --- IONOS media uploads ---
+MEDIA_UPLOAD_URL = os.getenv("MEDIA_UPLOAD_URL", "").strip()
+MEDIA_PUBLIC_BASE_URL = os.getenv("MEDIA_PUBLIC_BASE_URL", "").strip().rstrip("/")
+MEDIA_UPLOAD_SECRET = os.getenv("MEDIA_UPLOAD_SECRET", "").strip()
+MEDIA_PATH_PREFIX = os.getenv("MEDIA_PATH_PREFIX", "local").strip().strip("/")
+MEDIA_UPLOAD_TOKEN_TTL_SECONDS = int(os.getenv("MEDIA_UPLOAD_TOKEN_TTL_SECONDS", "900"))
+MEDIA_ALLOWED_MIME_TYPES = tuple(
+    item.strip()
+    for item in os.getenv("MEDIA_ALLOWED_MIME_TYPES", "image/png,image/jpeg,image/webp").split(",")
+    if item.strip()
+)
+
 # --- Game ---
 MAX_PROMPT_LENGTH = 140
 MAX_NICKNAME_LENGTH = 20

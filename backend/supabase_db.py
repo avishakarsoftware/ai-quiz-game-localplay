@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 import time
 import uuid
 from typing import Optional
@@ -558,3 +559,122 @@ def get_admin_stats() -> dict:
         "merge_count": int(result["merge_count"]),
         "users_count": int(result["users_count"]),
     }
+
+
+def _question_from_row(row: dict) -> dict:
+    question = dict(row)
+    if isinstance(question.get("options"), str):
+        question["options"] = json.loads(question["options"])
+    return {k: v for k, v in question.items() if v is not None}
+
+
+def save_quiz_pack(owner_wallet_id: str, title: str, questions: list[dict], pack_id: Optional[str] = None) -> dict:
+    now = _now()
+    pack_id = pack_id or uuid.uuid4().hex
+    existing = _first(_sb().select(
+        "quiz_packs",
+        filters={"id": f"eq.{pack_id}", "owner_wallet_id": f"eq.{owner_wallet_id}", "deleted_at": "is.null"},
+        limit=1,
+    ))
+    created_at = existing["created_at"] if existing else now
+    _sb().upsert("quiz_packs", {
+        "id": pack_id,
+        "owner_wallet_id": owner_wallet_id,
+        "title": title,
+        "status": "ready",
+        "question_count": len(questions),
+        "created_at": created_at,
+        "updated_at": now,
+        "deleted_at": None,
+    }, on_conflict="id")
+    _sb().delete("quiz_questions", filters={"pack_id": f"eq.{pack_id}"})
+    for index, q in enumerate(questions):
+        _sb().insert("quiz_questions", {
+            "id": f"{pack_id}_{index}",
+            "pack_id": pack_id,
+            "position": index,
+            "question_type": "true_false" if len(q.get("options", [])) == 2 else "multiple_choice",
+            "text": q.get("text", ""),
+            "options": q.get("options", []),
+            "answer_index": q.get("answer_index", 0),
+            "image_asset_id": q.get("image_asset_id"),
+            "image_url": q.get("image_url"),
+            "image_alt": q.get("image_alt"),
+            "created_at": now,
+            "updated_at": now,
+        })
+    pack = get_quiz_pack(owner_wallet_id, pack_id)
+    if not pack:
+        raise SupabaseDBError("Failed to save quiz pack")
+    return pack
+
+
+def list_quiz_packs(owner_wallet_id: str, limit: int = 50) -> list[dict]:
+    return _sb().select(
+        "quiz_packs",
+        filters={"owner_wallet_id": f"eq.{owner_wallet_id}", "deleted_at": "is.null"},
+        order="updated_at.desc",
+        limit=limit,
+    )
+
+
+def get_quiz_pack(owner_wallet_id: str, pack_id: str) -> Optional[dict]:
+    pack = _first(_sb().select(
+        "quiz_packs",
+        filters={"id": f"eq.{pack_id}", "owner_wallet_id": f"eq.{owner_wallet_id}", "deleted_at": "is.null"},
+        limit=1,
+    ))
+    if not pack:
+        return None
+    questions = _sb().select("quiz_questions", filters={"pack_id": f"eq.{pack_id}"}, order="position.asc")
+    pack["questions"] = [_question_from_row(row) for row in questions]
+    return pack
+
+
+def delete_quiz_pack(owner_wallet_id: str, pack_id: str) -> bool:
+    rows = _sb().update(
+        "quiz_packs",
+        {"status": "deleted", "deleted_at": _now(), "updated_at": _now()},
+        filters={"id": f"eq.{pack_id}", "owner_wallet_id": f"eq.{owner_wallet_id}", "deleted_at": "is.null"},
+    )
+    return bool(rows)
+
+
+def create_media_asset(asset_id: str, owner_wallet_id: str, storage_path: str, public_url: str, mime_type: str, bytes_size: int = 0, status: str = "pending", alt_text: str = "") -> dict:
+    now = _now()
+    rows = _sb().insert("media_assets", {
+        "id": asset_id,
+        "owner_wallet_id": owner_wallet_id,
+        "storage_backend": "ionos",
+        "storage_path": storage_path,
+        "public_url": public_url,
+        "status": status,
+        "mime_type": mime_type,
+        "bytes": bytes_size,
+        "alt_text": alt_text,
+        "created_at": now,
+        "updated_at": now,
+    })
+    return rows[0] if rows else {}
+
+
+def finalize_media_asset(owner_wallet_id: str, asset_id: str, bytes_size: int = 0, alt_text: str = "") -> Optional[dict]:
+    body = {"status": "ready", "updated_at": _now()}
+    if bytes_size > 0:
+        body["bytes"] = bytes_size
+    if alt_text:
+        body["alt_text"] = alt_text
+    rows = _sb().update(
+        "media_assets",
+        body,
+        filters={"id": f"eq.{asset_id}", "owner_wallet_id": f"eq.{owner_wallet_id}"},
+    )
+    return rows[0] if rows else None
+
+
+def get_media_asset(owner_wallet_id: str, asset_id: str) -> Optional[dict]:
+    return _first(_sb().select(
+        "media_assets",
+        filters={"id": f"eq.{asset_id}", "owner_wallet_id": f"eq.{owner_wallet_id}"},
+        limit=1,
+    ))

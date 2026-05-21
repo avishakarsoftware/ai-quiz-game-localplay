@@ -23,6 +23,7 @@ def clear_state():
 
 
 client = TestClient(app)
+AUTH_HEADERS = {"X-Device-Id": "11111111-1111-4111-8111-111111111111"}
 
 
 # ---------------------------------------------------------------------------
@@ -496,6 +497,89 @@ class TestExportImport:
         exported = client.get(f"/quiz/{qid}/export").json()["quiz"]
         res = client.post("/quiz/import", json={"quiz": exported})
         assert res.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Custom Quiz Packs
+# ---------------------------------------------------------------------------
+
+class TestCustomQuizPacks:
+    def test_save_list_and_materialize_quiz_pack(self):
+        quiz_data = {
+            "quiz_title": "Saved Custom Quiz",
+            "questions": [
+                {
+                    "id": 1,
+                    "text": "Who is pictured?",
+                    "options": ["A", "B", "C", "D"],
+                    "answer_index": 0,
+                    "image_url": "https://media.revelryapp.me/apps/localplay/gamma/uploads/test.webp",
+                    "image_alt": "A trophy photo",
+                },
+            ],
+        }
+        save_res = client.post("/quiz-packs", json={"quiz": quiz_data}, headers=AUTH_HEADERS)
+        assert save_res.status_code == 200
+        pack = save_res.json()["pack"]
+        assert pack["title"] == "Saved Custom Quiz"
+        assert pack["question_count"] == 1
+
+        list_res = client.get("/quiz-packs", headers=AUTH_HEADERS)
+        assert list_res.status_code == 200
+        assert any(p["id"] == pack["id"] for p in list_res.json()["packs"])
+
+        materialize_res = client.post(f"/quiz-packs/{pack['id']}/materialize", headers=AUTH_HEADERS)
+        assert materialize_res.status_code == 200
+        assert materialize_res.json()["quiz"]["questions"][0]["image_url"] == quiz_data["questions"][0]["image_url"]
+
+    def test_delete_quiz_pack(self):
+        quiz_data = {
+            "quiz_title": "Delete Me",
+            "questions": [{"id": 1, "text": "Q?", "options": ["A", "B"], "answer_index": 0}],
+        }
+        pack = client.post("/quiz-packs", json={"quiz": quiz_data}, headers=AUTH_HEADERS).json()["pack"]
+        res = client.delete(f"/quiz-packs/{pack['id']}", headers=AUTH_HEADERS)
+        assert res.status_code == 200
+        list_res = client.get("/quiz-packs", headers=AUTH_HEADERS)
+        assert all(p["id"] != pack["id"] for p in list_res.json()["packs"])
+
+
+# ---------------------------------------------------------------------------
+# Media Uploads
+# ---------------------------------------------------------------------------
+
+class TestMediaUploads:
+    def test_media_status_reports_upload_config(self, monkeypatch):
+        monkeypatch.setattr(config, "MEDIA_UPLOAD_URL", "https://media.revelryapp.me/apps/localplay/upload.php")
+        monkeypatch.setattr(config, "MEDIA_PUBLIC_BASE_URL", "https://media.revelryapp.me/apps/localplay")
+        monkeypatch.setattr(config, "MEDIA_UPLOAD_SECRET", "super-secret")
+        res = client.get("/media/status")
+        assert res.status_code == 200
+        assert res.json()["upload_available"] is True
+        assert res.json()["storage_backend"] == "ionos"
+
+    def test_create_media_upload_url_and_finalize(self, monkeypatch):
+        monkeypatch.setattr(config, "MEDIA_UPLOAD_URL", "https://media.revelryapp.me/apps/localplay/upload.php")
+        monkeypatch.setattr(config, "MEDIA_PUBLIC_BASE_URL", "https://media.revelryapp.me/apps/localplay")
+        monkeypatch.setattr(config, "MEDIA_UPLOAD_SECRET", "super-secret")
+        monkeypatch.setattr(config, "MEDIA_PATH_PREFIX", "gamma")
+        res = client.post(
+            "/media/upload-url",
+            json={"filename": "pic.webp", "mime_type": "image/webp", "bytes": 1234},
+            headers=AUTH_HEADERS,
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["asset"]["public_url"].startswith("https://media.revelryapp.me/apps/localplay/gamma/uploads/")
+        assert body["upload"]["fields"]["token"]
+
+        finalize = client.post(
+            f"/media/{body['asset']['id']}/finalize",
+            json={"bytes": 1234, "alt_text": "Alt"},
+            headers=AUTH_HEADERS,
+        )
+        assert finalize.status_code == 200
+        assert finalize.json()["asset"]["status"] == "ready"
 
 
 # ---------------------------------------------------------------------------

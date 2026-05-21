@@ -870,12 +870,12 @@ Backend: MEDIA_UPLOAD_SECRET
 Recommended backend env once uploads are implemented:
 
 ```env
-MEDIA_STORAGE_BACKEND=ionos
-MEDIA_CDN_BASE_URL=https://media.revelryapp.me/apps/localplay
+MEDIA_PUBLIC_BASE_URL=https://media.revelryapp.me/apps/localplay
 MEDIA_UPLOAD_URL=https://media.revelryapp.me/apps/localplay/upload.php
-MEDIA_DELETE_URL=https://media.revelryapp.me/apps/localplay/delete.php
 MEDIA_UPLOAD_SECRET=<same value as .upload_secret>
-MEDIA_ENABLE_UPLOADS=false
+MEDIA_PATH_PREFIX=gamma   # gamma; use prod in production
+MEDIA_ALLOWED_MIME_TYPES=image/png,image/jpeg,image/webp
+MEDIA_UPLOAD_TOKEN_TTL_SECONDS=900
 ```
 
 CORS:

@@ -4,6 +4,7 @@ import sqlite3
 import time
 import logging
 import threading
+import json
 from typing import Optional
 
 import config
@@ -111,6 +112,53 @@ def init_db():
             event_id TEXT PRIMARY KEY,
             processed_at INTEGER NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS custom_quiz_packs (
+            id TEXT PRIMARY KEY,
+            owner_wallet_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            question_count INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            deleted_at INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_custom_quiz_packs_owner_updated
+            ON custom_quiz_packs(owner_wallet_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS custom_quiz_questions (
+            id TEXT PRIMARY KEY,
+            pack_id TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            question_type TEXT NOT NULL DEFAULT 'multiple_choice',
+            text TEXT NOT NULL,
+            options TEXT NOT NULL,
+            answer_index INTEGER NOT NULL,
+            image_asset_id TEXT,
+            image_url TEXT,
+            image_alt TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY(pack_id) REFERENCES custom_quiz_packs(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_custom_quiz_questions_pack_position
+            ON custom_quiz_questions(pack_id, position);
+
+        CREATE TABLE IF NOT EXISTS media_assets (
+            id TEXT PRIMARY KEY,
+            owner_wallet_id TEXT NOT NULL,
+            storage_backend TEXT NOT NULL,
+            storage_path TEXT NOT NULL,
+            public_url TEXT NOT NULL,
+            status TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            bytes INTEGER NOT NULL DEFAULT 0,
+            alt_text TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_media_assets_owner_updated
+            ON media_assets(owner_wallet_id, updated_at DESC);
     """)
     conn.commit()
     # Add metadata column if missing (migration for existing databases)
@@ -1106,6 +1154,155 @@ def get_admin_stats() -> dict:
     }
 
 
+# --- Custom quiz packs ---
+
+def _row_to_quiz_pack(row: sqlite3.Row, questions: Optional[list[dict]] = None) -> dict:
+    pack = dict(row)
+    if questions is not None:
+        pack["questions"] = questions
+    return pack
+
+
+def _question_row_to_dict(row: sqlite3.Row) -> dict:
+    question = {
+        "id": row["id"],
+        "pack_id": row["pack_id"],
+        "position": row["position"],
+        "question_type": row["question_type"],
+        "text": row["text"],
+        "options": json.loads(row["options"]),
+        "answer_index": row["answer_index"],
+        "image_asset_id": row["image_asset_id"],
+        "image_url": row["image_url"],
+        "image_alt": row["image_alt"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+    return {k: v for k, v in question.items() if v is not None}
+
+
+def save_quiz_pack(owner_wallet_id: str, title: str, questions: list[dict], pack_id: Optional[str] = None) -> dict:
+    conn = _get_conn()
+    now = int(time.time())
+    pack_id = pack_id or os.urandom(16).hex()
+    existing = conn.execute(
+        "SELECT * FROM custom_quiz_packs WHERE id = ? AND owner_wallet_id = ? AND deleted_at IS NULL",
+        (pack_id, owner_wallet_id),
+    ).fetchone()
+    if existing:
+        created_at = existing["created_at"]
+    else:
+        created_at = now
+    conn.execute(
+        "INSERT INTO custom_quiz_packs (id, owner_wallet_id, title, status, question_count, created_at, updated_at, deleted_at) "
+        "VALUES (?, ?, ?, 'ready', ?, ?, ?, NULL) "
+        "ON CONFLICT(id) DO UPDATE SET title = excluded.title, status = 'ready', question_count = excluded.question_count, updated_at = excluded.updated_at, deleted_at = NULL "
+        "WHERE owner_wallet_id = excluded.owner_wallet_id",
+        (pack_id, owner_wallet_id, title, len(questions), created_at, now),
+    )
+    conn.execute("DELETE FROM custom_quiz_questions WHERE pack_id = ?", (pack_id,))
+    for index, q in enumerate(questions):
+        conn.execute(
+            "INSERT INTO custom_quiz_questions (id, pack_id, position, question_type, text, options, answer_index, image_asset_id, image_url, image_alt, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                f"{pack_id}_{index}",
+                pack_id,
+                index,
+                "true_false" if len(q.get("options", [])) == 2 else "multiple_choice",
+                q.get("text", ""),
+                json.dumps(q.get("options", [])),
+                q.get("answer_index", 0),
+                q.get("image_asset_id"),
+                q.get("image_url"),
+                q.get("image_alt"),
+                now,
+                now,
+            ),
+        )
+    conn.commit()
+    pack = get_quiz_pack(owner_wallet_id, pack_id)
+    if not pack:
+        raise RuntimeError("Failed to save quiz pack")
+    return pack
+
+
+def list_quiz_packs(owner_wallet_id: str, limit: int = 50) -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM custom_quiz_packs WHERE owner_wallet_id = ? AND deleted_at IS NULL "
+        "ORDER BY updated_at DESC LIMIT ?",
+        (owner_wallet_id, limit),
+    ).fetchall()
+    return [_row_to_quiz_pack(row) for row in rows]
+
+
+def get_quiz_pack(owner_wallet_id: str, pack_id: str) -> Optional[dict]:
+    conn = _get_conn()
+    pack = conn.execute(
+        "SELECT * FROM custom_quiz_packs WHERE id = ? AND owner_wallet_id = ? AND deleted_at IS NULL",
+        (pack_id, owner_wallet_id),
+    ).fetchone()
+    if not pack:
+        return None
+    questions = conn.execute(
+        "SELECT * FROM custom_quiz_questions WHERE pack_id = ? ORDER BY position ASC",
+        (pack_id,),
+    ).fetchall()
+    return _row_to_quiz_pack(pack, [_question_row_to_dict(row) for row in questions])
+
+
+def delete_quiz_pack(owner_wallet_id: str, pack_id: str) -> bool:
+    conn = _get_conn()
+    now = int(time.time())
+    cursor = conn.execute(
+        "UPDATE custom_quiz_packs SET status = 'deleted', deleted_at = ?, updated_at = ? "
+        "WHERE id = ? AND owner_wallet_id = ? AND deleted_at IS NULL",
+        (now, now, pack_id, owner_wallet_id),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def create_media_asset(asset_id: str, owner_wallet_id: str, storage_path: str, public_url: str, mime_type: str, bytes_size: int = 0, status: str = "pending", alt_text: str = "") -> dict:
+    conn = _get_conn()
+    now = int(time.time())
+    conn.execute(
+        "INSERT INTO media_assets (id, owner_wallet_id, storage_backend, storage_path, public_url, status, mime_type, bytes, alt_text, created_at, updated_at) "
+        "VALUES (?, ?, 'ionos', ?, ?, ?, ?, ?, ?, ?, ?)",
+        (asset_id, owner_wallet_id, storage_path, public_url, status, mime_type, bytes_size, alt_text, now, now),
+    )
+    conn.commit()
+    return get_media_asset(owner_wallet_id, asset_id) or {}
+
+
+def finalize_media_asset(owner_wallet_id: str, asset_id: str, bytes_size: int = 0, alt_text: str = "") -> Optional[dict]:
+    conn = _get_conn()
+    now = int(time.time())
+    updates = {"status": "ready", "updated_at": now}
+    if bytes_size > 0:
+        updates["bytes"] = bytes_size
+    if alt_text:
+        updates["alt_text"] = alt_text
+    assignments = ", ".join(f"{key} = ?" for key in updates)
+    values = list(updates.values()) + [asset_id, owner_wallet_id]
+    conn.execute(
+        f"UPDATE media_assets SET {assignments} WHERE id = ? AND owner_wallet_id = ?",
+        values,
+    )
+    conn.commit()
+    return get_media_asset(owner_wallet_id, asset_id)
+
+
+def get_media_asset(owner_wallet_id: str, asset_id: str) -> Optional[dict]:
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT * FROM media_assets WHERE id = ? AND owner_wallet_id = ?",
+        (asset_id, owner_wallet_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 if config.DB_BACKEND == "supabase":
     import supabase_db as _supabase_db
 
@@ -1155,6 +1352,13 @@ if config.DB_BACKEND == "supabase":
         "get_refund_debits_for_session",
         "mark_webhook_event_processed",
         "get_admin_stats",
+        "save_quiz_pack",
+        "list_quiz_packs",
+        "get_quiz_pack",
+        "delete_quiz_pack",
+        "create_media_asset",
+        "finalize_media_asset",
+        "get_media_asset",
     ]
     for _name in _SUPABASE_EXPORTS:
         globals()[_name] = getattr(_supabase_db, _name)

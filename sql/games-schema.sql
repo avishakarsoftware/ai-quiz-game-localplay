@@ -145,6 +145,59 @@ CREATE INDEX IF NOT EXISTS idx_games_generated_content_wallet
 CREATE INDEX IF NOT EXISTS idx_games_generated_content_type
   ON games_generated_content(content_type, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS games_quiz_packs (
+  id TEXT PRIMARY KEY,
+  owner_wallet_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft', 'ready', 'archived', 'deleted')),
+  question_count INTEGER NOT NULL DEFAULT 0 CHECK (question_count >= 0),
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  deleted_at BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_games_quiz_packs_owner_updated
+  ON games_quiz_packs(owner_wallet_id, updated_at DESC)
+  WHERE deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS games_quiz_questions (
+  id TEXT PRIMARY KEY,
+  pack_id TEXT NOT NULL REFERENCES games_quiz_packs(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL CHECK (position >= 0),
+  question_type TEXT NOT NULL DEFAULT 'multiple_choice'
+    CHECK (question_type IN ('multiple_choice', 'true_false')),
+  text TEXT NOT NULL,
+  options JSONB NOT NULL,
+  answer_index INTEGER NOT NULL CHECK (answer_index >= 0),
+  image_asset_id TEXT,
+  image_url TEXT,
+  image_alt TEXT,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_games_quiz_questions_pack_position
+  ON games_quiz_questions(pack_id, position);
+
+CREATE TABLE IF NOT EXISTS games_media_assets (
+  id TEXT PRIMARY KEY,
+  owner_wallet_id TEXT NOT NULL,
+  storage_backend TEXT NOT NULL,
+  storage_path TEXT NOT NULL,
+  public_url TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'ready', 'failed', 'deleted')),
+  mime_type TEXT NOT NULL,
+  bytes INTEGER NOT NULL DEFAULT 0 CHECK (bytes >= 0),
+  alt_text TEXT,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_games_media_assets_owner_updated
+  ON games_media_assets(owner_wallet_id, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS games_game_history (
   id BIGSERIAL PRIMARY KEY,
   room_code TEXT NOT NULL,

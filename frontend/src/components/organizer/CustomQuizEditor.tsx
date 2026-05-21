@@ -3,6 +3,7 @@ import { type Question, type Quiz, ANSWER_STYLES } from '../../types';
 import { useSwipeBack } from '../../utils/useSwipeBack';
 import { mediaUrl } from '../../utils/media';
 import GameImage from '../media/GameImage';
+import { apiFetch } from '../../utils/api';
 
 type QuestionType = 'multiple_choice' | 'true_false';
 
@@ -19,6 +20,9 @@ interface DraftQuestion {
 interface CustomQuizEditorProps {
     onBack: () => void;
     onReview: (quiz: Quiz) => void;
+    onSave?: (quiz: Quiz, packId?: string) => Promise<string | void> | string | void;
+    initialQuiz?: Quiz | null;
+    packId?: string;
 }
 
 interface DraftData {
@@ -88,6 +92,25 @@ function toQuiz(title: string, questions: DraftQuestion[]): Quiz {
     };
 }
 
+function draftFromQuiz(quiz: Quiz): DraftData {
+    const questions = quiz.questions.map((question) => ({
+        id: `q_${question.id}`,
+        type: question.options.length === 2 ? 'true_false' as const : 'multiple_choice' as const,
+        text: question.text,
+        options: question.options.length === 2 ? ['True', 'False'] : [...question.options, '', '', '', ''].slice(0, 4),
+        answerIndex: question.answer_index,
+        imageUrl: question.image_url || '',
+        imageAlt: question.image_alt || '',
+    }));
+    const fallbackQuestion = createQuestion();
+    const normalizedQuestions = questions.length > 0 ? questions : [fallbackQuestion];
+    return {
+        title: quiz.quiz_title || 'Custom Quiz',
+        questions: normalizedQuestions,
+        selectedId: normalizedQuestions[0].id,
+    };
+}
+
 function normalizeDraftQuestion(question: Partial<DraftQuestion>): DraftQuestion {
     const fallback = createQuestion();
     const type = question.type === 'true_false' ? 'true_false' : 'multiple_choice';
@@ -129,12 +152,15 @@ function loadDraft(): DraftData {
     }
 }
 
-export default function CustomQuizEditor({ onBack, onReview }: CustomQuizEditorProps) {
+export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz, packId }: CustomQuizEditorProps) {
     const swipeProgress = useSwipeBack(onBack);
-    const [initialDraft] = useState(loadDraft);
+    const [initialDraft] = useState(() => initialQuiz ? draftFromQuiz(initialQuiz) : loadDraft());
     const [title, setTitle] = useState(initialDraft.title);
     const [questions, setQuestions] = useState<DraftQuestion[]>(initialDraft.questions);
     const [selectedId, setSelectedId] = useState<string>(initialDraft.selectedId);
+    const [saving, setSaving] = useState(false);
+    const [uploadingQuestionId, setUploadingQuestionId] = useState<string | null>(null);
+    const [statusMessage, setStatusMessage] = useState('');
 
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ title, questions, selectedId }));
@@ -203,6 +229,58 @@ export default function CustomQuizEditor({ onBack, onReview }: CustomQuizEditorP
         onReview(toQuiz(title, questions));
     };
 
+    const handleSave = async () => {
+        if (!canReview || !onSave) return;
+        setSaving(true);
+        setStatusMessage('');
+        try {
+            await onSave(toQuiz(title, questions), packId);
+            setStatusMessage('Saved');
+        } catch {
+            setStatusMessage('Save failed');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const uploadQuestionImage = async (question: DraftQuestion, file: File) => {
+        setUploadingQuestionId(question.id);
+        setStatusMessage('');
+        try {
+            const signRes = await apiFetch('/media/upload-url', {
+                method: 'POST',
+                body: JSON.stringify({
+                    filename: file.name,
+                    mime_type: file.type,
+                    bytes: file.size,
+                    purpose: 'custom_quiz_question',
+                }),
+            });
+            if (!signRes.ok) throw new Error('sign_failed');
+            const signed = await signRes.json();
+            const form = new FormData();
+            Object.entries(signed.upload.fields as Record<string, string>).forEach(([key, value]) => form.append(key, value));
+            form.append('file', file);
+            const uploadRes = await fetch(signed.upload.url, { method: 'POST', body: form });
+            if (!uploadRes.ok) throw new Error('upload_failed');
+            const finalizeRes = await apiFetch(`/media/${signed.asset.id}/finalize`, {
+                method: 'POST',
+                body: JSON.stringify({ bytes: file.size, alt_text: question.imageAlt || question.text }),
+            });
+            if (!finalizeRes.ok) throw new Error('finalize_failed');
+            const finalized = await finalizeRes.json();
+            updateQuestion(question.id, {
+                imageUrl: finalized.asset.public_url,
+                imageAlt: question.imageAlt || question.text,
+            });
+            setStatusMessage('Image uploaded');
+        } catch {
+            setStatusMessage('Image upload failed');
+        } finally {
+            setUploadingQuestionId(null);
+        }
+    };
+
     const selectedIndex = useMemo(
         () => Math.max(0, questions.findIndex((question) => question.id === selectedQuestion?.id)),
         [questions, selectedQuestion?.id],
@@ -222,6 +300,7 @@ export default function CustomQuizEditor({ onBack, onReview }: CustomQuizEditorP
                 <div className="hero-icon mb-3">✍️</div>
                 <h1 className="hero-title">Create Your Own</h1>
                 <p className="text-[--text-tertiary] mt-2">{validCount} of {questions.length} questions ready</p>
+                {statusMessage && <p className="text-[--text-tertiary] text-sm mt-1">{statusMessage}</p>}
             </div>
 
             <div className="space-y-4 flex-1 overflow-y-auto no-scrollbar pb-4">
@@ -364,6 +443,20 @@ export default function CustomQuizEditor({ onBack, onReview }: CustomQuizEditorP
                                     placeholder="IONOS media URL or /media asset path"
                                     aria-label="Question image URL"
                                 />
+                                <label className="btn btn-secondary w-full mb-2" style={{ height: 40, fontSize: 13 }}>
+                                    {uploadingQuestionId === selectedQuestion.id ? 'Uploading...' : 'Upload Image'}
+                                    <input
+                                        type="file"
+                                        accept="image/png,image/jpeg,image/webp"
+                                        className="hidden"
+                                        disabled={uploadingQuestionId === selectedQuestion.id}
+                                        onChange={(event) => {
+                                            const file = event.target.files?.[0];
+                                            event.target.value = '';
+                                            if (file) void uploadQuestionImage(selectedQuestion, file);
+                                        }}
+                                    />
+                                </label>
                                 {selectedQuestion.imageUrl.trim() && !isAllowedImageReference(selectedQuestion.imageUrl) && (
                                     <p className="text-xs text-[--accent-danger] mb-2">Use a LocalPlay media URL from IONOS or /media.</p>
                                 )}
@@ -387,6 +480,11 @@ export default function CustomQuizEditor({ onBack, onReview }: CustomQuizEditorP
                         <polyline points="15 18 9 12 15 6" />
                     </svg>
                 </button>
+                {onSave && (
+                    <button onClick={handleSave} disabled={!canReview || saving} className="btn btn-secondary" style={{ flexShrink: 0, paddingLeft: 16, paddingRight: 16 }}>
+                        {saving ? 'Saving' : 'Save'}
+                    </button>
+                )}
                 <button onClick={handleReview} disabled={!canReview} className="btn btn-primary btn-glow" style={{ flex: 1 }}>
                     Review & Start
                 </button>

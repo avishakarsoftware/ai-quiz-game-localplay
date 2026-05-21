@@ -15,6 +15,7 @@ import string
 import secrets
 import base64
 import hmac
+import hashlib
 import logging
 import socket as socketlib
 
@@ -48,6 +49,7 @@ API_PREFIXES = (
     "/providers",
     "/purchases",
     "/quiz",
+    "/quiz-packs",
     "/room",
     "/sd",
     "/system",
@@ -473,11 +475,101 @@ def _strip_answers(quiz_data: dict) -> dict:
     return stripped
 
 
+def _pack_to_quiz(pack: dict) -> dict:
+    return {
+        "quiz_title": pack.get("title", "Custom Quiz"),
+        "questions": [
+            {
+                "id": index + 1,
+                "text": q.get("text", ""),
+                "options": q.get("options", []),
+                "answer_index": q.get("answer_index", 0),
+                "image_prompt": "",
+                **({"image_asset_id": q["image_asset_id"]} if q.get("image_asset_id") else {}),
+                **({"image_url": q["image_url"]} if q.get("image_url") else {}),
+                **({"image_alt": q["image_alt"]} if q.get("image_alt") else {}),
+            }
+            for index, q in enumerate(pack.get("questions", []))
+        ],
+    }
+
+
 @app.get("/quiz/{quiz_id}")
 async def get_quiz(quiz_id: str):
     if quiz_id not in quizzes:
         raise HTTPException(status_code=404, detail="Quiz not found")
     return _strip_answers(quizzes[quiz_id])
+
+
+class QuizPackSaveRequest(BaseModel):
+    pack_id: Optional[str] = None
+    quiz: dict
+
+    @field_validator('quiz')
+    @classmethod
+    def validate_quiz(cls, v: dict) -> dict:
+        QuizImportRequest.validate_quiz(v)
+        return v
+
+
+@app.get("/quiz-packs")
+async def list_custom_quiz_packs(req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return {"packs": db.list_quiz_packs(wallet_id)}
+
+
+@app.post("/quiz-packs")
+async def save_custom_quiz_pack(request: QuizPackSaveRequest, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    quiz_data = _sanitize_quiz(request.quiz)
+    if not _validate_quiz(quiz_data, attempt=0):
+        raise HTTPException(status_code=422, detail="Invalid quiz data")
+    pack = db.save_quiz_pack(wallet_id, quiz_data.get("quiz_title", "Custom Quiz"), quiz_data["questions"], request.pack_id)
+    return {"pack": pack}
+
+
+@app.get("/quiz-packs/{pack_id}")
+async def get_custom_quiz_pack(pack_id: str, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    pack = db.get_quiz_pack(wallet_id, pack_id)
+    if not pack:
+        raise HTTPException(status_code=404, detail="Quiz pack not found")
+    return {"pack": pack, "quiz": _pack_to_quiz(pack)}
+
+
+@app.delete("/quiz-packs/{pack_id}")
+async def delete_custom_quiz_pack(pack_id: str, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not db.delete_quiz_pack(wallet_id, pack_id):
+        raise HTTPException(status_code=404, detail="Quiz pack not found")
+    return {"status": "deleted"}
+
+
+@app.post("/quiz-packs/{pack_id}/materialize")
+async def materialize_custom_quiz_pack(pack_id: str, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    pack = db.get_quiz_pack(wallet_id, pack_id)
+    if not pack:
+        raise HTTPException(status_code=404, detail="Quiz pack not found")
+    quiz_data = _sanitize_quiz(_pack_to_quiz(pack))
+    if not _validate_quiz(quiz_data, attempt=0):
+        raise HTTPException(status_code=422, detail="Invalid quiz pack")
+    _evict_old_content()
+    quiz_id = str(uuid.uuid4())
+    quizzes[quiz_id] = quiz_data
+    quiz_timestamps[quiz_id] = time.time()
+    content_owners[quiz_id] = wallet_id
+    return {"quiz_id": quiz_id, "quiz": _strip_answers(quiz_data)}
 
 
 class QuizUpdateRequest(BaseModel):
@@ -606,16 +698,83 @@ async def get_question_image(quiz_id: str, question_id: int):
 async def media_status():
     """Report shared media platform capabilities."""
     sd_available = await image_engine.is_available()
+    upload_available = bool(config.MEDIA_UPLOAD_URL and config.MEDIA_PUBLIC_BASE_URL and config.MEDIA_UPLOAD_SECRET)
     return {
-        "upload_available": False,
+        "upload_available": upload_available,
         "generation_available": sd_available,
         "providers": [
             {"id": "stable_diffusion", "name": "Stable Diffusion", "available": sd_available},
         ],
         "max_upload_bytes": config.MAX_IMAGE_SIZE_BYTES,
-        "allowed_mime_types": ["image/png"],
-        "storage_backend": "memory",
+        "allowed_mime_types": list(config.MEDIA_ALLOWED_MIME_TYPES),
+        "storage_backend": "ionos" if upload_available else "memory",
     }
+
+
+class MediaUploadUrlRequest(BaseModel):
+    filename: str
+    mime_type: str
+    bytes: int
+    purpose: str = "custom_quiz_question"
+
+
+class MediaFinalizeRequest(BaseModel):
+    bytes: int = 0
+    alt_text: str = ""
+
+
+def _sign_media_upload(path: str, expires: int, mime_type: str, bytes_size: int) -> str:
+    payload = f"{path}\n{expires}\n{mime_type}\n{bytes_size}".encode()
+    return hmac.new(config.MEDIA_UPLOAD_SECRET.encode(), payload, hashlib.sha256).hexdigest()
+
+
+@app.post("/media/upload-url")
+async def create_media_upload_url(request: MediaUploadUrlRequest, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if not (config.MEDIA_UPLOAD_URL and config.MEDIA_PUBLIC_BASE_URL and config.MEDIA_UPLOAD_SECRET):
+        raise HTTPException(status_code=503, detail="Media uploads are not configured")
+    if request.mime_type not in config.MEDIA_ALLOWED_MIME_TYPES:
+        raise HTTPException(status_code=422, detail="Unsupported image type")
+    if request.bytes <= 0 or request.bytes > config.MAX_IMAGE_SIZE_BYTES:
+        raise HTTPException(status_code=422, detail="Image is too large")
+
+    ext_by_mime = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
+    ext = ext_by_mime.get(request.mime_type)
+    if not ext:
+        raise HTTPException(status_code=422, detail="Unsupported image type")
+    asset_id = f"img_{uuid.uuid4().hex}"
+    date_part = time.strftime("%Y/%m/%d", time.gmtime())
+    storage_path = f"{config.MEDIA_PATH_PREFIX}/uploads/{wallet_id[:12]}/{date_part}/{asset_id}.{ext}"
+    public_url = f"{config.MEDIA_PUBLIC_BASE_URL}/{storage_path}"
+    expires = int(time.time()) + config.MEDIA_UPLOAD_TOKEN_TTL_SECONDS
+    token = _sign_media_upload(storage_path, expires, request.mime_type, request.bytes)
+    asset = db.create_media_asset(asset_id, wallet_id, storage_path, public_url, request.mime_type, request.bytes)
+    return {
+        "asset": asset,
+        "upload": {
+            "url": config.MEDIA_UPLOAD_URL,
+            "fields": {
+                "path": storage_path,
+                "expires": str(expires),
+                "mime_type": request.mime_type,
+                "bytes": str(request.bytes),
+                "token": token,
+            },
+        },
+    }
+
+
+@app.post("/media/{asset_id}/finalize")
+async def finalize_media_upload(asset_id: str, request: MediaFinalizeRequest, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    asset = db.finalize_media_asset(wallet_id, asset_id, request.bytes, request.alt_text)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Media asset not found")
+    return {"asset": asset}
 
 
 @app.get("/media/{asset_id}")

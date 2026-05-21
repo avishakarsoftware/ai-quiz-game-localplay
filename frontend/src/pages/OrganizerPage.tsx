@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry } from '../types';
+import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending } from '../utils/storage';
@@ -26,7 +26,7 @@ import ErrorModal from '../components/ErrorModal';
 import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
 
 export default function OrganizerPage() {
     const { config: remoteConfig } = useRemoteConfigContext();
@@ -37,6 +37,9 @@ export default function OrganizerPage() {
     const [numQuestions, setNumQuestions] = useState(10);
     const [quiz, setQuiz] = useState<Quiz | null>(null);
     const [quizOrigin, setQuizOrigin] = useState<'ai' | 'custom'>('ai');
+    const [editingPackId, setEditingPackId] = useState<string | undefined>(undefined);
+    const [libraryPacks, setLibraryPacks] = useState<QuizPack[]>([]);
+    const [libraryLoading, setLibraryLoading] = useState(false);
     const [mltGame, setMltGame] = useState<MLTGame | null>(null);
     const [drawingGame, setDrawingGame] = useState<DrawingGame | null>(null);
     const [contentId, setContentId] = useState('');
@@ -85,7 +88,7 @@ export default function OrganizerPage() {
     // Listen for home navigation from hamburger menu
     useEffect(() => {
         const handler = () => {
-            if (stateRef.current === 'PROMPT' || stateRef.current === 'QUIZ_VARIANT_PROMPT' || stateRef.current === 'CUSTOM_QUIZ' || stateRef.current === 'MLT_PROMPT' || stateRef.current === 'DRAWING_PROMPT' || stateRef.current === 'SELECT_GAME') {
+            if (stateRef.current === 'PROMPT' || stateRef.current === 'QUIZ_VARIANT_PROMPT' || stateRef.current === 'CUSTOM_QUIZ' || stateRef.current === 'QUIZ_LIBRARY' || stateRef.current === 'MLT_PROMPT' || stateRef.current === 'DRAWING_PROMPT' || stateRef.current === 'SELECT_GAME') {
                 setState('SELECT_GAME');
             }
         };
@@ -365,6 +368,95 @@ export default function OrganizerPage() {
         } catch {
             setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
             setState('CUSTOM_QUIZ');
+        }
+    };
+
+    const saveCustomQuizPack = async (customQuiz: Quiz, packId?: string) => {
+        const res = await fetch(apiUrl('/quiz-packs'), {
+            method: 'POST',
+            headers: apiHeaders(),
+            body: JSON.stringify({ pack_id: packId, quiz: customQuiz }),
+        });
+        if (!res.ok) throw new Error('save_failed');
+        const data = await res.json();
+        setEditingPackId(data.pack.id);
+        track('custom_quiz_saved', { num_questions: customQuiz.questions.length });
+        return data.pack.id as string;
+    };
+
+    const loadQuizLibrary = async () => {
+        setLibraryLoading(true);
+        try {
+            const res = await fetch(apiUrl('/quiz-packs'), { headers: apiHeaders() });
+            if (!res.ok) throw new Error('load_failed');
+            const data = await res.json();
+            setLibraryPacks(data.packs || []);
+        } catch {
+            setErrorModal({ title: 'Quiz Library', message: 'Could not load your saved quizzes.' });
+        } finally {
+            setLibraryLoading(false);
+        }
+    };
+
+    const openQuizLibrary = () => {
+        setGameType('quiz');
+        setState('QUIZ_LIBRARY');
+        void loadQuizLibrary();
+    };
+
+    const editQuizPack = async (packId: string) => {
+        setLibraryLoading(true);
+        try {
+            const res = await fetch(apiUrl(`/quiz-packs/${packId}`), { headers: apiHeaders() });
+            if (!res.ok) throw new Error('load_failed');
+            const data = await res.json();
+            setEditingPackId(packId);
+            setQuiz(data.quiz);
+            setQuizOrigin('custom');
+            setState('CUSTOM_QUIZ');
+        } catch {
+            setErrorModal({ title: 'Quiz Library', message: 'Could not open that quiz.' });
+        } finally {
+            setLibraryLoading(false);
+        }
+    };
+
+    const startQuizPack = async (packId: string) => {
+        setState('LOADING');
+        try {
+            const res = await fetch(apiUrl(`/quiz-packs/${packId}/materialize`), {
+                method: 'POST',
+                headers: apiHeaders(),
+            });
+            if (!res.ok) throw new Error('start_failed');
+            const data = await res.json();
+            const fullRes = await fetch(apiUrl(`/quiz-packs/${packId}`), { headers: apiHeaders() });
+            const fullData = fullRes.ok ? await fullRes.json() : null;
+            const customQuiz = fullData?.quiz || data.quiz;
+            setGameType('quiz');
+            setQuizOrigin('custom');
+            setQuiz(customQuiz);
+            setContentId(data.quiz_id);
+            setTotalQuestions(customQuiz.questions.length);
+            setQuestionImages({});
+            setEditingPackId(packId);
+            setState('REVIEW');
+        } catch {
+            setErrorModal({ title: 'Quiz Library', message: 'Could not start that quiz.' });
+            setState('QUIZ_LIBRARY');
+        }
+    };
+
+    const deleteQuizPack = async (packId: string) => {
+        try {
+            const res = await fetch(apiUrl(`/quiz-packs/${packId}`), {
+                method: 'DELETE',
+                headers: apiHeaders(),
+            });
+            if (!res.ok) throw new Error('delete_failed');
+            setLibraryPacks((packs) => packs.filter((pack) => pack.id !== packId));
+        } catch {
+            setErrorModal({ title: 'Quiz Library', message: 'Could not delete that quiz.' });
         }
     };
 
@@ -694,8 +786,11 @@ export default function OrganizerPage() {
                         onGenerate={generateQuiz}
                         onCreateCustom={() => {
                             setGameType('quiz');
+                            setQuiz(null);
+                            setEditingPackId(undefined);
                             setState('CUSTOM_QUIZ');
                         }}
+                        onOpenLibrary={openQuizLibrary}
                     />
                 )}
 
@@ -703,7 +798,75 @@ export default function OrganizerPage() {
                     <CustomQuizEditor
                         onBack={() => setState('PROMPT')}
                         onReview={importCustomQuiz}
+                        onSave={saveCustomQuizPack}
+                        initialQuiz={quizOrigin === 'custom' ? quiz : null}
+                        packId={editingPackId}
                     />
+                )}
+
+                {state === 'QUIZ_LIBRARY' && (
+                    <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
+                        <div className="text-center py-5">
+                            <div className="hero-icon mb-3">📚</div>
+                            <h1 className="hero-title">My Quizzes</h1>
+                            <p className="text-[--text-tertiary] mt-2">Saved custom quiz packs</p>
+                        </div>
+                        <div className="space-y-3 flex-1 overflow-y-auto no-scrollbar pb-4">
+                            {libraryLoading && <div className="review-question-card"><div className="p-4 text-center text-[--text-tertiary]">Loading...</div></div>}
+                            {!libraryLoading && libraryPacks.length === 0 && (
+                                <div className="review-question-card">
+                                    <div className="p-4 text-center">
+                                        <p className="font-semibold mb-2">No saved quizzes yet</p>
+                                        <button
+                                            className="btn btn-primary"
+                                            onClick={() => {
+                                                setQuiz(null);
+                                                setEditingPackId(undefined);
+                                                setState('CUSTOM_QUIZ');
+                                            }}
+                                        >
+                                            Create Quiz
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            {libraryPacks.map((pack) => (
+                                <div key={pack.id} className="review-question-card">
+                                    <div className="p-4">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div style={{ minWidth: 0 }}>
+                                                <p className="font-semibold truncate">{pack.title}</p>
+                                                <p className="text-sm text-[--text-tertiary]">{pack.question_count} questions</p>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button className="review-action-btn" title="Start" onClick={() => void startQuizPack(pack.id)}>▶</button>
+                                                <button className="review-action-btn" title="Edit" onClick={() => void editQuizPack(pack.id)}>✎</button>
+                                                <button className="review-action-btn review-action-delete" title="Delete" onClick={() => void deleteQuizPack(pack.id)}>✕</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="pb-4" style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={() => setState('PROMPT')} className="btn btn-secondary" style={{ flexShrink: 0, paddingLeft: 16, paddingRight: 16 }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="15 18 9 12 15 6" />
+                                </svg>
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                style={{ flex: 1 }}
+                                onClick={() => {
+                                    setQuiz(null);
+                                    setEditingPackId(undefined);
+                                    setState('CUSTOM_QUIZ');
+                                }}
+                            >
+                                New Quiz
+                            </button>
+                        </div>
+                    </div>
                 )}
 
                 {state === 'QUIZ_VARIANT_PROMPT' && (
