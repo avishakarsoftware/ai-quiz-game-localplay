@@ -485,7 +485,7 @@ MEDIA_RETENTION_DAYS=30
 Gamma:
 
 ```env
-MEDIA_PATH_PREFIX=games_gamma_
+MEDIA_PATH_PREFIX=gamma
 ```
 
 Do not use Gemma for image work. Gemini multimodal/image providers should be the default direction when using Google-hosted capabilities.
