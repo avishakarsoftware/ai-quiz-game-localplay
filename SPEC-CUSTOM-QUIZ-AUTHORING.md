@@ -30,16 +30,16 @@ LocalPlay already has most of the quiz runtime pieces:
 
 Current gaps:
 
-- There is no "Start from blank quiz" flow.
-- Hosts must already have generated/imported content before they can edit.
+- The "Start from blank quiz" flow is implemented through **Create Your Own**.
+- Hosts can manually author content before any AI generation/import step.
 - Imported/generated quiz content is process-memory backed.
-- There is no durable custom quiz library for signed-in hosts.
-- There is no autosave or draft state.
-- There is no question-builder UX for adding/reordering questions.
-- There is no host upload flow for attaching images to custom quiz questions.
+- Durable custom quiz library support is implemented through `/quiz-packs` and **My Quizzes**.
+- Browser-local draft autosave is implemented; server-side debounce autosave is still backlog.
+- The question-builder UX supports add, duplicate, delete, reorder, multiple choice, true/false, and correct-answer selection.
+- Host upload flow for attaching images is implemented through signed IONOS uploads.
 - Current Stable Diffusion image generation is local/dev-only and should not be treated as available in gamma or production.
 - There is no friendly CSV/paste import.
-- There is no way to duplicate a past custom quiz pack.
+- There is no saved-pack duplicate UI yet.
 
 ## Product Goals
 
@@ -275,12 +275,22 @@ However, launching a custom quiz can still materialize a runtime quiz object in 
 
 ## API Surface
 
-All endpoints must use existing LocalPlay session/wallet ownership. Anonymous wallets can create local/runtime content, but durable Supabase library writes should require a signed-in user or a clear product decision to persist anonymous wallet content.
+All endpoints must use existing LocalPlay session/wallet ownership. The current implementation allows durable writes for the resolved wallet ID, whether that wallet comes from a signed-in user session or an anonymous device UUID. Product can later tighten this to signed-in users only if cross-device library behavior becomes the default expectation.
+
+Implemented endpoints:
+
+- `GET /quiz-packs`
+- `POST /quiz-packs`
+- `GET /quiz-packs/{pack_id}`
+- `DELETE /quiz-packs/{pack_id}`
+- `POST /quiz-packs/{pack_id}/materialize`
+
+Planned endpoints below remain backlog unless marked implemented.
 
 ### List Quiz Packs
 
 ```http
-GET /quiz-packs?limit=50&cursor=...
+GET /quiz-packs
 ```
 
 Returns only packs owned by the current wallet/user.
@@ -296,12 +306,11 @@ Returns only packs owned by the current wallet/user.
       "updated_at": 1779290000,
       "last_played_at": null
     }
-  ],
-  "next_cursor": null
+  ]
 }
 ```
 
-### Create Pack
+### Save Pack
 
 ```http
 POST /quiz-packs
@@ -309,12 +318,15 @@ POST /quiz-packs
 
 ```json
 {
-  "title": "Avi Birthday Trivia",
-  "description": "Questions for Saturday night"
+  "pack_id": "optional_existing_pack_id",
+  "quiz": {
+    "quiz_title": "Avi Birthday Trivia",
+    "questions": []
+  }
 }
 ```
 
-Creates an empty draft pack.
+Creates or replaces a pack from the existing runtime quiz JSON shape.
 
 ### Get Pack
 
@@ -325,6 +337,8 @@ GET /quiz-packs/{pack_id}
 Returns pack metadata and questions in runtime quiz-compatible order.
 
 ### Update Pack Metadata
+
+Backlog.
 
 ```http
 PATCH /quiz-packs/{pack_id}
@@ -338,6 +352,8 @@ Allowed fields:
 - `metadata`
 
 ### Add Question
+
+Backlog. The current implementation saves the whole quiz pack through `POST /quiz-packs`.
 
 ```http
 POST /quiz-packs/{pack_id}/questions
@@ -355,6 +371,8 @@ POST /quiz-packs/{pack_id}/questions
 
 ### Update Question
 
+Backlog.
+
 ```http
 PATCH /quiz-packs/{pack_id}/questions/{question_id}
 ```
@@ -363,6 +381,8 @@ Partial update. Server validates the full resulting question.
 
 ### Delete Question
 
+Backlog as an endpoint; the current editor deletes locally and saves the whole pack.
+
 ```http
 DELETE /quiz-packs/{pack_id}/questions/{question_id}
 ```
@@ -370,6 +390,8 @@ DELETE /quiz-packs/{pack_id}/questions/{question_id}
 Deletes the question and compacts positions.
 
 ### Reorder Questions
+
+Backlog as an endpoint; the current editor reorders locally and saves the whole pack.
 
 ```http
 POST /quiz-packs/{pack_id}/questions/reorder
@@ -385,6 +407,8 @@ Server should perform the reorder atomically.
 
 ### Duplicate Pack
 
+Backlog.
+
 ```http
 POST /quiz-packs/{pack_id}/duplicate
 ```
@@ -392,6 +416,8 @@ POST /quiz-packs/{pack_id}/duplicate
 Creates a new private draft copy owned by the current host.
 
 ### Import Existing JSON Into Pack
+
+Backlog as a separate endpoint. The implemented `POST /quiz-packs` accepts existing quiz JSON in the `quiz` field.
 
 ```http
 POST /quiz-packs/import
@@ -416,6 +442,8 @@ Accepts the existing exported quiz JSON shape:
 ```
 
 ### Export Pack
+
+Backlog.
 
 ```http
 GET /quiz-packs/{pack_id}/export
@@ -537,28 +565,33 @@ Image:
 - `image_alt` should default to the question text but remain editable for accessibility.
 - If `image_asset_id` is present, server must verify ownership or active attachment rights.
 - If `image_url` is external, reject for durable saved packs unless explicitly allowed.
-- Uploads must use the media safety rules from `SPEC-IMAGE-GAMES.md`: signed IONOS upload paths, size/type validation, content sniffing, metadata stripping, normalized dimensions/format, ownership metadata, and retention controls.
+- Uploads must use the media safety rules from `SPEC-IMAGE-GAMES.md`: signed IONOS upload paths, size/type validation, content sniffing, ownership metadata, and retention controls. Metadata stripping and normalized dimensions/format are desired follow-up hardening.
 
 ## Persistence Strategy
 
 ### V1 Local/Runtime Behavior
 
-For the fastest implementation:
+Implemented behavior:
 
 - Let anonymous users draft locally in `localStorage`.
 - When they tap **Review & Start**, call existing `/quiz/import` with the assembled quiz JSON.
 - Use returned `quiz_id` with existing `/room/create`.
-- This gives a working custom quiz creator without Supabase pack persistence.
+- This gives a working custom quiz creator even without saving to the library.
 
-This is useful but not the final product because drafts are browser-local and runtime content is still process-memory backed.
+Runtime content is still materialized into the existing in-memory quiz store when a quiz starts. Durable reuse comes from saved quiz packs.
 
 ### V2 Durable Library
 
-Use Supabase tables above.
+Implemented:
 
 - Signed-in hosts save packs to `games_quiz_packs`.
 - Gamma uses `games_gamma_quiz_packs`.
-- Autosave after 500-1000ms debounce.
+- `GET /quiz-packs`, `POST /quiz-packs`, `GET /quiz-packs/{pack_id}`, `DELETE /quiz-packs/{pack_id}`, and `POST /quiz-packs/{pack_id}/materialize` are implemented.
+- SQLite tables mirror the Supabase schema for local/dev.
+
+Backlog:
+
+- Autosave signed-in packs after 500-1000ms debounce.
 - Show clear save state:
   - Saving...
   - Saved
@@ -567,18 +600,22 @@ Use Supabase tables above.
 
 ### Image Persistence
 
-Custom quiz question images require persisted media before they are enabled in gamma or production.
+Custom quiz question image uploads are implemented using IONOS for files and backend/Supabase metadata.
 
-Required behavior:
+Implemented behavior:
 
 - Request a signed upload target from the backend before uploading.
 - Upload image files to IONOS media storage through the signed PHP handler described in `SPEC-IMAGE-GAMES.md` and `DEPLOY.md`.
 - Store media metadata in the shared media asset model from `SPEC-IMAGE-GAMES.md`.
-- Save `image_asset_id` on `games_quiz_questions`.
+- Save `image_url`, `image_alt`, and media metadata; `image_asset_id` is supported by the runtime shape and remains the preferred durable reference.
 - Resolve `image_url` when reading/materializing packs so the quiz runtime receives the same shape as generated quizzes.
 - Keep uploaded images private in product UX and metadata; the underlying IONOS file URLs are public CDN-style bearer URLs with unguessable UUID paths.
 - Expose images through `/media/{asset_id}` or direct `https://media.revelryapp.me/apps/localplay/...` URLs only after ownership/attachment checks.
-- Strip EXIF and normalize oversized uploads before storage.
+
+Backlog:
+
+- Strip EXIF and normalize uploaded images to a canonical web-safe format before storage.
+- Add remove/replace metadata cleanup and signed delete.
 - If a media asset is missing, deleted, or expired, the editor should show a repair state and the runtime should degrade to a text-only question instead of crashing.
 
 Stable Diffusion note:
@@ -668,6 +705,8 @@ V1 can defer paste parsing and provide JSON/CSV only.
 
 Purpose: ship the easy create-your-own flow without new persistence tables.
 
+Status: implemented in commit `c3bd58e`.
+
 Backend:
 
 1. Reuse `/quiz/import`, `/quiz/{quiz_id}`, `PUT /quiz/{quiz_id}`, `/quiz/{quiz_id}/export`, and `/room/create`.
@@ -694,21 +733,23 @@ Acceptance:
 
 ### Phase 1: Durable Signed-In Quiz Library
 
+Status: partially implemented in commit `a22970a`.
+
 Backend:
 
-1. Add Supabase tables for `games_quiz_packs` and `games_quiz_questions`.
-2. Add prefixed gamma equivalents.
-3. Add `/quiz-packs` CRUD endpoints.
-4. Add ownership checks.
-5. Add pack export/import endpoints.
-6. Add `materialize` endpoint to produce runtime `quiz_id`.
+1. Add Supabase tables for `games_quiz_packs` and `games_quiz_questions`. Implemented.
+2. Add prefixed gamma equivalents. Implemented.
+3. Add `/quiz-packs` CRUD endpoints. Save/list/get/delete implemented; fine-grained question PATCH/reorder is backlog.
+4. Add ownership checks. Implemented through wallet resolution.
+5. Add pack export/import endpoints. Backlog.
+6. Add `materialize` endpoint to produce runtime `quiz_id`. Implemented.
 
 Frontend:
 
-1. Add **My Quizzes** library.
-2. Autosave signed-in packs.
-3. Add duplicate/delete/export.
-4. Add "Save as custom quiz" from AI-generated review screen.
+1. Add **My Quizzes** library. Implemented.
+2. Autosave signed-in packs. Backlog; explicit Save is implemented.
+3. Add duplicate/delete/export. Delete is implemented; duplicate/export are backlog.
+4. Add "Save as custom quiz" from AI-generated review screen. Backlog.
 
 Acceptance:
 
@@ -718,24 +759,26 @@ Acceptance:
 
 ### Phase 2: Question Image Upload And Attachment
 
+Status: partially implemented in commit `a22970a`.
+
 Backend:
 
-1. Add persisted media asset storage from `SPEC-IMAGE-GAMES.md`.
-2. Add host upload signing endpoint, e.g. `POST /media/upload-url`, plus finalize endpoint.
-3. Validate uploaded type, decoded dimensions, and file size.
-4. Strip EXIF and normalize to a web-safe image format.
-5. Store image bytes on IONOS and media metadata with wallet ownership in Supabase.
-6. Allow quiz pack questions to attach/detach owned media assets.
-7. Materialize `image_asset_id`, `image_url`, and `image_alt` into runtime quiz questions.
-8. Ensure `/media/{asset_id}` and/or direct IONOS CDN URLs work for IONOS frontend, backend-served gamma, active rooms, and owner-only editor preview.
+1. Add persisted media asset storage from `SPEC-IMAGE-GAMES.md`. Implemented for metadata.
+2. Add host upload signing endpoint, e.g. `POST /media/upload-url`, plus finalize endpoint. Implemented.
+3. Validate uploaded type, decoded dimensions, and file size. MIME and size are implemented; decoded dimension validation is backlog.
+4. Strip EXIF and normalize to a web-safe image format. Backlog.
+5. Store image bytes on IONOS and media metadata with wallet ownership in Supabase. Implemented.
+6. Allow quiz pack questions to attach/detach owned media assets. Attach via editor/upload is implemented; detach cleanup is backlog.
+7. Materialize `image_asset_id`, `image_url`, and `image_alt` into runtime quiz questions. Implemented for stored image fields.
+8. Ensure `/media/{asset_id}` and/or direct IONOS CDN URLs work for IONOS frontend, backend-served gamma, active rooms, and owner-only editor preview. Direct IONOS URLs are implemented.
 
 Frontend:
 
-1. Add image attachment controls to `CustomQuizQuestionEditor`.
-2. Show upload progress, thumbnail preview, remove/replace actions, and alt text editing.
-3. Persist image attachments in saved packs.
-4. Preserve image attachments through duplicate, export/import where possible, and materialize/start flow.
-5. Show missing-image repair states in the editor.
+1. Add image attachment controls to `CustomQuizQuestionEditor`. Implemented.
+2. Show upload progress, thumbnail preview, remove/replace actions, and alt text editing. Upload progress/preview/alt are implemented; remove/replace polish is backlog.
+3. Persist image attachments in saved packs. Implemented.
+4. Preserve image attachments through duplicate, export/import where possible, and materialize/start flow. Materialize/start is implemented; export/import preservation is backlog.
+5. Show missing-image repair states in the editor. Backlog.
 
 Acceptance:
 
@@ -792,27 +835,27 @@ Playwright smoke:
 Remote smoke:
 
 - Gamma custom quiz create/start flow.
-- Signed-in save/load flow after Phase 1.
-- Gamma custom quiz upload-image/start flow after Phase 2.
+- Signed-in save/load flow.
+- Gamma custom quiz upload-image/start flow.
 - `/media/status` reports upload availability accurately and does not imply Stable Diffusion is available in gamma/prod.
 
 ## Deployment Notes
 
-- Phase 0 requires only frontend deployment plus existing backend endpoints.
-- Phase 1 requires Supabase migrations before enabling durable library UI.
-- Phase 2 requires IONOS media storage before enabling uploaded question images in gamma/prod.
+- Phase 0 custom authoring is implemented.
+- Durable library UI requires deploying the rendered Supabase schema updates before enabling against Supabase environments.
+- Uploaded images require IONOS `upload.php`, `.upload_secret`, and matching backend media env vars.
 - Stable Diffusion should remain disabled/unavailable in gamma and production unless explicitly replaced by a production-safe cloud provider. Host-uploaded images are the required prod/gamma path.
-- Keep feature flag:
+- Suggested feature flags:
 
 ```text
 custom_quiz_authoring_enabled=true
-custom_quiz_library_enabled=false
-custom_quiz_image_upload_enabled=false
+custom_quiz_library_enabled=true
+custom_quiz_image_upload_enabled=true
 custom_quiz_ai_assist_enabled=false
 ```
 
 - Enable in gamma first.
-- Production can initially expose **Create Your Own** without **My Quizzes** if Phase 0 is frontend-only.
+- Production can expose **Create Your Own** and **My Quizzes** once database schema and IONOS media env are deployed.
 
 ## Interaction With Other Specs
 

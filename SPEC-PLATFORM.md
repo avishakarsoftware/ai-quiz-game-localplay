@@ -1020,7 +1020,7 @@ Very visual and fun. Works great on TV. AI generation is the main challenge — 
 
 These aren't separate game types — they're **themed content packs** for existing game mechanics:
 
-- **How Well Do You Know the Parents/Couple?** — Custom quiz (already supported via quiz import). Needs the friendlier in-app authoring flow described in `SPEC-CUSTOM-QUIZ-AUTHORING.md`.
+- **How Well Do You Know the Parents/Couple?** — Custom quiz, now supported through the in-app authoring/library flow described in `SPEC-CUSTOM-QUIZ-AUTHORING.md`.
 - **Baby Name Battle** — AI generates unusual baby names, group votes (Hot Takes variant).
 - **Price is Right (Baby/Wedding Edition)** — Show products, guess the price. Needs numeric input (quiz variant with closest-wins scoring).
 - **Predictions** — See above.

@@ -20,18 +20,20 @@ LocalPlay already has partial image support:
 - `/quiz/{quiz_id}/image/{question_id}` serves generated image bytes.
 - `/media/status` and `/media/{asset_id}` now exist as the Phase 0 shared media namespace.
 - Quiz image generation now also creates in-memory media assets and attaches `/media/{asset_id}` URLs when rooms start.
+- Host upload signing exists at `POST /media/upload-url`, with finalize at `POST /media/{asset_id}/finalize`.
+- `ionos/media/upload.php` is checked into the repo for deployment to the LocalPlay media host.
+- Uploaded custom quiz image files are stored on IONOS; metadata is stored through the LocalPlay DB layer.
 - Host, player, and spectator question cards display image content through the reusable `GameImage` component.
 - Remote config has an `enable_image_generation` feature flag.
 
 Current limitations:
 
 - Image generation depends on a local Stable Diffusion endpoint and is not reliable on the current VM unless that service is running.
-- Images are not persisted in Supabase or object storage.
+- Generated images are not yet persisted in Supabase/IONOS and still use in-memory image storage.
 - Phase 0 images are still stored as base64 strings in backend memory.
-- No host upload endpoint exists.
 - No provider abstraction exists for Gemini image generation, Gemini vision analysis, or future storage backends.
-- No moderation or upload safety pipeline exists.
-- Gamma and production need host upload plus persisted media storage for custom quiz question images; they should not rely on local Stable Diffusion.
+- Upload safety currently validates MIME, size, HMAC, expiry, and path shape; decoded dimension checks, EXIF stripping, normalization, moderation, delete, and cleanup remain backlog.
+- Gamma and production custom quiz images should use host upload plus persisted media storage, not local Stable Diffusion.
 
 ## Goals
 
@@ -228,15 +230,13 @@ IONOS server root:
 ~/revelryapp/media/apps/localplay/
 
 prod/
+  uploads/{wallet_prefix}/YYYY/MM/DD/{asset_id}.webp
   generated/{asset_id}.webp
-  uploaded/{wallet_id}/{asset_id}.webp
-  quiz-packs/{pack_id}/{question_id}/{asset_id}.webp
   thumbs/{asset_id}.webp
 
 gamma/
+  uploads/{wallet_prefix}/YYYY/MM/DD/{asset_id}.webp
   generated/{asset_id}.webp
-  uploaded/{wallet_id}/{asset_id}.webp
-  quiz-packs/{pack_id}/{question_id}/{asset_id}.webp
   thumbs/{asset_id}.webp
 ```
 
@@ -325,9 +325,7 @@ Response:
 
 ### Upload Image Asset
 
-Future Phase 2 endpoint. There is no host upload flow in Phase 0.
-
-Recommended API shape follows the Revelry signed IONOS upload pattern.
+Implemented for custom quiz question images. The API follows the Revelry signed IONOS upload pattern.
 
 ```http
 POST /media/upload-url
@@ -337,12 +335,10 @@ Request:
 
 ```json
 {
-  "purpose": "custom_quiz_question",
-  "pack_id": "qp_123",
-  "question_id": "q_1",
+  "filename": "cake.jpg",
   "mime_type": "image/jpeg",
   "bytes": 123456,
-  "alt_text": "A birthday cake on a kitchen table"
+  "purpose": "custom_quiz_question"
 }
 ```
 
@@ -350,18 +346,24 @@ Response:
 
 ```json
 {
-  "asset_id": "img_abc123",
-  "upload": {
-    "url": "https://media.revelryapp.me/apps/localplay/upload.php",
-    "path": "gamma/quiz-packs/qp_123/q_1/img_abc123.jpg",
-    "expires": 1779290300,
-    "token": "hmac"
-  },
   "asset": {
     "id": "img_abc123",
+    "owner_wallet_id": "wallet...",
+    "storage_backend": "ionos",
+    "storage_path": "gamma/uploads/wallet.../2026/05/20/img_abc123.jpg",
+    "public_url": "https://media.revelryapp.me/apps/localplay/gamma/uploads/wallet.../2026/05/20/img_abc123.jpg",
     "status": "pending",
-    "url": "/media/img_abc123",
     "mime_type": "image/jpeg"
+  },
+  "upload": {
+    "url": "https://media.revelryapp.me/apps/localplay/upload.php",
+    "fields": {
+      "path": "gamma/uploads/wallet.../2026/05/20/img_abc123.jpg",
+      "expires": "1779290300",
+      "mime_type": "image/jpeg",
+      "bytes": "123456",
+      "token": "hmac"
+    }
   }
 }
 ```
@@ -378,6 +380,8 @@ Fields:
 - `file`: required.
 - `path`: backend-generated relative path.
 - `expires`: backend-generated expiry.
+- `mime_type`: backend-validated MIME type.
+- `bytes`: backend-validated size.
 - `token`: backend-generated HMAC.
 
 After upload succeeds, the frontend calls a backend finalize endpoint so metadata can move from `pending` to `ready`:
@@ -469,16 +473,15 @@ Configuration:
 
 ```env
 ENABLE_IMAGE_GENERATION=true
-MEDIA_STORAGE_BACKEND=ionos
-MEDIA_CDN_BASE_URL=https://media.revelryapp.me/apps/localplay
+MEDIA_PUBLIC_BASE_URL=https://media.revelryapp.me/apps/localplay
 MEDIA_UPLOAD_URL=https://media.revelryapp.me/apps/localplay/upload.php
-MEDIA_DELETE_URL=https://media.revelryapp.me/apps/localplay/delete.php
 MEDIA_UPLOAD_SECRET=<shared with IONOS .upload_secret>
 MEDIA_PATH_PREFIX=prod
-MEDIA_MAX_UPLOAD_BYTES=5242880
+MEDIA_ALLOWED_MIME_TYPES=image/png,image/jpeg,image/webp
+MEDIA_UPLOAD_TOKEN_TTL_SECONDS=900
+MAX_IMAGE_SIZE_BYTES=2097152
 MEDIA_MAX_GENERATED_BYTES=5242880
 MEDIA_DEFAULT_PROVIDER=gemini_image
-MEDIA_ENABLE_UPLOADS=false
 MEDIA_RETENTION_DAYS=30
 ```
 
@@ -833,16 +836,23 @@ Phase 0 is implemented:
 7. Legacy `/quiz/{quiz_id}/image/{question_id}` still works and falls back to old in-memory image storage.
 8. `scripts/smoke-remote.py` checks `/media/status`.
 
+Implemented beyond Phase 0:
+
+1. IONOS media upload signing plus `games_` / `games_gamma_` media metadata SQL.
+2. Host upload URL endpoint at `/media/upload-url`.
+3. Finalize endpoint at `/media/{asset_id}/finalize`.
+4. Repo-owned `ionos/media/upload.php` handler source.
+5. Custom quiz editor integration for uploaded question images.
+
 Remaining backend work:
 
 1. Add `backend/media_models.py` if the asset schema needs shared Pydantic validation beyond the current dataclass.
 2. Add `backend/media_engine.py` with provider abstraction.
-3. Add IONOS media upload signing plus `games_` / `games_gamma_` media metadata SQL.
-4. Add standalone `/media/generate`.
-5. Add host upload URL endpoint at `/media/upload-url` and finalize endpoint at `/media/{asset_id}/finalize`.
-6. Add IONOS-backed `DELETE /media/{asset_id}`.
-7. Add cleanup script for expired persisted metadata and IONOS files.
-8. Add admin stats for ready/failed/deleted media assets.
+3. Add standalone `/media/generate`.
+4. Add IONOS-backed `DELETE /media/{asset_id}`.
+5. Add cleanup script for expired persisted metadata and IONOS files.
+6. Add admin stats for ready/failed/deleted media assets.
+7. Add decoded dimension validation, EXIF stripping, and optional image normalization.
 
 ## Frontend Implementation Status
 
@@ -854,10 +864,17 @@ Phase 0 is implemented:
 4. CSS defines stable image aspect ratios, skeleton loading, and error presentation.
 5. Vitest component coverage verifies loading, loaded, and error behavior.
 
+Implemented beyond Phase 0:
+
+1. Custom quiz image upload control.
+2. Thumbnail preview via `GameImage`.
+3. Alt text editing.
+4. Saved pack persistence and materialize/start preservation for uploaded image URLs.
+
 Remaining frontend work:
 
-1. Add host image status and picker components.
-2. Add upload flow behind `MEDIA_ENABLE_UPLOADS`/remote config.
+1. Add richer host image status and picker components.
+2. Add remove/replace cleanup for attached assets.
 3. Add Image Quiz mode toggle in Quiz prompt/review flow.
 4. Add Photo Round once upload endpoint is stable.
 5. Add Playwright coverage for:
@@ -911,11 +928,11 @@ Backend tests:
 - `/media/{asset_id}` returns image bytes and cache headers.
 - `/media` is protected from SPA fallback.
 - Quiz image generation creates media assets while preserving legacy behavior.
-- Upload rejects unsupported MIME types. Future Phase 2.
-- Upload rejects oversized files. Future Phase 2.
-- Upload strips/normalizes metadata. Future Phase 2.
-- Upload URL generation creates a pending media asset with a signed IONOS path. Future Phase 2.
-- Finalize marks uploaded IONOS media as ready after successful upload. Future Phase 2.
+- Upload rejects unsupported MIME types. Implemented.
+- Upload rejects oversized files. Implemented.
+- Upload strips/normalizes metadata. Backlog.
+- Upload URL generation creates a pending media asset with a signed IONOS path. Implemented.
+- Finalize marks uploaded IONOS media as ready after successful upload. Implemented.
 - Generated image success inserts persisted metadata and stores the image on IONOS. Future Phase 1.
 - Generated image failure does not charge sparks.
 - Media fetch requires authorization for unattached owner-only assets.

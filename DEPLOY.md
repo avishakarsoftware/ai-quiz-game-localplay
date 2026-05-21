@@ -59,7 +59,7 @@ curl -sS -i https://gamesapi-gamma.revelryapp.me/health
     quiz/        → games.revelryapp.me/quiz (quiz game)
   media/         → media.revelryapp.me
     apps/
-      localplay/ → future LocalPlay uploaded/generated game images
+      localplay/ → LocalPlay uploaded/generated game images
 ```
 
 ## Credentials & Access
@@ -833,31 +833,27 @@ IONOS server:
   .htaccess
   .upload_secret
   prod/
-    quiz-packs/{pack_id}/{question_id}/{asset_id}.webp
+    uploads/{wallet_prefix}/YYYY/MM/DD/{asset_id}.webp
     generated/{asset_id}.webp
-    uploaded/{wallet_id}/{asset_id}.webp
     thumbs/{asset_id}.webp
   gamma/
-    quiz-packs/{pack_id}/{question_id}/{asset_id}.webp
+    uploads/{wallet_prefix}/YYYY/MM/DD/{asset_id}.webp
     generated/{asset_id}.webp
-    uploaded/{wallet_id}/{asset_id}.webp
     thumbs/{asset_id}.webp
 ```
 
-Planned repo source:
+Repo source:
 
 ```text
 ionos/media/upload.php
-ionos/media/delete.php
-ionos/media/.htaccess
+ionos/media/delete.php   # future
+ionos/media/.htaccess    # future
 ```
 
 Deploy PHP handlers only from repo source:
 
 ```bash
 scp ionos/media/upload.php u69414981@home420463025.1and1-data.host:~/revelryapp/media/apps/localplay/upload.php
-scp ionos/media/delete.php u69414981@home420463025.1and1-data.host:~/revelryapp/media/apps/localplay/delete.php
-scp ionos/media/.htaccess u69414981@home420463025.1and1-data.host:~/revelryapp/media/apps/localplay/.htaccess
 ```
 
 The IONOS secret file must match backend env:
@@ -867,7 +863,7 @@ IONOS:   ~/revelryapp/media/apps/localplay/.upload_secret
 Backend: MEDIA_UPLOAD_SECRET
 ```
 
-Recommended backend env once uploads are implemented:
+Required backend env for uploads:
 
 ```env
 MEDIA_PUBLIC_BASE_URL=https://media.revelryapp.me/apps/localplay

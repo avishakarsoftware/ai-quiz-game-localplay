@@ -80,6 +80,8 @@ The repository contains migration scaffolding:
 - `scripts/render-supabase-sql.py` regenerates both SQL files from the template.
 - `scripts/deploy-gcp.sh` validates that production uses `games_` and gamma uses `games_gamma_`.
 
+The rendered schema now also includes custom quiz authoring tables (`*_quiz_packs`, `*_quiz_questions`) and media metadata (`*_media_assets`) for the feature in `SPEC-CUSTOM-QUIZ-AUTHORING.md`.
+
 Future SQL changes must still be applied deliberately; editing files in this repo does not automatically mutate Supabase. Production and gamma are now on Supabase, but local development should keep SQLite as the default unless a test explicitly opts into Supabase.
 
 ## Current SQLite Surface
@@ -103,6 +105,9 @@ Current persistent tables in `backend/db.py`:
 | `request_log` | Idempotency for generation requests | Yes |
 | `pending_tokens` | Stripe checkout return notification pickup | Yes |
 | `webhook_events` | Stripe webhook deduplication | Yes |
+| `custom_quiz_packs` | Saved custom quiz pack metadata | Yes |
+| `custom_quiz_questions` | Saved custom quiz questions | Yes |
+| `media_assets` | IONOS media metadata for uploaded assets | Yes |
 
 Current in-memory state not covered by SQLite:
 

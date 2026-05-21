@@ -12,7 +12,8 @@ A multiplayer quiz game powered by local AI (Ollama). The organizer gives a prom
 - 🔥 **Streak bonuses** (1.5x at 3 correct, 2x at 5 correct)
 - 🎯 **Bonus rounds** (~30% of questions award 2x points)
 - 💪 **Power-ups** (Double Points, 50/50)
-- 🖼️ **Reusable image media layer** for generated quiz images and future image-based games
+- ✍️ **Custom quiz authoring** with local drafts, saved quiz packs, and question image upload
+- 🖼️ **Reusable image media layer** for generated quiz images, uploaded quiz images, and future image-based games
 - 👥 **Team mode** with averaged team scores
 - 📲 **QR Code + Room Code** for easy joining
 - 🏅 **Animated podium** with fireworks and team standings
@@ -20,9 +21,9 @@ A multiplayer quiz game powered by local AI (Ollama). The organizer gives a prom
 
 ## Image Media Layer
 
-Phase 0 of the image-game platform is implemented. Existing quiz image generation now creates shared in-memory media assets, exposes them through `/media/{asset_id}`, and renders them through the reusable frontend `GameImage` component on organizer, player, and spectator screens.
+The image-game platform has a reusable Phase 0/2 slice implemented. Existing quiz image generation creates shared in-memory media assets, exposes them through `/media/{asset_id}`, and renders them through the reusable frontend `GameImage` component on organizer, player, and spectator screens.
 
-Uploads, persisted IONOS media storage, thumbnails, standalone `/media/generate`, and image-native game modes are still future phases; see `SPEC-IMAGE-GAMES.md`.
+Custom quiz question images use signed browser-to-IONOS uploads through `POST /media/upload-url`, `ionos/media/upload.php`, and `POST /media/{asset_id}/finalize`. Supabase/SQLite stores media metadata and saved quiz pack references. Thumbnails, standalone `/media/generate`, signed delete/cleanup, and image-native game modes are still future phases; see `SPEC-IMAGE-GAMES.md`.
 
 ## Quick Start
 
