@@ -19,6 +19,7 @@ interface PromptScreenProps {
     setProvider: (v: string) => void;
     providers: AIProvider[];
     onGenerate: () => void;
+    onCreateCustom?: () => void;
 }
 
 const DIFFICULTIES = [
@@ -238,7 +239,7 @@ const TOPIC_IDEAS = [
 export default function PromptScreen({
     prompt, setPrompt, difficulty, setDifficulty,
     numQuestions, setNumQuestions, provider, setProvider,
-    providers, onGenerate,
+    providers, onGenerate, onCreateCustom,
 }: PromptScreenProps) {
     const { tokenStatus } = useTokenBalance();
 
@@ -352,6 +353,15 @@ export default function PromptScreen({
                 >
                     Generate Quiz
                 </button>
+                {onCreateCustom && (
+                    <button
+                        type="button"
+                        onClick={onCreateCustom}
+                        className="btn btn-secondary w-full"
+                    >
+                        Create Your Own
+                    </button>
+                )}
             </div>
         </div>
     );

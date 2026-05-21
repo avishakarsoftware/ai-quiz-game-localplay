@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { type Quiz, type Question, ANSWER_STYLES } from '../../types';
 import { useSwipeBack } from '../../utils/useSwipeBack';
+import { mediaUrl } from '../../utils/media';
+import GameImage from '../media/GameImage';
 
 interface ReviewScreenProps {
     quiz: Quiz;
@@ -25,7 +27,6 @@ const TIME_PRESETS = [
 
 export default function ReviewScreen({
     quiz, timeLimit, setTimeLimit,
-    sdAvailable: _sdAvailable, questionImages: _questionImages, onGenerateImages: _onGenerateImages,
     onCreateRoom, onUpdateQuiz, onBack,
 }: ReviewScreenProps) {
     const swipeProgress = useSwipeBack(onBack);
@@ -124,6 +125,24 @@ export default function ReviewScreen({
                                         className="input-field text-sm"
                                         maxLength={2000}
                                     />
+                                    <input
+                                        type="text"
+                                        value={editQuestion.image_url || ''}
+                                        onChange={(e) => setEditQuestion({ ...editQuestion, image_url: e.target.value.slice(0, 1000) || undefined })}
+                                        className="input-field text-xs"
+                                        maxLength={1000}
+                                        placeholder="Image URL"
+                                        aria-label="Question image URL"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={editQuestion.image_alt || ''}
+                                        onChange={(e) => setEditQuestion({ ...editQuestion, image_alt: e.target.value.slice(0, 300) || undefined })}
+                                        className="input-field text-xs"
+                                        maxLength={300}
+                                        placeholder="Image alt text"
+                                        aria-label="Question image alt text"
+                                    />
                                     <div className="grid grid-cols-2 gap-2">
                                         {editQuestion.options.map((opt, j) => {
                                             const style = ANSWER_STYLES[j];
@@ -182,6 +201,15 @@ export default function ReviewScreen({
                                     <div className="flex items-center gap-2 mb-2">
                                         <span className="review-q-number">{i + 1}</span>
                                     </div>
+                                    {q.image_url && (
+                                        <div className="mb-3">
+                                            <GameImage
+                                                src={mediaUrl(q.image_url)}
+                                                alt={q.image_alt || q.text}
+                                                mode="thumbnail"
+                                            />
+                                        </div>
+                                    )}
                                     <p className="text-sm font-medium mb-3">{q.text}</p>
                                     <div className={`grid gap-2 ${q.options.length === 2 ? 'grid-cols-1' : 'grid-cols-2'}`}>
                                         {q.options.map((opt, j) => {

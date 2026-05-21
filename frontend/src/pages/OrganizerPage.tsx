@@ -8,6 +8,7 @@ import { apiHeaders, apiUrl, generateIdempotencyKey } from '../utils/api';
 import GameSelectScreen from '../components/organizer/GameSelectScreen';
 import PromptScreen, { type AIProvider } from '../components/organizer/PromptScreen';
 import QuizVariantPromptScreen from '../components/organizer/QuizVariantPromptScreen';
+import CustomQuizEditor from '../components/organizer/CustomQuizEditor';
 import MLTPromptScreen from '../components/organizer/MLTPromptScreen';
 import DrawingPromptScreen from '../components/organizer/DrawingPromptScreen';
 import LoadingScreen from '../components/organizer/LoadingScreen';
@@ -25,7 +26,7 @@ import ErrorModal from '../components/ErrorModal';
 import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
 
 export default function OrganizerPage() {
     const { config: remoteConfig } = useRemoteConfigContext();
@@ -35,6 +36,7 @@ export default function OrganizerPage() {
     const [difficulty, setDifficulty] = useState('medium');
     const [numQuestions, setNumQuestions] = useState(10);
     const [quiz, setQuiz] = useState<Quiz | null>(null);
+    const [quizOrigin, setQuizOrigin] = useState<'ai' | 'custom'>('ai');
     const [mltGame, setMltGame] = useState<MLTGame | null>(null);
     const [drawingGame, setDrawingGame] = useState<DrawingGame | null>(null);
     const [contentId, setContentId] = useState('');
@@ -83,7 +85,7 @@ export default function OrganizerPage() {
     // Listen for home navigation from hamburger menu
     useEffect(() => {
         const handler = () => {
-            if (stateRef.current === 'PROMPT' || stateRef.current === 'QUIZ_VARIANT_PROMPT' || stateRef.current === 'MLT_PROMPT' || stateRef.current === 'DRAWING_PROMPT' || stateRef.current === 'SELECT_GAME') {
+            if (stateRef.current === 'PROMPT' || stateRef.current === 'QUIZ_VARIANT_PROMPT' || stateRef.current === 'CUSTOM_QUIZ' || stateRef.current === 'MLT_PROMPT' || stateRef.current === 'DRAWING_PROMPT' || stateRef.current === 'SELECT_GAME') {
                 setState('SELECT_GAME');
             }
         };
@@ -320,6 +322,7 @@ export default function OrganizerPage() {
             }
             const data = await res.json();
             if (data.quiz) {
+                setQuizOrigin('ai');
                 setQuiz(data.quiz);
                 setContentId(data.quiz_id);
                 setTotalQuestions(data.quiz.questions.length);
@@ -333,6 +336,35 @@ export default function OrganizerPage() {
         } catch {
             setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
             setState(gameType === 'quiz' ? 'PROMPT' : 'QUIZ_VARIANT_PROMPT');
+        }
+    };
+
+    const importCustomQuiz = async (customQuiz: Quiz) => {
+        setState('LOADING');
+        try {
+            const res = await fetch(apiUrl('/quiz/import'), {
+                method: 'POST',
+                headers: apiHeaders(),
+                body: JSON.stringify({ quiz: customQuiz }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Could not prepare this quiz.' }));
+                setErrorModal({ title: 'Quiz Error', message: err.detail || `Server error (${res.status})` });
+                setState('CUSTOM_QUIZ');
+                return;
+            }
+            const data = await res.json();
+            setGameType('quiz');
+            setQuizOrigin('custom');
+            setQuiz(customQuiz);
+            setContentId(data.quiz_id);
+            setTotalQuestions(customQuiz.questions.length);
+            setQuestionImages({});
+            track('custom_quiz_imported', { num_questions: customQuiz.questions.length });
+            setState('REVIEW');
+        } catch {
+            setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
+            setState('CUSTOM_QUIZ');
         }
     };
 
@@ -660,6 +692,17 @@ export default function OrganizerPage() {
                         setProvider={setProvider}
                         providers={providers}
                         onGenerate={generateQuiz}
+                        onCreateCustom={() => {
+                            setGameType('quiz');
+                            setState('CUSTOM_QUIZ');
+                        }}
+                    />
+                )}
+
+                {state === 'CUSTOM_QUIZ' && (
+                    <CustomQuizEditor
+                        onBack={() => setState('PROMPT')}
+                        onReview={importCustomQuiz}
                     />
                 )}
 
@@ -724,7 +767,7 @@ export default function OrganizerPage() {
                         onGenerateImages={generateImages}
                         onCreateRoom={createRoom}
                         onUpdateQuiz={updateQuiz}
-                        onBack={() => setState(gameType === 'quiz' ? 'PROMPT' : 'QUIZ_VARIANT_PROMPT')}
+                        onBack={() => setState(quizOrigin === 'custom' ? 'CUSTOM_QUIZ' : gameType === 'quiz' ? 'PROMPT' : 'QUIZ_VARIANT_PROMPT')}
                     />
                 )}
 

@@ -4,7 +4,9 @@ export interface Question {
     options: string[];
     answer_index: number;
     image_prompt: string;
+    image_asset_id?: string;
     image_url?: string;
+    image_alt?: string;
 }
 
 export interface Quiz {

@@ -150,6 +150,17 @@ MAX_QUIZ_TITLE_LENGTH = 500
 MAX_QUESTION_TEXT_LENGTH = 2000
 MAX_OPTION_LENGTH = 500
 MAX_IMAGE_PROMPT_LENGTH = 2000
+MAX_IMAGE_URL_LENGTH = 1000
+MAX_IMAGE_ALT_LENGTH = 300
+
+
+def _is_allowed_image_url(url: str) -> bool:
+    """Only allow app-controlled media references on imported/custom quiz data."""
+    return (
+        url.startswith("/media/")
+        or url.startswith("/quiz/")
+        or re.match(r"^https://media\.revelryapp\.me/apps/localplay/", url, re.IGNORECASE) is not None
+    )
 
 
 def _sanitize_quiz(quiz_data: dict) -> dict:
@@ -163,6 +174,21 @@ def _sanitize_quiz(quiz_data: dict) -> dict:
             q["options"] = [_sanitize_text(opt)[:MAX_OPTION_LENGTH] for opt in q["options"]]
         if "image_prompt" in q:
             q["image_prompt"] = _sanitize_text(q["image_prompt"])[:MAX_IMAGE_PROMPT_LENGTH]
+        if "image_url" in q:
+            image_url = _sanitize_text(q["image_url"])[:MAX_IMAGE_URL_LENGTH]
+            if image_url and _is_allowed_image_url(image_url):
+                q["image_url"] = image_url
+            else:
+                q.pop("image_url", None)
+                q.pop("image_asset_id", None)
+        if "image_asset_id" in q:
+            image_asset_id = _sanitize_text(q["image_asset_id"])[:128]
+            if re.match(r"^[A-Za-z0-9_-]+$", image_asset_id):
+                q["image_asset_id"] = image_asset_id
+            else:
+                q.pop("image_asset_id", None)
+        if "image_alt" in q:
+            q["image_alt"] = _sanitize_text(q["image_alt"])[:MAX_IMAGE_ALT_LENGTH]
     return quiz_data
 
 

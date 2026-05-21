@@ -442,6 +442,43 @@ class TestExportImport:
         res2 = client.get(f"/quiz/{qid}")
         assert res2.status_code == 200
 
+    def test_import_quiz_preserves_allowed_image_url(self):
+        quiz_data = {
+            "quiz_title": "Imported Quiz",
+            "questions": [
+                {
+                    "id": 1,
+                    "text": "Who is pictured?",
+                    "options": ["A", "B", "C", "D"],
+                    "answer_index": 0,
+                    "image_url": "https://media.revelryapp.me/apps/localplay/gamma/uploads/test.webp",
+                    "image_alt": "A trophy photo",
+                },
+            ],
+        }
+        res = client.post("/quiz/import", json={"quiz": quiz_data})
+        assert res.status_code == 200
+        question = res.json()["quiz"]["questions"][0]
+        assert question["image_url"] == quiz_data["questions"][0]["image_url"]
+        assert question["image_alt"] == "A trophy photo"
+
+    def test_import_quiz_strips_external_image_url(self):
+        quiz_data = {
+            "quiz_title": "Imported Quiz",
+            "questions": [
+                {
+                    "id": 1,
+                    "text": "Who is pictured?",
+                    "options": ["A", "B", "C", "D"],
+                    "answer_index": 0,
+                    "image_url": "https://example.com/image.jpg",
+                },
+            ],
+        }
+        res = client.post("/quiz/import", json={"quiz": quiz_data})
+        assert res.status_code == 200
+        assert "image_url" not in res.json()["quiz"]["questions"][0]
+
     def test_import_invalid_quiz(self):
         res = client.post("/quiz/import", json={"quiz": {"title": "bad"}})
         assert res.status_code == 422
