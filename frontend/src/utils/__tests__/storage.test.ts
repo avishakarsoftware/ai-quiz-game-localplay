@@ -23,7 +23,6 @@ const {
     setSessionToken, getSessionToken,
     setUserProfile, getUserProfile,
     signOut,
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 } = await import('../storage');
 
 describe('storage utilities', () => {

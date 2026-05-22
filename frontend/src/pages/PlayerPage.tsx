@@ -125,6 +125,7 @@ export default function PlayerPage() {
         };
 
         ws.onmessage = (event) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let msg: any;
             try { msg = JSON.parse(event.data); } catch { return; }
             if (msg.type === 'ERROR') {

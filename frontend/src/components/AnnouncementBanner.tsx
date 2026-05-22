@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useSyncExternalStore } from 'react';
 import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 
 const DISMISSED_KEY = 'revelry_dismissed_announcements';
@@ -11,19 +11,35 @@ function getDismissedIds(): Set<string> {
   }
 }
 
+let _dismissedSnapshot = getDismissedIds();
+const _listeners = new Set<() => void>();
+
 function dismissAnnouncement(id: string) {
   const ids = getDismissedIds();
   ids.add(id);
   localStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]));
+  _dismissedSnapshot = new Set(ids);
+  _listeners.forEach(cb => cb());
+}
+
+function subscribeDismissed(cb: () => void) {
+  _listeners.add(cb);
+  return () => { _listeners.delete(cb); };
+}
+
+function getDismissedSnapshot(): Set<string> {
+  // Always read fresh from localStorage so tests and cross-tab changes work.
+  // This is cheap — dismissed IDs is a small array.
+  const fresh = getDismissedIds();
+  if (fresh.size !== _dismissedSnapshot.size || ![...fresh].every(id => _dismissedSnapshot.has(id))) {
+    _dismissedSnapshot = fresh;
+  }
+  return _dismissedSnapshot;
 }
 
 export default function AnnouncementBanner() {
   const { config } = useRemoteConfigContext();
-  const [dismissed, setDismissed] = useState<Set<string>>(getDismissedIds);
-
-  useEffect(() => {
-    setDismissed(getDismissedIds());
-  }, [config.announcements]);
+  const dismissed = useSyncExternalStore(subscribeDismissed, getDismissedSnapshot);
 
   const visible = config.announcements.filter(a => !dismissed.has(a.id));
   if (visible.length === 0) return null;
@@ -46,10 +62,7 @@ export default function AnnouncementBanner() {
           <span style={{ flex: 1 }}>{a.text}</span>
           {a.dismissible && (
             <button
-              onClick={() => {
-                dismissAnnouncement(a.id);
-                setDismissed(prev => new Set([...prev, a.id]));
-              }}
+              onClick={() => dismissAnnouncement(a.id)}
               style={{
                 background: 'none', border: 'none', color: 'var(--text-secondary)',
                 cursor: 'pointer', fontSize: '1.25rem', padding: '0 0.25rem', lineHeight: 1,

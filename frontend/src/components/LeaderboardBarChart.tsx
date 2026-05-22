@@ -56,7 +56,7 @@ interface CustomTickProps {
     avatarMap: Record<string, string>;
 }
 
-function CustomYAxisTick({ x: _x, y, payload, config, biggestMoverNickname, biggestMoverChange, highlightNickname, avatarMap }: CustomTickProps) {
+function CustomYAxisTick({ y, payload, config, biggestMoverNickname, biggestMoverChange, highlightNickname, avatarMap }: CustomTickProps) {
     if (!payload) return null;
     const index = payload.index;
     const nickname = payload.value;

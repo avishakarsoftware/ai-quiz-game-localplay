@@ -74,11 +74,11 @@ export function useRemoteConfig() {
   const [config, setConfig] = useState<RemoteConfig>(getCachedConfig() || DEFAULT_CONFIG);
   const [loading, setLoading] = useState(true);
 
-  const fetchConfig = useCallback((forceFresh = false) => {
+  const fetchConfig = useCallback((forceFresh = false): (() => void) | undefined => {
     const cached = getCachedConfig(forceFresh);
     if (cached && !forceFresh) {
-      setConfig(cached);
-      setLoading(false);
+      // Synchronous early return — state was initialized from cache, just confirm loading is done.
+      queueMicrotask(() => { setConfig(cached); setLoading(false); });
       return;
     }
 

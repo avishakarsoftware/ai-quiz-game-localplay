@@ -62,6 +62,7 @@ export default function SpectatorPage() {
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const roomClosedRef = useRef(false);
+    const [roomClosed, setRoomClosed] = useState(false);
     const mountedRef = useRef(true);
 
     // In Capacitor, window.location.origin is capacitor://localhost — use the web URL
@@ -123,7 +124,7 @@ export default function SpectatorPage() {
     }, [setSearchParams]);
 
     const connectWs = useRef<() => void>(() => {});
-    connectWs.current = () => {
+    const connectWsImpl = () => {
         if (!joined || !roomCode) return;
         const clientId = `spectator-${Date.now()}`;
         const ws = new WebSocket(`${WS_URL}/ws/${roomCode}/${clientId}?spectator=true`);
@@ -134,6 +135,7 @@ export default function SpectatorPage() {
         };
 
         ws.onmessage = (event) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let msg: any;
             try { msg = JSON.parse(event.data); } catch { return; }
             if (msg.type === 'PING') return; // heartbeat — no action needed
@@ -250,6 +252,7 @@ export default function SpectatorPage() {
             }
             else if (msg.type === 'ROOM_CLOSED') {
                 roomClosedRef.current = true;
+                setRoomClosed(true);
                 if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                 setGameState('DISCONNECTED');
             }
@@ -282,9 +285,12 @@ export default function SpectatorPage() {
         };
     };
 
+    useEffect(() => { connectWs.current = connectWsImpl; });
+
     useEffect(() => {
         if (!joined || !roomCode) return;
         roomClosedRef.current = false;
+        setRoomClosed(false); // eslint-disable-line react-hooks/set-state-in-effect -- reset on new room join
         reconnectDelayRef.current = 2000;
         connectWs.current();
         return () => {
@@ -300,9 +306,7 @@ export default function SpectatorPage() {
     // Staggered podium reveal
     useEffect(() => {
         if (gameState !== 'PODIUM') return;
-        // Reset before starting the timed reveal sequence.
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setPodiumReveal(0);
+        setPodiumReveal(0); // eslint-disable-line react-hooks/set-state-in-effect -- reset before timed reveal sequence
         const timers = [
             setTimeout(() => setPodiumReveal(1), 300),
             setTimeout(() => setPodiumReveal(2), 1000),
@@ -406,10 +410,10 @@ export default function SpectatorPage() {
                                 {gameState === 'CONNECTING' ? '📡' : gameState === 'ERROR' ? '⚠️' : '🔌'}
                             </div>
                             <h1 className="hero-title mb-2">
-                                {gameState === 'CONNECTING' ? 'Connecting...' : gameState === 'ERROR' ? 'Connection Error' : roomClosedRef.current ? 'Disconnected' : 'Reconnecting...'}
+                                {gameState === 'CONNECTING' ? 'Connecting...' : gameState === 'ERROR' ? 'Connection Error' : roomClosed ? 'Disconnected' : 'Reconnecting...'}
                             </h1>
                             <p className="text-[--text-tertiary] text-lg">Room: {roomCode}</p>
-                            {(gameState === 'CONNECTING' || (gameState === 'DISCONNECTED' && !roomClosedRef.current)) && (
+                            {(gameState === 'CONNECTING' || (gameState === 'DISCONNECTED' && !roomClosed)) && (
                                 <div className="flex gap-1.5 mt-6">
                                     {[0, 1, 2].map((i) => (
                                         <div key={i} className="w-2.5 h-2.5 bg-[--accent-primary] rounded-full animate-bounce"

@@ -38,8 +38,6 @@ export default function CastButton({ roomCode }: CastButtonProps) {
     if (window.cast?.framework) {
       try {
         const context = cast.framework.CastContext.getInstance();
-        // Syncing state from external Cast SDK — not a cascading render.
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCastSdkReady(true);
         setCasting(context.getCastState() === cast.framework.CastState.CONNECTED);
         listener = (event: cast.framework.CastStateEvent) => {
@@ -109,6 +107,7 @@ export default function CastButton({ roomCode }: CastButtonProps) {
         } catch { /* cleanup best-effort */ }
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Send room code when casting starts or room code changes

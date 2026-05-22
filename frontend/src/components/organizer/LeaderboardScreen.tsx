@@ -12,7 +12,7 @@ interface LeaderboardScreenProps {
     onEndQuiz?: () => void;
 }
 
-export default function LeaderboardScreen({ leaderboard, questionNumber, totalQuestions, onNextQuestion, onEndQuiz: _onEndQuiz }: LeaderboardScreenProps) {
+export default function LeaderboardScreen({ leaderboard, questionNumber, totalQuestions, onNextQuestion }: LeaderboardScreenProps) {
     const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
     useEffect(() => {

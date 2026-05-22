@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, type ReactNode } from 'react';
 import { type RemoteConfig, DEFAULT_CONFIG } from '../types/remoteConfig';
 import { useRemoteConfig } from '../hooks/useRemoteConfig';

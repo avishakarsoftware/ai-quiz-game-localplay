@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { getUserProfile, getSessionToken, type UserProfile } from '../utils/storage';
 import { signInWithBackend, fetchUserProfile, signOut as storageSignOut } from '../utils/auth';
@@ -23,22 +24,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // On mount, verify session is still valid if we have a token
     useEffect(() => {
-        const token = getSessionToken();
-        if (!token) {
-            setLoading(false);
-            return;
-        }
+        if (!getSessionToken()) return;
+        let cancelled = false;
         fetchUserProfile()
             .then(data => {
+                if (cancelled) return;
                 if (data?.user) {
                     setUser(data.user);
                 } else {
-                    // Session expired or invalid
                     storageSignOut();
                     setUser(null);
                 }
             })
-            .finally(() => setLoading(false));
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
     }, []);
 
     const signIn = useCallback(async (provider: 'google' | 'apple', idToken: string) => {
