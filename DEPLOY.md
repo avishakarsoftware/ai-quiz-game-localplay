@@ -692,6 +692,215 @@ Ollama and Stable Diffusion are NOT available on the production VM (no GPU).
 
 ---
 
+## Supabase Connection Reference
+
+### Project
+
+| Field | Value |
+|---|---|
+| Project ref | `hosbtyylacluziugwjfd` |
+| Project name | LearningCompanion (shared with VibePix) |
+| Region | us-west-2 |
+| REST URL | `https://hosbtyylacluziugwjfd.supabase.co` |
+| Dashboard | `https://supabase.com/dashboard/project/hosbtyylacluziugwjfd` |
+
+### How LocalPlay connects at runtime
+
+The backend uses raw HTTP via `httpx` to the Supabase PostgREST API. No Supabase client SDK.
+
+Implementation: `backend/supabase_db.py` → `SupabaseClient` class.
+
+```
+Every request:
+  apikey: <SUPABASE_SERVICE_KEY>
+  Authorization: Bearer <SUPABASE_SERVICE_KEY>
+  Content-Type: application/json
+
+CRUD via PostgREST:
+  GET    {SUPABASE_URL}/rest/v1/{prefix}{table}?{filters}     # select
+  POST   {SUPABASE_URL}/rest/v1/{prefix}{table}                # insert/upsert
+  PATCH  {SUPABASE_URL}/rest/v1/{prefix}{table}?{filters}      # update
+  DELETE {SUPABASE_URL}/rest/v1/{prefix}{table}?{filters}      # delete
+
+Atomic operations via Postgres RPCs:
+  POST   {SUPABASE_URL}/rest/v1/rpc/{prefix}{function}         # e.g. games_debit_tokens
+```
+
+PostgREST filter syntax: `eq.`, `is.null`, `not.is.null`, `in.()`, `gte.`, `lt.`, `lte.`, `ilike.`
+
+### Backend env vars
+
+```env
+DB_BACKEND=supabase
+TABLE_PREFIX=games_              # or games_gamma_ for gamma
+SUPABASE_URL=https://hosbtyylacluziugwjfd.supabase.co
+SUPABASE_SERVICE_KEY=<service-role-key>
+SUPABASE_ANON_KEY=<anon-key>     # optional, not used at runtime
+SUPABASE_TIMEOUT_SECONDS=10
+```
+
+### Table prefix isolation
+
+| Environment | Table prefix | Example table | Example RPC |
+|---|---|---|---|
+| Production | `games_` | `games_wallets` | `games_debit_tokens` |
+| Gamma | `games_gamma_` | `games_gamma_wallets` | `games_gamma_debit_tokens` |
+| VibePix prod | `vp_` | `vp_photos` | — |
+| VibePix gamma | `vp_gamma_` | `vp_gamma_photos` | — |
+
+All apps share one Supabase project. Prefixes prevent collisions.
+
+### LocalPlay tables (per prefix)
+
+```
+{prefix}users
+{prefix}wallets
+{prefix}token_transactions
+{prefix}entitlements
+{prefix}device_usage
+{prefix}request_log
+{prefix}pending_tokens
+{prefix}webhook_events
+{prefix}generated_content
+{prefix}quiz_packs
+{prefix}quiz_questions
+{prefix}media_assets
+{prefix}game_history
+{prefix}rejections
+```
+
+### LocalPlay RPCs (per prefix)
+
+```
+{prefix}ensure_wallet
+{prefix}debit_tokens
+{prefix}credit_tokens
+{prefix}credit_purchase
+{prefix}merge_wallet
+{prefix}grant_daily_bonus
+{prefix}grant_ad_reward
+{prefix}claim_device_usage
+{prefix}claim_user_usage
+{prefix}mark_webhook_processed
+{prefix}admin_stats
+```
+
+### Code architecture
+
+```
+backend/db.py              # Facade — all call sites import from here
+backend/supabase_db.py     # Supabase implementation (PostgREST via httpx)
+
+db.py selects backend at import:
+  if config.DB_BACKEND == "supabase":
+      import supabase_db
+      # overlay every function in _SUPABASE_EXPORTS via globals()
+  else:
+      # use SQLite (local dev default)
+
+Call sites (main.py, tokens.py, auth.py) always: import db
+They never import supabase_db directly.
+```
+
+### SQL schema files
+
+```
+sql/templates/games-schema.template.sql   # Source template (__PREFIX__ placeholder)
+sql/games-schema.sql                      # Rendered prod (games_)
+sql/games-gamma-schema.sql                # Rendered gamma (games_gamma_)
+scripts/render-supabase-sql.py            # Regenerates both from template
+```
+
+Render after editing the template:
+
+```bash
+.venv/bin/python scripts/render-supabase-sql.py --prefix games_ --output sql/games-schema.sql
+.venv/bin/python scripts/render-supabase-sql.py --prefix games_gamma_ --output sql/games-gamma-schema.sql
+```
+
+### Applying schema changes to Supabase
+
+This is always a manual human step — never automated by deploy scripts or CI.
+
+```bash
+# Get auth token from macOS Keychain (same pattern as VibePix)
+TOKEN=$(security find-generic-password -s "Supabase CLI" -w | sed 's/^go-keyring-base64://' | base64 -d)
+
+# Apply gamma schema
+body=$(jq -n --rawfile q sql/games-gamma-schema.sql '{query: $q}')
+curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/database/query" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "$body"
+
+# Apply prod schema
+body=$(jq -n --rawfile q sql/games-schema.sql '{query: $q}')
+curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/database/query" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "$body"
+```
+
+HTTP 201 with `[]` means success. Any error returns a JSON object with details.
+
+### Verifying applied objects
+
+List all LocalPlay tables:
+
+```bash
+QUERY="SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'games_%' ORDER BY tablename;"
+body=$(jq -n --arg q "$QUERY" '{query: $q}')
+curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/database/query" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "$body"
+```
+
+List all LocalPlay RPCs:
+
+```bash
+QUERY="SELECT proname FROM pg_proc WHERE proname LIKE 'games_%' ORDER BY proname;"
+body=$(jq -n --arg q "$QUERY" '{query: $q}')
+curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/database/query" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "$body"
+```
+
+Test PostgREST access to a table (uses the service-role key from backend .env):
+
+```bash
+curl -sS "https://hosbtyylacluziugwjfd.supabase.co/rest/v1/games_gamma_wallets?select=id&limit=1" \
+  -H "apikey: <service-role-key>" \
+  -H "Authorization: Bearer <service-role-key>"
+```
+
+### Ad-hoc queries via Management API
+
+Run any SQL (read or write) through the Management API:
+
+```bash
+TOKEN=$(security find-generic-password -s "Supabase CLI" -w | sed 's/^go-keyring-base64://' | base64 -d)
+
+QUERY="SELECT COUNT(*) as cnt FROM games_wallets;"
+body=$(jq -n --arg q "$QUERY" '{query: $q}')
+curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/database/query" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "$body"
+```
+
+### When adding new tables or RPCs
+
+1. Edit `sql/templates/games-schema.template.sql` using `__PREFIX__` for all names
+2. Run `scripts/render-supabase-sql.py` to regenerate both prod and gamma SQL
+3. Add corresponding functions in `backend/supabase_db.py`
+4. Add function names to `_SUPABASE_EXPORTS` list in `backend/db.py`
+5. Commit the SQL + Python changes
+6. **Human manually** applies the SQL to Supabase (gamma first, then prod after testing)
+
+---
+
 ## Database Migration Status
 
 Production and gamma currently use Supabase:
