@@ -1031,6 +1031,107 @@ Rollback caveat: writes accepted by Supabase after cutover must be replayed manu
 
 ---
 
+## Revelry Integration
+
+LocalPlay exposes integration endpoints that let the Revelry app launch games, create rooms, and retrieve results without knowing game internals.
+
+### Env vars
+
+Both LocalPlay and Revelry need a shared secret:
+
+| Service | Env var | Value |
+|---|---|---|
+| LocalPlay backend | `REVELRY_INTEGRATION_SECRET` | shared HMAC secret (hex, 64 chars) |
+| LocalPlay backend | `PUBLIC_BASE_URL` | `https://gamesapi-gamma.revelryapp.me` (gamma) or `https://gamesapi.revelryapp.me` (prod) |
+| Revelry backend | `LOCALPLAY_INTEGRATION_SECRET` | same value as `REVELRY_INTEGRATION_SECRET` |
+
+Generate a new secret: `openssl rand -hex 32`
+
+### Setting env vars on the VM
+
+```bash
+# Gamma
+gcloud compute ssh revelry-backend --zone us-central1-a --command "
+  sudo sh -c \"grep -q '^REVELRY_INTEGRATION_SECRET=' /home/revelry-games/app/.env.gamma && \
+    sed -i 's#^REVELRY_INTEGRATION_SECRET=.*#REVELRY_INTEGRATION_SECRET=<secret>#' /home/revelry-games/app/.env.gamma || \
+    echo 'REVELRY_INTEGRATION_SECRET=<secret>' >> /home/revelry-games/app/.env.gamma\"
+  sudo sh -c \"grep -q '^PUBLIC_BASE_URL=' /home/revelry-games/app/.env.gamma && \
+    sed -i 's#^PUBLIC_BASE_URL=.*#PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me#' /home/revelry-games/app/.env.gamma || \
+    echo 'PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me' >> /home/revelry-games/app/.env.gamma\"
+"
+
+# Production (when ready)
+# Same pattern with /home/revelry-games/app/.env and PUBLIC_BASE_URL=https://gamesapi.revelryapp.me
+```
+
+After setting env vars, redeploy: `./scripts/deploy-gcp.sh --gamma --with-frontend`
+
+### Supabase table
+
+The `game_sessions` table must exist in Supabase before the integration works:
+
+```bash
+# Apply gamma schema (includes games_gamma_game_sessions)
+TOKEN=$(security find-generic-password -s "Supabase CLI" -w | sed 's/^go-keyring-base64://' | base64 -d)
+body=$(jq -n --rawfile q sql/games-gamma-schema.sql '{query: $q}')
+curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/database/query" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "$body"
+```
+
+### Integration endpoints
+
+All integration endpoints require `Authorization: Bearer <REVELRY_INTEGRATION_SECRET>`.
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/catalog?host_app=revelry` | GET | List available games with metadata |
+| `/integrations/revelry/sessions` | POST | Create a game session for a Revelry party |
+| `/integrations/revelry/sessions/{id}/launch-token` | POST | Generate a signed JWT launch URL |
+| `/integrations/revelry/sessions/{id}` | GET | Check session status |
+| `/integrations/revelry/launch-token/resolve` | GET | Resolve a launch token to a room code (used by frontend) |
+
+### Smoke test
+
+```bash
+# 1. Catalog
+curl -s "https://gamesapi-gamma.revelryapp.me/catalog?host_app=revelry" | python3 -m json.tool | head -10
+
+# 2. Create session
+SECRET="<REVELRY_INTEGRATION_SECRET from gamma .env>"
+curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sessions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${SECRET}" \
+  -d '{
+    "game_type": "quiz",
+    "external_context": {
+      "host_app": "revelry",
+      "external_container_type": "party",
+      "external_container_id": "test-party-123",
+      "external_container_title": "Test Party"
+    },
+    "actor": { "display_name": "Avi", "role": "host" }
+  }'
+
+# 3. Generate launch token (use session_id from step 2)
+curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sessions/<session_id>/launch-token" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${SECRET}" \
+  -d '{"scope": "player", "route": "join", "embed": true}'
+
+# 4. Open the returned launch_url in a browser
+```
+
+### Current status (gamma)
+
+- Schema applied: `games_gamma_game_sessions` exists in Supabase
+- Env vars set: `REVELRY_INTEGRATION_SECRET` and `PUBLIC_BASE_URL`
+- Deployed and smoke-tested: catalog, session creation, launch token generation all working
+- Full spec: `SPEC-REVELRY-INTEGRATION.md`
+
+---
+
 ## Media Uploads (IONOS)
 
 LocalPlay image files should be stored on IONOS, not Supabase Storage and not the GCP VM filesystem. Supabase remains the metadata store for media asset rows and quiz-pack question references.
