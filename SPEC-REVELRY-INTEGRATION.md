@@ -693,10 +693,12 @@ Rules:
 LocalPlay:
 
 ```text
-REVELRY_INTEGRATION_ENABLED=true
 REVELRY_INTEGRATION_SECRET=<prod-or-gamma-secret>
-REVELRY_ALLOWED_ORIGINS=https://app.revelryapp.me,https://api.revelryapp.me,https://api-gamma.revelryapp.me
-REVELRY_BILLING_MODE=revelry_managed
+REVELRY_LAUNCH_TOKEN_TTL_SECONDS=600
+REVELRY_SESSION_LOBBY_TTL_SECONDS=14400
+REVELRY_SESSION_IDLE_TTL_SECONDS=7200
+PUBLIC_BASE_URL=https://gamesapi.revelryapp.me
+ALLOWED_ORIGINS=https://gamesapi.revelryapp.me,https://app.revelryapp.me,https://api.revelryapp.me,https://api-gamma.revelryapp.me
 ```
 
 Revelry:
@@ -706,13 +708,20 @@ GAMES_ENGINE_URL=https://gamesapi.revelryapp.me
 LOCALPLAY_INTEGRATION_SECRET=<matching-secret-or-private-key>
 ```
 
-Gamma should use gamma URLs and separate secrets.
+Gamma should use gamma URLs, a separate secret, and `PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me`.
 
 ## Testing
 
-LocalPlay should add focused tests for:
+Implemented LocalPlay tests cover:
 
 - valid handoff creates a session
+- one-active-session replacement requires host confirmation
+- launch-token minting and resolution
+- stable `/sessions/{session_id}/organizer` redirect with token validation
+- status polling returns joinability and launch metadata
+
+Remaining focused tests to add:
+
 - expired handoff is rejected
 - wrong audience/issuer is rejected
 - organizer launch rejects player-scoped token
@@ -751,16 +760,16 @@ Do not promote to production until the gamma flow is playable end to end.
 
 Recommended LocalPlay order:
 
-1. Add config for Revelry integration origins/secrets.
-2. Add generic durable session/participant schema and db facade methods.
-3. Add catalog endpoint.
-4. Add handoff validation helper.
-5. Add embeddable launch shell/chrome mode.
-6. Add session wrapper around current `/room/create`.
-7. Add `POST /integrations/revelry/sessions`.
-8. Add safe one-active-game replacement handling.
-9. Add on-demand launch-token exchange.
-10. Add status/result polling endpoint.
+1. Add config for Revelry integration origins/secrets. Done.
+2. Add generic durable session schema and db facade methods. Done for `game_sessions`; participant persistence remains deferred.
+3. Add catalog endpoint. Done.
+4. Add handoff validation helper. Done for shared-secret bearer/JWT validation.
+5. Add embeddable launch shell/chrome mode. Partially done via launch-token query resolution in the existing organizer/player/spectator routes; dedicated embedded chrome polish remains.
+6. Add session wrapper around current `/room/create`. Done.
+7. Add `POST /integrations/revelry/sessions`. Done.
+8. Add safe one-active-game replacement handling. Done.
+9. Add on-demand launch-token exchange. Done.
+10. Add status/result polling endpoint. Done.
 11. Add postMessage events only where they improve embedded UX.
 12. Add callback/webhook delivery only if polling proves insufficient.
 

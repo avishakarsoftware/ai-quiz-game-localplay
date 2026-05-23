@@ -1405,6 +1405,11 @@ Gamma env requirements:
 - `GOOGLE_CLIENT_ID=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com`
 - `APPLE_CLIENT_ID=me.revelryapp.quiz.web`
 - `APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz`
+- `PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me`
+- `REVELRY_INTEGRATION_SECRET=<strong gamma shared secret matching Revelry gamma>`
+- `REVELRY_LAUNCH_TOKEN_TTL_SECONDS=600`
+- `REVELRY_SESSION_LOBBY_TTL_SECONDS=14400`
+- `REVELRY_SESSION_IDLE_TTL_SECONDS=7200`
 - test Stripe keys and webhook secret
 - distinct mounted data directory; current gamma should set `DB_DIR=/app/data` and mount `/home/revelry-games/revelry-data-gamma:/app/data`
 - same Gemini key unless a separate quota is desired
@@ -1421,6 +1426,11 @@ Production env should include both user-facing and backend-preview origins:
 - `GOOGLE_CLIENT_ID=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com`
 - `APPLE_CLIENT_ID=me.revelryapp.quiz.web`
 - `APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz`
+- `PUBLIC_BASE_URL=https://gamesapi.revelryapp.me`
+- `REVELRY_INTEGRATION_SECRET=<strong prod shared secret matching Revelry prod>`
+- `REVELRY_LAUNCH_TOKEN_TTL_SECONDS=600`
+- `REVELRY_SESSION_LOBBY_TTL_SECONDS=14400`
+- `REVELRY_SESSION_IDLE_TTL_SECONDS=7200`
 - keep any existing `revelryapp.me` origins that are still needed for compatibility
 - CORS origins are scheme + host + optional port only; do not include `/quiz/`.
 - Deployed env vars and remote `config.json` override code defaults; free and premium model settings should both stay on `gemini-2.5-flash-lite`.

@@ -678,3 +678,77 @@ def get_media_asset(owner_wallet_id: str, asset_id: str) -> Optional[dict]:
         filters={"id": f"eq.{asset_id}", "owner_wallet_id": f"eq.{owner_wallet_id}"},
         limit=1,
     ))
+
+
+def create_game_session(session: dict) -> dict:
+    now = _now()
+    row = {
+        "id": session["id"],
+        "host_app": session["host_app"],
+        "external_container_id": session["external_container_id"],
+        "external_container_type": session.get("external_container_type", ""),
+        "external_container_title": session.get("external_container_title", ""),
+        "external_host_user_id": session.get("external_host_user_id", ""),
+        "external_host_display_name": session.get("external_host_display_name", ""),
+        "game_type": session["game_type"],
+        "game_id": session.get("game_id", ""),
+        "game_title": session.get("game_title", ""),
+        "room_code": session["room_code"],
+        "organizer_token": session.get("organizer_token", ""),
+        "status": session.get("status", "lobby"),
+        "joinable": session.get("joinable", True),
+        "closed_reason": session.get("closed_reason"),
+        "closed_message": session.get("closed_message"),
+        "superseded_by_session_id": session.get("superseded_by_session_id"),
+        "launch_routes": session.get("launch_routes", {}),
+        "feed_card": session.get("feed_card", {}),
+        "result_summary": session.get("result_summary"),
+        "created_at": session.get("created_at", now),
+        "started_at": session.get("started_at"),
+        "completed_at": session.get("completed_at"),
+        "expires_at": session.get("expires_at", now + config.REVELRY_SESSION_LOBBY_TTL_SECONDS),
+        "last_activity_at": session.get("last_activity_at", now),
+        "updated_at": session.get("updated_at", now),
+    }
+    rows = _sb().insert("game_sessions", row)
+    return rows[0] if rows else row
+
+
+def get_game_session(session_id: str) -> Optional[dict]:
+    return _first(_sb().select("game_sessions", filters={"id": f"eq.{session_id}"}, limit=1))
+
+
+def get_game_session_by_room(room_code: str) -> Optional[dict]:
+    return _first(_sb().select(
+        "game_sessions",
+        filters={"room_code": f"eq.{room_code}"},
+        order="created_at.desc",
+        limit=1,
+    ))
+
+
+def get_active_game_session(host_app: str, external_container_id: str) -> Optional[dict]:
+    return _first(_sb().select(
+        "game_sessions",
+        filters={
+            "host_app": f"eq.{host_app}",
+            "external_container_id": f"eq.{external_container_id}",
+            "status": "in.(lobby,active,paused)",
+        },
+        order="created_at.desc",
+        limit=1,
+    ))
+
+
+def update_game_session(session_id: str, updates: dict) -> Optional[dict]:
+    allowed = {
+        "status", "joinable", "closed_reason", "closed_message", "superseded_by_session_id",
+        "launch_routes", "feed_card", "result_summary", "started_at", "completed_at",
+        "expires_at", "last_activity_at", "updated_at",
+    }
+    body = {key: value for key, value in updates.items() if key in allowed}
+    if not body:
+        return get_game_session(session_id)
+    body["updated_at"] = body.get("updated_at", _now())
+    rows = _sb().update("game_sessions", body, filters={"id": f"eq.{session_id}"})
+    return rows[0] if rows else None

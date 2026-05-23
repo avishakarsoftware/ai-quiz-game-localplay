@@ -31,7 +31,7 @@ requires_ollama = pytest.mark.skipif(
 )
 
 from fastapi.testclient import TestClient
-from main import app, quizzes, quiz_images, quiz_image_assets, game_history, mlt_scenarios, content_owners
+from main import app, quizzes, quiz_images, quiz_image_assets, game_history, mlt_scenarios, content_owners, _rate_limit_store
 from media_store import media_store
 from socket_manager import socket_manager
 import db
@@ -92,6 +92,7 @@ def clear_state():
     game_history.clear()
     mlt_scenarios.clear()
     content_owners.clear()
+    _rate_limit_store.clear()
     saved_origins = socket_manager.allowed_origins
     socket_manager.allowed_origins = []
     # Fund test wallets
@@ -106,6 +107,7 @@ def clear_state():
     game_history.clear()
     mlt_scenarios.clear()
     content_owners.clear()
+    _rate_limit_store.clear()
     socket_manager.allowed_origins = saved_origins
 
 

@@ -154,6 +154,11 @@ REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json
 GOOGLE_CLIENT_ID=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com
 APPLE_CLIENT_ID=me.revelryapp.quiz.web
 APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz
+PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me
+REVELRY_INTEGRATION_SECRET=<strong gamma shared secret matching Revelry gamma>
+REVELRY_LAUNCH_TOKEN_TTL_SECONDS=600
+REVELRY_SESSION_LOBBY_TTL_SECONDS=14400
+REVELRY_SESSION_IDLE_TTL_SECONDS=7200
 ```
 
 **Important:** The bootstrap copies production Stripe keys into gamma. You must manually replace them with test-mode keys (`sk_test_...`, `whsec_...`) in `/home/revelry-games/app/.env.gamma` before testing checkout, or you will charge real money.
@@ -171,6 +176,11 @@ SUPABASE_SERVICE_KEY=<service-role-key>
 GOOGLE_CLIENT_ID=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com
 APPLE_CLIENT_ID=me.revelryapp.quiz.web
 APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz
+PUBLIC_BASE_URL=https://gamesapi.revelryapp.me
+REVELRY_INTEGRATION_SECRET=<strong prod shared secret matching Revelry prod>
+REVELRY_LAUNCH_TOKEN_TTL_SECONDS=600
+REVELRY_SESSION_LOBBY_TTL_SECONDS=14400
+REVELRY_SESSION_IDLE_TTL_SECONDS=7200
 ```
 
 Origins are scheme + host + optional port only; do not include `/quiz/` or other paths. Installed PWAs still use the web origin they were installed from, while Capacitor/native shells and local development need their own localhost-style origins.

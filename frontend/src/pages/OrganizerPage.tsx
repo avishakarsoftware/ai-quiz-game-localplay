@@ -673,6 +673,30 @@ export default function OrganizerPage() {
     useEffect(() => { connectWsRef.current = connectWs; }, [connectWs]);
 
     useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const launchToken = params.get('launch_token');
+        if (!launchToken) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(apiUrl(`/integrations/revelry/launch-token/resolve?scope=organizer&launch_token=${encodeURIComponent(launchToken)}`));
+                if (!res.ok) throw new Error('Launch token rejected');
+                const data = await res.json();
+                if (cancelled) return;
+                setRoomCode(data.room_code);
+                organizerTokenRef.current = data.organizer_token || '';
+                setState('ROOM');
+                connectWsRef.current(data.room_code);
+            } catch {
+                if (!cancelled) {
+                    setErrorModal({ title: 'Launch Expired', message: 'This game link expired. Ask the host to reopen the game.' });
+                }
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    useEffect(() => {
         return () => {
             mountedRef.current = false;
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);

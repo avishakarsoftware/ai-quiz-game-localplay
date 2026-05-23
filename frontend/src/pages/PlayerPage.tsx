@@ -14,6 +14,7 @@ import Avatar from '../components/Avatar';
 import DrawingCanvas from '../components/DrawingCanvas';
 import GameImage from '../components/media/GameImage';
 import { mediaUrl } from '../utils/media';
+import { apiUrl } from '../utils/api';
 
 type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
@@ -59,6 +60,25 @@ export default function PlayerPage() {
     const [introCount, setIntroCount] = useState(3);
     const [lobbyPlayers, setLobbyPlayers] = useState<PlayerInfo[]>([]);
     const [powerUps, setPowerUps] = useState<PowerUps>({ double_points: true, fifty_fifty: true });
+
+    useEffect(() => {
+        const launchToken = searchParams.get('launch_token');
+        if (!launchToken) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(apiUrl(`/integrations/revelry/launch-token/resolve?scope=player&launch_token=${encodeURIComponent(launchToken)}`));
+                if (!res.ok) throw new Error('Launch token rejected');
+                const data = await res.json();
+                if (!cancelled && data.room_code) {
+                    setRoomCode(data.room_code);
+                }
+            } catch {
+                if (!cancelled) setError('This game link expired. Ask the host to reopen it.');
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [searchParams]);
     const [hiddenOptions, setHiddenOptions] = useState<number[]>([]);
     const [isBonus, setIsBonus] = useState(false);
     const [showBonusSplash, setShowBonusSplash] = useState(false);

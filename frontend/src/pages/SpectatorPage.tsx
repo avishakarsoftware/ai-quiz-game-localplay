@@ -14,6 +14,7 @@ import Avatar from '../components/Avatar';
 import DrawingCanvas from '../components/DrawingCanvas';
 import GameImage from '../components/media/GameImage';
 import { mediaUrl } from '../utils/media';
+import { apiUrl } from '../utils/api';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
@@ -53,6 +54,27 @@ export default function SpectatorPage() {
     const [showFullscreenPrompt, setShowFullscreenPrompt] = useState(true);
     const [wmltRoundResult, setWmltRoundResult] = useState<{ winner: string; winners: string[]; round_podium: { nickname: string; avatar: string; vote_count: number; voters: string[] }[]; unanimous: boolean; show_votes: boolean; statement: string } | null>(null);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
+
+    useEffect(() => {
+        const launchToken = searchParams.get('launch_token');
+        if (!launchToken) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(apiUrl(`/integrations/revelry/launch-token/resolve?scope=spectator&launch_token=${encodeURIComponent(launchToken)}`));
+                if (!res.ok) throw new Error('Launch token rejected');
+                const data = await res.json();
+                if (!cancelled && data.room_code) {
+                    setRoomCode(data.room_code);
+                    setJoined(true);
+                    setGameState('CONNECTING');
+                }
+            } catch {
+                if (!cancelled) setGameState('CLOSED');
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [searchParams]);
     const [drawingDrawer, setDrawingDrawer] = useState('');
     const [drawingOps, setDrawingOps] = useState<DrawOperation[]>([]);
     const [correctGuessers, setCorrectGuessers] = useState<string[]>([]);
@@ -290,7 +312,7 @@ export default function SpectatorPage() {
     useEffect(() => {
         if (!joined || !roomCode) return;
         roomClosedRef.current = false;
-        setRoomClosed(false); // eslint-disable-line react-hooks/set-state-in-effect -- reset on new room join
+        setRoomClosed(false);
         reconnectDelayRef.current = 2000;
         connectWs.current();
         return () => {
@@ -306,7 +328,7 @@ export default function SpectatorPage() {
     // Staggered podium reveal
     useEffect(() => {
         if (gameState !== 'PODIUM') return;
-        setPodiumReveal(0); // eslint-disable-line react-hooks/set-state-in-effect -- reset before timed reveal sequence
+        setPodiumReveal(0);
         const timers = [
             setTimeout(() => setPodiumReveal(1), 300),
             setTimeout(() => setPodiumReveal(2), 1000),

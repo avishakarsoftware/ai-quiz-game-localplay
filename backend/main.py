@@ -1,12 +1,13 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel, field_validator
-from typing import List, Optional, Dict
+from fastapi.responses import FileResponse, RedirectResponse, Response
+from pydantic import BaseModel, Field, field_validator
+from typing import Any, List, Optional, Dict
 from collections import defaultdict
 import os
 import re
 import time
+from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from pathlib import Path
 import uvicorn
@@ -18,6 +19,7 @@ import hmac
 import hashlib
 import logging
 import socket as socketlib
+import jwt
 
 import config
 config.setup_logging()
@@ -44,6 +46,7 @@ API_PREFIXES = (
     "/entitlements",
     "/health",
     "/history",
+    "/integrations",
     "/media",
     "/mlt",
     "/providers",
@@ -51,6 +54,7 @@ API_PREFIXES = (
     "/quiz",
     "/quiz-packs",
     "/room",
+    "/sessions",
     "/sd",
     "/system",
     "/tokens",
@@ -365,6 +369,147 @@ class RoomCreateRequest(BaseModel):
         if v not in ("quiz", "wmlt", "drawing"):
             raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
         return v
+
+
+GAME_CATALOG = [
+    {
+        "id": "quiz",
+        "game_type": "quiz",
+        "runtime_type": "quiz",
+        "title": "AI Quiz",
+        "description": "A fast trivia room with multiple-choice questions.",
+        "launchable": True,
+        "supports_custom_content": True,
+        "supports_images": True,
+    },
+    {
+        "id": "wmlt",
+        "game_type": "wmlt",
+        "runtime_type": "wmlt",
+        "title": "Most Likely To",
+        "description": "Vote on who best matches each prompt.",
+        "launchable": True,
+        "supports_custom_content": False,
+        "supports_images": False,
+    },
+    {
+        "id": "drawing",
+        "game_type": "drawing",
+        "runtime_type": "drawing",
+        "title": "Drawing Game",
+        "description": "Draw secret prompts while everyone guesses.",
+        "launchable": True,
+        "supports_custom_content": False,
+        "supports_images": False,
+    },
+]
+
+
+def _now_ts() -> int:
+    return int(time.time())
+
+
+def _iso(ts: Optional[int]) -> Optional[str]:
+    if not ts:
+        return None
+    return datetime.fromtimestamp(int(ts), timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _public_base_url(req: Request) -> str:
+    configured = config.PUBLIC_BASE_URL
+    if configured:
+        return configured
+    return str(req.base_url).rstrip("/")
+
+
+def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
+    if game_type == "wmlt":
+        return str(uuid.uuid4()), {
+            "game_title": title or "Most Likely To",
+            "statements": [
+                {"id": 1, "text": "Most likely to start the dance floor"},
+                {"id": 2, "text": "Most likely to remember every tiny detail"},
+                {"id": 3, "text": "Most likely to make everyone laugh"},
+            ],
+        }
+    if game_type == "drawing":
+        return str(uuid.uuid4()), {
+            "game_title": title or "Drawing Game",
+            "prompts": [
+                {"id": 1, "text": "birthday cake", "aliases": ["cake"]},
+                {"id": 2, "text": "dance party", "aliases": ["party"]},
+                {"id": 3, "text": "confetti", "aliases": []},
+            ],
+        }
+    return str(uuid.uuid4()), {
+        "quiz_title": title or "Party Quiz",
+        "questions": [
+            {"id": 1, "text": "What is the best kind of party snack?", "options": ["Chips", "Napkins", "Ice cubes", "Plates"], "answer_index": 0, "image_prompt": ""},
+            {"id": 2, "text": "How many points is a correct answer worth by default?", "options": ["1", "10", "100", "1000"], "answer_index": 2, "image_prompt": ""},
+            {"id": 3, "text": "What should players do first?", "options": ["Join the room", "Close the tab", "Mute everyone", "Hide the QR code"], "answer_index": 0, "image_prompt": ""},
+        ],
+    }
+
+
+def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = "") -> tuple[str, dict]:
+    if game_type == "wmlt":
+        if content_id:
+            if content_id not in mlt_scenarios:
+                raise HTTPException(status_code=404, detail="MLT scenario not found")
+            return content_id, mlt_scenarios[content_id]
+        return _default_game_content(game_type, title)
+    if game_type == "drawing":
+        if content_id:
+            if content_id not in drawing_games:
+                raise HTTPException(status_code=404, detail="Drawing game not found")
+            return content_id, drawing_games[content_id]
+        return _default_game_content(game_type, title)
+    if content_id:
+        if content_id not in quizzes:
+            raise HTTPException(status_code=404, detail="Quiz not found")
+        return content_id, quizzes[content_id]
+    return _default_game_content("quiz", title)
+
+
+def _create_runtime_room(game_type: str, content_id: str, game_data: dict, wallet_id: str, time_limit: int) -> tuple[str, str]:
+    if game_type == "wmlt" and not game_data.get("statements"):
+        raise HTTPException(status_code=422, detail="Game has no statements")
+    if game_type == "drawing" and not game_data.get("prompts"):
+        raise HTTPException(status_code=422, detail="Drawing game has no prompts")
+    if game_type == "quiz" and not game_data.get("questions"):
+        raise HTTPException(status_code=422, detail="Quiz has no questions")
+    if len(socket_manager.rooms) >= config.MAX_ROOMS:
+        raise HTTPException(status_code=429, detail="Too many active rooms. Please try again later.")
+
+    room_code = generate_room_code()
+    organizer_token = secrets.token_urlsafe(32)
+
+    import copy
+    game_data = copy.deepcopy(game_data)
+    if game_type == "quiz" and content_id in quiz_images:
+        for question in game_data["questions"]:
+            asset_id = quiz_image_assets.get(content_id, {}).get(question["id"])
+            if asset_id:
+                asset = media_store.get_asset(asset_id)
+                if asset:
+                    question["image_asset_id"] = asset.id
+                    question["image_url"] = asset.url
+                    question["image_alt"] = asset.alt_text
+                    continue
+            if question["id"] in quiz_images[content_id]:
+                question["image_url"] = f"/quiz/{content_id}/image/{question['id']}"
+
+    room = socket_manager.create_room(
+        room_code,
+        game_data,
+        time_limit,
+        organizer_token=organizer_token,
+        content_id=content_id,
+        game_type=game_type,
+    )
+    room.wallet_id = wallet_id
+    logger.info("Room created: %s (type=%s)", room_code, game_type)
+    return room_code, organizer_token
 
 
 class ImageGenerateRequest(BaseModel):
@@ -791,6 +936,352 @@ async def get_media_asset(asset_id: str):
     )
 
 
+@app.get("/catalog")
+async def get_catalog(host_app: str = ""):
+    """Return launchable LocalPlay catalog metadata for first-party and host apps."""
+    return {
+        "host_app": host_app or None,
+        "games": GAME_CATALOG,
+    }
+
+
+class RevelryActor(BaseModel):
+    external_user_id: str = ""
+    external_guest_id: Optional[str] = None
+    display_name: str = ""
+    avatar_url: str = ""
+    role: str = "host"
+    capabilities: list[str] = Field(default_factory=list)
+
+
+class RevelryExternalContext(BaseModel):
+    host_app: str = "revelry"
+    external_container_type: str = "party"
+    external_container_id: str
+    external_container_title: str = ""
+    party_type: str = ""
+    brand_key: str = "revelry"
+    host_user_id: str = ""
+    return_url: str = ""
+
+
+class RevelrySessionCreateRequest(BaseModel):
+    handoff_token: str = ""
+    game_type: str = "quiz"
+    settings: dict[str, Any] = Field(default_factory=dict)
+    replace_session_id: Optional[str] = None
+    replacement_confirmed: bool = False
+    external_context: RevelryExternalContext
+    actor: RevelryActor = Field(default_factory=RevelryActor)
+
+    @field_validator("game_type")
+    @classmethod
+    def validate_game_type(cls, value: str) -> str:
+        if value not in ("quiz", "wmlt", "drawing"):
+            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
+        return value
+
+
+class RevelryLaunchTokenRequest(BaseModel):
+    scope: str = "player"
+    route: str = "join"
+    embed: bool = True
+    return_url: str = ""
+
+    @field_validator("scope")
+    @classmethod
+    def validate_scope(cls, value: str) -> str:
+        if value not in ("organizer", "player", "spectator"):
+            raise ValueError("scope must be organizer, player, or spectator")
+        return value
+
+
+def _require_revelry_auth(req: Request, handoff_token: str = "") -> dict:
+    secret = config.REVELRY_INTEGRATION_SECRET
+    if not secret:
+        raise HTTPException(status_code=503, detail="Revelry integration is not configured")
+    bearer = (req.headers.get("authorization") or "").strip()
+    token = ""
+    if bearer.lower().startswith("bearer "):
+        token = bearer[7:].strip()
+    token = handoff_token or token
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing integration credential")
+    if hmac.compare_digest(token, secret):
+        return {"type": "service", "iss": "local"}
+    try:
+        claims = jwt.decode(token, secret, algorithms=["HS256"], options={"require": ["exp"]})
+        if claims.get("iss") not in ("revelry", "localplay"):
+            raise HTTPException(status_code=401, detail="Invalid integration issuer")
+        return claims
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid or expired integration credential")
+
+
+def _session_launch_routes(base_url: str, session_id: str) -> dict:
+    return {
+        "organizer": {
+            "url": f"{base_url}/sessions/{session_id}/organizer?embed=1",
+            "path": f"/sessions/{session_id}/organizer",
+            "scope": "organizer",
+        },
+        "player": {
+            "url": f"{base_url}/sessions/{session_id}/join",
+            "path": f"/sessions/{session_id}/join",
+            "scope": "player",
+        },
+        "spectator": {
+            "url": f"{base_url}/sessions/{session_id}/spectate",
+            "path": f"/sessions/{session_id}/spectate",
+            "scope": "spectator",
+        },
+    }
+
+
+def _session_feed_card(title: str, actor_name: str) -> dict:
+    return {
+        "title": title,
+        "body": f"{actor_name or 'The host'} started a LocalPlay game.",
+        "action_label": "Join game",
+        "thumbnail_url": "",
+    }
+
+
+def _format_session(session: dict) -> dict:
+    room = socket_manager.rooms.get(session.get("room_code", ""))
+    status = session.get("status", "lobby")
+    joinable = bool(session.get("joinable", True))
+    last_activity_at = session.get("last_activity_at")
+    if room:
+        last_activity_at = int(room.last_activity)
+        if room.state == "LOBBY":
+            status = "lobby"
+        elif room.state == "PODIUM":
+            status = "complete"
+            joinable = False
+        else:
+            status = "active"
+    elif status in ("lobby", "active", "paused") and session.get("expires_at", 0) <= _now_ts():
+        status = "expired"
+        joinable = False
+    return {
+        "session_id": session["id"],
+        "room_code": session["room_code"],
+        "status": status,
+        "joinable": joinable,
+        "closed_reason": session.get("closed_reason"),
+        "closed_message": session.get("closed_message"),
+        "superseded_by_session_id": session.get("superseded_by_session_id"),
+        "feed_card": session.get("feed_card") or {},
+        "launch_routes": session.get("launch_routes") or {},
+        "created_at": _iso(session.get("created_at")),
+        "started_at": _iso(session.get("started_at")),
+        "completed_at": _iso(session.get("completed_at")),
+        "expires_at": _iso(session.get("expires_at")),
+        "last_activity_at": _iso(last_activity_at),
+    }
+
+
+def _create_launch_token(session_id: str, scope: str, route: str, return_url: str = "") -> tuple[str, int]:
+    now = datetime.now(timezone.utc)
+    exp = now + timedelta(seconds=config.REVELRY_LAUNCH_TOKEN_TTL_SECONDS)
+    payload = {
+        "type": "revelry_launch",
+        "iss": "localplay",
+        "session_id": session_id,
+        "scope": scope,
+        "route": route,
+        "return_url": return_url,
+        "iat": int(now.timestamp()),
+        "exp": int(exp.timestamp()),
+        "jti": uuid.uuid4().hex,
+    }
+    return jwt.encode(payload, config.REVELRY_INTEGRATION_SECRET, algorithm="HS256"), int(exp.timestamp())
+
+
+def _resolve_launch_token(token: str, expected_session_id: str = "", expected_scope: str = "") -> dict:
+    if not config.REVELRY_INTEGRATION_SECRET:
+        raise HTTPException(status_code=503, detail="Revelry integration is not configured")
+    try:
+        claims = jwt.decode(token, config.REVELRY_INTEGRATION_SECRET, algorithms=["HS256"])
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid or expired launch token")
+    if claims.get("type") != "revelry_launch":
+        raise HTTPException(status_code=401, detail="Invalid launch token")
+    if expected_session_id and claims.get("session_id") != expected_session_id:
+        raise HTTPException(status_code=401, detail="Launch token session mismatch")
+    if expected_scope and claims.get("scope") != expected_scope:
+        raise HTTPException(status_code=403, detail="Launch token scope mismatch")
+    return claims
+
+
+@app.post("/integrations/revelry/sessions")
+async def create_revelry_session(request: RevelrySessionCreateRequest, req: Request):
+    _require_revelry_auth(req, request.handoff_token)
+    context = request.external_context
+    if context.host_app != "revelry":
+        raise HTTPException(status_code=422, detail="Unsupported host_app")
+
+    active = db.get_active_game_session(context.host_app, context.external_container_id)
+    if active and not request.replacement_confirmed:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "active_session_exists",
+                "session_id": active["id"],
+                "message": "An active LocalPlay session already exists for this party.",
+            },
+        )
+    if request.replacement_confirmed and active:
+        if not request.replace_session_id or request.replace_session_id != active["id"]:
+            raise HTTPException(status_code=409, detail="replace_session_id must match the active LocalPlay session")
+
+    time_limit = int(request.settings.get("time_limit") or config.DEFAULT_TIME_LIMIT)
+    time_limit = max(5, min(60, time_limit))
+    title = context.external_container_title or next((g["title"] for g in GAME_CATALOG if g["game_type"] == request.game_type), "LocalPlay Game")
+    content_id, game_data = _resolve_runtime_content(request.game_type, str(request.settings.get("content_id") or ""), title)
+    wallet_id = f"revelry:{context.host_user_id or request.actor.external_user_id or context.external_container_id}"
+    tokens.ensure_wallet(wallet_id)
+    room_code, organizer_token = _create_runtime_room(request.game_type, content_id, game_data, wallet_id, time_limit)
+
+    now = _now_ts()
+    session_id = f"lp_{uuid.uuid4().hex}"
+    base_url = _public_base_url(req)
+    game_title = game_data.get("quiz_title") or game_data.get("game_title") or title
+    session = db.create_game_session({
+        "id": session_id,
+        "host_app": context.host_app,
+        "external_container_id": context.external_container_id,
+        "external_container_type": context.external_container_type,
+        "external_container_title": context.external_container_title,
+        "external_host_user_id": context.host_user_id,
+        "external_host_display_name": request.actor.display_name,
+        "game_type": request.game_type,
+        "game_id": content_id,
+        "game_title": game_title,
+        "room_code": room_code,
+        "organizer_token": organizer_token,
+        "status": "lobby",
+        "joinable": True,
+        "launch_routes": _session_launch_routes(base_url, session_id),
+        "feed_card": _session_feed_card(game_title, request.actor.display_name),
+        "created_at": now,
+        "expires_at": now + config.REVELRY_SESSION_LOBBY_TTL_SECONDS,
+        "last_activity_at": now,
+        "updated_at": now,
+    })
+    if active:
+        db.update_game_session(active["id"], {
+            "status": "superseded",
+            "joinable": False,
+            "closed_reason": "superseded",
+            "closed_message": "The host started a newer game.",
+            "superseded_by_session_id": session_id,
+        })
+    return _format_session(session)
+
+
+@app.post("/integrations/revelry/sessions/{session_id}/launch-token")
+async def create_revelry_launch_token(session_id: str, request: RevelryLaunchTokenRequest, req: Request):
+    _require_revelry_auth(req)
+    route_by_scope = {"organizer": "organizer", "player": "join", "spectator": "spectate"}
+    if request.route != route_by_scope[request.scope]:
+        raise HTTPException(status_code=422, detail="route must match scope")
+    session = db.get_game_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    formatted = _format_session(session)
+    if not formatted["joinable"] and request.scope != "spectator":
+        raise HTTPException(status_code=409, detail="Session is not joinable")
+    token, expires = _create_launch_token(session_id, request.scope, request.route, request.return_url)
+    base_url = _public_base_url(req)
+    query = f"session_id={session_id}&launch_token={token}"
+    if request.embed:
+        query += "&embed=1"
+    path = "organizer" if request.scope == "organizer" else "join" if request.scope == "player" else "spectator"
+    return {
+        "launch_url": f"{base_url}/{path}?{query}",
+        "launch_token_expires_at": _iso(expires),
+    }
+
+
+@app.get("/integrations/revelry/launch-token/resolve")
+async def resolve_revelry_launch_token(launch_token: str, scope: str = ""):
+    claims = _resolve_launch_token(launch_token, expected_scope=scope or "")
+    session = db.get_game_session(claims["session_id"])
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    formatted = _format_session(session)
+    if not formatted["joinable"] and claims.get("scope") != "spectator":
+        raise HTTPException(status_code=409, detail="Session is not joinable")
+    payload = {
+        "session_id": session["id"],
+        "room_code": session["room_code"],
+        "scope": claims.get("scope"),
+        "return_url": claims.get("return_url", ""),
+    }
+    if claims.get("scope") == "organizer":
+        payload["organizer_token"] = session.get("organizer_token", "")
+    return payload
+
+
+@app.get("/integrations/revelry/sessions/{session_id}")
+async def get_revelry_session_status(session_id: str, req: Request):
+    _require_revelry_auth(req)
+    session = db.get_game_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return _format_session(session)
+
+
+@app.get("/integrations/revelry/sessions/{session_id}/results")
+async def get_revelry_session_results(session_id: str, req: Request):
+    _require_revelry_auth(req)
+    session = db.get_game_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    result = session.get("result_summary")
+    if not result:
+        for game in reversed(game_history):
+            if game.get("room_code") == session.get("room_code"):
+                result = game
+                break
+    return {
+        "session_id": session_id,
+        "status": _format_session(session)["status"],
+        "result": result,
+        "feed_card": {
+            "title": f"{session.get('game_title') or 'LocalPlay'} results",
+            "body": "Final results are ready.",
+            "thumbnail_url": "",
+        } if result else None,
+    }
+
+
+@app.get("/sessions/{session_id}/{route}")
+async def launch_session_route(session_id: str, route: str, launch_token: str = "", embed: int = 0):
+    if route not in ("organizer", "join", "spectate"):
+        raise HTTPException(status_code=404, detail="Launch route not found")
+    session = db.get_game_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    scope_by_route = {"organizer": "organizer", "join": "player", "spectate": "spectator"}
+    if launch_token:
+        _resolve_launch_token(launch_token, expected_session_id=session_id, expected_scope=scope_by_route[route])
+    elif route == "organizer":
+        raise HTTPException(status_code=401, detail="Organizer launch token required")
+
+    if route == "organizer":
+        path = f"/organizer?session_id={session_id}&launch_token={launch_token}"
+    elif route == "spectate":
+        path = f"/spectator?room={session['room_code']}"
+    else:
+        path = f"/join?room={session['room_code']}"
+    if embed:
+        path += "&embed=1"
+    return RedirectResponse(path, status_code=302)
+
+
 @app.get("/sd/status")
 async def sd_status():
     """Check if Stable Diffusion is available"""
@@ -799,66 +1290,14 @@ async def sd_status():
 
 @app.post("/room/create")
 async def create_room(request: RoomCreateRequest, req: Request):
-    # Resolve content based on game type
-    if request.game_type == "wmlt":
-        if request.mlt_id not in mlt_scenarios:
-            raise HTTPException(status_code=404, detail="MLT scenario not found")
-        game_data = mlt_scenarios[request.mlt_id]
-        content_id = request.mlt_id
-        if not game_data.get("statements"):
-            raise HTTPException(status_code=422, detail="Game has no statements")
-    elif request.game_type == "drawing":
-        if request.drawing_id not in drawing_games:
-            raise HTTPException(status_code=404, detail="Drawing game not found")
-        game_data = drawing_games[request.drawing_id]
-        content_id = request.drawing_id
-        if not game_data.get("prompts"):
-            raise HTTPException(status_code=422, detail="Drawing game has no prompts")
-    else:
-        if request.quiz_id not in quizzes:
-            raise HTTPException(status_code=404, detail="Quiz not found")
-        game_data = quizzes[request.quiz_id]
-        content_id = request.quiz_id
-        if not game_data.get("questions"):
-            raise HTTPException(status_code=422, detail="Quiz has no questions")
-
-    # Resolve wallet for spark charges (charged on game start, not room creation)
+    content_id = request.quiz_id if request.game_type == "quiz" else request.mlt_id if request.game_type == "wmlt" else request.drawing_id
+    content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
     wallet_id = tokens.get_wallet_id(req)
     if not wallet_id:
         raise HTTPException(status_code=400, detail="Device ID required")
     tokens.ensure_wallet(wallet_id)
     _check_content_owner(content_id, wallet_id)
-
-    # Enforce max rooms limit
-    if len(socket_manager.rooms) >= config.MAX_ROOMS:
-        raise HTTPException(status_code=429, detail="Too many active rooms. Please try again later.")
-
-    room_code = generate_room_code()
-    organizer_token = secrets.token_urlsafe(32)
-
-    # Copy game data to avoid mutating the stored original
-    import copy
-    game_data = copy.deepcopy(game_data)
-
-    # Attach image URLs to quiz data if available (quiz only)
-    if request.game_type == "quiz" and content_id in quiz_images:
-        for question in game_data["questions"]:
-            asset_id = quiz_image_assets.get(content_id, {}).get(question["id"])
-            if asset_id:
-                asset = media_store.get_asset(asset_id)
-                if asset:
-                    question["image_asset_id"] = asset.id
-                    question["image_url"] = asset.url
-                    question["image_alt"] = asset.alt_text
-                    continue
-            if question["id"] in quiz_images[content_id]:
-                question["image_url"] = f"/quiz/{content_id}/image/{question['id']}"
-
-    room = socket_manager.create_room(room_code, game_data, request.time_limit,
-                                      organizer_token=organizer_token, content_id=content_id,
-                                      game_type=request.game_type)
-    room.wallet_id = wallet_id
-    logger.info("Room created: %s (type=%s)", room_code, request.game_type)
+    room_code, organizer_token = _create_runtime_room(request.game_type, content_id, game_data, wallet_id, request.time_limit)
     return {"room_code": room_code, "organizer_token": organizer_token}
 
 

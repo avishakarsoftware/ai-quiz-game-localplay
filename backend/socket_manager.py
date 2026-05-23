@@ -273,6 +273,7 @@ class SocketManager:
                         if room.timer_task:
                             room.timer_task.cancel()
                         await room.close_all_connections()
+                        self._mark_game_session_closed(room, "expired", "This game expired. Ask the host to start a new one.")
                     logger.info("Cleaned up expired room %s", code)
             except asyncio.CancelledError:
                 break
@@ -290,6 +291,7 @@ class SocketManager:
                 if room.timer_task:
                     room.timer_task.cancel()
                 await room.close_all_connections()
+                self._mark_game_session_closed(room, "cancelled", "The host left this game.")
                 logger.info("Room %s deleted (organizer did not reconnect within %ds)", room_code, delay)
         except asyncio.CancelledError:
             pass
@@ -591,6 +593,7 @@ class SocketManager:
                     if room.game_type == "quiz":
                         self._select_bonus_questions(room)
                     room.state = "INTRO"
+                    self._mark_game_session_started(room)
                     await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
@@ -629,9 +632,11 @@ class SocketManager:
                     await room.broadcast(podium_msg)
                     try:
                         from main import game_history
-                        game_history.append(self.get_game_summary(room))
+                        summary = self.get_game_summary(room)
+                        game_history.append(summary)
                         if len(game_history) > config.MAX_GAME_HISTORY:
                             del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+                        self._mark_game_session_complete(room, summary)
                     except Exception:
                         logger.warning("Could not save game history for room %s", room.room_code)
 
@@ -1308,6 +1313,57 @@ class SocketManager:
             "wallet_id": room.wallet_id or "",
         }
 
+    def _mark_game_session_complete(self, room: Room, summary: dict):
+        """Attach completed result metadata to an integration session, if present."""
+        try:
+            import db
+            session = db.get_game_session_by_room(room.room_code)
+            if not session:
+                return
+            now = int(time.time())
+            db.update_game_session(session["id"], {
+                "status": "complete",
+                "joinable": False,
+                "result_summary": summary,
+                "completed_at": now,
+                "last_activity_at": now,
+            })
+        except Exception:
+            logger.warning("Could not update game session for room %s", room.room_code)
+
+    def _mark_game_session_started(self, room: Room):
+        try:
+            import db
+            session = db.get_game_session_by_room(room.room_code)
+            if not session or session.get("started_at"):
+                return
+            now = int(time.time())
+            db.update_game_session(session["id"], {
+                "status": "active",
+                "started_at": now,
+                "expires_at": now + config.REVELRY_SESSION_IDLE_TTL_SECONDS,
+                "last_activity_at": now,
+            })
+        except Exception:
+            logger.warning("Could not mark game session started for room %s", room.room_code)
+
+    def _mark_game_session_closed(self, room: Room, reason: str, message: str):
+        try:
+            import db
+            session = db.get_game_session_by_room(room.room_code)
+            if not session or session.get("status") in ("complete", "superseded", "cancelled", "expired"):
+                return
+            now = int(time.time())
+            db.update_game_session(session["id"], {
+                "status": reason,
+                "joinable": False,
+                "closed_reason": reason,
+                "closed_message": message,
+                "last_activity_at": now,
+            })
+        except Exception:
+            logger.warning("Could not mark game session closed for room %s", room.room_code)
+
     def _select_bonus_questions(self, room: Room):
         """Pre-select which rounds will be bonus rounds (2x points)."""
         import random
@@ -1343,9 +1399,11 @@ class SocketManager:
             # Save game history — import here to avoid circular dependency
             try:
                 from main import game_history
-                game_history.append(self.get_game_summary(room))
+                summary = self.get_game_summary(room)
+                game_history.append(summary)
                 if len(game_history) > config.MAX_GAME_HISTORY:
                     del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+                self._mark_game_session_complete(room, summary)
                 logger.info("Game history saved for room %s", room.room_code)
             except Exception:
                 logger.warning("Could not save game history for room %s", room.room_code)

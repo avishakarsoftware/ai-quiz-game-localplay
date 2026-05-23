@@ -129,6 +129,13 @@ APPLE_CLIENT_IDS = [
 ]
 SESSION_JWT_EXPIRY_DAYS = int(os.getenv("SESSION_JWT_EXPIRY_DAYS", "30"))
 
+# --- Host app integrations ---
+REVELRY_INTEGRATION_SECRET = os.getenv("REVELRY_INTEGRATION_SECRET", "").strip()
+REVELRY_LAUNCH_TOKEN_TTL_SECONDS = int(os.getenv("REVELRY_LAUNCH_TOKEN_TTL_SECONDS", "600"))
+REVELRY_SESSION_LOBBY_TTL_SECONDS = int(os.getenv("REVELRY_SESSION_LOBBY_TTL_SECONDS", str(4 * 3600)))
+REVELRY_SESSION_IDLE_TTL_SECONDS = int(os.getenv("REVELRY_SESSION_IDLE_TTL_SECONDS", str(2 * 3600)))
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+
 # --- Logging ---
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_FILE = os.getenv("LOG_FILE", "")  # empty = stdout only

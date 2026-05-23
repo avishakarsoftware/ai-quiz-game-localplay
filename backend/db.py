@@ -159,6 +159,39 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_media_assets_owner_updated
             ON media_assets(owner_wallet_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS game_sessions (
+            id TEXT PRIMARY KEY,
+            host_app TEXT NOT NULL,
+            external_container_id TEXT NOT NULL,
+            external_container_type TEXT NOT NULL DEFAULT '',
+            external_container_title TEXT NOT NULL DEFAULT '',
+            external_host_user_id TEXT NOT NULL DEFAULT '',
+            external_host_display_name TEXT NOT NULL DEFAULT '',
+            game_type TEXT NOT NULL,
+            game_id TEXT NOT NULL DEFAULT '',
+            game_title TEXT NOT NULL DEFAULT '',
+            room_code TEXT NOT NULL,
+            organizer_token TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'lobby',
+            joinable INTEGER NOT NULL DEFAULT 1,
+            closed_reason TEXT,
+            closed_message TEXT,
+            superseded_by_session_id TEXT,
+            launch_routes TEXT NOT NULL DEFAULT '{}',
+            feed_card TEXT NOT NULL DEFAULT '{}',
+            result_summary TEXT,
+            created_at INTEGER NOT NULL,
+            started_at INTEGER,
+            completed_at INTEGER,
+            expires_at INTEGER NOT NULL,
+            last_activity_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_game_sessions_external_active
+            ON game_sessions(host_app, external_container_id, status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_game_sessions_room
+            ON game_sessions(room_code);
     """)
     conn.commit()
     # Add metadata column if missing (migration for existing databases)
@@ -1303,6 +1336,119 @@ def get_media_asset(owner_wallet_id: str, asset_id: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
+# --- Durable game sessions for host-app integrations ---
+
+def _session_row_to_dict(row: sqlite3.Row) -> dict:
+    data = dict(row)
+    for key in ("launch_routes", "feed_card", "result_summary"):
+        raw = data.get(key)
+        if raw:
+            data[key] = json.loads(raw)
+        elif key == "result_summary":
+            data[key] = None
+        else:
+            data[key] = {}
+    data["joinable"] = bool(data.get("joinable"))
+    return data
+
+
+def create_game_session(session: dict) -> dict:
+    conn = _get_conn()
+    now = int(time.time())
+    row = {
+        "id": session["id"],
+        "host_app": session["host_app"],
+        "external_container_id": session["external_container_id"],
+        "external_container_type": session.get("external_container_type", ""),
+        "external_container_title": session.get("external_container_title", ""),
+        "external_host_user_id": session.get("external_host_user_id", ""),
+        "external_host_display_name": session.get("external_host_display_name", ""),
+        "game_type": session["game_type"],
+        "game_id": session.get("game_id", ""),
+        "game_title": session.get("game_title", ""),
+        "room_code": session["room_code"],
+        "organizer_token": session.get("organizer_token", ""),
+        "status": session.get("status", "lobby"),
+        "joinable": 1 if session.get("joinable", True) else 0,
+        "closed_reason": session.get("closed_reason"),
+        "closed_message": session.get("closed_message"),
+        "superseded_by_session_id": session.get("superseded_by_session_id"),
+        "launch_routes": json.dumps(session.get("launch_routes", {})),
+        "feed_card": json.dumps(session.get("feed_card", {})),
+        "result_summary": json.dumps(session["result_summary"]) if session.get("result_summary") is not None else None,
+        "created_at": session.get("created_at", now),
+        "started_at": session.get("started_at"),
+        "completed_at": session.get("completed_at"),
+        "expires_at": session.get("expires_at", now + config.REVELRY_SESSION_LOBBY_TTL_SECONDS),
+        "last_activity_at": session.get("last_activity_at", now),
+        "updated_at": session.get("updated_at", now),
+    }
+    conn.execute(
+        "INSERT INTO game_sessions (id, host_app, external_container_id, external_container_type, external_container_title, "
+        "external_host_user_id, external_host_display_name, game_type, game_id, game_title, room_code, organizer_token, "
+        "status, joinable, closed_reason, closed_message, superseded_by_session_id, launch_routes, feed_card, result_summary, "
+        "created_at, started_at, completed_at, expires_at, last_activity_at, updated_at) "
+        "VALUES (:id, :host_app, :external_container_id, :external_container_type, :external_container_title, "
+        ":external_host_user_id, :external_host_display_name, :game_type, :game_id, :game_title, :room_code, :organizer_token, "
+        ":status, :joinable, :closed_reason, :closed_message, :superseded_by_session_id, :launch_routes, :feed_card, :result_summary, "
+        ":created_at, :started_at, :completed_at, :expires_at, :last_activity_at, :updated_at)",
+        row,
+    )
+    conn.commit()
+    created = get_game_session(session["id"])
+    if not created:
+        raise RuntimeError("Failed to create game session")
+    return created
+
+
+def get_game_session(session_id: str) -> Optional[dict]:
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM game_sessions WHERE id = ?", (session_id,)).fetchone()
+    return _session_row_to_dict(row) if row else None
+
+
+def get_game_session_by_room(room_code: str) -> Optional[dict]:
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT * FROM game_sessions WHERE room_code = ? ORDER BY created_at DESC LIMIT 1",
+        (room_code,),
+    ).fetchone()
+    return _session_row_to_dict(row) if row else None
+
+
+def get_active_game_session(host_app: str, external_container_id: str) -> Optional[dict]:
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT * FROM game_sessions WHERE host_app = ? AND external_container_id = ? "
+        "AND status IN ('lobby', 'active', 'paused') ORDER BY created_at DESC LIMIT 1",
+        (host_app, external_container_id),
+    ).fetchone()
+    return _session_row_to_dict(row) if row else None
+
+
+def update_game_session(session_id: str, updates: dict) -> Optional[dict]:
+    allowed = {
+        "status", "joinable", "closed_reason", "closed_message", "superseded_by_session_id",
+        "launch_routes", "feed_card", "result_summary", "started_at", "completed_at",
+        "expires_at", "last_activity_at", "updated_at",
+    }
+    body = {key: value for key, value in updates.items() if key in allowed}
+    if not body:
+        return get_game_session(session_id)
+    if "joinable" in body:
+        body["joinable"] = 1 if body["joinable"] else 0
+    for key in ("launch_routes", "feed_card", "result_summary"):
+        if key in body and body[key] is not None:
+            body[key] = json.dumps(body[key])
+    body["updated_at"] = body.get("updated_at", int(time.time()))
+    assignments = ", ".join(f"{key} = ?" for key in body)
+    values = list(body.values()) + [session_id]
+    conn = _get_conn()
+    conn.execute(f"UPDATE game_sessions SET {assignments} WHERE id = ?", values)
+    conn.commit()
+    return get_game_session(session_id)
+
+
 if config.DB_BACKEND == "supabase":
     import supabase_db as _supabase_db
 
@@ -1359,6 +1505,11 @@ if config.DB_BACKEND == "supabase":
         "create_media_asset",
         "finalize_media_asset",
         "get_media_asset",
+        "create_game_session",
+        "get_game_session",
+        "get_game_session_by_room",
+        "get_active_game_session",
+        "update_game_session",
     ]
     for _name in _SUPABASE_EXPORTS:
         globals()[_name] = getattr(_supabase_db, _name)

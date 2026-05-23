@@ -198,6 +198,41 @@ CREATE TABLE IF NOT EXISTS games_media_assets (
 CREATE INDEX IF NOT EXISTS idx_games_media_assets_owner_updated
   ON games_media_assets(owner_wallet_id, updated_at DESC);
 
+CREATE TABLE IF NOT EXISTS games_game_sessions (
+  id TEXT PRIMARY KEY,
+  host_app TEXT NOT NULL,
+  external_container_id TEXT NOT NULL,
+  external_container_type TEXT NOT NULL DEFAULT '',
+  external_container_title TEXT NOT NULL DEFAULT '',
+  external_host_user_id TEXT NOT NULL DEFAULT '',
+  external_host_display_name TEXT NOT NULL DEFAULT '',
+  game_type TEXT NOT NULL,
+  game_id TEXT NOT NULL DEFAULT '',
+  game_title TEXT NOT NULL DEFAULT '',
+  room_code TEXT NOT NULL,
+  organizer_token TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'lobby'
+    CHECK (status IN ('lobby', 'active', 'paused', 'complete', 'expired', 'cancelled', 'superseded')),
+  joinable BOOLEAN NOT NULL DEFAULT TRUE,
+  closed_reason TEXT,
+  closed_message TEXT,
+  superseded_by_session_id TEXT,
+  launch_routes JSONB NOT NULL DEFAULT '{}'::jsonb,
+  feed_card JSONB NOT NULL DEFAULT '{}'::jsonb,
+  result_summary JSONB,
+  created_at BIGINT NOT NULL,
+  started_at BIGINT,
+  completed_at BIGINT,
+  expires_at BIGINT NOT NULL,
+  last_activity_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_games_game_sessions_external_active
+  ON games_game_sessions(host_app, external_container_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_games_game_sessions_room
+  ON games_game_sessions(room_code);
+
 CREATE TABLE IF NOT EXISTS games_game_history (
   id BIGSERIAL PRIMARY KEY,
   room_code TEXT NOT NULL,
@@ -245,6 +280,10 @@ ALTER TABLE games_request_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_pending_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_webhook_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_generated_content ENABLE ROW LEVEL SECURITY;
+ALTER TABLE games_quiz_packs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE games_quiz_questions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE games_media_assets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE games_game_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_game_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_rejections ENABLE ROW LEVEL SECURITY;
 
@@ -274,6 +313,18 @@ CREATE POLICY service_role_all_games_webhook_events ON games_webhook_events
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS service_role_all_games_generated_content ON games_generated_content;
 CREATE POLICY service_role_all_games_generated_content ON games_generated_content
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS service_role_all_games_quiz_packs ON games_quiz_packs;
+CREATE POLICY service_role_all_games_quiz_packs ON games_quiz_packs
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS service_role_all_games_quiz_questions ON games_quiz_questions;
+CREATE POLICY service_role_all_games_quiz_questions ON games_quiz_questions
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS service_role_all_games_media_assets ON games_media_assets;
+CREATE POLICY service_role_all_games_media_assets ON games_media_assets
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS service_role_all_games_game_sessions ON games_game_sessions;
+CREATE POLICY service_role_all_games_game_sessions ON games_game_sessions
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS service_role_all_games_game_history ON games_game_history;
 CREATE POLICY service_role_all_games_game_history ON games_game_history
