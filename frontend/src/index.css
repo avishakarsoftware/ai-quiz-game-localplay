@@ -2745,3 +2745,148 @@ body {
     max-height: 35vh;
     overflow: hidden;
 }
+
+.party-hub {
+    min-height: 100dvh;
+    padding: clamp(20px, 4vw, 48px);
+    color: var(--ink);
+    background:
+        linear-gradient(135deg, rgba(255, 79, 154, 0.18), transparent 38%),
+        linear-gradient(180deg, var(--bg-deep), var(--bg));
+}
+
+.party-hub--center {
+    display: grid;
+    place-items: center;
+    text-align: center;
+    font-size: 1.2rem;
+}
+
+.party-hub__header {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 18px;
+    align-items: center;
+    max-width: 1100px;
+    margin: 0 auto 32px;
+}
+
+.party-hub__cover {
+    width: 92px;
+    height: 92px;
+    border-radius: 8px;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.party-hub__title-block p,
+.party-hub__title-block span,
+.party-hub__card span,
+.party-hub__card p {
+    margin: 0;
+    color: var(--ink-mute);
+}
+
+.party-hub__title-block h1 {
+    margin: 2px 0;
+    font-size: clamp(2rem, 5vw, 4.2rem);
+    line-height: 0.95;
+}
+
+.party-hub button {
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: var(--ink);
+    background: color-mix(in srgb, var(--party-accent, #ff4f9a) 24%, rgba(255, 255, 255, 0.08));
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.party-hub button:disabled {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+.party-hub__return {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.party-hub__section {
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.party-hub__section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.party-hub__section-head h2 {
+    margin: 0;
+    font-size: 1.4rem;
+}
+
+.party-hub__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 14px;
+}
+
+.party-hub__card,
+.party-hub__empty,
+.party-hub__error {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.party-hub__card {
+    display: grid;
+    gap: 14px;
+    padding: 14px;
+}
+
+.party-hub__card img {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    border-radius: 6px;
+}
+
+.party-hub__card h3 {
+    margin: 4px 0;
+    font-size: 1.25rem;
+}
+
+.party-hub__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.party-hub__actions button {
+    flex: 1 1 120px;
+}
+
+.party-hub__empty,
+.party-hub__error {
+    padding: 18px;
+    color: var(--ink-mute);
+}
+
+@media (max-width: 640px) {
+    .party-hub__header {
+        grid-template-columns: 1fr;
+    }
+
+    .party-hub__cover {
+        width: 100%;
+        height: auto;
+        aspect-ratio: 16 / 9;
+    }
+}

@@ -126,3 +126,90 @@ def test_revelry_session_replacement_requires_confirmation(monkeypatch):
     assert old["status"] == "superseded"
     assert old["joinable"] is False
     assert old["superseded_by_session_id"] == replacement_id
+
+
+def test_revelry_party_workspace_is_non_personalized(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-workspace-{uuid.uuid4().hex}"
+    owner_wallet_id = f"revelry:party:{container_id}"
+    pack = db.save_quiz_pack(
+        owner_wallet_id,
+        "Ava Trivia",
+        [
+            {"text": "Favorite color?", "options": ["Pink", "Blue", "Green", "Gold"], "answer_index": 0},
+            {"text": "Favorite snack?", "options": ["Cake", "Chips", "Fruit", "Popcorn"], "answer_index": 1},
+        ],
+    )
+
+    res = client.get(
+        f"/integrations/revelry/party-workspace?external_container_id={container_id}&external_container_title=Ava",
+        headers=_headers(),
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["external_context"]["external_container_id"] == container_id
+    assert body["active_session"] is None
+    assert body["prepared_content"][0]["localplay_content_id"] == pack["id"]
+    assert body["prepared_content"][0]["action_requirements"] == {
+        "start": ["operate_game"],
+        "edit": ["author_content"],
+        "delete": ["manage_games"],
+    }
+    assert "can_start" not in body["prepared_content"][0]
+
+
+def test_revelry_party_games_link_resolve_and_start_saved_pack(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-hub-{uuid.uuid4().hex}"
+    owner_wallet_id = f"revelry:party:{container_id}"
+    pack = db.save_quiz_pack(
+        owner_wallet_id,
+        "Hub Quiz",
+        [
+            {"text": "Who is hosting?", "options": ["Ava", "Bo", "Cy", "Dee"], "answer_index": 0},
+            {"text": "What are we playing?", "options": ["Quiz", "Chess", "Cards", "Soccer"], "answer_index": 0},
+        ],
+    )
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Ava's Birthday",
+            "cover_image_url": "https://media.revelryapp.me/cover.jpg",
+            "accent_color": "#ff4f9a",
+            "return_url": "https://app.revelryapp.me/party/1?tab=games",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["manage_games", "author_content", "operate_game"],
+        },
+        "return_url": "https://app.revelryapp.me/party/1?tab=games",
+    }
+
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+    assert link_res.status_code == 200
+    link_body = link_res.json()
+    assert "party_games_token=" in link_body["party_games_url"]
+    assert link_body["display"]["container_label"] == "Ava's Birthday"
+    token = link_body["party_games_url"].split("party_games_token=", 1)[1]
+
+    resolve_res = client.get(f"/integrations/revelry/party-games/resolve?party_games_token={token}")
+    assert resolve_res.status_code == 200
+    resolved = resolve_res.json()
+    assert resolved["launch_context"]["surface"] == "party_hub"
+    assert resolved["workspace"]["prepared_content"][0]["localplay_content_id"] == pack["id"]
+
+    start_res = client.post(
+        "/integrations/revelry/party-games/start",
+        json={"party_games_token": token, "content_id": pack["id"], "game_type": "quiz", "time_limit": 20},
+    )
+    assert start_res.status_code == 200
+    start_body = start_res.json()
+    assert start_body["session"]["session_id"].startswith("lp_")
+    assert "launch_token=" in start_body["launch_url"]
+    assert start_body["session"]["room_code"] in socket_manager.rooms
