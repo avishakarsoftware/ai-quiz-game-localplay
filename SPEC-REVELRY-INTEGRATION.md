@@ -1,6 +1,6 @@
 # LocalPlay Revelry Integration Spec
 
-Status: Gamma bridge implemented; LocalPlay-hosted authoring proposed
+Status: Gamma bridge implemented; party-scoped Revelry Games hub proposed
 
 Last updated: 2026-05-23
 
@@ -21,6 +21,7 @@ LocalPlay owns:
 - game catalog metadata
 - game setup and AI content generation
 - game sessions and live room runtime
+- party-scoped host-app game workspace surfaces such as "Revelry Games"
 - WebSockets, reconnects, timers, scoring, and results
 - standalone LocalPlay host/player UX
 - embeddable launch routes for trusted host apps
@@ -30,15 +31,17 @@ Revelry owns:
 - party identity and lifecycle
 - host/cohost/helper/guest roles
 - party membership, RSVP, guest list, and display names
-- Games tab UX and launch authorization
+- Games tab UX, party-scoped entry links, and launch authorization
 - party-scoped entitlement/payment decisions
-- displaying and posting completed result summaries
+- displaying, mirroring, and posting completed result summaries
 
 The bridge owns:
 
 - signed handoff validation
 - creating/resuming a LocalPlay session from external context
 - returning tokenless launch routes
+- opening a party-scoped LocalPlay "Revelry Games" hub
+- synchronizing safe prepared-game/session/result metadata
 - exposing normalized result summaries
 - iframe/open-in-new-tab compatibility
 
@@ -71,6 +74,7 @@ Current limitations and follow-up work:
 - rooms live in process memory
 - participant persistence remains deferred; session metadata is durable
 - LocalPlay-hosted authoring/content APIs are specified below but not implemented
+- party-scoped "Revelry Games" hub is specified below but not implemented
 - host-app launch chrome still needs polish so standalone account, navigation, and economy surfaces do not leak into Revelry-managed sessions
 - result summaries exist but should be hardened as LocalPlay-hosted authoring and richer game variants are added
 
@@ -91,6 +95,7 @@ Minimum LocalPlay work:
 7. Enforce one active game per `host_app` + `external_container_id`, with host-confirmed replacement.
 8. Return a normalized response with `session_id`, `room_code`, `launch_routes`, joinability state, and a safe feed-card payload.
 9. Add a polling status/result endpoint with safe result summaries.
+10. Add a party-scoped "Revelry Games" hub link and workspace sync endpoint so Revelry and LocalPlay show the same prepared games, active session, and results for a party.
 
 Phase 0 may still run gameplay in the existing in-memory `Room`, but the external contract should talk about `session_id`, not raw room internals. Durable session records are required for status polling, friendly expired/superseded states, one-active-game enforcement, and result summaries.
 
@@ -127,6 +132,8 @@ LocalPlay integrations should use a generic host-app model internally. Revelry i
 The API may expose Revelry-specific routes for MVP:
 
 ```text
+POST /integrations/revelry/party-games-link
+GET  /integrations/revelry/party-workspace
 POST /integrations/revelry/sessions
 ```
 
@@ -827,6 +834,114 @@ last_used_at
 metadata jsonb          # safe display hints only
 ```
 
+#### Party-Scoped "Revelry Games" Hub
+
+When a user clicks a generic LocalPlay/Games entry point from Revelry, LocalPlay must not open the standalone LocalPlay catalog. It should open a party-scoped "Revelry Games" hub for the current `host_app = revelry` and `external_container_id`.
+
+The hub is a LocalPlay-owned surface backed by the same party context as the Revelry Games tab. It should show the party title, return action, active game state, prepared/saved party games, draft games, recent results, and the launchable catalog for that party. It should hide standalone LocalPlay navigation, sparks, wallet balances, paywalls, account prompts, unrelated libraries, and games not returned as launchable by the Revelry catalog.
+
+Service endpoint to mint the hub link:
+
+```text
+POST /integrations/revelry/party-games-link
+```
+
+Request:
+
+```json
+{
+  "external_context": {
+    "host_app": "revelry",
+    "external_container_type": "party",
+    "external_container_id": "party_uuid",
+    "external_container_title": "Ava's Birthday",
+    "party_type": "birthday",
+    "brand_key": "revelry"
+  },
+  "actor": {
+    "external_user_id": "revelry_user_uuid",
+    "display_name": "Avi",
+    "role": "host",
+    "capabilities": ["manage_games", "author_content", "operate_game"]
+  },
+  "return_url": "https://app.revelryapp.me/party/party_uuid?tab=games",
+  "preferred_display": "fullscreen"
+}
+```
+
+Response:
+
+```json
+{
+  "party_games_url": "https://gamesapi.revelryapp.me/integrations/revelry/games?party_games_token=...",
+  "party_games_token_expires_at": "2026-05-23T21:00:00Z",
+  "return_url": "https://app.revelryapp.me/party/party_uuid?tab=games"
+}
+```
+
+Rules:
+
+- Requires service authorization from Revelry. Browser/native clients must never receive the shared integration secret.
+- The `party_games_token` is a short-lived exchange token. After exchange, LocalPlay issues a session-scoped runtime credential for the hub, authoring, and start actions.
+- The token must carry the normalized host-app launch context, actor capabilities, allowlisted `return_url`, and display policy.
+- If the token expires before exchange, LocalPlay shows "Open this from Revelry again." Expiry after exchange must not interrupt authoring, lobby, or gameplay while runtime credentials remain valid.
+
+LocalPlay hub route:
+
+```text
+GET /integrations/revelry/games?party_games_token=...
+```
+
+Expected hub behavior:
+
+- Host/cohost sees prepared content for the party, including drafts, ready games, locked/used games, expired items when useful for recovery, and recent completed sessions.
+- Guests see only active/joinable games and completed summaries that Revelry/LocalPlay mark visible to party members.
+- Host/cohost can create, edit, delete, and start party-scoped games directly inside LocalPlay when granted `author_content` and/or `operate_game`.
+- Starting from the LocalPlay hub follows the same rules as starting from the Revelry Games tab: validate `settings.content_id`, enforce one active session per party, warn before replacement in the surface where Start was tapped, create the replacement before superseding the old session, and return safe launch/result metadata.
+- Any game created in the hub remains party-scoped and must be visible later from the Revelry Games tab after sync. Do not save it only to a standalone LocalPlay library.
+
+Workspace sync endpoint for Revelry:
+
+```text
+GET /integrations/revelry/party-workspace?external_container_type=party&external_container_id=party_uuid
+```
+
+This service-authorized endpoint returns safe metadata only:
+
+```json
+{
+  "external_context": {
+    "host_app": "revelry",
+    "external_container_type": "party",
+    "external_container_id": "party_uuid",
+    "external_container_title": "Ava's Birthday"
+  },
+  "catalog": [{ "game_id": "quiz", "launchable": true }],
+  "prepared_content": [
+    {
+      "localplay_content_id": "lp_content_uuid",
+      "game_type": "quiz",
+      "title": "Ava's Birthday Quiz",
+      "status": "ready",
+      "thumbnail_url": "https://gamesmedia.revelryapp.me/gamma/...",
+      "question_count": 12,
+      "created_by": "revelry_user_uuid",
+      "updated_at": "2026-05-23T20:45:00Z",
+      "last_used_at": null
+    }
+  ],
+  "active_session": null,
+  "recent_results": []
+}
+```
+
+Sync rules:
+
+- Revelry may call this endpoint when the Games tab opens, after returning from LocalPlay, after app resume, and after a LocalPlay hub start/edit action.
+- Revelry stores or updates pointer metadata only. It must not store questions, answers, options, raw prompts, media paths, or full LocalPlay payloads.
+- LocalPlay may add webhooks/callbacks later for immediate sync, but polling/refresh is the MVP source of consistency.
+- Conflicts are resolved by LocalPlay content/session timestamps. Revelry should treat its prepared setup records as a mirror of LocalPlay party content, not as the authority for game internals.
+
 ## Handoff Token
 
 Revelry should mint a short-lived signed JWT. LocalPlay validates it. LocalPlay should never use the Revelry app JWT directly as a runtime credential.
@@ -1009,7 +1124,7 @@ Suggested shape:
   "return_url": "https://app.revelryapp.me/party/party_uuid?tab=games",
   "billing_mode": "host_app_managed",
   "allowed_game_ids": ["quiz", "wmlt", "drawing"],
-  "surface": "authoring",
+  "surface": "party_hub",
   "display": {
     "show_localplay_nav": false,
     "show_account_menu": false,
@@ -1031,6 +1146,7 @@ Modes:
 
 Surfaces:
 
+- `party_hub`
 - `authoring`
 - `organizer`
 - `player`
@@ -1039,6 +1155,7 @@ Surfaces:
 
 Revelry-specific UI policy:
 
+- The `party_hub` surface is the LocalPlay-owned full-screen/embedded "Revelry Games" workspace for one party. It must never fall back to the standalone LocalPlay home/catalog when opened from Revelry with valid host-app context.
 - Show `external_container_title` near the top of authoring/lobby/game surfaces, for example "Ava's Birthday".
 - Show a clear return action using the validated `return_url`; use universal/app links where available.
 - Hide sparks, wallet balances, LocalPlay checkout/paywalls, standalone login prompts, and unrelated LocalPlay library/account navigation.
@@ -1207,6 +1324,7 @@ Recommended LocalPlay order:
 - Decision: Roll out on gamma first and do not promote to production until Revelry gamma can create, launch, play, supersede, expire, poll, and summarize a LocalPlay session end to end.
 - Decision: Expose `GET /catalog` as part of the MVP. Revelry should use it to render available LocalPlay games, filtered by host app/environment where needed. LocalPlay still validates launch requests server-side. The catalog may include `live`, `gamma`, `planned`, or `disabled` status values, but Revelry should only enable launch for games LocalPlay marks `launchable`.
 - Decision: Custom quiz authoring remains owned by LocalPlay. The MVP authoring path is LocalPlay-hosted prepared content: Revelry opens the authoring link, LocalPlay returns canonical `localplay_content_id`, Revelry stores a prepared setup pointer, and session creation passes `settings.content_id`. Do not add or revive a separate generic quiz/`quiz_pack_id` bypass for Revelry-launched custom quizzes.
+- Decision: A generic Games/LocalPlay entry from Revelry opens a party-scoped LocalPlay "Revelry Games" hub, not standalone LocalPlay. The hub shows the same party prepared games, drafts, active session, recent results, and launchable catalog that Revelry mirrors in its Games tab, and host/cohost can start games from either surface.
 - Decision: Embedded host-app authoring must run in host-app-aware mode. The UI may reuse standalone LocalPlay components, but it must hide unsupported games, standalone economy/account chrome, and standalone-only content paths. Authored content should be saved as LocalPlay host-app content and attached to the Revelry-managed session with `settings.content_id`.
 - Decision: Rebus and other quiz variants stay hidden from Revelry-launched LocalPlay mode until explicitly promoted into the bridge contract with catalog metadata, content schema, room materialization, launch/status/results support, and feed-safe summaries.
 - Decision: Manual custom quiz authoring should remain free. LocalPlay may delete free saved custom quizzes after a retention window and monetize long-term save/retention, larger libraries, media quotas, premium templates, AI assist, advanced branding, analytics, or cross-event reuse. This is a LocalPlay product/commerce feature, not a Revelry feature.
