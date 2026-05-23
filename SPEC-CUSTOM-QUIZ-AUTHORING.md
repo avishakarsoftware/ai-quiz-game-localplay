@@ -923,6 +923,7 @@ custom_quiz_ai_assist_enabled=false
 
 ## Backlog
 
+- Generic host-app content table migration. The current implementation intentionally reuses existing custom quiz tables for both standalone and Revelry quiz authoring: standalone quizzes use the user's wallet id, and Revelry party quizzes use owner wallet id `revelry:party:<party_id>`. This avoids blocking the Revelry quiz flow on a schema migration while keeping non-Revelry custom quiz behavior on the same proven storage path. When LocalPlay adds editable non-quiz content types such as Bingo, Housie, Baby Bingo, Rebus, or other host-app-authored games, add a generic host-app content table/schema that carries `host_app`, `external_container_id`, `game_type`, ownership, retention, media, versioning, and payload metadata explicitly.
 - CSV import.
 - Paste import.
 - AI assist for wrong answers and rewrites.
