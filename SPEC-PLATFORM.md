@@ -249,6 +249,8 @@ Example:
 
 LocalPlay should store enough external context to return results and support debugging, but not enough to duplicate the external app's data model.
 
+External context should also drive LocalPlay chrome. Standalone launches show normal LocalPlay navigation, account/library, sparks, wallet, checkout, and standalone catalog. Host-app launches, such as Revelry, should hide standalone economy/account surfaces, show the party/container title, show an allowlisted return action, and restrict visible games/actions to the host-app catalog and actor capabilities.
+
 ## Current-To-Platform Migration
 
 Current system:

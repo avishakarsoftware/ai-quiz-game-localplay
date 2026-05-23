@@ -986,6 +986,72 @@ Standalone LocalPlay can keep its own spark economy. Revelry-launched sessions s
 
 Authoring and gameplay must establish runtime credentials that survive the short-lived handoff/launch token. Token expiry should not interrupt a host while they are writing questions, uploading images, reviewing AI-generated content, waiting in lobby, or playing.
 
+### Frontend Launch Context Contract
+
+LocalPlay frontend should derive a single `LaunchContext` from standalone app state, handoff tokens, launch tokens, or authoring tokens. Every top-level UI surface should use this context rather than checking raw query params directly.
+
+Suggested shape:
+
+```json
+{
+  "mode": "host_app",
+  "host_app": "revelry",
+  "brand_key": "revelry",
+  "external_container_type": "party",
+  "external_container_id": "party_uuid",
+  "external_container_title": "Ava's Birthday",
+  "party_type": "birthday",
+  "role": "host",
+  "capabilities": ["manage_games", "author_content", "operate_game"],
+  "return_url": "https://app.revelryapp.me/party/party_uuid?tab=games",
+  "billing_mode": "host_app_managed",
+  "allowed_game_ids": ["quiz", "wmlt", "drawing"],
+  "surface": "authoring",
+  "display": {
+    "show_localplay_nav": false,
+    "show_account_menu": false,
+    "show_wallet": false,
+    "show_paywalls": false,
+    "show_library": false,
+    "show_return_action": true,
+    "container_label": "Ava's Birthday",
+    "return_label": "Back to Revelry"
+  }
+}
+```
+
+Modes:
+
+- `standalone`: normal LocalPlay app. Show LocalPlay nav/account/library, sparks, wallet balances, standalone catalog, standalone share/join flows, and LocalPlay save/library CTAs.
+- `host_app`: launched from Revelry or another host app. Hide standalone economy/account/nav surfaces unless explicitly allowed. Show host-app context, return action, and only host-app catalog/actions.
+- `diagnostic`: optional internal/debug mode; never use for normal Revelry users.
+
+Surfaces:
+
+- `authoring`
+- `organizer`
+- `player`
+- `spectator`
+- `results`
+
+Revelry-specific UI policy:
+
+- Show `external_container_title` near the top of authoring/lobby/game surfaces, for example "Ava's Birthday".
+- Show a clear return action using the validated `return_url`; use universal/app links where available.
+- Hide sparks, wallet balances, LocalPlay checkout/paywalls, standalone login prompts, and unrelated LocalPlay library/account navigation.
+- Hide unsupported standalone games and variants not present in `allowed_game_ids` / `GET /catalog?host_app=revelry`.
+- Keep gameplay essentials visible: room code when useful, QR/join affordances, player list, start controls, moderation, timer/scoring, and spectator controls.
+- Use host-app-aware share copy. Prefer Revelry-owned join/open URLs when sharing outside LocalPlay; raw `gamesapi.../join` URLs are acceptable for diagnostics but should not be the polished Revelry UX.
+- Preserve role labels for display, but gate actions by `capabilities`.
+- If context is missing or invalid on a privileged surface, fail closed with a friendly "Open this from Revelry again" state rather than falling back to standalone organizer controls.
+
+Implementation guidance:
+
+- Backend token resolution should return the normalized launch context to the frontend along with any runtime credential.
+- The frontend should store launch context only for the active browser session. Do not persist host-app role/capabilities indefinitely in localStorage.
+- WebSocket `AUTH` / first sync should include enough context to keep server-side room behavior aligned with host-app billing and capabilities.
+- Tests should cover standalone mode and Revelry mode so hiding sparks/nav does not regress standalone LocalPlay.
+
 ## MVP LocalPlay-Hosted Authoring Slice
 
 Recommended first product slice:

@@ -17,6 +17,8 @@ The goal is not to replace AI generation. The goal is to make host-authored quiz
 
 For Revelry and future host-app integrations, custom quiz authoring should remain LocalPlay-hosted. Host apps launch the LocalPlay authoring surface with signed context and an allowlisted return URL, then store only pointer metadata such as `content_id`, title, thumbnail, question count, and status.
 
+When authoring is launched from a host app, the editor should use host-app chrome: show the party/container name and return action, hide LocalPlay sparks/wallet/paywalls/account/library navigation, and expose only games/actions allowed by the host-app catalog and actor capabilities. Standalone LocalPlay authoring keeps the normal LocalPlay chrome and economy surfaces.
+
 ## Current State
 
 LocalPlay already has most of the quiz runtime pieces:
