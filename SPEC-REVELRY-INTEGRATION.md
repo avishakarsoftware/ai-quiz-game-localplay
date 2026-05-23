@@ -1,8 +1,8 @@
 # LocalPlay Revelry Integration Spec
 
-Status: Proposed
+Status: Gamma bridge implemented; embedded authoring proposed
 
-Last updated: 2026-05-22
+Last updated: 2026-05-23
 
 ## Purpose
 
@@ -44,7 +44,7 @@ The bridge owns:
 
 ## Current LocalPlay State
 
-Current implemented APIs are room-first:
+LocalPlay still uses the existing room runtime internally:
 
 ```text
 POST /room/create
@@ -53,12 +53,26 @@ WS   /ws/{room_code}/{client_id}
 
 `POST /room/create` returns a `room_code` and `organizer_token`. The organizer token is a live control credential and must not be exposed in guest URLs or stored in Revelry as a durable launch URL.
 
-Current limitations:
+The Revelry bridge is implemented on gamma on top of that runtime:
+
+```text
+GET  /catalog?host_app=revelry
+POST /integrations/revelry/sessions
+POST /integrations/revelry/sessions/{session_id}/launch-token
+GET  /integrations/revelry/sessions/{session_id}
+GET  /integrations/revelry/sessions/{session_id}/results
+GET  /sessions/{session_id}/organizer
+GET  /sessions/{session_id}/join
+GET  /sessions/{session_id}/spectate
+```
+
+Current limitations and follow-up work:
 
 - rooms live in process memory
-- completed results are not yet normalized as portable external summaries
-- external host-app launch tokens are not validated yet
-- LocalPlay does not yet have stable `/sessions/{id}/...` launch routes
+- participant persistence remains deferred; session metadata is durable
+- embedded host-app authoring/content APIs are specified below but not implemented
+- embedded organizer chrome still needs polish so standalone account, navigation, and economy surfaces do not leak into Revelry-managed sessions
+- result summaries exist but should be hardened as embedded authoring and richer game variants are added
 
 ## Phase Plan
 
@@ -68,7 +82,7 @@ Goal: let Revelry prove the Games tab flow without baking LocalPlay internals in
 
 Minimum LocalPlay work:
 
-1. Add the generic durable `game_sessions` and `game_session_participants` slice needed for integration state.
+1. Add the generic durable `game_sessions` slice needed for integration state; defer participant persistence until gameplay identity needs it.
 2. Add `GET /catalog?host_app=revelry` with launchability metadata.
 3. Add origin/frame allowlist for Revelry hosts.
 4. Add stable embeddable launch routes that do not expose long-lived organizer credentials.
@@ -381,7 +395,7 @@ superseded
 ```
 
 Closed sessions should return `joinable = false`, a stable `closed_reason`, and friendly `closed_message` suitable for organizer/player/spectator launch routes.
-`completed_at` is LocalPlay's canonical completion timestamp; host apps may map it to local fields such as Revelry `finished_at`.
+`completed_at` is LocalPlay's canonical completion timestamp; host apps should persist or explicitly map it in their own session records.
 `last_activity_at`, `closed_reason`, and `closed_message` should be treated as first-class status metadata by external adapters.
 
 ### Result Summary
@@ -911,7 +925,7 @@ Playwright smoke:
 
 Roll out the integration on gamma first.
 
-Current LocalPlay status: deployed to gamma from commit `6bb9a3b` on 2026-05-23. Direct LocalPlay gamma smoke passed for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, and host-app-managed billing wallet behavior. Revelry-to-LocalPlay end-to-end gamma testing is still required before production promotion.
+Current LocalPlay status: deployed to gamma from commit `6bb9a3b` on 2026-05-23. Direct LocalPlay gamma smoke passed for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, and host-app-managed billing wallet behavior. Basic Revelry gamma end-to-end launch testing has worked for catalog, create session, organizer/player launch, and gameplay. Embedded authoring and embedded chrome cleanup remain required before production promotion.
 
 Gamma acceptance checklist:
 
