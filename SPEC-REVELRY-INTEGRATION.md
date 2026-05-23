@@ -1,6 +1,6 @@
 # LocalPlay Revelry Integration Spec
 
-Status: Gamma bridge implemented; embedded authoring proposed
+Status: Gamma bridge implemented; LocalPlay-hosted authoring proposed
 
 Last updated: 2026-05-23
 
@@ -70,9 +70,9 @@ Current limitations and follow-up work:
 
 - rooms live in process memory
 - participant persistence remains deferred; session metadata is durable
-- embedded host-app authoring/content APIs are specified below but not implemented
-- embedded organizer chrome still needs polish so standalone account, navigation, and economy surfaces do not leak into Revelry-managed sessions
-- result summaries exist but should be hardened as embedded authoring and richer game variants are added
+- LocalPlay-hosted authoring/content APIs are specified below but not implemented
+- host-app launch chrome still needs polish so standalone account, navigation, and economy surfaces do not leak into Revelry-managed sessions
+- result summaries exist but should be hardened as LocalPlay-hosted authoring and richer game variants are added
 
 ## Phase Plan
 
@@ -519,24 +519,27 @@ Rules:
 - `host_app` may filter availability, copy, thumbnails, and launchability.
 - Status values may include `live`, `gamma`, `planned`, and `disabled`.
 - Revelry should only enable launch actions for games where `launchable = true`.
-- The embedded organizer UI must only expose games returned as `launchable = true` for `GET /catalog?host_app=revelry`.
+- The Revelry-launched LocalPlay UI must only expose games returned as `launchable = true` for `GET /catalog?host_app=revelry`.
 - If a quiz variant such as Rebus, Timeline, or Odd One Out should appear in Revelry, it must first be represented in the bridge contract with catalog metadata, accepted `game_type` or mode validation, content/session creation semantics, launch-token handling, status, and result summary support.
 - Games not represented in the bridge contract must be hidden in embedded host-app mode even if they are available in standalone LocalPlay.
 - Backlog games such as Bingo, Baby Bingo, and Housie may appear as `planned` if Revelry wants to show coming-soon cards.
 
-### Embedded Host-App Authoring
+### LocalPlay-Hosted Authoring And Play
+
+Canonical product model: Revelry is the party launcher, pointer store, and result surface; LocalPlay is the game app. Revelry opens LocalPlay for authoring, lobby, gameplay, media upload, scoring, and results. Desktop may present LocalPlay in an iframe when it works well, but the contract must also work as fullscreen/open-external web and native app links/deep links.
 
 LocalPlay owns game/content authoring, but when launched from Revelry or another host app the authoring UI must run in host-app-aware mode.
 
 Principles:
 
-- The standalone LocalPlay UI may be reused, but it must be constrained by the host app context, catalog response, actor capabilities, and session scope.
-- Embedded authoring must not create standalone-only content that cannot be attached to the Revelry-managed session.
-- Embedded authoring must not expose games or variants that are absent from `GET /catalog?host_app=revelry` or marked `launchable = false`.
-- Embedded authoring must hide standalone LocalPlay navigation, login prompts, spark balances, spark paywalls, and unrelated account/library surfaces unless the host app explicitly launches a standalone LocalPlay flow.
+- The standalone LocalPlay UI may be reused, but it must be constrained by the host app context, catalog response, actor capabilities, and authoring/session scope.
+- Host-app authoring must not create standalone-only content that cannot be attached to a Revelry prepared setup or Revelry-managed session.
+- Host-app authoring must not expose games or variants that are absent from `GET /catalog?host_app=revelry` or marked `launchable = false`.
+- Host-app authoring must hide standalone LocalPlay navigation, login prompts, spark balances, spark paywalls, and unrelated account/library surfaces unless the host app explicitly launches a standalone LocalPlay flow.
 - Content created from a Revelry launch is scoped to `host_app`, `external_container_id`, and the author/actor identity. Standalone LocalPlay content and host-app-scoped content must not be silently interchangeable.
 - Custom quiz images remain in LocalPlay/IONOS media storage and are referenced by LocalPlay media asset ids or public LocalPlay media URLs.
 - Result summaries may include custom quiz title and safe thumbnail, but not full quiz contents by default.
+- Revelry stores pointer metadata only: prepared setup id, party id, LocalPlay `content_id`, LocalPlay `session_id`, title, safe thumbnail, question count, status, and result summary. Revelry must not store questions, answers, options, raw prompts, full media paths, or full game payloads.
 
 #### Content Authoring API
 
@@ -606,11 +609,13 @@ Response:
 
 Rules:
 
-- Content APIs require the same service authorization model as session APIs.
+- Server-to-server content API calls require the same service authorization model as session APIs.
+- Browser-based authoring must not receive the shared integration secret. MVP uses a short-lived LocalPlay authoring token minted for the active actor, party container, game type, and optional draft/setup id.
 - LocalPlay validates `game_type` against the host-app catalog before accepting content.
 - LocalPlay validates the payload against the catalog `content_schema` or `config_schema`.
 - LocalPlay stores host-app content ownership metadata so session creation can enforce same-container or allowed-author access.
 - Revelry must use LocalPlay APIs for authoring and media; it must not write LocalPlay quiz, content, or media tables directly.
+- Content create/update requests should include an idempotency key or stable `draft_id` so browser refreshes, mobile webview reloads, and upload retries can recover without duplicating partial games.
 - AI-assisted authoring may use `source = ai` and include prompt/theme metadata, but it still returns a stable `content_id` before room creation.
 - Manual custom quiz authoring should remain free because comparable products commonly include it. LocalPlay may monetize long-term saving/retention, larger libraries, larger media quotas, premium templates, AI assist, advanced branding, analytics, or cross-event reuse outside the Revelry-managed gameplay path.
 
@@ -642,31 +647,67 @@ LocalPlay must validate:
 
 Avoid a path where a host creates content in embedded LocalPlay and then cannot create or attach a Revelry-managed room from it.
 
-#### Embedded Authoring Flow
+#### LocalPlay-Hosted Authoring Flow
 
-The embedded organizer view may include an authoring step before the room lobby:
+MVP decision: manual quiz authoring happens before LocalPlay session creation in a LocalPlay-hosted authoring surface. Creating/editing prepared content does not close an active game. Revelry checks for an active LocalPlay session and shows the replacement warning only when the host taps Start on a prepared setup.
+
+The preferred MVP flow is:
 
 ```text
-Revelry organizer iframe/open-external
-  -> LocalPlay embedded organizer bootstraps host_app context
+Host opens Revelry Games tab
+  -> Revelry fetches GET /api/games/catalog
   -> Host chooses a launchable catalog game
+  -> Revelry opens LocalPlay-hosted authoring route with an authoring token and return_url
   -> Host creates/manual-edits/AI-generates content
-  -> LocalPlay saves content through host-app content API
-  -> LocalPlay creates or updates the Revelry-managed session with settings.content_id
-  -> Organizer enters lobby and shares player route
+  -> LocalPlay saves party-scoped content and redirects to return_url with content_id
+  -> Revelry stores or updates a prepared game setup pointer
+  -> Later, host taps Start on the prepared setup
+  -> Revelry checks active session and gets replacement confirmation if needed
+  -> Revelry creates the LocalPlay session with settings.content_id and replacement intent if needed
+  -> Organizer launch token opens the normal LocalPlay lobby
 ```
 
-If session creation happened before content is ready, LocalPlay must either:
+Do not use the existing organizer route for pre-session authoring, because organizer launch currently requires a `session_id`. Add a separate content-authoring launch route such as:
 
-- keep the session in a non-joinable `setup`/`draft` state until `settings.content_id` is attached, or
-- defer session creation until content is saved.
+```text
+GET /integrations/revelry/authoring?game_type=quiz&draft_id=...&authoring_token=...
+```
 
-For MVP, prefer deferring session creation until content is saved for manual authoring. For quick-start games with safe default content, LocalPlay may create a lobby immediately.
+The authoring token is only for editing. It should last 60 minutes, refresh while the editor is active, and never delete drafts or interrupt gameplay when it expires. If refresh fails, LocalPlay should ask the host to reopen from Revelry; reopening with the same `draft_id` restores the draft.
 
-Open monetization questions:
+The authoring route must accept a validated `return_url`. When content is ready, LocalPlay redirects back with a compact handoff such as `content_id`, `game_type`, and optional `prepared_setup_id`/`draft_id`. For native apps, Revelry should prefer universal/app links and may use a custom scheme fallback. LocalPlay must allowlist return origins/schemes, and Revelry must validate the returned `content_id` server-side before creating a session.
 
-- Should paid long-term save/retention use LocalPlay's existing spark economy, a LocalPlay subscription, or another LocalPlay-owned purchase model?
-- If a host starts in Revelry, should Revelry simply link to the LocalPlay save/retention upsell, or later pass an entitlement claim?
+Native compatibility requirements:
+
+- Revelry should pass universal/app-link `return_url` values where possible, for example `https://app.revelryapp.me/party/{party_id}?tab=games`.
+- Custom schemes such as `revelry://party/{party_id}/games` may be supported as fallback, but must be allowlisted explicitly.
+- LocalPlay authoring and launch URLs should be safe to open in a system browser, in-app browser, or Capacitor-style webview.
+- Return handoff parameters are hints only. Revelry must verify party membership and fetch/validate LocalPlay content/session metadata server-side before storing pointers or starting a session.
+- If an app link opens the Revelry native app after authoring, the app should resume the Games tab, refresh prepared setups from Revelry backend, and avoid trusting URL parameters as authoritative state.
+
+Alternative later: create a non-joinable `setup`/`draft` session first, then author inside that session before opening player routes. That path requires session status, launch routes, replacement semantics, and cleanup rules for `setup` sessions; do not mix it into the MVP unless deliberately chosen.
+
+For quick-start games with safe default content, LocalPlay may still create a lobby immediately.
+
+#### Prepared Game Setups
+
+Prepared game setups are Revelry-owned pointer records for LocalPlay content that can be started later. They let a host prepare one or more quizzes before the party without creating a live LocalPlay room.
+
+Rules:
+
+- Multiple prepared games are allowed per party.
+- Only one active LocalPlay session is allowed per party at a time.
+- Prepared games are visible only to host/cohost until started.
+- Host/cohost can create, edit, delete, and start prepared games. Guests cannot author or start games.
+- Helpers remain view-only for MVP unless Revelry explicitly grants authoring capabilities later.
+- Prepared content is party-scoped for MVP. A `content_id` created for one Revelry party cannot start a session in another party.
+- Once a `content_id` has been used to start a session, it becomes immutable. Editing after use creates a new `content_id` or version, and Revelry updates the prepared setup pointer after save.
+- Draft autosave survives 7 days since last edit.
+- Free saved party content survives until 30 days after party end. If party end is unknown, use party start plus 48 hours, then 30 days.
+- Deleting a prepared setup in Revelry detaches/hides the pointer and asks LocalPlay to mark the content `deleted_by_host`; IONOS media deletion happens asynchronously after a grace period.
+- Images for expired/deleted drafts/content are marked orphaned/expired first and deleted later by cleanup. Completed game recap media should remain available through the result-retention window.
+- MVP media limits: one image per question, 20 questions max, 5 MB per image, PNG/JPEG/WebP.
+- Manual authoring ships first. AI assist may use the same LocalPlay-hosted surface later.
 
 ## Handoff Token
 
@@ -814,7 +855,7 @@ referrerpolicy="strict-origin-when-cross-origin"
 
 Avoid relying on third-party cookies. Use explicit launch/runtime tokens.
 
-## Embedded UX Rules
+## Host-App Launch UX Rules
 
 When launched from Revelry:
 
@@ -823,33 +864,36 @@ When launched from Revelry:
 - show only games/content actions that are valid for the current host-app catalog and actor capabilities
 - keep authoring, room setup, lobby, and gameplay inside the same host-app session context
 - provide a visible full-screen or open-external fallback
-- provide a return path when launched outside an iframe
+- provide a return path through allowlisted web URLs, universal/app links, or explicit custom schemes
 - do not show standalone LocalPlay spark/paywall prompts, wallet balances, login prompts, or unrelated account/library navigation unless Revelry explicitly requests a standalone LocalPlay mode
 
-Standalone LocalPlay can keep its own spark economy. Embedded Revelry sessions should use LocalPlay internal `billing_mode = host_app_managed` or equivalent service authorization so the party does not see two payment systems.
+Standalone LocalPlay can keep its own spark economy. Revelry-launched sessions should use LocalPlay internal `billing_mode = host_app_managed` or equivalent service authorization so the party does not see two payment systems.
 
-Embedded authoring must establish runtime credentials that survive the short-lived handoff/launch token. Token expiry should not interrupt a host while they are writing questions, uploading images, reviewing AI-generated content, waiting in lobby, or playing.
+Authoring and gameplay must establish runtime credentials that survive the short-lived handoff/launch token. Token expiry should not interrupt a host while they are writing questions, uploading images, reviewing AI-generated content, waiting in lobby, or playing.
 
-## MVP Embedded Authoring Slice
+## MVP LocalPlay-Hosted Authoring Slice
 
 Recommended first product slice:
 
-1. Quiz manual authoring in host-app-aware embedded mode.
-2. Optional AI-generated quiz from Revelry party theme/title and host-provided prompt.
-3. Save authored quiz content through LocalPlay host-app content API and receive `content_id`.
-4. Create the Revelry-managed session with `settings.content_id`.
-5. Enter the normal LocalPlay lobby and gameplay flow with standalone economy/account chrome hidden.
+1. Quiz manual authoring in LocalPlay-hosted host-app mode.
+2. App-compatible authoring launch URL with authoring token, `draft_id`, and allowlisted `return_url`.
+3. Save authored quiz content in LocalPlay and return `content_id` to Revelry.
+4. Store a Revelry prepared setup pointer without duplicating quiz content.
+5. Start a Revelry-managed session later with `settings.content_id`.
+6. Enter the normal LocalPlay lobby/gameplay flow with standalone economy/account chrome hidden.
 
-Rebus and other quiz variants should stay hidden from Revelry embedded authoring until promoted into the bridge contract. Promotion means catalog metadata, payload schema, accepted session `game_type` or mode, room materialization, launch-token handling, status, results, and feed-safe summaries are all implemented and tested.
+Manual authoring ships first. Optional AI-generated quiz creation from Revelry party theme/title and host-provided prompt may follow on the same LocalPlay-hosted surface.
+
+Rebus and other quiz variants should stay hidden from Revelry host-app authoring until promoted into the bridge contract. Promotion means catalog metadata, payload schema, accepted session `game_type` or mode, room materialization, launch-token handling, status, results, and feed-safe summaries are all implemented and tested.
 
 Risks and gotchas:
 
 - Content ownership can cross standalone and host-app contexts accidentally unless `host_app`, `external_container_id`, author identity, and reuse capabilities are stored and enforced.
-- Creating content without a path to attach it to a Revelry-managed session strands the host in embedded mode.
+- Creating content without a path to attach it to a Revelry prepared setup strands the host.
 - Room creation from unsupported `game_type` or unsupported quiz variant creates broken organizer/player flows.
-- Standalone wallet/economy/login/nav chrome leaking into embedded mode confuses hosts and can conflict with Revelry billing.
+- Standalone wallet/economy/login/nav chrome leaking into Revelry-launched mode confuses hosts and can conflict with Revelry billing.
 - Launch token expiry must not interrupt active authoring or gameplay after runtime credentials are established.
-- Mobile embedded behavior may need open-external/fullscreen defaults, especially for authoring forms and media upload.
+- Mobile/native behavior should default to open-external/fullscreen/app-link paths, especially for authoring forms and media upload.
 - Host-app content APIs need idempotency or draft recovery so refreshes do not duplicate partially authored games.
 
 ## postMessage Events
@@ -980,5 +1024,5 @@ Recommended LocalPlay order:
 - Decision: Expose `GET /catalog` as part of the MVP. Revelry should use it to render available LocalPlay games, filtered by host app/environment where needed. LocalPlay still validates launch requests server-side. The catalog may include `live`, `gamma`, `planned`, or `disabled` status values, but Revelry should only enable launch for games LocalPlay marks `launchable`.
 - Decision: Custom quiz authoring remains owned by LocalPlay. For MVP, Revelry may launch generic quizzes first; saved custom quiz launch can follow by passing a LocalPlay `quiz_pack_id` or content reference. Future Revelry CTAs may send hosts to LocalPlay to create custom quizzes that are saved and referenceable from Revelry.
 - Decision: Embedded host-app authoring must run in host-app-aware mode. The UI may reuse standalone LocalPlay components, but it must hide unsupported games, standalone economy/account chrome, and standalone-only content paths. Authored content should be saved as LocalPlay host-app content and attached to the Revelry-managed session with `settings.content_id`.
-- Decision: Rebus and other quiz variants stay hidden from Revelry embedded mode until explicitly promoted into the bridge contract with catalog metadata, content schema, room materialization, launch/status/results support, and feed-safe summaries.
+- Decision: Rebus and other quiz variants stay hidden from Revelry-launched LocalPlay mode until explicitly promoted into the bridge contract with catalog metadata, content schema, room materialization, launch/status/results support, and feed-safe summaries.
 - Decision: Manual custom quiz authoring should remain free. LocalPlay may delete free saved custom quizzes after a retention window and monetize long-term save/retention, larger libraries, media quotas, premium templates, AI assist, advanced branding, analytics, or cross-event reuse. This is a LocalPlay product/commerce feature, not a Revelry feature.
