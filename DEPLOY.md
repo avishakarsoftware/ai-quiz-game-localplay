@@ -843,6 +843,16 @@ curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/data
 
 HTTP 201 with `[]` means success. Any error returns a JSON object with details.
 
+If an IDE agent cannot read the Keychain item, use an explicit Supabase personal access token in that same shell:
+
+```bash
+export SUPABASE_ACCESS_TOKEN="sbp_..."
+TOKEN="${SUPABASE_ACCESS_TOKEN}"
+supabase projects list
+```
+
+The expected project is `hosbtyylacluziugwjfd`. This fixes the restart/session case where `security find-generic-password -s "Supabase CLI" -w` returns "item could not be found" for one agent even though another local agent can read it. The app runtime service-role key is not enough for schema DDL; it only covers PostgREST/RPC runtime access.
+
 ### Verifying applied objects
 
 List all LocalPlay tables:

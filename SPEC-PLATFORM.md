@@ -1,6 +1,6 @@
 # LocalPlay Platform Spec
 
-This document describes the intended platform direction for LocalPlay. It is forward-looking. For the current implemented system, see `SPEC.md`.
+This document describes the intended platform direction for LocalPlay. It is forward-looking. For the current implemented system, see `SPEC.md`. For the detailed LocalPlay-side Revelry bridge contract, see `SPEC-REVELRY-INTEGRATION.md`.
 
 ## Vision
 
@@ -423,6 +423,8 @@ Examples:
 - Word Association: seed words, category packs, scoring prompts.
 
 ## Integration With Revelry
+
+Detailed implementation contract: `SPEC-REVELRY-INTEGRATION.md`.
 
 ### Integration Goals
 
@@ -1024,8 +1026,23 @@ These aren't separate game types — they're **themed content packs** for existi
 - **Baby Name Battle** — AI generates unusual baby names, group votes (Hot Takes variant).
 - **Price is Right (Baby/Wedding Edition)** — Show products, guess the price. Needs numeric input (quiz variant with closest-wins scoring).
 - **Predictions** — See above.
+- **Bingo / Housie** — Host runs a caller-led number/phrase draw; players get generated boards and mark squares in real time. Needs board generation, draw history, claim validation, and winner patterns such as line, corners, full house.
+- **Baby Bingo** — Event-themed bingo using baby-shower gifts, phrases, or activities instead of only numbers. Best as a Bingo/Housie ruleset with custom word banks and event templates.
 
 The event-specific value comes from themed AI prompts, not new game mechanics. The vibe/theme selector should support event types: "baby shower", "wedding", "birthday", "team building", "holiday party".
+
+### Bingo / Housie Runtime
+
+Classic bingo, housie/tambola, and baby bingo are adjacent to quiz authoring but need a different room model:
+
+- Host creates or selects a board template: numbers, words, images, or event-specific phrases.
+- Server generates unique player boards when players join.
+- Host/caller advances draws one at a time, with optional auto-caller mode.
+- Players mark called cells locally; server validates claims against the draw history.
+- Winning patterns should be configurable: one line, two lines, four corners, early five, full house, baby-gift row, etc.
+- Spectator view should show the latest call, call history, current claims, and winners.
+
+Complexity: medium. This is a good event-game candidate after custom quiz packs because it reuses host-authored content, saved templates, image/word banks, and spectator-first party flow, but it requires new board/claim state rather than quiz answer scoring.
 
 ### Image-Based Game Modes
 
@@ -1579,9 +1596,11 @@ This is the main infrastructure investment needed before Chinese Whispers or Dra
 - How much game content should be family-safe by default versus configurable by audience?
   - **Recommendation**: Default to family-safe. WMLT already has the vibe system (party/spicy/wholesome/work). Extend this pattern: each game's generation has a "vibe" or "audience" selector that adjusts the LLM prompt. Spicy/adult modes should be opt-in per session.
 - Should LocalPlay monetize independently, share Revelry billing, or support both?
-  - **Recommendation**: Independent for now (spark economy is already built). Future Revelry integration could grant sparks to Revelry Premium subscribers, but LocalPlay's economy should remain self-contained.
+  - **Recommendation**: Keep gameplay launch/play free of surprise payment prompts in Revelry-managed sessions. Manual custom quiz authoring should remain free for competitiveness. LocalPlay can monetize long-term save/retention for free custom quizzes, larger libraries, media quotas, premium templates, optional AI assist, advanced branding, analytics, or cross-event reuse. This should remain a LocalPlay commerce feature; Revelry can link hosts into it later if needed.
 - How should native app deep links route between Revelry and LocalPlay?
   - **Recommendation**: Stable LocalPlay universal links. The exact path can change, but links should support app-open when installed and browser fallback when not. Existing `/quiz/join` style links are legacy-compatible examples, not the final platform shape.
+- Public IONOS surface cleanup:
+  - **Backlog**: Move the canonical public LocalPlay web surface off `https://games.revelryapp.me/quiz/` because LocalPlay is now a multi-game app, not just quiz. Prefer `https://games.revelryapp.me/` as the eventual canonical surface, with `/quiz/` retained as a compatibility redirect or alias. This should be handled separately from the Phase 0 Revelry iframe bridge, which will start on the backend-served host for same-origin API/WebSocket simplicity.
 - **New: How should we handle games that need a canvas/drawing?**
   - Build a shared `<DrawingCanvas>` component that handles touch/mouse input, undo, color picker, and exports strokes as compact events. Reuse across Chinese Whispers (drawing variant) and DrawingGame. Don't build it until the first drawing game is in scope. See `SPEC-GAME-DRAWING.md`.
 

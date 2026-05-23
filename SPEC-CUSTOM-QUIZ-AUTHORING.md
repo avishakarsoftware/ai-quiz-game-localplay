@@ -57,7 +57,8 @@ Current gaps:
 
 - No public marketplace of quiz packs.
 - No collaborative real-time editing.
-- No paid creator tools.
+- No paid authoring gate for creating a basic manual quiz.
+- No implementation of paid long-term retention/save plans in V1.
 - No comments or moderation queue.
 - No branching/version history beyond simple duplicate/restore.
 - No question types beyond multiple-choice and true/false.
@@ -259,7 +260,29 @@ Rules:
 - `answer_index` must be within the `options` array.
 - `question_count` should be maintained server-side when questions change.
 - `deleted` packs should be soft-deleted by default.
-- Hard delete can be a future account-data deletion operation.
+- Free saved packs may become `expired` or `deleted` after a LocalPlay-defined retention window.
+- Hard delete can be a future account-data deletion operation after any grace/recovery period.
+
+### Retention Model
+
+Manual custom quiz creation should be free, but free saved quizzes do not need to live forever.
+
+Recommended product model:
+
+- Free hosts can create, edit, launch, import, export, duplicate, and upload host-provided question images during the free retention window.
+- Free saved quizzes are retained for 30 days by default.
+- After 30 days, quizzes enter a 7-day recoverable grace period.
+- During the grace period, hosts can export, recover, or upgrade retention.
+- After the grace period, quizzes should be soft-deleted from the library and associated media becomes eligible for cleanup according to the media retention policy.
+- Hosts can pay LocalPlay to keep quizzes longer, recover recently expired quizzes, expand their saved library, or unlock premium creator features.
+- Export should remain available where practical so hosts are not trapped by retention limits.
+- Revelry may link hosts into LocalPlay to create or manage saved quizzes, but retention and payment are LocalPlay-owned.
+
+Implementation notes:
+
+- Add `expires_at`, `retention_tier`, and/or `retention_status` before enforcing automatic deletion.
+- Media assets attached to expired/deleted packs should follow the media retention policy in `SPEC-IMAGE-GAMES.md`.
+- Runtime games already launched from a quiz pack should not break if the source pack later expires; they should rely on materialized session content or a result snapshot.
 
 ### Relation To `games_generated_content`
 
@@ -650,9 +673,11 @@ Conflict policy for V1:
 - Reuse the image media safety rules from `SPEC-IMAGE-GAMES.md`.
 - Admin logs should include pack ID and owner wallet prefix, not full question text unless debugging explicitly requires it.
 
-## Spark Economy
+## Monetization And Spark Economy
 
-Manual authoring should be free.
+Manual custom quiz authoring should remain free because comparable products commonly include it. The LocalPlay monetization opportunity is durability and premium creator features, not the basic ability to create a quiz.
+
+Free saved custom quizzes are retained for 30 days by default, followed by a 7-day recoverable grace period. Hosts can pay to keep quizzes longer, expand their saved library, or unlock premium creator features. This is a LocalPlay product/commerce feature, not a Revelry feature.
 
 Charge sparks only for optional AI assist actions:
 
@@ -664,8 +689,15 @@ Charge sparks only for optional AI assist actions:
 Recommended behavior:
 
 - Show spark cost on the AI assist button.
-- Never charge for typing, editing, deleting, reordering, importing, exporting, duplicating, or launching a manual quiz.
+- Never charge for typing, editing, deleting, reordering, importing, exporting, duplicating, or launching a manual quiz while it is inside the free retention window.
 - Never charge for uploading a host-provided image unless a separate storage/quota product decision is made.
+- Keep save/retention entitlement separate from gameplay launch entitlement so guests never see payment prompts while joining or playing.
+
+Open payment questions:
+
+- Should paid save/retention use LocalPlay sparks, one-time purchases, a LocalPlay creator subscription, or another LocalPlay-owned model?
+- Should free expired quizzes soft-delete first with a grace recovery window?
+- Should premium features include larger libraries, larger media quotas, premium templates, AI assist bundles, advanced branding, analytics, or cross-event reuse?
 
 ## Import And Paste Helpers
 
@@ -875,3 +907,4 @@ custom_quiz_ai_assist_enabled=false
 - Pack search.
 - Shareable read-only pack links.
 - Event templates for birthday, baby shower, wedding, holiday, team building.
+- Bingo/Housie content templates that can reuse custom pack authoring concepts: number boards, phrase banks, baby bingo gift/activity lists, and saved caller decks. Runtime rules belong in `SPEC-PLATFORM.md` because Bingo/Housie needs board and claim validation instead of quiz scoring.

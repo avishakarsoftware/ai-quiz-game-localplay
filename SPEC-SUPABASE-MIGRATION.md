@@ -116,6 +116,9 @@ Current in-memory state not covered by SQLite:
 | Generated quiz/MLT content | `main.py` dictionaries | Phase 2 |
 | Content ownership | `content_owners` dict | Phase 2 |
 | Completed game history | `game_history` list | Phase 2 |
+| Durable session lifecycle | `socket_manager.rooms` plus API state | Phase 2 |
+| Session participants | `socket_manager.rooms` player state | Phase 2 |
+| External host-app integration context | Not currently persisted | Phase 2 |
 | Live room state | `socket_manager.rooms` | Future Cloud Run phase |
 | WebSocket connection objects | `socket_manager` | Must remain process-local |
 
@@ -149,7 +152,7 @@ Phase 1 changes:
 - Local tests can continue using SQLite unless explicitly testing Supabase.
 - Atomic wallet/payment operations move to Postgres RPCs.
 
-### Phase 2: Decide Generated Content And Game History Persistence
+### Phase 2: Durable Session, Generated Content, And Game History Persistence
 
 Generated quiz/WMLT content and completed game history are currently process-memory backed. Before serious Cloud Run or multi-instance work, decide whether these should remain process-local, move to a short-lived shared store, or be persisted longer term.
 
@@ -158,6 +161,35 @@ This is not a requirement to save every generated quiz forever. The main questio
 - Temporary active-content persistence with TTL could protect generate -> review -> room creation flows from container restarts.
 - Completed game history should only be persisted if it has product value for recent games, user history, analytics, support, or account/device migration.
 - Long-term generated-content retention needs explicit retention, cleanup, ownership, privacy, and user-facing UX decisions.
+
+The Revelry integration in `SPEC-REVELRY-INTEGRATION.md` should be treated as the first consumer of the durable session slice of Phase 2, not as a separate Revelry-only persistence track.
+
+Durable session persistence should use generic LocalPlay tables such as:
+
+- `game_sessions`
+- `game_session_participants`
+- `game_session_events` or `game_session_result_snapshots`
+
+These tables may include optional host-app fields:
+
+- `host_app`
+- `external_container_type`
+- `external_container_id`
+- `external_container_title`
+- `external_context_json`
+- `external_user_id`
+- `external_guest_id`
+- `role`
+- `capabilities_json`
+- `return_url`
+
+The canonical boundary remains API-only:
+
+```text
+External app -> LocalPlay integration APIs -> LocalPlay DB
+```
+
+External apps, including Revelry, must not read or write LocalPlay Supabase tables directly. They should use LocalPlay APIs for session creation, launch URLs, status polling, result summaries, and future callbacks/webhooks.
 
 ### Future Cloud Run Phase
 
@@ -225,6 +257,9 @@ Use the same schema shape for prod and gamma, differing only by prefix:
 | Pending tokens | `games_pending_tokens` | `games_gamma_pending_tokens` |
 | Webhook events | `games_webhook_events` | `games_gamma_webhook_events` |
 | Generated content | `games_generated_content` | `games_gamma_generated_content` |
+| Game sessions | `games_game_sessions` | `games_gamma_game_sessions` |
+| Game session participants | `games_game_session_participants` | `games_gamma_game_session_participants` |
+| Game session events/results | `games_game_session_events` | `games_gamma_game_session_events` |
 | Game history | `games_game_history` | `games_gamma_game_history` |
 | Rejections/debug events | `games_rejections` | `games_gamma_rejections` |
 
@@ -793,6 +828,13 @@ curl -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/database
 ```
 
 HTTP 201 means success.
+
+Operational backlog note:
+
+- Some IDE agent shells cannot read the macOS Keychain item even when another local agent can. Symptom: `security find-generic-password -s "Supabase CLI" -w` returns "item could not be found", while runtime Supabase access via `SUPABASE_SERVICE_KEY` still works.
+- Preferred fix for future Codex deploy/schema sessions: export a Supabase personal access token as `SUPABASE_ACCESS_TOKEN` in the shell that runs deploy commands, then use `TOKEN="${SUPABASE_ACCESS_TOKEN}"` for Management API calls.
+- Token source: Supabase dashboard -> Account -> Access Tokens. Treat it like a password; never commit it.
+- Verification: `supabase projects list` should list project `hosbtyylacluziugwjfd` before running Management API schema commands.
 
 Verification query:
 
