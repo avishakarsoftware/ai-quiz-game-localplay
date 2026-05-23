@@ -614,7 +614,7 @@ Rules:
     "external_user_id": "revelry_user_uuid",
     "display_name": "Avi",
     "role": "host",
-    "capabilities": ["manage_games", "operate_game"]
+    "capabilities": ["manage_games", "author_content", "operate_game"]
   },
   "game_type": "quiz",
   "draft_id": "revelry_prepared_setup_uuid_or_client_uuid",
@@ -1153,7 +1153,7 @@ Playwright smoke:
 
 Roll out the integration on gamma first.
 
-Current LocalPlay status: deployed to gamma from commit `6bb9a3b` on 2026-05-23. Direct LocalPlay gamma smoke passed for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, and host-app-managed billing wallet behavior. Basic Revelry gamma end-to-end launch testing has worked for catalog, create session, organizer/player launch, and gameplay. Embedded authoring and embedded chrome cleanup remain required before production promotion.
+Current LocalPlay status: gamma has passed direct smoke for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, and host-app-managed billing wallet behavior. Basic Revelry gamma end-to-end launch testing has worked for catalog, create session, organizer/player launch, and gameplay. Before each rollout or manual test pass, verify the deployed Cloud Run revision against the current repo HEAD because this spec intentionally does not act as the source of truth for deployed commit tracking. Embedded authoring and embedded chrome cleanup remain required before production promotion.
 
 Gamma acceptance checklist:
 
@@ -1206,7 +1206,7 @@ Recommended LocalPlay order:
 - Decision: MVP should deliver a narrow Revelry-to-LocalPlay bridge on top of the generic durable session model: catalog, create session, enforce one active game, launch organizer/player/spectator, support embedded/open-external play, poll status/results, and return safe result summaries. Webhooks, full Cloud Run room persistence, richer feed automation, and deep analytics are deferred until the bridge is playable on gamma.
 - Decision: Roll out on gamma first and do not promote to production until Revelry gamma can create, launch, play, supersede, expire, poll, and summarize a LocalPlay session end to end.
 - Decision: Expose `GET /catalog` as part of the MVP. Revelry should use it to render available LocalPlay games, filtered by host app/environment where needed. LocalPlay still validates launch requests server-side. The catalog may include `live`, `gamma`, `planned`, or `disabled` status values, but Revelry should only enable launch for games LocalPlay marks `launchable`.
-- Decision: Custom quiz authoring remains owned by LocalPlay. For MVP, Revelry may launch generic quizzes first; saved custom quiz launch can follow by passing a LocalPlay `quiz_pack_id` or content reference. Future Revelry CTAs may send hosts to LocalPlay to create custom quizzes that are saved and referenceable from Revelry.
+- Decision: Custom quiz authoring remains owned by LocalPlay. The MVP authoring path is LocalPlay-hosted prepared content: Revelry opens the authoring link, LocalPlay returns canonical `localplay_content_id`, Revelry stores a prepared setup pointer, and session creation passes `settings.content_id`. Do not add or revive a separate generic quiz/`quiz_pack_id` bypass for Revelry-launched custom quizzes.
 - Decision: Embedded host-app authoring must run in host-app-aware mode. The UI may reuse standalone LocalPlay components, but it must hide unsupported games, standalone economy/account chrome, and standalone-only content paths. Authored content should be saved as LocalPlay host-app content and attached to the Revelry-managed session with `settings.content_id`.
 - Decision: Rebus and other quiz variants stay hidden from Revelry-launched LocalPlay mode until explicitly promoted into the bridge contract with catalog metadata, content schema, room materialization, launch/status/results support, and feed-safe summaries.
 - Decision: Manual custom quiz authoring should remain free. LocalPlay may delete free saved custom quizzes after a retention window and monetize long-term save/retention, larger libraries, media quotas, premium templates, AI assist, advanced branding, analytics, or cross-event reuse. This is a LocalPlay product/commerce feature, not a Revelry feature.
