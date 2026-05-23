@@ -543,13 +543,61 @@ Principles:
 
 #### Content Authoring API
 
-Proposed host-app content endpoints:
+Implementation endpoints:
 
 ```text
+POST /integrations/revelry/authoring-token
 POST /integrations/revelry/content
 GET  /integrations/revelry/content/{content_id}
 PUT  /integrations/revelry/content/{content_id}
 ```
+
+`POST /integrations/revelry/authoring-token` mints an edit-only token and URL for the LocalPlay-hosted authoring surface.
+
+Request:
+
+```json
+{
+  "external_context": {
+    "host_app": "revelry",
+    "external_container_type": "party",
+    "external_container_id": "party_uuid",
+    "external_container_title": "Ava's Birthday",
+    "party_type": "birthday",
+    "brand_key": "revelry"
+  },
+  "actor": {
+    "external_user_id": "revelry_user_uuid",
+    "display_name": "Avi",
+    "role": "host",
+    "capabilities": ["manage_games", "author_content"]
+  },
+  "game_type": "quiz",
+  "draft_id": "revelry_prepared_setup_uuid_or_client_uuid",
+  "return_url": "https://app.revelryapp.me/party/party_uuid?tab=games",
+  "mode": "create"
+}
+```
+
+Response:
+
+```json
+{
+  "authoring_url": "https://gamesapi.revelryapp.me/integrations/revelry/authoring?game_type=quiz&draft_id=...&authoring_token=...",
+  "authoring_token_expires_at": "2026-05-23T21:00:00Z",
+  "draft_id": "revelry_prepared_setup_uuid_or_client_uuid",
+  "return_url": "https://app.revelryapp.me/party/party_uuid?tab=games"
+}
+```
+
+Rules:
+
+- Requires service authorization from Revelry.
+- Actor must include `author_content` or `manage_games`.
+- `return_url` must match the allowlist for Revelry web, universal/app-link hosts, or explicitly allowed custom schemes.
+- `draft_id` is stable across reopen/retry and is used for autosave recovery.
+- `mode` is `create`, `edit`, or `duplicate`; editing locked/used content must create a new version/content id.
+- Token lifetime is 60 minutes. The authoring UI may refresh it through the same service-backed flow while the host remains active.
 
 `POST /integrations/revelry/content` request:
 
@@ -568,6 +616,8 @@ PUT  /integrations/revelry/content/{content_id}
     "capabilities": ["manage_games", "operate_game"]
   },
   "game_type": "quiz",
+  "draft_id": "revelry_prepared_setup_uuid_or_client_uuid",
+  "idempotency_key": "uuid-per-save-attempt",
   "title": "Ava's Birthday Quiz",
   "source": "manual",
   "payload": {
@@ -598,10 +648,13 @@ Response:
   "title": "Ava's Birthday Quiz",
   "status": "ready",
   "question_count": 10,
+  "thumbnail_url": "https://media.revelryapp.me/apps/localplay/gamma/...",
   "supports_images": true,
   "host_app": "revelry",
   "external_container_id": "party_uuid",
   "created_by_external_user_id": "revelry_user_uuid",
+  "locked": false,
+  "retention_expires_at": "2026-06-30T00:00:00Z",
   "created_at": "2026-05-23T20:00:00Z",
   "updated_at": "2026-05-23T20:00:00Z"
 }
@@ -611,13 +664,42 @@ Rules:
 
 - Server-to-server content API calls require the same service authorization model as session APIs.
 - Browser-based authoring must not receive the shared integration secret. MVP uses a short-lived LocalPlay authoring token minted for the active actor, party container, game type, and optional draft/setup id.
+- Browser authoring calls use the authoring token, not the Revelry service secret.
 - LocalPlay validates `game_type` against the host-app catalog before accepting content.
 - LocalPlay validates the payload against the catalog `content_schema` or `config_schema`.
 - LocalPlay stores host-app content ownership metadata so session creation can enforce same-container or allowed-author access.
 - Revelry must use LocalPlay APIs for authoring and media; it must not write LocalPlay quiz, content, or media tables directly.
 - Content create/update requests should include an idempotency key or stable `draft_id` so browser refreshes, mobile webview reloads, and upload retries can recover without duplicating partial games.
+- `GET /integrations/revelry/content/{content_id}` returns safe metadata only by default: title, status, game type, question count, thumbnail, ownership scope, retention timestamps, lock state, and validation errors. It must not return full questions/answers unless a future privileged export scope is explicitly added.
+- Content statuses: `draft`, `ready`, `locked`, `deleted_by_host`, `expired`, `archived`.
+- Validation errors use `422 invalid_content` with field paths such as `questions[2].options`.
+- Duplicate idempotency keys return the original response.
+- Stale update versions return `409 edit_conflict`.
 - AI-assisted authoring may use `source = ai` and include prompt/theme metadata, but it still returns a stable `content_id` before room creation.
 - Manual custom quiz authoring should remain free because comparable products commonly include it. LocalPlay may monetize long-term saving/retention, larger libraries, larger media quotas, premium templates, AI assist, advanced branding, analytics, or cross-event reuse outside the Revelry-managed gameplay path.
+
+LocalPlay persistence requirements:
+
+- Store drafts/content in LocalPlay-owned tables, not Revelry tables. Existing `quiz_packs` / `quiz_questions` may be reused if they can store host-app ownership fields; otherwise add a generic host-app content table.
+- Required content fields: `id`, `host_app`, `external_container_type`, `external_container_id`, `created_by_external_user_id`, `game_type`, `title`, `status`, `question_count`, `thumbnail_asset_id`, `thumbnail_url`, `draft_id`, `source`, `payload_version`, `locked_at`, `used_at`, `retention_expires_at`, `deleted_at`, `created_at`, `updated_at`, and safe `metadata`.
+- Required draft fields: `draft_id`, `host_app`, `external_container_id`, `actor_external_user_id`, `game_type`, `payload`, `autosave_version`, `editing_lock_actor_id`, `editing_lock_expires_at`, `expires_at`, `created_at`, and `updated_at`.
+- Drafts expire 7 days after last edit. Saved party-scoped content expires 30 days after party end, or party start plus 48 hours plus 30 days when no end time exists.
+- When content is used to start a session, set `used_at` / `locked_at`; future edits must duplicate/version rather than mutate that content id.
+- Media asset rows must record content/draft ownership so unused draft images can be marked orphaned and cleaned up asynchronously.
+
+Common error responses:
+
+```text
+400 invalid_request
+401 invalid_or_expired_authoring_token
+403 insufficient_capability
+404 content_not_found
+409 edit_conflict
+409 content_locked
+410 content_expired
+422 invalid_content
+429 rate_limited
+```
 
 #### Session Creation With Authored Content
 
@@ -670,12 +752,26 @@ Host opens Revelry Games tab
 Do not use the existing organizer route for pre-session authoring, because organizer launch currently requires a `session_id`. Add a separate content-authoring launch route such as:
 
 ```text
-GET /integrations/revelry/authoring?game_type=quiz&draft_id=...&authoring_token=...
+GET /integrations/revelry/authoring?game_type=quiz&draft_id=...&authoring_token=...&return_url=...
 ```
 
 The authoring token is only for editing. It should last 60 minutes, refresh while the editor is active, and never delete drafts or interrupt gameplay when it expires. If refresh fails, LocalPlay should ask the host to reopen from Revelry; reopening with the same `draft_id` restores the draft.
 
 The authoring route must accept a validated `return_url`. When content is ready, LocalPlay redirects back with a compact handoff such as `content_id`, `game_type`, and optional `prepared_setup_id`/`draft_id`. For native apps, Revelry should prefer universal/app links and may use a custom scheme fallback. LocalPlay must allowlist return origins/schemes, and Revelry must validate the returned `content_id` server-side before creating a session.
+
+Canonical return shape:
+
+```text
+{return_url}&localplay_content_id=lp_content_uuid&game_type=quiz&draft_id=...&status=ready
+```
+
+If authoring is cancelled:
+
+```text
+{return_url}&draft_id=...&status=cancelled
+```
+
+The redirect must not include full content payloads, tokens, media paths, answers, or organizer credentials.
 
 Native compatibility requirements:
 
@@ -708,6 +804,25 @@ Rules:
 - Images for expired/deleted drafts/content are marked orphaned/expired first and deleted later by cleanup. Completed game recap media should remain available through the result-retention window.
 - MVP media limits: one image per question, 20 questions max, 5 MB per image, PNG/JPEG/WebP.
 - Manual authoring ships first. AI assist may use the same LocalPlay-hosted surface later.
+
+Suggested Revelry pointer fields:
+
+```text
+prepared_setup_id
+party_id
+game_type
+localplay_content_id
+title
+thumbnail_url
+question_count
+status                  # draft, ready, expired, deleted, locked
+created_by
+updated_by
+created_at
+updated_at
+last_used_at
+metadata jsonb          # safe display hints only
+```
 
 ## Handoff Token
 
