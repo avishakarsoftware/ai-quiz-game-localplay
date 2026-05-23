@@ -1130,7 +1130,7 @@ curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sess
 - Supabase gamma schema includes `games_gamma_game_sessions`.
 - Gamma env includes `REVELRY_INTEGRATION_SECRET` and `PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me`.
 - Smoke-tested after deploy: `/health`, `/config.json`, `/catalog?host_app=revelry`, session creation, launch token generation, status polling, tokenless player launch redirect, and no signup-bonus sparks for the Revelry integration wallet.
-- Still test from Revelry gamma end to end before production promotion: embedded organizer launch, guest join, game start, replacement confirmation, completion, and result polling/feed handling.
+- Basic Revelry gamma end-to-end testing has worked for catalog, session creation, organizer/player launch, and gameplay. Still test before production promotion: replacement confirmation, completion, result polling/feed handling, LocalPlay-hosted authoring, app/universal-link return flows, and host-app chrome cleanup.
 - Full spec: `SPEC-REVELRY-INTEGRATION.md`
 
 ---

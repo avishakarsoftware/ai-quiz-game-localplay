@@ -1598,7 +1598,7 @@ This is the main infrastructure investment needed before Chinese Whispers or Dra
 - Should generated content be reusable across sessions?
   - **Recommendation**: Yes. Content already persists independently of rooms (quiz_id / mlt_id). Multiple rooms can reference the same content. This should continue for new games.
 - Should hosts be able to build custom game packs?
-  - **Recommendation**: Defer. Import/export already exists for quiz. Custom packs (curated collections of content across game types) are a Phase 3+ feature.
+  - **Recommendation**: Manual quiz authoring is now a first-class LocalPlay feature. For Revelry and future host apps, keep authoring LocalPlay-hosted and store only host-app pointer metadata outside LocalPlay. Broader custom packs across multiple game types remain a later platform feature.
 - Should Revelry guests appear automatically in LocalPlay player lists, or should they still join explicitly?
   - **Recommendation**: Explicit join always. Pre-populating player lists breaks the "anyone can join with a code" model and adds complexity around absent players.
 - Should LocalPlay results post automatically to Revelry memories, or should the host approve?
@@ -1613,9 +1613,9 @@ This is the main infrastructure investment needed before Chinese Whispers or Dra
   - Add launch-token replay protection using `jti` once Redis/Supabase-backed token-use tracking exists.
   - Add tests for expired handoff tokens, wrong issuer/audience, organizer launch with player-scoped token, and player/spectator launch without organizer token exposure.
 - How should native app deep links route between Revelry and LocalPlay?
-  - **Recommendation**: Stable LocalPlay universal links. The exact path can change, but links should support app-open when installed and browser fallback when not. Existing `/quiz/join` style links are legacy-compatible examples, not the final platform shape.
+  - **Recommendation**: Stable LocalPlay universal/app links for authoring, organizer, player, and spectator launch. Links should support app-open when installed and browser fallback when not. Existing `/quiz/join` style links are legacy-compatible examples, not the final platform shape. Return URLs from LocalPlay back to Revelry must support universal links and explicitly allowlisted custom schemes.
 - Public IONOS surface cleanup:
-  - **Backlog**: Move the canonical public LocalPlay web surface off `https://games.revelryapp.me/quiz/` because LocalPlay is now a multi-game app, not just quiz. Prefer `https://games.revelryapp.me/` as the eventual canonical surface, with `/quiz/` retained as a compatibility redirect or alias. This should be handled separately from the Phase 0 Revelry iframe bridge, which will start on the backend-served host for same-origin API/WebSocket simplicity.
+  - **Backlog**: Move the canonical public LocalPlay web surface off `https://games.revelryapp.me/quiz/` because LocalPlay is now a multi-game app, not just quiz. Prefer `https://games.revelryapp.me/` as the eventual canonical surface, with `/quiz/` retained as a compatibility redirect or alias. This should be handled separately from the Revelry bridge, whose current gamma path uses the backend-served LocalPlay host for API/WebSocket simplicity.
 - **New: How should we handle games that need a canvas/drawing?**
   - Build a shared `<DrawingCanvas>` component that handles touch/mouse input, undo, color picker, and exports strokes as compact events. Reuse across Chinese Whispers (drawing variant) and DrawingGame. Don't build it until the first drawing game is in scope. See `SPEC-GAME-DRAWING.md`.
 

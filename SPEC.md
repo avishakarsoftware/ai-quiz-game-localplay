@@ -1094,7 +1094,7 @@ Backlog:
 
 - Clean up docs and user-facing labels that imply LocalPlay and Revelry are the same product.
 - Keep legacy deployment/package names documented where they are real operational facts.
-- Define the future integration boundary explicitly before connecting Revelry users to LocalPlay.
+- Keep the Revelry integration boundary aligned with `SPEC-REVELRY-INTEGRATION.md`: Revelry is launcher/pointer/results surface; LocalPlay owns authoring, media, lobby, gameplay, and results.
 
 ## Markdown Document Currentness
 

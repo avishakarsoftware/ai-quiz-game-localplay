@@ -15,6 +15,8 @@ This is the friendlier path for party/event games such as:
 
 The goal is not to replace AI generation. The goal is to make host-authored quizzes feel first-class, fast, visual, and durable, while still reusing the existing quiz room lifecycle, scoring, player screens, spectator screens, and image media layer.
 
+For Revelry and future host-app integrations, custom quiz authoring should remain LocalPlay-hosted. Host apps launch the LocalPlay authoring surface with signed context and an allowlisted return URL, then store only pointer metadata such as `content_id`, title, thumbnail, question count, and status.
+
 ## Current State
 
 LocalPlay already has most of the quiz runtime pieces:
@@ -65,6 +67,7 @@ Current gaps:
 - No complex scoring modes such as closest numeric answer or free-text grading.
 - No mandatory persistence for anonymous users beyond local browser drafts.
 - No dependence on Stable Diffusion for gamma or production custom quiz images.
+- No host app storing full quiz questions, answers, options, prompt text, or raw media internals.
 
 ## User Experience
 
@@ -84,6 +87,25 @@ Also add a library entry point:
 - Menu -> My Quizzes.
 - Organizer empty state -> "Create your own quiz".
 - Review screen after AI generation -> "Save as custom quiz" for signed-in hosts.
+
+For host-app launches such as Revelry:
+
+- Host app opens a LocalPlay-hosted authoring route with signed party/user context, `draft_id`, and `return_url`.
+- LocalPlay handles authoring, image upload, validation, draft recovery, and saved content.
+- LocalPlay redirects back to the host app with `content_id` and safe metadata hints.
+- Host app verifies the returned content server-side before storing a prepared game setup pointer or creating a session.
+- Universal/app links and explicitly allowlisted custom schemes should work for native return flows.
+
+Prepared game setup decisions:
+
+- Multiple prepared quizzes may exist for one party.
+- Prepared quizzes are party-scoped for MVP and cannot silently launch in another party.
+- Prepared quizzes are visible to host/cohost only until started.
+- Creating or editing a prepared quiz does not close an active game; replacement warning happens when the host taps Start.
+- Once a `content_id` is used to start a session, it becomes immutable. Later edits create a new version/content id.
+- Draft autosave survives 7 days since last edit.
+- Free saved party content survives until 30 days after party end, or party start plus 48 hours plus 30 days when no end time exists.
+- Authoring tokens are edit-only credentials, last 60 minutes, and refresh while active. Expiry does not delete drafts or interrupt gameplay.
 
 ### Create Flow
 

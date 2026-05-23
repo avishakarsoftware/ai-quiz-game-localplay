@@ -521,7 +521,7 @@ Rules:
 - Revelry should only enable launch actions for games where `launchable = true`.
 - The Revelry-launched LocalPlay UI must only expose games returned as `launchable = true` for `GET /catalog?host_app=revelry`.
 - If a quiz variant such as Rebus, Timeline, or Odd One Out should appear in Revelry, it must first be represented in the bridge contract with catalog metadata, accepted `game_type` or mode validation, content/session creation semantics, launch-token handling, status, and result summary support.
-- Games not represented in the bridge contract must be hidden in embedded host-app mode even if they are available in standalone LocalPlay.
+- Games not represented in the bridge contract must be hidden in Revelry-launched host-app mode even if they are available in standalone LocalPlay.
 - Backlog games such as Bingo, Baby Bingo, and Housie may appear as `planned` if Revelry wants to show coming-soon cards.
 
 ### LocalPlay-Hosted Authoring And Play
