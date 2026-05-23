@@ -954,10 +954,10 @@ This service-authorized endpoint returns safe metadata only:
       "created_by": "revelry_user_uuid",
       "updated_at": "2026-05-23T20:45:00Z",
       "last_used_at": null,
-      "actions": {
-        "can_start": true,
-        "can_edit": true,
-        "can_delete": true
+      "action_requirements": {
+        "start": ["operate_game"],
+        "edit": ["author_content"],
+        "delete": ["manage_games"]
       }
     }
   ],
@@ -970,6 +970,7 @@ Sync and callback rules:
 
 - Revelry may call this endpoint when the Games tab opens, after returning from LocalPlay, after app resume, and after a LocalPlay hub start/edit action.
 - Revelry stores or updates pointer metadata only. It must not store questions, answers, options, raw prompts, media paths, or full LocalPlay payloads.
+- `party-workspace` is a service-level party snapshot, not an actor-personalized authorization response. It may include `action_requirements`, but Revelry must derive actor-specific `can_start`, `can_edit`, and `can_delete` from current party membership, role, and capabilities before rendering controls.
 - LocalPlay should send signed callbacks for important changes so Revelry can update feed cards, prepared game cards, active-session state, and result summaries without waiting for user refresh. Polling/refresh remains the consistency fallback.
 - Conflicts are resolved by LocalPlay content/session timestamps. Revelry should treat its prepared setup records as a mirror of LocalPlay party content, not as the authority for game internals.
 
