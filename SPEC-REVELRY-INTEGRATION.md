@@ -750,7 +750,7 @@ Playwright smoke:
 
 Roll out the integration on gamma first.
 
-Current LocalPlay status: implemented and committed through `abee2af`, but not considered deployed to gamma until the gamma container is redeployed from that commit or newer and the smoke checks below pass.
+Current LocalPlay status: deployed to gamma from commit `6bb9a3b` on 2026-05-23. Direct LocalPlay gamma smoke passed for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, and host-app-managed billing wallet behavior. Revelry-to-LocalPlay end-to-end gamma testing is still required before production promotion.
 
 Gamma acceptance checklist:
 

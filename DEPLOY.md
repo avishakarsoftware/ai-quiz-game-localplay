@@ -1126,11 +1126,11 @@ curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sess
 
 ### Gamma readiness status
 
-- Code committed locally through `abee2af` and ready for gamma deploy.
-- Supabase gamma schema must include `games_gamma_game_sessions`.
-- Gamma env must include `REVELRY_INTEGRATION_SECRET` and `PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me`.
-- Latest LocalPlay Revelry bridge hardening has not been deployed to gamma until `./scripts/deploy-gcp.sh --gamma --with-frontend` is run from this commit or newer.
-- After deploy, smoke-test catalog, session creation, launch token generation, organizer/player launch URLs, and host-app-managed billing behavior.
+- Deployed to gamma from commit `6bb9a3b` on 2026-05-23 with `./scripts/deploy-gcp.sh --gamma --with-frontend`.
+- Supabase gamma schema includes `games_gamma_game_sessions`.
+- Gamma env includes `REVELRY_INTEGRATION_SECRET` and `PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me`.
+- Smoke-tested after deploy: `/health`, `/config.json`, `/catalog?host_app=revelry`, session creation, launch token generation, status polling, tokenless player launch redirect, and no signup-bonus sparks for the Revelry integration wallet.
+- Still test from Revelry gamma end to end before production promotion: embedded organizer launch, guest join, game start, replacement confirmation, completion, and result polling/feed handling.
 - Full spec: `SPEC-REVELRY-INTEGRATION.md`
 
 ---
