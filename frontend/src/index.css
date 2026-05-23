@@ -2003,6 +2003,248 @@ body {
     border-color: var(--accent-danger);
 }
 
+/* Custom quiz authoring */
+.custom-quiz-shell {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+}
+
+.custom-quiz-hero {
+    text-align: center;
+    padding: 20px 0 16px;
+}
+
+.custom-quiz-progress {
+    margin-top: 8px;
+    color: var(--text-secondary);
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.custom-quiz-hint,
+.custom-quiz-status,
+.custom-question-state {
+    margin-top: 4px;
+    color: var(--text-tertiary);
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.custom-quiz-status {
+    color: var(--olive);
+    font-weight: 700;
+}
+
+.custom-quiz-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 16px;
+}
+
+.custom-quiz-scroll > * + * {
+    margin-top: 16px;
+}
+
+.custom-card-body {
+    padding: 16px;
+}
+
+.custom-card-body > * + * {
+    margin-top: 12px;
+}
+
+.custom-card-body-tight {
+    padding: 12px;
+}
+
+.custom-card-header,
+.custom-question-editor-header,
+.custom-question-title,
+.custom-question-actions,
+.custom-answer-row,
+.custom-quiz-footer,
+.custom-add-question-btn,
+.custom-correct-btn {
+    display: flex;
+    align-items: center;
+}
+
+.custom-card-header,
+.custom-question-editor-header {
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.custom-add-question-btn {
+    height: 34px;
+    gap: 6px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid var(--rule);
+    background: rgba(248, 235, 217, 0.08);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.custom-add-question-btn:hover {
+    background: var(--paper-2);
+    border-color: var(--accent);
+}
+
+.custom-question-tabs {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-top: 12px;
+}
+
+.custom-question-tab {
+    width: 48px;
+    height: 44px;
+    flex: 0 0 auto;
+    border-radius: 8px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    color: var(--ink-mute);
+    font-size: 15px;
+    font-weight: 900;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+}
+
+.custom-question-tab.ready {
+    border-color: rgba(109, 255, 230, 0.45);
+}
+
+.custom-question-tab.needs-work {
+    border-color: rgba(255, 46, 122, 0.45);
+}
+
+.custom-question-tab.active {
+    border-color: var(--accent);
+    background: rgba(255, 46, 122, 0.18);
+    color: var(--ink);
+    box-shadow: var(--glow-accent);
+}
+
+.custom-editor-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.custom-editor-body > * {
+    margin-top: 0;
+}
+
+.custom-question-title {
+    gap: 10px;
+    min-width: 0;
+}
+
+.custom-question-heading {
+    color: var(--ink);
+    font-size: 17px;
+    font-weight: 800;
+    line-height: 1.15;
+}
+
+.custom-question-state.ready {
+    color: var(--olive);
+}
+
+.custom-question-actions {
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.review-action-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.custom-answer-list > * + * {
+    margin-top: 8px;
+}
+
+.custom-answer-row {
+    gap: 8px;
+}
+
+.custom-answer-input {
+    flex: 1;
+    min-width: 0;
+    font-size: 14px;
+}
+
+.custom-correct-btn {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid var(--rule);
+    background: var(--bg-tertiary);
+    color: var(--text-quaternary);
+    cursor: pointer;
+}
+
+.custom-correct-btn.active {
+    background: var(--accent-success);
+    border-color: var(--accent-success);
+    color: var(--accent-ink);
+    box-shadow: var(--glow-mint);
+}
+
+.custom-upload-button {
+    height: 40px;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.custom-file-input {
+    display: none;
+}
+
+.custom-quiz-footer {
+    gap: 8px;
+    padding-bottom: 16px;
+}
+
+.custom-footer-icon,
+.custom-footer-secondary {
+    flex-shrink: 0;
+}
+
+.custom-footer-icon {
+    padding-left: 16px;
+    padding-right: 16px;
+}
+
+.custom-footer-secondary {
+    padding-left: 18px;
+    padding-right: 18px;
+}
+
+.custom-footer-primary {
+    flex: 1;
+}
+
+@media (max-width: 390px) {
+    .custom-card-header,
+    .custom-question-editor-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .custom-question-actions {
+        width: 100%;
+    }
+}
+
 /* Review option pills */
 .review-option {
     display: flex;

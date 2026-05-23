@@ -4,6 +4,7 @@ import { useSwipeBack } from '../../utils/useSwipeBack';
 import { mediaUrl } from '../../utils/media';
 import GameImage from '../media/GameImage';
 import { apiFetch } from '../../utils/api';
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Plus, Trash2 } from 'lucide-react';
 
 type QuestionType = 'multiple_choice' | 'true_false';
 
@@ -72,6 +73,24 @@ function isQuestionValid(question: DraftQuestion): boolean {
         question.answerIndex < options.length &&
         isAllowedImageReference(question.imageUrl)
     );
+}
+
+function questionIssues(question: DraftQuestion): string[] {
+    const options = normalizeOptions(question).map((opt) => opt.trim());
+    const issues: string[] = [];
+    if (!question.text.trim()) issues.push('question text');
+    if (options.some((option) => !option)) {
+        issues.push(question.type === 'true_false' ? 'true/false answers' : 'all answer choices');
+    }
+    if (!isAllowedImageReference(question.imageUrl)) issues.push('a LocalPlay image URL');
+    return issues;
+}
+
+function issueSummary(question: DraftQuestion): string {
+    const issues = questionIssues(question);
+    if (issues.length === 0) return 'Ready to play';
+    if (issues.length === 1) return `Needs ${issues[0]}`;
+    return `Needs ${issues.slice(0, -1).join(', ')} and ${issues[issues.length - 1]}`;
 }
 
 function toQuiz(title: string, questions: DraftQuestion[]): Quiz {
@@ -169,6 +188,9 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
     const selectedQuestion = questions.find((question) => question.id === selectedId) || questions[0];
     const validCount = questions.filter(isQuestionValid).length;
     const canReview = title.trim().length > 0 && validCount > 0;
+    const progressText = validCount === questions.length
+        ? `${questions.length} ${questions.length === 1 ? 'question is' : 'questions are'} ready`
+        : `${validCount} ready, ${questions.length - validCount} to finish`;
 
     const updateQuestion = (id: string, patch: Partial<DraftQuestion>) => {
         setQuestions((current) => current.map((question) => {
@@ -287,7 +309,7 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
     );
 
     return (
-        <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
+        <div className="custom-quiz-shell container-responsive safe-top safe-bottom animate-in">
             {swipeProgress > 0 && (
                 <div className="swipe-back-indicator" style={{ opacity: swipeProgress, transform: `translateX(${swipeProgress * 24 - 24}px)` }}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -296,16 +318,17 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
                 </div>
             )}
 
-            <div className="text-center py-5">
+            <div className="custom-quiz-hero">
                 <div className="hero-icon mb-3">✍️</div>
                 <h1 className="hero-title">Create Your Own</h1>
-                <p className="text-[--text-tertiary] mt-2">{validCount} of {questions.length} questions ready</p>
-                {statusMessage && <p className="text-[--text-tertiary] text-sm mt-1">{statusMessage}</p>}
+                <p className="custom-quiz-progress">{progressText}</p>
+                <p className="custom-quiz-hint">Complete any question, then review or save it for later.</p>
+                {statusMessage && <p className="custom-quiz-status">{statusMessage}</p>}
             </div>
 
-            <div className="space-y-4 flex-1 overflow-y-auto no-scrollbar pb-4">
+            <div className="custom-quiz-scroll no-scrollbar">
                 <div className="review-question-card">
-                    <div className="p-4 space-y-3">
+                    <div className="custom-card-body">
                         <p className="section-header">Quiz Title</p>
                         <input
                             value={title}
@@ -318,25 +341,26 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
                 </div>
 
                 <div className="review-question-card">
-                    <div className="p-3">
-                        <div className="flex items-center justify-between mb-3">
+                    <div className="custom-card-body custom-card-body-tight">
+                        <div className="custom-card-header">
                             <p className="section-header">Questions</p>
-                            <button onClick={addQuestion} className="btn btn-secondary" style={{ height: 34, padding: '0 12px', fontSize: 13 }}>
-                                Add
+                            <button onClick={addQuestion} className="custom-add-question-btn">
+                                <Plus size={16} aria-hidden="true" />
+                                Add Question
                             </button>
                         </div>
-                        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                        <div className="custom-question-tabs no-scrollbar">
                             {questions.map((question, index) => {
                                 const valid = isQuestionValid(question);
                                 return (
                                     <button
                                         key={question.id}
                                         onClick={() => setSelectedId(question.id)}
-                                        className={`time-preset-option ${selectedQuestion?.id === question.id ? 'active' : ''}`}
-                                        style={{ minWidth: 48, borderColor: valid ? undefined : 'rgba(255, 107, 107, 0.55)' }}
+                                        className={`custom-question-tab ${selectedQuestion?.id === question.id ? 'active' : ''} ${valid ? 'ready' : 'needs-work'}`}
                                         aria-label={`Question ${index + 1}`}
+                                        aria-current={selectedQuestion?.id === question.id ? 'true' : undefined}
                                     >
-                                        {index + 1}
+                                        <span>{index + 1}</span>
                                     </button>
                                 );
                             })}
@@ -346,15 +370,21 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
 
                 {selectedQuestion && (
                     <div className="review-question-card">
-                        <div className="p-4 space-y-4">
-                            <div className="flex items-center justify-between gap-2">
-                                <span className="review-q-number">{selectedIndex + 1}</span>
-                                <div className="flex gap-2">
-                                    <button onClick={() => moveQuestion(selectedQuestion.id, -1)} disabled={selectedIndex === 0} className="review-action-btn" title="Move earlier">↑</button>
-                                    <button onClick={() => moveQuestion(selectedQuestion.id, 1)} disabled={selectedIndex === questions.length - 1} className="review-action-btn" title="Move later">↓</button>
-                                    <button onClick={() => duplicateQuestion(selectedQuestion.id)} className="review-action-btn" title="Duplicate">⧉</button>
+                        <div className="custom-card-body custom-editor-body">
+                            <div className="custom-question-editor-header">
+                                <div className="custom-question-title">
+                                    <span className="review-q-number">{selectedIndex + 1}</span>
+                                    <div>
+                                        <p className="custom-question-heading">Question {selectedIndex + 1}</p>
+                                        <p className={`custom-question-state ${isQuestionValid(selectedQuestion) ? 'ready' : ''}`}>{issueSummary(selectedQuestion)}</p>
+                                    </div>
+                                </div>
+                                <div className="custom-question-actions">
+                                    <button onClick={() => moveQuestion(selectedQuestion.id, -1)} disabled={selectedIndex === 0} className="review-action-btn" title="Move earlier" aria-label="Move question earlier"><ArrowUp size={16} /></button>
+                                    <button onClick={() => moveQuestion(selectedQuestion.id, 1)} disabled={selectedIndex === questions.length - 1} className="review-action-btn" title="Move later" aria-label="Move question later"><ArrowDown size={16} /></button>
+                                    <button onClick={() => duplicateQuestion(selectedQuestion.id)} className="review-action-btn" title="Duplicate" aria-label="Duplicate question"><Copy size={16} /></button>
                                     {questions.length > 1 && (
-                                        <button onClick={() => deleteQuestion(selectedQuestion.id)} className="review-action-btn review-action-delete" title="Delete">✕</button>
+                                        <button onClick={() => deleteQuestion(selectedQuestion.id)} className="review-action-btn review-action-delete" title="Delete" aria-label="Delete question"><Trash2 size={16} /></button>
                                     )}
                                 </div>
                             </div>
@@ -391,12 +421,12 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
 
                             <div>
                                 <p className="section-header mb-2">Answers</p>
-                                <div className="space-y-2">
+                                <div className="custom-answer-list">
                                     {normalizeOptions(selectedQuestion).map((option, optionIndex) => {
                                         const style = ANSWER_STYLES[optionIndex];
                                         const isCorrect = selectedQuestion.answerIndex === optionIndex;
                                         return (
-                                            <div key={optionIndex} className="flex items-center gap-2">
+                                            <div key={optionIndex} className="custom-answer-row">
                                                 <span className="answer-label" style={{ marginRight: 0 }}>{String.fromCharCode(65 + optionIndex)}</span>
                                                 <input
                                                     value={option}
@@ -406,17 +436,18 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
                                                         updateQuestion(selectedQuestion.id, { options: nextOptions });
                                                     }}
                                                     disabled={selectedQuestion.type === 'true_false'}
-                                                    className="input-field text-sm flex-1"
+                                                    className="input-field custom-answer-input"
                                                     maxLength={200}
                                                     style={{ borderLeft: `3px solid ${style.bg}` }}
                                                     aria-label={`Answer ${String.fromCharCode(65 + optionIndex)}`}
                                                 />
                                                 <button
                                                     onClick={() => updateQuestion(selectedQuestion.id, { answerIndex: optionIndex })}
-                                                    className={`w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0 ${isCorrect ? 'bg-[--accent-success] text-white' : 'bg-[--bg-tertiary] text-[--text-quaternary]'}`}
+                                                    className={`custom-correct-btn ${isCorrect ? 'active' : ''}`}
                                                     title={isCorrect ? 'Correct answer' : 'Set as correct'}
+                                                    aria-label={isCorrect ? `Correct option ${String.fromCharCode(65 + optionIndex)}` : `Set correct option ${String.fromCharCode(65 + optionIndex)}`}
                                                 >
-                                                    ✓
+                                                    <Check size={16} />
                                                 </button>
                                             </div>
                                         );
@@ -443,12 +474,12 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
                                     placeholder="IONOS media URL or /media asset path"
                                     aria-label="Question image URL"
                                 />
-                                <label className="btn btn-secondary w-full mb-2" style={{ height: 40, fontSize: 13 }}>
+                                <label className="btn btn-secondary custom-upload-button">
                                     {uploadingQuestionId === selectedQuestion.id ? 'Uploading...' : 'Upload Image'}
                                     <input
                                         type="file"
                                         accept="image/png,image/jpeg,image/webp"
-                                        className="hidden"
+                                        className="custom-file-input"
                                         disabled={uploadingQuestionId === selectedQuestion.id}
                                         onChange={(event) => {
                                             const file = event.target.files?.[0];
@@ -474,18 +505,16 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
                 )}
             </div>
 
-            <div className="pb-4" style={{ display: 'flex', gap: 8 }}>
-                <button onClick={onBack} className="btn btn-secondary" style={{ flexShrink: 0, paddingLeft: 16, paddingRight: 16 }}>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="15 18 9 12 15 6" />
-                    </svg>
+            <div className="custom-quiz-footer">
+                <button onClick={onBack} className="btn btn-secondary custom-footer-icon" aria-label="Back">
+                    <ArrowLeft size={20} aria-hidden="true" />
                 </button>
                 {onSave && (
-                    <button onClick={handleSave} disabled={!canReview || saving} className="btn btn-secondary" style={{ flexShrink: 0, paddingLeft: 16, paddingRight: 16 }}>
+                    <button onClick={handleSave} disabled={!canReview || saving} className="btn btn-secondary custom-footer-secondary">
                         {saving ? 'Saving' : 'Save'}
                     </button>
                 )}
-                <button onClick={handleReview} disabled={!canReview} className="btn btn-primary btn-glow" style={{ flex: 1 }}>
+                <button onClick={handleReview} disabled={!canReview} className="btn btn-primary btn-glow custom-footer-primary">
                     Review & Start
                 </button>
             </div>
