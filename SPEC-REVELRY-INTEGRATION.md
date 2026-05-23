@@ -546,13 +546,13 @@ Principles:
 Implementation endpoints:
 
 ```text
-POST /integrations/revelry/authoring-token
+POST /integrations/revelry/content/authoring-link
 POST /integrations/revelry/content
 GET  /integrations/revelry/content/{content_id}
 PUT  /integrations/revelry/content/{content_id}
 ```
 
-`POST /integrations/revelry/authoring-token` mints an edit-only token and URL for the LocalPlay-hosted authoring surface.
+`POST /integrations/revelry/content/authoring-link` mints an edit-only token and URL for the LocalPlay-hosted authoring surface. LocalPlay is the only service that mints the browser `authoring_token`; Revelry calls this endpoint with service credentials and must not construct token-bearing LocalPlay authoring URLs itself.
 
 Request:
 
@@ -598,6 +598,7 @@ Rules:
 - `draft_id` is stable across reopen/retry and is used for autosave recovery.
 - `mode` is `create`, `edit`, or `duplicate`; editing locked/used content must create a new version/content id.
 - Token lifetime is 60 minutes. The authoring UI may refresh it through the same service-backed flow while the host remains active.
+- The response must not include the shared integration secret. Browser clients receive only the short-lived LocalPlay `authoring_token` embedded in `authoring_url`.
 
 `POST /integrations/revelry/content` request:
 
@@ -741,7 +742,7 @@ Host opens Revelry Games tab
   -> Host chooses a launchable catalog game
   -> Revelry opens LocalPlay-hosted authoring route with an authoring token and return_url
   -> Host creates/manual-edits/AI-generates content
-  -> LocalPlay saves party-scoped content and redirects to return_url with content_id
+  -> LocalPlay saves party-scoped content and redirects to return_url with localplay_content_id
   -> Revelry stores or updates a prepared game setup pointer
   -> Later, host taps Start on the prepared setup
   -> Revelry checks active session and gets replacement confirmation if needed
@@ -757,13 +758,15 @@ GET /integrations/revelry/authoring?game_type=quiz&draft_id=...&authoring_token=
 
 The authoring token is only for editing. It should last 60 minutes, refresh while the editor is active, and never delete drafts or interrupt gameplay when it expires. If refresh fails, LocalPlay should ask the host to reopen from Revelry; reopening with the same `draft_id` restores the draft.
 
-The authoring route must accept a validated `return_url`. When content is ready, LocalPlay redirects back with a compact handoff such as `content_id`, `game_type`, and optional `prepared_setup_id`/`draft_id`. For native apps, Revelry should prefer universal/app links and may use a custom scheme fallback. LocalPlay must allowlist return origins/schemes, and Revelry must validate the returned `content_id` server-side before creating a session.
+The authoring route must accept a validated `return_url`. When content is ready, LocalPlay redirects back with a compact handoff using canonical `localplay_content_id`, plus `game_type` and optional `prepared_setup_id`/`draft_id`. For native apps, Revelry should prefer universal/app links and may use a custom scheme fallback. LocalPlay must allowlist return origins/schemes, and Revelry must validate the returned `localplay_content_id` server-side before creating a session.
 
 Canonical return shape:
 
 ```text
 {return_url}&localplay_content_id=lp_content_uuid&game_type=quiz&draft_id=...&status=ready
 ```
+
+`localplay_content_id` is the canonical return parameter. Do not use `content_id` in new return URLs; a temporary alias may be accepted only for backward compatibility during rollout.
 
 If authoring is cancelled:
 
@@ -815,7 +818,7 @@ localplay_content_id
 title
 thumbnail_url
 question_count
-status                  # draft, ready, expired, deleted, locked
+status                  # draft, ready, locked, deleted_by_host, expired, archived
 created_by
 updated_by
 created_at
@@ -1058,7 +1061,7 @@ Recommended first product slice:
 
 1. Quiz manual authoring in LocalPlay-hosted host-app mode.
 2. App-compatible authoring launch URL with authoring token, `draft_id`, and allowlisted `return_url`.
-3. Save authored quiz content in LocalPlay and return `content_id` to Revelry.
+3. Save authored quiz content in LocalPlay and return canonical `localplay_content_id` to Revelry.
 4. Store a Revelry prepared setup pointer without duplicating quiz content.
 5. Start a Revelry-managed session later with `settings.content_id`.
 6. Enter the normal LocalPlay lobby/gameplay flow with standalone economy/account chrome hidden.
