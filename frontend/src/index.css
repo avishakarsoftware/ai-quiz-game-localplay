@@ -2022,6 +2022,7 @@ body {
     font-weight: 700;
 }
 
+.custom-quiz-context,
 .custom-quiz-hint,
 .custom-quiz-status,
 .custom-question-state {
@@ -2029,6 +2030,11 @@ body {
     color: var(--text-tertiary);
     font-size: 13px;
     line-height: 1.35;
+}
+
+.custom-quiz-context {
+    color: var(--text-secondary);
+    font-weight: 700;
 }
 
 .custom-quiz-status {

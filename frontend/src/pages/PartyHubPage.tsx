@@ -77,7 +77,7 @@ export default function PartyHubPage() {
     const display = launchContext?.display || {};
     const title = display.container_label || launchContext?.external_container_title || 'Revelry Games';
     const canStart = hasCapability(launchContext, 'operate_game');
-    const canEdit = false;
+    const canEdit = hasCapability(launchContext, 'author_content');
 
     const preparedContent = useMemo(() => workspace?.prepared_content || [], [workspace]);
 
@@ -116,6 +116,27 @@ export default function PartyHubPage() {
         }
     }
 
+    async function openAuthoring(mode: 'create' | 'edit', content?: PreparedContent) {
+        setError('');
+        try {
+            const res = await fetch(`${API_URL}/integrations/revelry/party-games/authoring-link`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    party_games_token: partyGamesToken,
+                    game_type: 'quiz',
+                    mode,
+                    content_id: content?.localplay_content_id,
+                }),
+            });
+            if (!res.ok) throw new Error('authoring_failed');
+            const data = await res.json();
+            window.location.href = data.authoring_url;
+        } catch {
+            setError('Could not open the editor. Please try again.');
+        }
+    }
+
     function returnToRevelry() {
         if (launchContext?.return_url) {
             window.location.href = launchContext.return_url;
@@ -151,7 +172,7 @@ export default function PartyHubPage() {
             <section className="party-hub__section">
                 <div className="party-hub__section-head">
                     <h2>Saved games</h2>
-                    {canEdit && <button>Create quiz</button>}
+                    {canEdit && <button onClick={() => void openAuthoring('create')}>Create quiz</button>}
                 </div>
                 {preparedContent.length === 0 ? (
                     <div className="party-hub__empty">No saved games for this party yet.</div>
@@ -171,7 +192,9 @@ export default function PartyHubPage() {
                                             {startingId === content.localplay_content_id ? 'Starting...' : 'Start'}
                                         </button>
                                     )}
-                                    {canEdit && <button>Edit/Open</button>}
+                                    {canEdit && content.game_type === 'quiz' && (
+                                        <button onClick={() => void openAuthoring('edit', content)}>Edit/Open</button>
+                                    )}
                                 </div>
                             </article>
                         ))}

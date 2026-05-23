@@ -3,11 +3,14 @@ from typing import Dict, List, Optional
 import copy
 import json
 import hmac
+import hashlib
 import secrets
 import time
 import asyncio
 import logging
 import re
+import uuid
+import httpx
 
 import config
 import tokens as token_module
@@ -1325,15 +1328,55 @@ class SocketManager:
             if not session:
                 return
             now = int(time.time())
-            db.update_game_session(session["id"], {
+            updated = db.update_game_session(session["id"], {
                 "status": "complete",
                 "joinable": False,
                 "result_summary": summary,
                 "completed_at": now,
                 "last_activity_at": now,
             })
+            self._send_integration_callback("session.completed", updated or session, summary)
         except Exception:
             logger.warning("Could not update game session for room %s", room.room_code)
+
+    def _send_integration_callback(self, event_type: str, session: dict, result_summary: Optional[dict] = None):
+        if not config.REVELRY_CALLBACK_URL or session.get("host_app") != "revelry":
+            return
+        body = {
+            "event_id": f"lp_evt_{uuid.uuid4().hex}",
+            "event_type": event_type,
+            "occurred_at": int(time.time()),
+            "payload": {
+                "host_app": session.get("host_app"),
+                "external_container_type": session.get("external_container_type"),
+                "external_container_id": session.get("external_container_id"),
+                "session_id": session.get("id"),
+                "room_code": session.get("room_code"),
+                "status": session.get("status"),
+                "game_type": session.get("game_type"),
+                "game_title": session.get("game_title"),
+                "result": result_summary,
+            },
+        }
+        raw = json.dumps(body, separators=(",", ":")).encode()
+        timestamp = str(int(time.time()))
+        headers = {
+            "Content-Type": "application/json",
+            "X-LocalPlay-Event-Id": body["event_id"],
+            "X-LocalPlay-Timestamp": timestamp,
+        }
+        if config.REVELRY_CALLBACK_SECRET:
+            signature = hmac.new(
+                config.REVELRY_CALLBACK_SECRET.encode(),
+                f"{timestamp}.".encode() + raw,
+                hashlib.sha256,
+            ).hexdigest()
+            headers["X-LocalPlay-Signature"] = f"sha256={signature}"
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                client.post(config.REVELRY_CALLBACK_URL, content=raw, headers=headers).raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.warning("Integration callback failed for %s: %s", event_type, exc)
 
     def _mark_game_session_started(self, room: Room):
         try:
@@ -1342,12 +1385,13 @@ class SocketManager:
             if not session or session.get("started_at"):
                 return
             now = int(time.time())
-            db.update_game_session(session["id"], {
+            updated = db.update_game_session(session["id"], {
                 "status": "active",
                 "started_at": now,
                 "expires_at": now + config.REVELRY_SESSION_IDLE_TTL_SECONDS,
                 "last_activity_at": now,
             })
+            self._send_integration_callback("session.started", updated or session)
         except Exception:
             logger.warning("Could not mark game session started for room %s", room.room_code)
 

@@ -4,6 +4,7 @@ import OrganizerPage from './pages/OrganizerPage';
 import PlayerPage from './pages/PlayerPage';
 import SpectatorPage from './pages/SpectatorPage';
 import PartyHubPage from './pages/PartyHubPage';
+import RevelryAuthoringPage from './pages/RevelryAuthoringPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import SettingsDrawer from './components/SettingsDrawer';
 import { RemoteConfigProvider } from './context/RemoteConfigContext';
@@ -28,6 +29,7 @@ function AppShell() {
         <Route path="/tv" element={<SpectatorPage />} />
         <Route path="/tv/:code" element={<SpectatorPage />} />
         <Route path="/revelry/games" element={<PartyHubPage />} />
+        <Route path="/revelry/author" element={<RevelryAuthoringPage />} />
       </Routes>
     </>
   );

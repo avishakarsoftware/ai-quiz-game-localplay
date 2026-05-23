@@ -24,6 +24,8 @@ interface CustomQuizEditorProps {
     onSave?: (quiz: Quiz, packId?: string) => Promise<string | void> | string | void;
     initialQuiz?: Quiz | null;
     packId?: string;
+    authToken?: string;
+    contextLabel?: string;
 }
 
 interface DraftData {
@@ -171,7 +173,7 @@ function loadDraft(): DraftData {
     }
 }
 
-export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz, packId }: CustomQuizEditorProps) {
+export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz, packId, authToken, contextLabel }: CustomQuizEditorProps) {
     const swipeProgress = useSwipeBack(onBack);
     const [initialDraft] = useState(() => initialQuiz ? draftFromQuiz(initialQuiz) : loadDraft());
     const [title, setTitle] = useState(initialDraft.title);
@@ -271,6 +273,7 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
         try {
             const signRes = await apiFetch('/media/upload-url', {
                 method: 'POST',
+                headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
                 body: JSON.stringify({
                     filename: file.name,
                     mime_type: file.type,
@@ -287,6 +290,7 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
             if (!uploadRes.ok) throw new Error('upload_failed');
             const finalizeRes = await apiFetch(`/media/${signed.asset.id}/finalize`, {
                 method: 'POST',
+                headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
                 body: JSON.stringify({ bytes: file.size, alt_text: question.imageAlt || question.text }),
             });
             if (!finalizeRes.ok) throw new Error('finalize_failed');
@@ -321,6 +325,7 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
             <div className="custom-quiz-hero">
                 <div className="hero-icon mb-3">✍️</div>
                 <h1 className="hero-title">Create Your Own</h1>
+                {contextLabel && <p className="custom-quiz-context">{contextLabel}</p>}
                 <p className="custom-quiz-progress">{progressText}</p>
                 <p className="custom-quiz-hint">Complete any question, then review or save it for later.</p>
                 {statusMessage && <p className="custom-quiz-status">{statusMessage}</p>}

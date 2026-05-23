@@ -213,3 +213,124 @@ def test_revelry_party_games_link_resolve_and_start_saved_pack(monkeypatch):
     assert start_body["session"]["session_id"].startswith("lp_")
     assert "launch_token=" in start_body["launch_url"]
     assert start_body["session"]["room_code"] in socket_manager.rooms
+
+
+def test_revelry_authoring_link_save_and_fetch_content(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-author-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Ava's Birthday",
+            "return_url": "https://app.revelryapp.me/party/1?tab=games",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["author_content"],
+        },
+        "game_type": "quiz",
+        "mode": "create",
+    }
+
+    link_res = client.post("/integrations/revelry/content/authoring-link", headers=_headers(), json=payload)
+    assert link_res.status_code == 200
+    authoring_url = link_res.json()["authoring_url"]
+    token = authoring_url.split("authoring_token=", 1)[1]
+
+    resolve_res = client.get(f"/integrations/revelry/content/authoring-token/resolve?authoring_token={token}")
+    assert resolve_res.status_code == 200
+    assert resolve_res.json()["mode"] == "create"
+
+    quiz = {
+        "quiz_title": "Party Facts",
+        "questions": [
+            {"id": 1, "text": "What is the theme?", "options": ["Space", "Ocean", "Garden", "Disco"], "answer_index": 0, "image_prompt": ""}
+        ],
+    }
+    save_res = client.post(
+        "/integrations/revelry/content",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"game_type": "quiz", "title": "Party Facts", "content_payload": {"quiz": quiz}},
+    )
+    assert save_res.status_code == 200
+    body = save_res.json()
+    content_id = body["localplay_content_id"]
+    assert body["content"]["title"] == "Party Facts"
+    assert db.get_quiz_pack(f"revelry:party:{container_id}", content_id)
+
+    get_res = client.get(
+        f"/integrations/revelry/content/{content_id}?include_payload=true&authoring_token={token}",
+    )
+    assert get_res.status_code == 200
+    assert get_res.json()["quiz"]["quiz_title"] == "Party Facts"
+
+
+def test_revelry_party_hub_can_mint_authoring_link(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-hub-author-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Ava's Birthday",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["author_content", "operate_game"],
+        },
+    }
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+    assert link_res.status_code == 200
+    party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
+
+    authoring_res = client.post(
+        "/integrations/revelry/party-games/authoring-link",
+        json={"party_games_token": party_token, "game_type": "quiz", "mode": "create"},
+    )
+    assert authoring_res.status_code == 200
+    assert "/revelry/author?authoring_token=" in authoring_res.json()["authoring_url"]
+
+
+def test_revelry_authoring_token_can_upload_media(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    monkeypatch.setattr(config, "MEDIA_UPLOAD_URL", "https://upload.example.test/upload.php")
+    monkeypatch.setattr(config, "MEDIA_PUBLIC_BASE_URL", "https://media.revelryapp.me/apps/localplay")
+    monkeypatch.setattr(config, "MEDIA_UPLOAD_SECRET", "test-media-secret")
+    db.init_db()
+    container_id = f"party-media-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["author_content"],
+        },
+        "game_type": "quiz",
+        "mode": "create",
+    }
+    link_res = client.post("/integrations/revelry/content/authoring-link", headers=_headers(), json=payload)
+    token = link_res.json()["authoring_url"].split("authoring_token=", 1)[1]
+
+    sign_res = client.post(
+        "/media/upload-url",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"filename": "question.png", "mime_type": "image/png", "bytes": 1234, "purpose": "custom_quiz_question"},
+    )
+    assert sign_res.status_code == 200
+    asset = sign_res.json()["asset"]
+    assert asset["owner_wallet_id"] == f"revelry:party:{container_id}"
+    assert asset["public_url"].startswith("https://media.revelryapp.me/apps/localplay/")

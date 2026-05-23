@@ -157,8 +157,11 @@ APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz
 PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me
 REVELRY_INTEGRATION_SECRET=<strong gamma shared secret matching Revelry gamma>
 REVELRY_LAUNCH_TOKEN_TTL_SECONDS=600
+REVELRY_AUTHORING_TOKEN_TTL_SECONDS=3600
 REVELRY_SESSION_LOBBY_TTL_SECONDS=14400
 REVELRY_SESSION_IDLE_TTL_SECONDS=7200
+REVELRY_CALLBACK_URL=<optional Revelry gamma callback endpoint>
+REVELRY_CALLBACK_SECRET=<optional callback signing secret>
 ```
 
 **Important:** The bootstrap copies production Stripe keys into gamma. You must manually replace them with test-mode keys (`sk_test_...`, `whsec_...`) in `/home/revelry-games/app/.env.gamma` before testing checkout, or you will charge real money.
@@ -179,8 +182,11 @@ APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz
 PUBLIC_BASE_URL=https://gamesapi.revelryapp.me
 REVELRY_INTEGRATION_SECRET=<strong prod shared secret matching Revelry prod>
 REVELRY_LAUNCH_TOKEN_TTL_SECONDS=600
+REVELRY_AUTHORING_TOKEN_TTL_SECONDS=3600
 REVELRY_SESSION_LOBBY_TTL_SECONDS=14400
 REVELRY_SESSION_IDLE_TTL_SECONDS=7200
+REVELRY_CALLBACK_URL=<optional Revelry prod callback endpoint>
+REVELRY_CALLBACK_SECRET=<optional callback signing secret>
 ```
 
 Origins are scheme + host + optional port only; do not include `/quiz/` or other paths. Installed PWAs still use the web origin they were installed from, while Capacitor/native shells and local development need their own localhost-style origins.
@@ -1043,6 +1049,9 @@ Both LocalPlay and Revelry need a shared secret:
 |---|---|---|
 | LocalPlay backend | `REVELRY_INTEGRATION_SECRET` | shared HMAC secret (hex, 64 chars) |
 | LocalPlay backend | `PUBLIC_BASE_URL` | `https://gamesapi-gamma.revelryapp.me` (gamma) or `https://gamesapi.revelryapp.me` (prod) |
+| LocalPlay backend | `REVELRY_AUTHORING_TOKEN_TTL_SECONDS` | authoring token lifetime; default `3600` |
+| LocalPlay backend | `REVELRY_CALLBACK_URL` | optional Revelry callback endpoint for content/session/result sync |
+| LocalPlay backend | `REVELRY_CALLBACK_SECRET` | optional HMAC signing secret for callback delivery |
 | Revelry backend | `LOCALPLAY_INTEGRATION_SECRET` | same value as `REVELRY_INTEGRATION_SECRET` |
 
 Generate a new secret: `openssl rand -hex 32`
@@ -1126,11 +1135,11 @@ curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sess
 
 ### Gamma readiness status
 
-- Deployed to gamma from commit `6bb9a3b` on 2026-05-23 with `./scripts/deploy-gcp.sh --gamma --with-frontend`.
+- Deployed the bridge + party hub slice to gamma from commit `1e6417b` on 2026-05-23 with `./scripts/deploy-gcp.sh --gamma --with-frontend`. The quiz authoring/callback slice in the current repo must be deployed separately before authoring gamma testing.
 - Supabase gamma schema includes `games_gamma_game_sessions`.
 - Gamma env includes `REVELRY_INTEGRATION_SECRET` and `PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me`.
-- Smoke-tested after deploy: `/health`, `/config.json`, `/catalog?host_app=revelry`, session creation, launch token generation, status polling, tokenless player launch redirect, and no signup-bonus sparks for the Revelry integration wallet.
-- Basic Revelry gamma end-to-end testing has worked for catalog, session creation, organizer/player launch, and gameplay. Still test before production promotion: replacement confirmation, completion, result polling/feed handling, LocalPlay-hosted authoring, app/universal-link return flows, and host-app chrome cleanup.
+- Smoke-tested after deploy: `/health`, `/config.json`, `/catalog?host_app=revelry`, session creation, launch token generation, status polling, tokenless player launch redirect, party hub link/resolve, party workspace, and no signup-bonus sparks for the Revelry integration wallet.
+- Basic Revelry gamma end-to-end testing has worked for catalog, session creation, organizer/player launch, and gameplay. After deploying the current authoring slice, test before production promotion: authoring-link creation, create/edit quiz with image upload, return/deep-link behavior, workspace refresh, Start from saved content, replacement confirmation, completion, result polling/feed handling, callback delivery if configured, app/universal-link return flows, and host-app chrome cleanup.
 - Full spec: `SPEC-REVELRY-INTEGRATION.md`
 
 ---

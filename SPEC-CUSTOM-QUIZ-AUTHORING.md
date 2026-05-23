@@ -93,8 +93,8 @@ Also add a library entry point:
 For host-app launches such as Revelry:
 
 - Host app opens a LocalPlay-hosted authoring route with signed party/user context, `draft_id`, and `return_url`.
-- LocalPlay handles authoring, image upload, validation, draft recovery, and saved content.
-- LocalPlay redirects back to the host app with `content_id` and safe metadata hints.
+- LocalPlay handles authoring, image upload, validation, local draft recovery, and saved content.
+- LocalPlay redirects back to the host app with canonical `localplay_content_id` and safe metadata hints.
 - Host app verifies the returned content server-side before storing a prepared game setup pointer or creating a session.
 - Universal/app links and explicitly allowlisted custom schemes should work for native return flows.
 
@@ -107,7 +107,7 @@ Prepared game setup decisions:
 - Once a `content_id` is used to start a session, it becomes immutable. Later edits create a new version/content id.
 - Draft autosave survives 7 days since last edit.
 - Free saved party content survives until 30 days after party end, or party start plus 48 hours plus 30 days when no end time exists.
-- Authoring tokens are edit-only credentials, last 60 minutes, and refresh while active. Expiry does not delete drafts or interrupt gameplay.
+- Authoring tokens are edit-only credentials and last 60 minutes. Expiry does not delete saved content or interrupt gameplay; server-side refresh/autosave recovery is backlog hardening.
 
 ### Create Flow
 
@@ -898,6 +898,7 @@ Remote smoke:
 ## Deployment Notes
 
 - Phase 0 custom authoring is implemented.
+- Revelry party-scoped quiz authoring is implemented with `/integrations/revelry/content/authoring-link`, `/revelry/author`, `/integrations/revelry/content`, and authoring-token media uploads. It reuses quiz-pack storage under `revelry:party:{party_id}`.
 - Durable library UI requires deploying the rendered Supabase schema updates before enabling against Supabase environments.
 - Uploaded images require IONOS `upload.php`, `.upload_secret`, and matching backend media env vars.
 - Stable Diffusion should remain disabled/unavailable in gamma and production unless explicitly replaced by a production-safe cloud provider. Host-uploaded images are the required prod/gamma path.

@@ -1,6 +1,6 @@
 # LocalPlay Revelry Integration Spec
 
-Status: Gamma bridge implemented; party-scoped Revelry Games hub proposed
+Status: Gamma bridge plus party-scoped quiz authoring implemented; production hardening remains
 
 Last updated: 2026-05-23
 
@@ -67,19 +67,32 @@ POST /integrations/revelry/sessions
 POST /integrations/revelry/sessions/{session_id}/launch-token
 GET  /integrations/revelry/sessions/{session_id}
 GET  /integrations/revelry/sessions/{session_id}/results
+POST /integrations/revelry/party-games-link
+GET  /integrations/revelry/party-games/resolve
+GET  /integrations/revelry/party-workspace
+POST /integrations/revelry/party-games/authoring-link
+POST /integrations/revelry/party-games/start
+POST /integrations/revelry/content/authoring-link
+GET  /integrations/revelry/content/authoring-token/resolve
+POST /integrations/revelry/content
+GET  /integrations/revelry/content/{content_id}
+PUT  /integrations/revelry/content/{content_id}
 GET  /sessions/{session_id}/organizer
 GET  /sessions/{session_id}/join
 GET  /sessions/{session_id}/spectate
+GET  /revelry/games
+GET  /revelry/author
 ```
 
 Current limitations and follow-up work:
 
 - rooms live in process memory
 - participant persistence remains deferred; session metadata is durable
-- LocalPlay-hosted authoring/content APIs are specified below but not implemented
-- party-scoped "Revelry Games" hub is specified below but not implemented
-- host-app launch chrome still needs polish so standalone account, navigation, and economy surfaces do not leak into Revelry-managed sessions
-- result summaries exist but should be hardened as LocalPlay-hosted authoring and richer game variants are added
+- quiz-only LocalPlay-hosted authoring/content APIs are implemented by reusing durable quiz-pack storage scoped to `revelry:party:{external_container_id}`
+- the party-scoped "Revelry Games" hub is implemented for list/create/edit/start quiz flows
+- host-app launch chrome is hidden on `/revelry/*`; organizer/player/spectator surfaces still need deeper polish for fully branded host-app mode
+- callbacks are best-effort signed HTTP delivery when `REVELRY_CALLBACK_URL` is configured; polling remains the recovery path
+- result summaries exist but should be hardened as richer game variants are added
 
 ## Phase Plan
 
@@ -556,6 +569,8 @@ Implementation endpoints:
 
 ```text
 POST /integrations/revelry/content/authoring-link
+POST /integrations/revelry/party-games/authoring-link
+GET  /integrations/revelry/content/authoring-token/resolve
 POST /integrations/revelry/content
 GET  /integrations/revelry/content/{content_id}
 PUT  /integrations/revelry/content/{content_id}
@@ -595,10 +610,14 @@ Response:
 
 ```json
 {
-  "authoring_url": "https://gamesapi.revelryapp.me/integrations/revelry/authoring?game_type=quiz&draft_id=...&authoring_token=...",
+  "authoring_url": "https://gamesapi.revelryapp.me/revelry/author?authoring_token=...",
   "authoring_token_expires_at": "2026-05-23T21:00:00Z",
-  "draft_id": "revelry_prepared_setup_uuid_or_client_uuid",
-  "return_url": "https://app.revelryapp.me/party/party_uuid?tab=games"
+  "localplay_content_id": "lp_content_uuid_when_editing",
+  "launch_context": {
+    "mode": "host_app",
+    "host_app": "revelry",
+    "surface": "content_authoring"
+  }
 }
 ```
 
@@ -611,6 +630,23 @@ Rules:
 - `mode` is `create`, `edit`, or `duplicate`; `mode = edit` should include the existing `content_id` / `localplay_content_id`. Editing locked/used content must create a new version/content id.
 - Token lifetime is 60 minutes. The authoring UI may refresh it through the same service-backed flow while the host remains active.
 - The response must not include the shared integration secret. Browser clients receive only the short-lived LocalPlay `authoring_token` embedded in `authoring_url`.
+
+When the user is already inside the LocalPlay party hub, the browser uses the validated LocalPlay `party_games_token` instead of a Revelry service credential:
+
+```text
+POST /integrations/revelry/party-games/authoring-link
+```
+
+```json
+{
+  "party_games_token": "...",
+  "game_type": "quiz",
+  "mode": "edit",
+  "content_id": "lp_content_uuid"
+}
+```
+
+This endpoint applies the same capability checks (`author_content` or `manage_games`) and returns the same `authoring_url` response shape. It exists so the LocalPlay hub can create/edit party-scoped content without exposing the Revelry shared secret to the browser.
 
 `POST /integrations/revelry/content` request:
 
@@ -629,25 +665,23 @@ Rules:
     "capabilities": ["manage_games", "author_content", "operate_game"]
   },
   "game_type": "quiz",
-  "draft_id": "revelry_prepared_setup_uuid_or_client_uuid",
-  "idempotency_key": "uuid-per-save-attempt",
   "title": "Ava's Birthday Quiz",
-  "source": "manual",
-  "payload": {
-    "questions": [
-      {
-        "text": "Where did Ava go to college?",
-        "question_type": "multiple_choice",
-        "options": ["UCLA", "NYU", "UT Austin", "UW"],
-        "answer_index": 2,
-        "image_asset_id": "img_uuid_or_null",
-        "image_alt": "Ava wearing a graduation cap"
-      }
-    ]
-  },
-  "metadata": {
-    "party_theme": "birthday",
-    "visibility": "host_app_container"
+  "content_id": "lp_content_uuid_when_editing",
+  "content_payload": {
+    "quiz": {
+      "quiz_title": "Ava's Birthday Quiz",
+      "questions": [
+        {
+          "id": 1,
+          "text": "Where did Ava go to college?",
+          "options": ["UCLA", "NYU", "UT Austin", "UW"],
+          "answer_index": 2,
+          "image_prompt": "",
+          "image_url": "https://media.revelryapp.me/apps/localplay/gamma/...",
+          "image_alt": "Ava wearing a graduation cap"
+        }
+      ]
+    }
   }
 }
 ```
@@ -656,20 +690,22 @@ Response:
 
 ```json
 {
-  "content_id": "lp_content_uuid",
-  "game_type": "quiz",
-  "title": "Ava's Birthday Quiz",
-  "status": "ready",
-  "question_count": 10,
-  "thumbnail_url": "https://media.revelryapp.me/apps/localplay/gamma/...",
-  "supports_images": true,
-  "host_app": "revelry",
-  "external_container_id": "party_uuid",
-  "created_by_external_user_id": "revelry_user_uuid",
-  "locked": false,
-  "retention_expires_at": "2026-06-30T00:00:00Z",
-  "created_at": "2026-05-23T20:00:00Z",
-  "updated_at": "2026-05-23T20:00:00Z"
+  "localplay_content_id": "lp_content_uuid",
+  "content": {
+    "localplay_content_id": "lp_content_uuid",
+    "game_type": "quiz",
+    "title": "Ava's Birthday Quiz",
+    "status": "ready",
+    "question_count": 10,
+    "thumbnail_url": "https://media.revelryapp.me/apps/localplay/gamma/...",
+    "updated_at": "2026-05-23T20:00:00Z",
+    "action_requirements": {
+      "start": ["operate_game"],
+      "edit": ["author_content"],
+      "delete": ["manage_games"]
+    }
+  },
+  "workspace": {}
 }
 ```
 
@@ -682,19 +718,18 @@ Rules:
 - LocalPlay validates the payload against the catalog `content_schema` or `config_schema`.
 - LocalPlay stores host-app content ownership metadata so session creation can enforce same-container or allowed-author access.
 - Revelry must use LocalPlay APIs for authoring and media; it must not write LocalPlay quiz, content, or media tables directly.
-- Content create/update requests should include an idempotency key or stable `draft_id` so browser refreshes, mobile webview reloads, and upload retries can recover without duplicating partial games.
-- `GET /integrations/revelry/content/{content_id}` returns safe metadata only by default: title, status, game type, question count, thumbnail, ownership scope, retention timestamps, lock state, and validation errors. It must not return full questions/answers unless a future privileged export scope is explicitly added.
+- Content create/update requests should eventually include an idempotency key or stable `draft_id` so browser refreshes, mobile webview reloads, and upload retries can recover without duplicating partial games. Current implementation relies on `content_id` for edit idempotency and the editor's local draft for unsaved create recovery.
+- `GET /integrations/revelry/content/{content_id}` returns safe metadata by default. The LocalPlay authoring UI may request `include_payload=true` using an authoring token to load the full quiz for editing; Revelry should not persist that full payload.
 - Content statuses: `draft`, `ready`, `locked`, `deleted_by_host`, `expired`, `archived`.
 - Validation errors use `422 invalid_content` with field paths such as `questions[2].options`.
-- Duplicate idempotency keys return the original response.
-- Stale update versions return `409 edit_conflict`.
+- Duplicate idempotency keys returning the original response and stale update-version `409 edit_conflict` handling are backlog hardening items.
 - AI-assisted authoring may use `source = ai` and include prompt/theme metadata, but it still returns a stable `content_id` before room creation.
 - Manual custom quiz authoring should remain free because comparable products commonly include it. LocalPlay may monetize long-term saving/retention, larger libraries, larger media quotas, premium templates, AI assist, advanced branding, analytics, or cross-event reuse outside the Revelry-managed gameplay path.
 
 LocalPlay persistence requirements:
 
-- Store drafts/content in LocalPlay-owned tables, not Revelry tables. Existing `quiz_packs` / `quiz_questions` may be reused if they can store host-app ownership fields; otherwise add a generic host-app content table.
-- Required content fields: `id`, `host_app`, `external_container_type`, `external_container_id`, `created_by_external_user_id`, `game_type`, `title`, `status`, `question_count`, `thumbnail_asset_id`, `thumbnail_url`, `draft_id`, `source`, `payload_version`, `locked_at`, `used_at`, `retention_expires_at`, `deleted_at`, `created_at`, `updated_at`, and safe `metadata`.
+- Store drafts/content in LocalPlay-owned tables, not Revelry tables. Current quiz implementation reuses `quiz_packs` / `quiz_questions` with owner wallet id `revelry:party:{external_container_id}`. A generic host-app content table should be added when additional editable game types need payloads that no longer fit the quiz-pack schema.
+- Current required persisted fields for quiz content are `id`, `owner_wallet_id`, `title`, `status`, `question_count`, `deleted_at`, `created_at`, `updated_at`, and question rows. Future generic content should add `host_app`, `external_container_type`, `external_container_id`, `created_by_external_user_id`, `game_type`, `thumbnail_asset_id`, `draft_id`, `source`, `payload_version`, `locked_at`, `used_at`, `retention_expires_at`, and safe `metadata`.
 - Required draft fields: `draft_id`, `host_app`, `external_container_id`, `actor_external_user_id`, `game_type`, `payload`, `autosave_version`, `editing_lock_actor_id`, `editing_lock_expires_at`, `expires_at`, `created_at`, and `updated_at`.
 - Drafts expire 7 days after last edit. Saved party-scoped content expires 30 days after party end, or party start plus 48 hours plus 30 days when no end time exists.
 - When content is used to start a session, set `used_at` / `locked_at`; future edits must duplicate/version rather than mutate that content id.
@@ -765,10 +800,10 @@ Host opens Revelry Games tab
 Do not use the existing organizer route for pre-session authoring, because organizer launch currently requires a `session_id`. Add a separate content-authoring launch route such as:
 
 ```text
-GET /integrations/revelry/authoring?game_type=quiz&draft_id=...&authoring_token=...&return_url=...
+GET /revelry/author?authoring_token=...
 ```
 
-The authoring token is only for editing. It should last 60 minutes, refresh while the editor is active, and never delete drafts or interrupt gameplay when it expires. If refresh fails, LocalPlay should ask the host to reopen from Revelry; reopening with the same `draft_id` restores the draft.
+The authoring token is only for editing. It lasts 60 minutes. Expiry does not delete saved content or affect gameplay; if the token expires during editing, LocalPlay asks the host to reopen from Revelry/the party hub. Token refresh and server-side draft recovery are backlog hardening items.
 
 The authoring route must accept a validated `return_url`. When content is ready, LocalPlay redirects back with a compact handoff using canonical `localplay_content_id`, plus `game_type` and optional `prepared_setup_id`/`draft_id`. For native apps, Revelry should prefer universal/app links and may use a custom scheme fallback. LocalPlay must allowlist return origins/schemes, and Revelry must validate the returned `localplay_content_id` server-side before creating a session.
 
@@ -990,28 +1025,19 @@ Event envelope:
 
 ```json
 {
-  "event_id": "uuid",
-  "event_type": "game.completed",
+  "event_id": "lp_evt_uuid",
+  "event_type": "session.completed",
   "occurred_at": "2026-05-23T21:30:00Z",
-  "host_app": "revelry",
-  "external_container_type": "party",
-  "external_container_id": "party_uuid",
-  "session_id": "lp_session_uuid",
-  "content_id": "lp_content_uuid",
-  "idempotency_key": "game.completed:lp_session_uuid:v1",
   "payload": {
-    "status": "completed",
-    "result_summary": {
-      "title": "Ava's Birthday Quiz",
-      "game_type": "quiz",
-      "top_results": [],
-      "thumbnail_url": "https://gamesmedia.revelryapp.me/results/lp_session_uuid.jpg"
-    },
-    "feed_card": {
-      "card_type": "localplay_result",
-      "title": "Ava's Birthday Quiz results are ready",
-      "thumbnail_url": "https://gamesmedia.revelryapp.me/results/lp_session_uuid.jpg"
-    }
+    "host_app": "revelry",
+    "external_container_type": "party",
+    "external_container_id": "party_uuid",
+    "session_id": "lp_session_uuid",
+    "room_code": "ABCD12",
+    "status": "complete",
+    "game_type": "quiz",
+    "game_title": "Ava's Birthday Quiz",
+    "result": {}
   }
 }
 ```
@@ -1021,19 +1047,20 @@ Recommended event types:
 - `content.created`
 - `content.updated`
 - `content.deleted`
-- `game.session_created`
-- `game.started`
-- `game.completed`
-- `game.cancelled`
-- `game.expired`
-- `game.superseded`
+- `session.created`
+- `session.started`
+- `session.completed`
+- `session.cancelled`
+- `session.expired`
+- `session.superseded`
 
 Rules:
 
-- Callbacks must be signed with a shared secret or asymmetric signing key. Include timestamp and idempotency headers so Revelry can reject replays and dedupe events.
+- Current implementation sends callbacks only when `REVELRY_CALLBACK_URL` is configured. `content.created` / `content.updated` and `session.created` are sent from the API path; `session.started` and `session.completed` are sent from the room runtime.
+- Callbacks are signed with `REVELRY_CALLBACK_SECRET` when configured. LocalPlay includes `X-LocalPlay-Event-Id`, `X-LocalPlay-Timestamp`, and `X-LocalPlay-Signature: sha256=...`; Revelry should reject replays and dedupe by event id.
 - Callback payloads must contain safe metadata only. Do not include full quiz contents, answers, raw prompts, private media paths, organizer credentials, launch tokens, or participant secrets.
 - Revelry owns whether to post feed/memory entries automatically, as drafts, or only after host approval.
-- LocalPlay should retry transient callback failures with backoff. Revelry should also poll `party-workspace` or session results on page open/app resume to recover missed callbacks.
+- LocalPlay does best-effort delivery in the current implementation and logs transient failures. Durable retry with backoff is backlog hardening; Revelry should poll `party-workspace` or session results on page open/app resume to recover missed callbacks.
 - Callback failures must not block gameplay completion. They affect sync latency only.
 
 ## Handoff Token
@@ -1322,8 +1349,11 @@ LocalPlay:
 ```text
 REVELRY_INTEGRATION_SECRET=<prod-or-gamma-secret>
 REVELRY_LAUNCH_TOKEN_TTL_SECONDS=600
+REVELRY_AUTHORING_TOKEN_TTL_SECONDS=3600
 REVELRY_SESSION_LOBBY_TTL_SECONDS=14400
 REVELRY_SESSION_IDLE_TTL_SECONDS=7200
+REVELRY_CALLBACK_URL=<optional-revelry-callback-endpoint>
+REVELRY_CALLBACK_SECRET=<optional-callback-signing-secret>
 PUBLIC_BASE_URL=https://gamesapi.revelryapp.me
 ALLOWED_ORIGINS=https://gamesapi.revelryapp.me,https://app.revelryapp.me,https://api.revelryapp.me,https://api-gamma.revelryapp.me
 ```
@@ -1368,7 +1398,7 @@ Playwright smoke:
 
 Roll out the integration on gamma first.
 
-Current LocalPlay status: gamma has passed direct smoke for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, and host-app-managed billing wallet behavior. Basic Revelry gamma end-to-end launch testing has worked for catalog, create session, organizer/player launch, and gameplay. Before each rollout or manual test pass, verify the deployed Cloud Run revision against the current repo HEAD because this spec intentionally does not act as the source of truth for deployed commit tracking. Embedded authoring and embedded chrome cleanup remain required before production promotion.
+Current LocalPlay status: gamma has passed direct smoke for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, party workspace, party hub link/resolve, and host-app-managed billing wallet behavior. Basic Revelry gamma end-to-end launch testing has worked for catalog, create session, organizer/player launch, and gameplay. The repo now implements quiz-only LocalPlay-hosted authoring and best-effort callbacks; deploy and smoke those before treating the authoring flow as gamma-ready. Before each rollout or manual test pass, verify the deployed Cloud Run revision against the current repo HEAD because this spec intentionally does not act as the source of truth for deployed commit tracking. Deeper embedded chrome cleanup remains required before production promotion.
 
 Gamma acceptance checklist:
 
@@ -1382,6 +1412,9 @@ Gamma acceptance checklist:
 - Result summary omits raw answers and private custom quiz contents.
 - Feed-card payloads are usable by Revelry but posting/visibility remains Revelry-owned.
 - No standalone LocalPlay spark/paywall prompts appear in Revelry-managed sessions.
+- Revelry gamma can mint an authoring link, create/edit a quiz with an image, return with `localplay_content_id`, refresh party workspace, and start the saved quiz.
+- LocalPlay hub can create/edit/start party-scoped saved quizzes without exposing the Revelry service secret.
+- If configured, signed callbacks reach Revelry for content/session events; if not, polling recovers state.
 
 Do not promote to production until the gamma flow is playable end to end.
 
@@ -1399,8 +1432,8 @@ Recommended LocalPlay order:
 8. Add safe one-active-game replacement handling. Done.
 9. Add on-demand launch-token exchange. Done.
 10. Add status/result polling endpoint. Done.
-11. Add embedded host-app authoring mode for manual quiz content, including host-app content APIs and session creation via `settings.content_id`.
-12. Add signed callback/webhook delivery for content/session/result events, with polling as recovery.
+11. Add embedded host-app authoring mode for manual quiz content, including host-app content APIs and session creation via `settings.content_id`. Done for quiz content using party-scoped quiz packs.
+12. Add signed callback/webhook delivery for content/session/result events, with polling as recovery. Done as best-effort delivery when callback env vars are configured; durable retry remains backlog.
 13. Add postMessage events only where they improve embedded UX.
 
 ## Open Questions
