@@ -272,8 +272,8 @@ Revelry hosts should be able to run only one active LocalPlay game at a time per
 Lifecycle rules:
 
 - `lobby`, `active`, and `paused` sessions count as active.
-- Starting a new game for the same `host_app`, `external_container_id`, and managing actor requires host confirmation in Revelry UI.
-- After confirmation, Revelry calls create session with replacement intent; LocalPlay creates the replacement first and only then marks the previous active session `superseded` and closes its organizer/player/spectator launch routes.
+- Starting a new game for the same `host_app`, `external_container_id`, and managing actor requires confirmation from the managing host/cohost in the launching surface, whether that surface is Revelry or the LocalPlay party hub.
+- After confirmation, the launching surface calls create session with replacement intent; LocalPlay creates the replacement first and only then marks the previous active session `superseded` and closes its organizer/player/spectator launch routes.
 - If replacement creation fails, the previous active session remains active and joinable.
 - Superseded sessions should return a friendly closed-game state, not a generic 404.
 - Expired sessions should return clear UI copy, for example: "This game expired. Ask the host to start a new one."
