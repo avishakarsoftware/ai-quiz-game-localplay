@@ -750,6 +750,8 @@ Playwright smoke:
 
 Roll out the integration on gamma first.
 
+Current LocalPlay status: implemented and committed through `abee2af`, but not considered deployed to gamma until the gamma container is redeployed from that commit or newer and the smoke checks below pass.
+
 Gamma acceptance checklist:
 
 - Revelry gamma can create a LocalPlay session through the service endpoint.
