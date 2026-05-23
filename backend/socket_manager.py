@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class Room:
     def __init__(self, room_code: str, game_data: dict, time_limit: int = 15,
                  organizer_token: str = "", content_id: str = "",
-                 game_type: str = "quiz"):
+                 game_type: str = "quiz", billing_mode: str = "localplay_sparks"):
         self.room_code = room_code
         self.quiz = game_data  # generic game content (quiz or WMLT)
         self.content_id = content_id
@@ -39,6 +39,7 @@ class Room:
         self.lock = asyncio.Lock()
         self.last_activity = time.time()
         self.wallet_id: Optional[str] = None  # organizer's wallet for spark charges
+        self.billing_mode = billing_mode
         self._organizer_just_disconnected = False  # flag for post-disconnect notification
         self._player_event: Optional[tuple] = None  # ('left'|'disconnected'|'reconnected', nickname)
         self.disconnected_players: Dict[str, dict] = {}  # nickname -> {score, prev_rank, streak}
@@ -307,9 +308,9 @@ class SocketManager:
 
     def create_room(self, room_code: str, game_data: dict, time_limit: int = 15,
                     organizer_token: str = "", content_id: str = "",
-                    game_type: str = "quiz") -> Room:
+                    game_type: str = "quiz", billing_mode: str = "localplay_sparks") -> Room:
         room = Room(room_code, game_data, time_limit, organizer_token=organizer_token,
-                    content_id=content_id, game_type=game_type)
+                    content_id=content_id, game_type=game_type, billing_mode=billing_mode)
         self.rooms[room_code] = room
         self.start_cleanup_loop()
         return room
@@ -582,7 +583,10 @@ class SocketManager:
                                 "message": f"Drawing Game needs at least {config.MIN_DRAWING_PLAYERS} players to start",
                             })
                             return
-                    spent, _ = token_module.spend_room(room.wallet_id)
+                    if room.billing_mode == "host_app_managed":
+                        spent = True
+                    else:
+                        spent, _ = token_module.spend_room(room.wallet_id)
                     if not spent:
                         await self._send_to_client(room, client_id, {
                             "type": "INSUFFICIENT_SPARKS",

@@ -13,6 +13,7 @@ client = TestClient(app)
 
 def setup_function():
     socket_manager.rooms.clear()
+    socket_manager.allowed_origins = []
 
 
 def _headers():
@@ -21,6 +22,7 @@ def _headers():
 
 def _create_payload(container_id: str = "", game_type: str = "quiz"):
     container_id = container_id or f"party-{uuid.uuid4().hex}"
+    host_user_id = f"host-{container_id}"
     return {
         "game_type": game_type,
         "settings": {"time_limit": 20},
@@ -29,11 +31,11 @@ def _create_payload(container_id: str = "", game_type: str = "quiz"):
             "external_container_type": "party",
             "external_container_id": container_id,
             "external_container_title": "Ava's Birthday",
-            "host_user_id": "host-1",
+            "host_user_id": host_user_id,
             "return_url": "https://app.revelryapp.me/parties/party-1",
         },
         "actor": {
-            "external_user_id": "host-1",
+            "external_user_id": host_user_id,
             "display_name": "Ava",
             "role": "host",
             "capabilities": ["manage_games", "operate_game"],
@@ -60,6 +62,10 @@ def test_revelry_session_create_launch_token_and_status(monkeypatch):
     assert body["room_code"] in socket_manager.rooms
     assert body["status"] == "lobby"
     assert body["launch_routes"]["organizer"]["path"].endswith("/organizer")
+    session = db.get_game_session(body["session_id"])
+    assert session
+    assert db.get_wallet_balance(f"revelry:host-{container_id}") == 0
+    assert socket_manager.rooms[body["room_code"]].billing_mode == "host_app_managed"
 
     token_res = client.post(
         f"/integrations/revelry/sessions/{body['session_id']}/launch-token",
@@ -88,6 +94,12 @@ def test_revelry_session_create_launch_token_and_status(monkeypatch):
     )
     assert route_res.status_code == 302
     assert route_res.headers["location"].startswith(f"/organizer?session_id={body['session_id']}")
+
+    with client.websocket_connect(f"/ws/{body['room_code']}/org-1?organizer=true") as ws:
+        ws.send_json({"type": "AUTH", "token": session["organizer_token"]})
+        assert ws.receive_json()["type"] == "ROOM_CREATED"
+        ws.send_json({"type": "START_GAME"})
+        assert ws.receive_json()["type"] == "GAME_STARTING"
 
 
 def test_revelry_session_replacement_requires_confirmation(monkeypatch):

@@ -1607,6 +1607,11 @@ This is the main infrastructure investment needed before Chinese Whispers or Dra
   - **Recommendation**: Default to family-safe. WMLT already has the vibe system (party/spicy/wholesome/work). Extend this pattern: each game's generation has a "vibe" or "audience" selector that adjusts the LLM prompt. Spicy/adult modes should be opt-in per session.
 - Should LocalPlay monetize independently, share Revelry billing, or support both?
   - **Recommendation**: Keep gameplay launch/play free of surprise payment prompts in Revelry-managed sessions. Manual custom quiz authoring should remain free for competitiveness. LocalPlay can monetize long-term save/retention for free custom quizzes, larger libraries, media quotas, premium templates, optional AI assist, advanced branding, analytics, or cross-event reuse. This should remain a LocalPlay commerce feature; Revelry can link hosts into it later if needed.
+- Revelry integration hardening backlog:
+  - Add service-level rate limiting and/or idempotency keys for `/integrations/revelry/sessions` before production scale.
+  - Add a durable cleanup/archive job for expired `game_sessions`; completed summaries should remain attached to their host container, but stale lobby/active records should not grow without bounds.
+  - Add launch-token replay protection using `jti` once Redis/Supabase-backed token-use tracking exists.
+  - Add tests for expired handoff tokens, wrong issuer/audience, organizer launch with player-scoped token, and player/spectator launch without organizer token exposure.
 - How should native app deep links route between Revelry and LocalPlay?
   - **Recommendation**: Stable LocalPlay universal links. The exact path can change, but links should support app-open when installed and browser fallback when not. Existing `/quiz/join` style links are legacy-compatible examples, not the final platform shape.
 - Public IONOS surface cleanup:

@@ -1083,6 +1083,7 @@ curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/data
 ### Integration endpoints
 
 All integration endpoints require `Authorization: Bearer <REVELRY_INTEGRATION_SECRET>`.
+Revelry-created sessions are LocalPlay `host_app_managed` billing sessions: LocalPlay does not grant signup-bonus sparks to the integration wallet and does not debit sparks when the host starts the game. Billing/entitlement policy is owned by Revelry for this launch path.
 
 | Endpoint | Method | Purpose |
 |---|---|---|

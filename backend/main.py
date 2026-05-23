@@ -471,7 +471,14 @@ def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = 
     return _default_game_content("quiz", title)
 
 
-def _create_runtime_room(game_type: str, content_id: str, game_data: dict, wallet_id: str, time_limit: int) -> tuple[str, str]:
+def _create_runtime_room(
+    game_type: str,
+    content_id: str,
+    game_data: dict,
+    wallet_id: str,
+    time_limit: int,
+    billing_mode: str = "localplay_sparks",
+) -> tuple[str, str]:
     if game_type == "wmlt" and not game_data.get("statements"):
         raise HTTPException(status_code=422, detail="Game has no statements")
     if game_type == "drawing" and not game_data.get("prompts"):
@@ -506,6 +513,7 @@ def _create_runtime_room(game_type: str, content_id: str, game_data: dict, walle
         organizer_token=organizer_token,
         content_id=content_id,
         game_type=game_type,
+        billing_mode=billing_mode,
     )
     room.wallet_id = wallet_id
     logger.info("Room created: %s (type=%s)", room_code, game_type)
@@ -1141,8 +1149,15 @@ async def create_revelry_session(request: RevelrySessionCreateRequest, req: Requ
     title = context.external_container_title or next((g["title"] for g in GAME_CATALOG if g["game_type"] == request.game_type), "LocalPlay Game")
     content_id, game_data = _resolve_runtime_content(request.game_type, str(request.settings.get("content_id") or ""), title)
     wallet_id = f"revelry:{context.host_user_id or request.actor.external_user_id or context.external_container_id}"
-    tokens.ensure_wallet(wallet_id)
-    room_code, organizer_token = _create_runtime_room(request.game_type, content_id, game_data, wallet_id, time_limit)
+    db.get_or_create_wallet(wallet_id, signup_bonus=False)
+    room_code, organizer_token = _create_runtime_room(
+        request.game_type,
+        content_id,
+        game_data,
+        wallet_id,
+        time_limit,
+        billing_mode="host_app_managed",
+    )
 
     now = _now_ts()
     session_id = f"lp_{uuid.uuid4().hex}"

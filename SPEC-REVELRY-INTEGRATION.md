@@ -273,10 +273,12 @@ Route behavior:
 - `organizer` requires organizer scope.
 - `join` requires player scope or falls back to fast nickname entry if the session permits it.
 - `spectate` requires spectator scope or a session-level spectator setting.
+- Tokenless player/spectator routes are intentionally allowed for MVP when the caller already has the unguessable LocalPlay `session_id`, matching the existing "anyone with the room code can join" model. Revelry may still wrap these routes with its own URLs and mint player/spectator launch tokens on open.
 - `embed=1` hides standalone marketing/app chrome and keeps only gameplay controls.
 - `return_url` may be accepted for native/browser escape hatches.
 
 Long-lived control credentials must not live in URLs. A URL launch token should be short-lived, preferably one-time use, and exchangeable for a LocalPlay runtime session token.
+Organizer launch URLs are privileged because an organizer-scoped launch token can be exchanged for the room `organizer_token`; never put organizer launch URLs in feed cards, guest-visible pages, logs, or durable storage.
 
 Persistence rules:
 
@@ -569,6 +571,13 @@ Secrets:
 - If symmetric HMAC is used, the two env vars contain the same secret value in their respective services.
 - Keep prod and gamma secrets separate.
 - Do not log full handoff tokens, launch tokens, organizer tokens, or service tokens.
+
+Billing:
+
+- Sessions created through `/integrations/revelry/sessions` use LocalPlay internal `billing_mode = host_app_managed`.
+- Host-app-managed sessions must not grant LocalPlay signup bonuses to integration wallets.
+- Host-app-managed sessions must not debit LocalPlay sparks or show LocalPlay spark/paywall prompts at game start.
+- This is internal LocalPlay behavior and does not require a Revelry request-field change for Phase 0.
 
 ## External Context
 
