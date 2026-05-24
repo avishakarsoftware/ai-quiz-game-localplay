@@ -702,7 +702,7 @@ Conflict policy for V1:
 
 Manual custom quiz authoring should remain free because comparable products commonly include it. The LocalPlay monetization opportunity is durability and premium creator features, not the basic ability to create a quiz.
 
-Free saved custom quizzes are retained for 30 days by default, followed by a 7-day recoverable grace period. Hosts can pay to keep quizzes longer, expand their saved library, or unlock premium creator features. This is a LocalPlay product/commerce feature, not a Revelry feature.
+Free saved custom quizzes are retained for 30 days by default, followed by a 7-day recoverable grace period. In standalone LocalPlay, hosts can pay LocalPlay to keep quizzes longer, expand their saved library, or unlock premium creator features. In Revelry-launched party mode, Revelry owns customer-facing party pass/payment decisions and LocalPlay should receive normalized party capabilities such as `saved_custom_games`, `premium_ai`, and `expires_at`.
 
 Charge sparks only for optional AI assist actions:
 
@@ -723,6 +723,7 @@ Open payment questions:
 - Should paid save/retention use LocalPlay sparks, one-time purchases, a LocalPlay creator subscription, or another LocalPlay-owned model?
 - Should free expired quizzes soft-delete first with a grace recovery window?
 - Should premium features include larger libraries, larger media quotas, premium templates, AI assist bundles, advanced branding, analytics, or cross-event reuse?
+- For host-app mode, which Revelry party-pass capabilities should map to longer quiz retention, premium AI assist, image quotas, and cross-party reuse?
 
 ## Import And Paste Helpers
 
