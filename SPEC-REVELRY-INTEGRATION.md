@@ -1489,7 +1489,7 @@ Recommended LocalPlay order:
 2. Add generic durable session schema and db facade methods. Done for `game_sessions`; participant persistence remains deferred.
 3. Add catalog endpoint. Done.
 4. Add handoff validation helper. Done for shared-secret bearer/JWT validation.
-5. Add embeddable launch shell/chrome mode. Done for Revelry-launched `/revelry/*`, tokenized organizer/player/spectator surfaces, standalone economy chrome hiding, raw LocalPlay share/join suppression in host-app lobby mode, and `guest_join_url` QR rendering when Revelry provides a party-aware join route. Remaining: add host-app-safe "Copy join link" / share action that uses `guest_join_url` and is implemented in the shared lobby component rather than a forked Revelry-only copy.
+5. Add embeddable launch shell/chrome mode. Done for Revelry-launched `/revelry/*`, tokenized organizer/player/spectator surfaces, standalone economy chrome hiding, raw LocalPlay share/join suppression in host-app lobby mode, `guest_join_url` QR rendering, and a host-app-safe "Copy join link" action implemented in the shared lobby component.
 6. Add session wrapper around current `/room/create`. Done.
 7. Add `POST /integrations/revelry/sessions`. Done.
 8. Add safe one-active-game replacement handling. Done.

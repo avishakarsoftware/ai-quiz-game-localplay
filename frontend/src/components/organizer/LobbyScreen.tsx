@@ -36,6 +36,7 @@ export default function LobbyScreen({
     const [copied, setCopied] = useState(false);
     const qrUrl = hostAppMode ? hostAppJoinUrl : joinUrl;
     const showQr = Boolean(qrUrl) && (!hostAppMode || Boolean(hostAppJoinUrl));
+    const showHostAppShare = hostAppMode && Boolean(hostAppJoinUrl);
 
     useEffect(() => {
         if (playerCount > prevCountRef.current) {
@@ -71,6 +72,23 @@ export default function LobbyScreen({
         setTimeout(() => setCopied(false), 2000);
     };
 
+    const copyHostAppJoinLink = async () => {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(hostAppJoinUrl);
+        } else if (navigator.share) {
+            await navigator.share({ title: 'Join the game', url: hostAppJoinUrl });
+        } else if (Capacitor.isNativePlatform()) {
+            await Share.share({
+                title: 'Join the game',
+                text: `Join the game for room ${roomCode}`,
+                url: hostAppJoinUrl,
+                dialogTitle: 'Invite players',
+            });
+        }
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
     return (
         <div className="min-h-dvh flex flex-col items-center justify-center container-responsive safe-top safe-bottom animate-in">
             <div className="screen-hero">
@@ -94,6 +112,11 @@ export default function LobbyScreen({
                 {!hostAppMode && (
                     <button onClick={shareLink} className="btn btn-secondary" style={{ fontSize: '0.875rem', padding: '8px 20px', height: 40 }}>
                         {copied ? 'Copied!' : 'Share Link'}
+                    </button>
+                )}
+                {showHostAppShare && (
+                    <button onClick={copyHostAppJoinLink} className="btn btn-secondary" style={{ fontSize: '0.875rem', padding: '8px 20px', height: 40 }}>
+                        {copied ? 'Copied!' : 'Copy Join Link'}
                     </button>
                 )}
                 <button onClick={onToggleLock} className="btn btn-secondary" style={{ fontSize: '0.875rem', padding: '8px 16px', height: 40, gap: 6 }}>

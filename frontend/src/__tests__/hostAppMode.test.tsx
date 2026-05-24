@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { vi } from 'vitest';
 import { isHostAppSurfaceLocation } from '../utils/hostAppMode';
 import { filterGameModesForCatalog } from '../gameModes';
 import LobbyScreen from '../components/organizer/LobbyScreen';
@@ -42,7 +43,13 @@ describe('host-app mode filtering', () => {
         expect(screen.getByText(/players can join from revelry/i)).toBeInTheDocument();
     });
 
-    it('renders a Revelry-owned QR affordance in host-app lobby mode when provided', () => {
+    it('renders and copies a Revelry-owned join affordance in host-app lobby mode when provided', async () => {
+        const writeText = vi.fn().mockResolvedValue(undefined);
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { writeText },
+        });
+
         render(
             <LobbyScreen
                 roomCode="ABCD12"
@@ -61,5 +68,9 @@ describe('host-app mode filtering', () => {
         expect(screen.getByText(/scan to join ava's birthday/i)).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /share link/i })).not.toBeInTheDocument();
         expect(screen.queryByText(/gamesapi-gamma\.revelryapp\.me/)).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /copy join link/i }));
+        await waitFor(() => {
+            expect(writeText).toHaveBeenCalledWith('https://app.revelryapp.me/party/party-1/games/join');
+        });
     });
 });
