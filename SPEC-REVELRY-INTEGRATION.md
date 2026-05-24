@@ -1140,7 +1140,7 @@ Rules:
 
 - Current implementation sends callbacks only when `REVELRY_CALLBACK_URL` is configured. `content.created` / `content.updated` / `content.deleted`, `game.session_created`, and `game.superseded` are sent from the API path; `game.started` and `game.completed` are sent from the room runtime. Cancellation/expiration callbacks are emitted when those state transitions happen.
 - `occurred_at` must be an ISO 8601 UTC string ending in `Z`. Do not send Unix seconds in new LocalPlay callback code.
-- `game.session_created` and `game.started` callbacks should include safe actor metadata when available so Revelry can map ownership for games started from the LocalPlay hub: `payload.actor.external_user_id`, `external_guest_id`, `display_name`, and `role`. Do not include auth tokens, launch tokens, organizer tokens, participant secrets, private profile fields, raw answers, prompt payloads, or media internals.
+- Current LocalPlay callbacks include safe actor metadata on `game.session_created` and `game.started` when available so Revelry can map ownership for games started from the LocalPlay hub: `payload.actor.external_user_id`, `external_guest_id`, `display_name`, and `role`. Do not include auth tokens, launch tokens, organizer tokens, participant secrets, private profile fields, raw answers, prompt payloads, or media internals.
 - Callbacks are signed with `REVELRY_INTEGRATION_SECRET`, the canonical shared Revelry integration secret. `REVELRY_CALLBACK_SECRET` may exist only as a temporary rotation alias or compatibility fallback and must not silently diverge from `REVELRY_INTEGRATION_SECRET` in normal gamma/prod configuration.
 - LocalPlay signs `HMAC_SHA256("${timestamp}.${raw_body}")` and sends `X-LocalPlay-Event-Id`, `X-LocalPlay-Timestamp`, and `X-LocalPlay-Signature: sha256=...`; Revelry should reject replays and dedupe by event id.
 - Callback payloads must contain safe metadata only. Do not include full quiz contents, answers, raw prompts, private media paths, organizer credentials, launch tokens, or participant secrets.
@@ -1190,7 +1190,7 @@ Validation requirements:
 - `exp` is in the future
 - `scope` matches the requested launch route
 - required claims: `iss`, `aud`, `typ`, `jti`, `host_app`, `external_container_type`, `external_container_id`, `display_name`, `role`, `scope`, `capabilities`, `iat`, and `exp`
-- optional context claims: `external_container_title`, `brand_key`, `party_type`, `external_user_id`, `external_guest_id`, `avatar_url`, `game_type`, and `return_url`
+- optional context claims: `external_container_title`, `brand_key`, `party_type`, `external_user_id`, `external_guest_id`, `avatar_url`, `game_type`, `return_url`, and `guest_join_url`
 - sensitive host/cohost actions require explicit capabilities, not only role labels
 - `jti` is checked for replay when practical
 
