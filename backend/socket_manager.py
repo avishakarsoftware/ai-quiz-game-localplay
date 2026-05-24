@@ -1,5 +1,6 @@
 from fastapi import WebSocket, WebSocketDisconnect
 from typing import Dict, List, Optional
+from datetime import datetime, timezone
 import copy
 import json
 import hmac
@@ -1399,7 +1400,7 @@ class SocketManager:
         body = {
             "event_id": f"lp_evt_{uuid.uuid4().hex}",
             "event_type": event_type,
-            "occurred_at": int(time.time()),
+            "occurred_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "host_app": session.get("host_app"),
             "external_container_type": session.get("external_container_type"),
             "external_container_id": session.get("external_container_id"),

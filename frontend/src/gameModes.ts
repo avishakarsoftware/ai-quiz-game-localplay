@@ -110,6 +110,12 @@ export function getGameModeConfig(gameType: GameType): GameModeConfig {
     return GAME_MODE_CONFIGS.find((item) => item.id === gameType) || GAME_MODE_CONFIGS[0];
 }
 
+export function filterGameModesForCatalog(catalog: Array<{ id: string; launchable?: boolean }> | undefined): GameModeConfig[] {
+    if (!catalog) return GAME_MODE_CONFIGS;
+    const allowed = new Set(catalog.filter((item) => item.launchable !== false).map((item) => item.id));
+    return GAME_MODE_CONFIGS.filter((item) => allowed.has(item.id));
+}
+
 export function isQuizRuntimeGame(gameType: GameType): boolean {
     return getGameModeConfig(gameType).runtimeType === 'quiz';
 }

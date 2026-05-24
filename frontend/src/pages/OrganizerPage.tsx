@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { API_URL, WS_URL } from '../config';
 import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question } from '../types';
 import { soundManager } from '../utils/sound';
@@ -83,13 +83,17 @@ export default function OrganizerPage() {
     const connectWsRef = useRef<(code: string) => void>(() => {});
     const gameTypeRef = useRef<GameType>('quiz');
     const checkoutPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const hostAppMode = useMemo(() => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('embed') === '1' || params.has('launch_token') || params.has('session_id');
+    }, []);
 
     useEffect(() => { stateRef.current = state; }, [state]);
     useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
     useEffect(() => { gameTypeRef.current = gameType; }, [gameType]);
     useEffect(() => {
-        if (errorModal?.upgradeAvailable) track('paywall_shown', { source: 'error_modal' });
-    }, [errorModal]);
+        if (!hostAppMode && errorModal?.upgradeAvailable) track('paywall_shown', { source: 'error_modal' });
+    }, [errorModal, hostAppMode]);
 
     // Listen for home navigation from hamburger menu
     useEffect(() => {
@@ -118,7 +122,7 @@ export default function OrganizerPage() {
             .catch(() => {});
 
         // Resume pending checkout: if a previous checkout was interrupted, poll for token
-        const pending = getCheckoutPending();
+        const pending = hostAppMode ? { pending: false } : getCheckoutPending();
         let poll: ReturnType<typeof setInterval> | null = null;
         if (pending.pending) {
             let attempts = 0;
@@ -139,7 +143,7 @@ export default function OrganizerPage() {
             }, 2000);
         }
         return () => { if (poll) clearInterval(poll); };
-    }, []);
+    }, [hostAppMode]);
 
 
     const handleWsMessage = useCallback((event: MessageEvent) => {
@@ -152,7 +156,7 @@ export default function OrganizerPage() {
         }
         else if (msg.type === 'QUESTION') {
             // First question means game just started (sparks were charged)
-            if (msg.question_number === 1) {
+            if (!hostAppMode && msg.question_number === 1) {
                 window.dispatchEvent(new CustomEvent('refresh-sparks'));
             }
             setCurrentQuestion(msg.question_number as number);
@@ -223,7 +227,11 @@ export default function OrganizerPage() {
             setState('ROOM');
         }
         else if (msg.type === 'INSUFFICIENT_SPARKS') {
-            setErrorModal({ title: 'Not Enough Sparks', message: msg.message as string || 'You need more sparks to start a game.', upgradeAvailable: true });
+            setErrorModal({
+                title: hostAppMode ? 'Game Unavailable' : 'Not Enough Sparks',
+                message: hostAppMode ? 'This Revelry-managed game could not be started. Please return to Revelry and try again.' : msg.message as string || 'You need more sparks to start a game.',
+                upgradeAvailable: !hostAppMode,
+            });
         }
         else if (msg.type === 'ROOM_LOCK_STATUS') {
             setRoomLocked(msg.locked as boolean);
@@ -282,7 +290,7 @@ export default function OrganizerPage() {
                 setState('SELECT_GAME');
             }
         }
-    }, []);
+    }, [hostAppMode]);
 
     const handleGameSelect = (type: GameType) => {
         window.dispatchEvent(new CustomEvent('close-settings'));
@@ -316,7 +324,7 @@ export default function OrganizerPage() {
             });
             if (res.status === 402) {
                 track('paywall_hit', { source: 'quiz' });
-                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: true });
+                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: !hostAppMode });
                 setState(gameType === 'quiz' ? 'PROMPT' : 'QUIZ_VARIANT_PROMPT');
                 return;
             }
@@ -483,7 +491,7 @@ export default function OrganizerPage() {
             });
             if (res.status === 402) {
                 track('paywall_hit', { source: 'mlt' });
-                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: true });
+                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: !hostAppMode });
                 setState('MLT_PROMPT');
                 return;
             }
@@ -531,7 +539,7 @@ export default function OrganizerPage() {
             });
             if (res.status === 402) {
                 track('paywall_hit', { source: 'drawing' });
-                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: true });
+                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: !hostAppMode });
                 setState('DRAWING_PROMPT');
                 return;
             }
@@ -1002,6 +1010,7 @@ export default function OrganizerPage() {
                         playerCount={playerCount}
                         players={players}
                         locked={roomLocked}
+                        hostAppMode={hostAppMode}
                         onStartGame={startGame}
                         onToggleLock={() => wsRef.current?.send(JSON.stringify({ type: 'TOGGLE_LOCK' }))}
                     />
@@ -1145,9 +1154,10 @@ export default function OrganizerPage() {
                 <ErrorModal
                     title={errorModal.title}
                     message={errorModal.message}
-                    upgradeAvailable={errorModal.upgradeAvailable}
+                    upgradeAvailable={!hostAppMode && errorModal.upgradeAvailable}
                     onDismiss={() => setErrorModal(null)}
                     onUpgrade={async () => {
+                        if (hostAppMode) return;
                         track('upgrade_clicked', { source: 'error_modal' });
                         setErrorModal(null);
                         if (checkoutPollRef.current) return; // Prevent double-click

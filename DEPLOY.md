@@ -161,7 +161,8 @@ REVELRY_AUTHORING_TOKEN_TTL_SECONDS=3600
 REVELRY_SESSION_LOBBY_TTL_SECONDS=14400
 REVELRY_SESSION_IDLE_TTL_SECONDS=7200
 REVELRY_CALLBACK_URL=<optional Revelry gamma callback endpoint>
-REVELRY_CALLBACK_SECRET=<optional callback signing secret>
+# Keep unset unless doing a deliberate callback-secret rotation/compatibility window.
+REVELRY_CALLBACK_SECRET=
 ```
 
 **Important:** The bootstrap copies production Stripe keys into gamma. You must manually replace them with test-mode keys (`sk_test_...`, `whsec_...`) in `/home/revelry-games/app/.env.gamma` before testing checkout, or you will charge real money.
@@ -186,7 +187,8 @@ REVELRY_AUTHORING_TOKEN_TTL_SECONDS=3600
 REVELRY_SESSION_LOBBY_TTL_SECONDS=14400
 REVELRY_SESSION_IDLE_TTL_SECONDS=7200
 REVELRY_CALLBACK_URL=<optional Revelry prod callback endpoint>
-REVELRY_CALLBACK_SECRET=<optional callback signing secret>
+# Keep unset unless doing a deliberate callback-secret rotation/compatibility window.
+REVELRY_CALLBACK_SECRET=
 ```
 
 Origins are scheme + host + optional port only; do not include `/quiz/` or other paths. Installed PWAs still use the web origin they were installed from, while Capacitor/native shells and local development need their own localhost-style origins.
@@ -1051,7 +1053,7 @@ Both LocalPlay and Revelry need a shared secret:
 | LocalPlay backend | `PUBLIC_BASE_URL` | `https://gamesapi-gamma.revelryapp.me` (gamma) or `https://gamesapi.revelryapp.me` (prod) |
 | LocalPlay backend | `REVELRY_AUTHORING_TOKEN_TTL_SECONDS` | authoring token lifetime; default `3600` |
 | LocalPlay backend | `REVELRY_CALLBACK_URL` | optional Revelry callback endpoint for content/session/result sync |
-| LocalPlay backend | `REVELRY_CALLBACK_SECRET` | optional HMAC signing secret for callback delivery |
+| LocalPlay backend | `REVELRY_CALLBACK_SECRET` | temporary rotation-only alias; normal callback signing uses `REVELRY_INTEGRATION_SECRET` |
 | Revelry backend | `LOCALPLAY_INTEGRATION_SECRET` | same value as `REVELRY_INTEGRATION_SECRET` |
 
 Generate a new secret: `openssl rand -hex 32`
@@ -1092,6 +1094,8 @@ curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/data
 ### Integration endpoints
 
 All integration endpoints require `Authorization: Bearer <REVELRY_INTEGRATION_SECRET>`.
+
+LocalPlay callbacks to Revelry are signed with `REVELRY_INTEGRATION_SECRET` using HMAC-SHA256 over `${timestamp}.${raw_body}` and include `X-LocalPlay-Timestamp`, `X-LocalPlay-Event-Id`, and `X-LocalPlay-Signature: sha256=...`. Keep `REVELRY_CALLBACK_SECRET` unset unless doing a deliberate rotation/compatibility window; it must not silently diverge from the integration secret in normal gamma/prod.
 Revelry-created sessions are LocalPlay `host_app_managed` billing sessions: LocalPlay does not grant signup-bonus sparks to the integration wallet and does not debit sparks when the host starts the game. Billing/entitlement policy is owned by Revelry for this launch path.
 
 | Endpoint | Method | Purpose |

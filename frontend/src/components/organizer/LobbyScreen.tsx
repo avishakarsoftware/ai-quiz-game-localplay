@@ -14,9 +14,10 @@ interface LobbyScreenProps {
     locked: boolean;
     onStartGame: () => void;
     onToggleLock: () => void;
+    hostAppMode?: boolean;
 }
 
-export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, locked, onStartGame, onToggleLock }: LobbyScreenProps) {
+export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, locked, onStartGame, onToggleLock, hostAppMode = false }: LobbyScreenProps) {
     const prevCountRef = useRef(playerCount);
     const [justJoined, setJustJoined] = useState(false);
     const [copied, setCopied] = useState(false);
@@ -59,23 +60,27 @@ export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, l
         <div className="min-h-dvh flex flex-col items-center justify-center container-responsive safe-top safe-bottom animate-in">
             <div className="screen-hero">
                 <h1 className="hero-title">Game Lobby</h1>
-                <p className="hero-subtitle">Share the code below to invite players</p>
+                <p className="hero-subtitle">{hostAppMode ? 'Players can join from Revelry' : 'Share the code below to invite players'}</p>
             </div>
 
-            <div className="text-center mb-4">
-                <div className="qr-container">
-                    <QRCodeSVG value={joinUrl} size={180} bgColor="white" fgColor="#000000" level="H" />
+            {!hostAppMode && (
+                <div className="text-center mb-4">
+                    <div className="qr-container">
+                        <QRCodeSVG value={joinUrl} size={180} bgColor="white" fgColor="#000000" level="H" />
+                    </div>
                 </div>
-            </div>
+            )}
 
             <div className="room-code mb-2 text-center">{roomCode}</div>
-            <p className="text-[--text-tertiary] text-sm mb-2 text-center">{new URL(joinUrl).host}{new URL(joinUrl).pathname}</p>
+            {!hostAppMode && <p className="text-[--text-tertiary] text-sm mb-2 text-center">{new URL(joinUrl).host}{new URL(joinUrl).pathname}</p>}
 
             {/* Share & Lock row */}
             <div style={{ display: 'flex', flexDirection: 'row', gap: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
-                <button onClick={shareLink} className="btn btn-secondary" style={{ fontSize: '0.875rem', padding: '8px 20px', height: 40 }}>
-                    {copied ? 'Copied!' : 'Share Link'}
-                </button>
+                {!hostAppMode && (
+                    <button onClick={shareLink} className="btn btn-secondary" style={{ fontSize: '0.875rem', padding: '8px 20px', height: 40 }}>
+                        {copied ? 'Copied!' : 'Share Link'}
+                    </button>
+                )}
                 <button onClick={onToggleLock} className="btn btn-secondary" style={{ fontSize: '0.875rem', padding: '8px 16px', height: 40, gap: 6 }}>
                     {locked ? '\uD83D\uDD12 Locked' : '\uD83D\uDD13 Open'}
                 </button>

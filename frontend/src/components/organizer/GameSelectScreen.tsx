@@ -1,11 +1,14 @@
 import { type GameType } from '../../types';
-import { GAME_MODE_CONFIGS } from '../../gameModes';
+import { filterGameModesForCatalog, GAME_MODE_CONFIGS } from '../../gameModes';
 
 interface GameSelectScreenProps {
     onSelect: (gameType: GameType) => void;
+    catalog?: Array<{ id: string; launchable?: boolean }>;
 }
 
-export default function GameSelectScreen({ onSelect }: GameSelectScreenProps) {
+export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreenProps) {
+    const gameModes = catalog ? filterGameModesForCatalog(catalog) : GAME_MODE_CONFIGS;
+
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
             <div className="flex-1 flex flex-col justify-center py-8">
@@ -18,7 +21,7 @@ export default function GameSelectScreen({ onSelect }: GameSelectScreenProps) {
                 </div>
 
                 <div className="space-y-4">
-                    {GAME_MODE_CONFIGS.map((game) => (
+                    {gameModes.map((game) => (
                         <button
                             key={game.id}
                             onClick={() => onSelect(game.id)}

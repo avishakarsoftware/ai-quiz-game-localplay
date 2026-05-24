@@ -78,6 +78,7 @@ export default function PartyHubPage() {
     const title = display.container_label || launchContext?.external_container_title || 'Revelry Games';
     const canStart = hasCapability(launchContext, 'operate_game');
     const canEdit = hasCapability(launchContext, 'author_content');
+    const canDelete = hasCapability(launchContext, 'manage_games');
 
     const preparedContent = useMemo(() => workspace?.prepared_content || [], [workspace]);
 
@@ -134,6 +135,26 @@ export default function PartyHubPage() {
             window.location.href = data.authoring_url;
         } catch {
             setError('Could not open the editor. Please try again.');
+        }
+    }
+
+    async function deleteContent(content: PreparedContent) {
+        if (!window.confirm(`Delete "${content.title}" from this party?`)) return;
+        setStartingId(content.localplay_content_id);
+        setError('');
+        try {
+            const res = await fetch(`${API_URL}/integrations/revelry/party-games/content/${encodeURIComponent(content.localplay_content_id)}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ party_games_token: partyGamesToken }),
+            });
+            if (!res.ok) throw new Error('delete_failed');
+            const data = await res.json();
+            setWorkspace(data.workspace);
+        } catch {
+            setError('Could not delete that game. Please try again.');
+        } finally {
+            setStartingId('');
         }
     }
 
@@ -194,6 +215,11 @@ export default function PartyHubPage() {
                                     )}
                                     {canEdit && content.game_type === 'quiz' && (
                                         <button onClick={() => void openAuthoring('edit', content)}>Edit/Open</button>
+                                    )}
+                                    {canDelete && (
+                                        <button className="party-hub__danger" onClick={() => void deleteContent(content)} disabled={startingId === content.localplay_content_id}>
+                                            Delete
+                                        </button>
                                     )}
                                 </div>
                             </article>

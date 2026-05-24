@@ -90,7 +90,7 @@ Current limitations and follow-up work:
 - participant persistence remains deferred; session metadata is durable
 - quiz-only LocalPlay-hosted authoring/content APIs are implemented by reusing durable quiz-pack storage scoped to `revelry:party:{external_container_id}`
 - the party-scoped "Revelry Games" hub is implemented for list/create/edit/start quiz flows
-- host-app launch chrome is hidden on `/revelry/*`; organizer/player/spectator surfaces still need deeper polish for fully branded host-app mode
+- host-app launch chrome is hidden on `/revelry/*` and tokenized/embedded organizer/player/spectator launch URLs; deeper brand-specific polish remains iterative
 - organizer gameplay renders the live WebSocket `QUESTION` payload, because Revelry-launched organizer sessions may not have the original quiz object in browser state
 - host-app media upload paths sanitize synthetic owner ids such as `revelry:party:{party_id}` before signing IONOS paths; raw colons or other unsafe wallet characters must never appear in `storage_path`
 - callbacks are best-effort signed HTTP delivery when `REVELRY_CALLBACK_URL` is configured; polling remains the recovery path
@@ -577,6 +577,8 @@ GET  /integrations/revelry/content/authoring-token/resolve
 POST /integrations/revelry/content
 GET  /integrations/revelry/content/{content_id}
 PUT  /integrations/revelry/content/{content_id}
+DELETE /integrations/revelry/content/{content_id}
+DELETE /integrations/revelry/party-games/content/{content_id}
 ```
 
 `POST /integrations/revelry/content/authoring-link` mints an edit-only token and URL for the LocalPlay-hosted authoring surface. LocalPlay is the only service that mints the browser `authoring_token`; Revelry calls this endpoint with service credentials and must not construct token-bearing LocalPlay authoring URLs itself.
@@ -724,6 +726,9 @@ Rules:
 - Revelry must use LocalPlay APIs for authoring and media; it must not write LocalPlay quiz, content, or media tables directly.
 - Content create/update requests should eventually include an idempotency key or stable `draft_id` so browser refreshes, mobile webview reloads, and upload retries can recover without duplicating partial games. Current implementation relies on `content_id` for edit idempotency and the editor's local draft for unsaved create recovery.
 - `GET /integrations/revelry/content/{content_id}` returns safe metadata by default. The LocalPlay authoring UI may request `include_payload=true` using an authoring token to load the full quiz for editing; Revelry should not persist that full payload.
+- `DELETE /integrations/revelry/content/{content_id}` soft-deletes host-app-scoped content when called with service auth plus `external_container_id`, or with an authoring token scoped to the content.
+- `DELETE /integrations/revelry/party-games/content/{content_id}` soft-deletes party-scoped content from the LocalPlay Revelry Games hub using `party_games_token`; the actor must have `manage_games`.
+- Host-app content deletion sends a signed `content.deleted` callback with `status = deleted_by_host`, `content_id`, and top-level host-app/container context.
 - Content statuses: `draft`, `ready`, `locked`, `deleted_by_host`, `expired`, `archived`.
 - Validation errors use `422 invalid_content` with field paths such as `questions[2].options`.
 - Duplicate idempotency keys returning the original response and stale update-version `409 edit_conflict` handling are backlog hardening items.
@@ -738,6 +743,7 @@ LocalPlay persistence requirements:
 - Drafts expire 7 days after last edit. Saved party-scoped content expires 30 days after party end, or party start plus 48 hours plus 30 days when no end time exists.
 - When content is used to start a session, set `used_at` / `locked_at`; future edits must duplicate/version rather than mutate that content id.
 - Media asset rows must record content/draft ownership so unused draft images can be marked orphaned and cleaned up asynchronously.
+- Retention cleanup should run as a scheduled LocalPlay job. For the current quiz-pack implementation, the job should soft-delete expired `revelry:party:{party_id}` quiz packs, mark expired drafts as `expired`, and enqueue orphaned IONOS media cleanup. Until the scheduled job exists, expired content remains hidden by UI/status rules but may remain in storage.
 
 Common error responses:
 
@@ -1030,18 +1036,17 @@ Event envelope:
 ```json
 {
   "event_id": "lp_evt_uuid",
-  "event_type": "session.completed",
+  "event_type": "game.completed",
   "occurred_at": "2026-05-23T21:30:00Z",
+  "host_app": "revelry",
+  "external_container_type": "party",
+  "external_container_id": "party_uuid",
+  "session_id": "lp_session_uuid",
+  "content_id": "lp_content_uuid",
+  "idempotency_key": "game.completed:lp_session_uuid:v1",
   "payload": {
-    "host_app": "revelry",
-    "external_container_type": "party",
-    "external_container_id": "party_uuid",
-    "session_id": "lp_session_uuid",
-    "room_code": "ABCD12",
     "status": "complete",
-    "game_type": "quiz",
-    "game_title": "Ava's Birthday Quiz",
-    "result": {}
+    "result_summary": {}
   }
 }
 ```
@@ -1051,17 +1056,19 @@ Recommended event types:
 - `content.created`
 - `content.updated`
 - `content.deleted`
-- `session.created`
-- `session.started`
-- `session.completed`
-- `session.cancelled`
-- `session.expired`
-- `session.superseded`
+- `game.session_created`
+- `game.started`
+- `game.completed`
+- `game.cancelled`
+- `game.expired`
+- `game.superseded`
 
 Rules:
 
-- Current implementation sends callbacks only when `REVELRY_CALLBACK_URL` is configured. `content.created` / `content.updated` and `session.created` are sent from the API path; `session.started` and `session.completed` are sent from the room runtime.
-- Callbacks are signed with `REVELRY_CALLBACK_SECRET` when configured. LocalPlay includes `X-LocalPlay-Event-Id`, `X-LocalPlay-Timestamp`, and `X-LocalPlay-Signature: sha256=...`; Revelry should reject replays and dedupe by event id.
+- Current implementation sends callbacks only when `REVELRY_CALLBACK_URL` is configured. `content.created` / `content.updated` / `content.deleted`, `game.session_created`, and `game.superseded` are sent from the API path; `game.started` and `game.completed` are sent from the room runtime. Cancellation/expiration callbacks are emitted when those state transitions happen.
+- `occurred_at` must be an ISO 8601 UTC string ending in `Z`. Do not send Unix seconds in new LocalPlay callback code.
+- Callbacks are signed with `REVELRY_INTEGRATION_SECRET`, the canonical shared Revelry integration secret. `REVELRY_CALLBACK_SECRET` may exist only as a temporary rotation alias or compatibility fallback and must not silently diverge from `REVELRY_INTEGRATION_SECRET` in normal gamma/prod configuration.
+- LocalPlay signs `HMAC_SHA256("${timestamp}.${raw_body}")` and sends `X-LocalPlay-Event-Id`, `X-LocalPlay-Timestamp`, and `X-LocalPlay-Signature: sha256=...`; Revelry should reject replays and dedupe by event id.
 - Callback payloads must contain safe metadata only. Do not include full quiz contents, answers, raw prompts, private media paths, organizer credentials, launch tokens, or participant secrets.
 - Revelry owns whether to post feed/memory entries automatically, as drafts, or only after host approval.
 - LocalPlay does best-effort delivery in the current implementation and logs transient failures. Durable retry with backoff is backlog hardening; Revelry should poll `party-workspace` or session results on page open/app resume to recover missed callbacks.
@@ -1357,7 +1364,9 @@ REVELRY_AUTHORING_TOKEN_TTL_SECONDS=3600
 REVELRY_SESSION_LOBBY_TTL_SECONDS=14400
 REVELRY_SESSION_IDLE_TTL_SECONDS=7200
 REVELRY_CALLBACK_URL=<optional-revelry-callback-endpoint>
-REVELRY_CALLBACK_SECRET=<optional-callback-signing-secret>
+# Optional, temporary rotation-only alias. Keep unset in normal gamma/prod,
+# or set to the same value as REVELRY_INTEGRATION_SECRET during planned rotation.
+REVELRY_CALLBACK_SECRET=<temporary-rotation-alias-only>
 PUBLIC_BASE_URL=https://gamesapi.revelryapp.me
 ALLOWED_ORIGINS=https://gamesapi.revelryapp.me,https://app.revelryapp.me,https://api.revelryapp.me,https://api-gamma.revelryapp.me
 ```

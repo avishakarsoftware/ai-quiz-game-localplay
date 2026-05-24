@@ -11,9 +11,10 @@ import { RemoteConfigProvider } from './context/RemoteConfigContext';
 import { AuthProvider } from './context/AuthContext';
 import MaintenanceOverlay from './components/MaintenanceOverlay';
 import AnnouncementBanner from './components/AnnouncementBanner';
+import { isHostAppSurfaceLocation } from './utils/hostAppMode';
 
 function AppShell() {
-  const isHostAppSurface = window.location.pathname.startsWith('/revelry/');
+  const isHostAppSurface = isHostAppSurfaceLocation(window.location.pathname, window.location.search);
 
   return (
     <>

@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 import hashlib
 import hmac
 import json
+import re
 import uuid
 
 import config
@@ -161,6 +162,7 @@ def test_revelry_callbacks_use_game_events_top_level_context_and_integration_sec
     assert body["external_container_id"] == container_id
     assert body["session_id"] == res.json()["session_id"]
     assert body["idempotency_key"] == f"game.session_created:{res.json()['session_id']}:v1"
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T.*Z$", body["occurred_at"])
     timestamp = call["headers"]["X-LocalPlay-Timestamp"]
     expected = hmac.new(
         b"test-revelry-secret",
@@ -285,6 +287,7 @@ def test_runtime_callback_uses_safe_result_summary_and_game_event(monkeypatch):
     assert body["host_app"] == "revelry"
     assert body["external_container_id"] == "party-runtime"
     assert body["session_id"] == "lp_runtime"
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T.*Z$", body["occurred_at"])
     assert body["payload"]["result_summary"]["top_results"] == [{"nickname": "Ava", "avatar": "🎉", "score": 100}]
     assert "answer_log" not in json.dumps(body)
 
@@ -459,6 +462,95 @@ def test_revelry_party_hub_can_mint_authoring_link(monkeypatch):
     )
     assert authoring_res.status_code == 200
     assert "/revelry/author?authoring_token=" in authoring_res.json()["authoring_url"]
+
+
+def test_revelry_party_hub_delete_sends_content_deleted_callback(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    monkeypatch.setattr(config, "REVELRY_CALLBACK_URL", "https://api-gamma.revelryapp.me/api/games/localplay/callback")
+    calls = []
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *args, **kwargs: _FakeAsyncClient(calls, *args, **kwargs))
+    db.init_db()
+    container_id = f"party-delete-{uuid.uuid4().hex}"
+    owner_wallet_id = f"revelry:party:{container_id}"
+    pack = db.save_quiz_pack(
+        owner_wallet_id,
+        "Delete Me",
+        [{"text": "Keep?", "options": ["No", "Yes", "Maybe", "Later"], "answer_index": 0}],
+    )
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["manage_games", "author_content", "operate_game"],
+        },
+    }
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+    party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
+
+    delete_res = client.request(
+        "DELETE",
+        f"/integrations/revelry/party-games/content/{pack['id']}",
+        json={"party_games_token": party_token},
+    )
+
+    assert delete_res.status_code == 200
+    assert delete_res.json()["status"] == "deleted_by_host"
+    assert db.get_quiz_pack(owner_wallet_id, pack["id"]) is None
+    deleted = [call["body"] for call in calls if call["body"]["event_type"] == "content.deleted"]
+    assert deleted
+    assert deleted[-1]["content_id"] == pack["id"]
+    assert deleted[-1]["external_container_id"] == container_id
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T.*Z$", deleted[-1]["occurred_at"])
+
+
+def test_revelry_authoring_token_can_delete_scoped_content(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    monkeypatch.setattr(config, "REVELRY_CALLBACK_URL", "https://api-gamma.revelryapp.me/api/games/localplay/callback")
+    calls = []
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *args, **kwargs: _FakeAsyncClient(calls, *args, **kwargs))
+    db.init_db()
+    container_id = f"party-author-delete-{uuid.uuid4().hex}"
+    owner_wallet_id = f"revelry:party:{container_id}"
+    pack = db.save_quiz_pack(
+        owner_wallet_id,
+        "Author Delete",
+        [{"text": "Delete?", "options": ["Yes", "No", "Maybe", "Later"], "answer_index": 0}],
+    )
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["author_content"],
+        },
+        "game_type": "quiz",
+        "mode": "edit",
+        "content_id": pack["id"],
+    }
+    link_res = client.post("/integrations/revelry/content/authoring-link", headers=_headers(), json=payload)
+    token = link_res.json()["authoring_url"].split("authoring_token=", 1)[1]
+
+    delete_res = client.delete(
+        f"/integrations/revelry/content/{pack['id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert delete_res.status_code == 200
+    assert db.get_quiz_pack(owner_wallet_id, pack["id"]) is None
+    deleted = [call["body"] for call in calls if call["body"]["event_type"] == "content.deleted"]
+    assert deleted
+    assert deleted[-1]["payload"]["content"]["status"] == "deleted_by_host"
 
 
 def test_revelry_authoring_token_can_upload_media(monkeypatch):

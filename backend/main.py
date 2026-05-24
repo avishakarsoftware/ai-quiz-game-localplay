@@ -1103,6 +1103,10 @@ class RevelryPartyGamesAuthoringLinkRequest(BaseModel):
         return value
 
 
+class RevelryPartyGamesContentDeleteRequest(BaseModel):
+    party_games_token: str
+
+
 class RevelryContentSaveRequest(BaseModel):
     external_context: Optional[RevelryExternalContext] = None
     actor: Optional[RevelryActor] = None
@@ -1458,6 +1462,7 @@ async def _send_revelry_callback(event_type: str, payload: dict[str, Any]) -> No
             "status": payload.get("status") or session.get("status"),
             "session": session or None,
             "result_summary": result_summary,
+            "content": payload.get("content"),
             "feed_card": payload.get("feed_card") or session.get("feed_card"),
             "closed_reason": payload.get("closed_reason") or session.get("closed_reason"),
             "closed_message": payload.get("closed_message") or session.get("closed_message"),
@@ -1853,6 +1858,8 @@ async def create_revelry_content(request: RevelryContentSaveRequest, req: Reques
         "host_app": context.host_app,
         "external_container_type": context.external_container_type,
         "external_container_id": context.external_container_id,
+        "content_id": pack["id"],
+        "localplay_content_id": pack["id"],
         "content": _quiz_pack_summary(pack),
     })
     return _content_response(context, pack)
@@ -1886,6 +1893,42 @@ async def get_revelry_content(
 async def update_revelry_content(content_id: str, request: RevelryContentSaveRequest, req: Request):
     request.content_id = content_id
     return await create_revelry_content(request, req)
+
+
+@app.delete("/integrations/revelry/content/{content_id}")
+async def delete_revelry_content(
+    content_id: str,
+    req: Request,
+    external_container_id: str = "",
+    external_container_type: str = "party",
+):
+    request_context = RevelryExternalContext(
+        external_container_id=external_container_id,
+        external_container_type=external_container_type,
+    ) if external_container_id else None
+    context, actor, claims = _require_authoring_or_service(req, request_context)
+    if claims and claims.get("content_id") and claims.get("content_id") != content_id:
+        raise HTTPException(status_code=403, detail="content_id does not match authoring token")
+    if claims:
+        actor = _actor_from_launch_context(claims["launch_context"])
+    if not _author_can_author(actor):
+        raise HTTPException(status_code=403, detail="Missing capability to delete content")
+    wallet_id = _revelry_party_wallet_id(context.external_container_id)
+    pack = db.get_quiz_pack(wallet_id, content_id)
+    if not pack:
+        raise HTTPException(status_code=404, detail="Content not found")
+    if not db.delete_quiz_pack(wallet_id, content_id):
+        raise HTTPException(status_code=404, detail="Content not found")
+    await _send_revelry_callback("content.deleted", {
+        "host_app": context.host_app,
+        "external_container_type": context.external_container_type,
+        "external_container_id": context.external_container_id,
+        "content_id": content_id,
+        "localplay_content_id": content_id,
+        "status": "deleted_by_host",
+        "content": {**_quiz_pack_summary(pack), "status": "deleted_by_host"},
+    })
+    return {"status": "deleted_by_host", "localplay_content_id": content_id, "workspace": _workspace_payload(context)}
 
 
 @app.get("/integrations/revelry/party-games/resolve")
@@ -1968,6 +2011,31 @@ async def start_revelry_party_game(request: RevelryPartyGameStartRequest, req: R
         "launch_url": f"{base_url}/organizer?session_id={session['id']}&launch_token={token}&embed=1",
         "launch_token_expires_at": _iso(expires),
     }
+
+
+@app.delete("/integrations/revelry/party-games/content/{content_id}")
+async def delete_revelry_party_game_content(content_id: str, request: RevelryPartyGamesContentDeleteRequest):
+    launch_context = _resolve_party_games_token(request.party_games_token)
+    actor = _actor_from_launch_context(launch_context)
+    if "manage_games" not in set(actor.capabilities or []):
+        raise HTTPException(status_code=403, detail="Missing capability to delete content")
+    context = _external_context_from_launch_context(launch_context)
+    wallet_id = _revelry_party_wallet_id(context.external_container_id)
+    pack = db.get_quiz_pack(wallet_id, content_id)
+    if not pack:
+        raise HTTPException(status_code=404, detail="Content not found")
+    if not db.delete_quiz_pack(wallet_id, content_id):
+        raise HTTPException(status_code=404, detail="Content not found")
+    await _send_revelry_callback("content.deleted", {
+        "host_app": context.host_app,
+        "external_container_type": context.external_container_type,
+        "external_container_id": context.external_container_id,
+        "content_id": content_id,
+        "localplay_content_id": content_id,
+        "status": "deleted_by_host",
+        "content": {**_quiz_pack_summary(pack), "status": "deleted_by_host"},
+    })
+    return {"status": "deleted_by_host", "localplay_content_id": content_id, "workspace": _workspace_payload(context)}
 
 
 @app.post("/integrations/revelry/sessions")
