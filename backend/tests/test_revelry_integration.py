@@ -1,4 +1,7 @@
 from fastapi.testclient import TestClient
+import hashlib
+import hmac
+import json
 import uuid
 
 import config
@@ -41,6 +44,41 @@ def _create_payload(container_id: str = "", game_type: str = "quiz"):
             "capabilities": ["manage_games", "operate_game"],
         },
     }
+
+
+class _FakeResponse:
+    def raise_for_status(self):
+        return None
+
+
+class _FakeAsyncClient:
+    def __init__(self, calls, *args, **kwargs):
+        self.calls = calls
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+    async def post(self, url, content, headers):
+        self.calls.append({"url": url, "body": json.loads(content.decode()), "raw": content, "headers": headers})
+        return _FakeResponse()
+
+
+class _FakeSyncClient:
+    def __init__(self, calls, *args, **kwargs):
+        self.calls = calls
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+    def post(self, url, content, headers):
+        self.calls.append({"url": url, "body": json.loads(content.decode()), "raw": content, "headers": headers})
+        return _FakeResponse()
 
 
 def test_catalog_lists_launchable_games():
@@ -102,6 +140,36 @@ def test_revelry_session_create_launch_token_and_status(monkeypatch):
         assert ws.receive_json()["type"] == "GAME_STARTING"
 
 
+def test_revelry_callbacks_use_game_events_top_level_context_and_integration_secret(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    monkeypatch.setattr(config, "REVELRY_CALLBACK_SECRET", "different-callback-secret")
+    monkeypatch.setattr(config, "REVELRY_CALLBACK_URL", "https://api-gamma.revelryapp.me/api/games/localplay/callback")
+    calls = []
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *args, **kwargs: _FakeAsyncClient(calls, *args, **kwargs))
+    db.init_db()
+    container_id = f"party-callback-{uuid.uuid4().hex}"
+
+    res = client.post("/integrations/revelry/sessions", headers=_headers(), json=_create_payload(container_id))
+
+    assert res.status_code == 200
+    assert calls
+    call = calls[-1]
+    body = call["body"]
+    assert body["event_type"] == "game.session_created"
+    assert body["host_app"] == "revelry"
+    assert body["external_container_type"] == "party"
+    assert body["external_container_id"] == container_id
+    assert body["session_id"] == res.json()["session_id"]
+    assert body["idempotency_key"] == f"game.session_created:{res.json()['session_id']}:v1"
+    timestamp = call["headers"]["X-LocalPlay-Timestamp"]
+    expected = hmac.new(
+        b"test-revelry-secret",
+        f"{timestamp}.".encode() + call["raw"],
+        hashlib.sha256,
+    ).hexdigest()
+    assert call["headers"]["X-LocalPlay-Signature"] == f"sha256={expected}"
+
+
 def test_revelry_session_replacement_requires_confirmation(monkeypatch):
     monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
     db.init_db()
@@ -126,6 +194,99 @@ def test_revelry_session_replacement_requires_confirmation(monkeypatch):
     assert old["status"] == "superseded"
     assert old["joinable"] is False
     assert old["superseded_by_session_id"] == replacement_id
+
+
+def test_revelry_session_replacement_sends_superseded_callback(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    monkeypatch.setattr(config, "REVELRY_CALLBACK_URL", "https://api-gamma.revelryapp.me/api/games/localplay/callback")
+    calls = []
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *args, **kwargs: _FakeAsyncClient(calls, *args, **kwargs))
+    db.init_db()
+    container_id = f"party-replace-callback-{uuid.uuid4().hex}"
+    first = client.post("/integrations/revelry/sessions", headers=_headers(), json=_create_payload(container_id))
+    payload = _create_payload(container_id)
+    payload["replace_session_id"] = first.json()["session_id"]
+    payload["replacement_confirmed"] = True
+
+    replacement = client.post("/integrations/revelry/sessions", headers=_headers(), json=payload)
+
+    assert replacement.status_code == 200
+    events = [call["body"]["event_type"] for call in calls]
+    assert "game.superseded" in events
+    superseded = next(call["body"] for call in calls if call["body"]["event_type"] == "game.superseded")
+    assert superseded["session_id"] == first.json()["session_id"]
+    assert superseded["payload"]["status"] == "superseded"
+
+
+def test_revelry_results_endpoint_returns_safe_summary(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    session_id = f"lp_{uuid.uuid4().hex}"
+    db.create_game_session({
+        "id": session_id,
+        "host_app": "revelry",
+        "external_container_id": "party-safe-results",
+        "external_container_type": "party",
+        "game_type": "quiz",
+        "game_id": "quiz-1",
+        "game_title": "Secret Answer Quiz",
+        "room_code": "SAFE01",
+        "organizer_token": "org",
+        "status": "complete",
+        "joinable": False,
+        "result_summary": {
+            "game_title": "Secret Answer Quiz",
+            "game_type": "quiz",
+            "player_count": 1,
+            "leaderboard": [{"nickname": "Ava", "avatar": "🎉", "score": 100}],
+            "answer_log": [{"answer_index": 2, "correct": True}],
+        },
+    })
+
+    res = client.get(f"/integrations/revelry/sessions/{session_id}/results", headers=_headers())
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["result_summary"]["title"] == "Secret Answer Quiz"
+    assert body["result_summary"]["top_results"] == [{"nickname": "Ava", "avatar": "🎉", "score": 100}]
+    assert "answer_log" not in json.dumps(body)
+
+
+def test_runtime_callback_uses_safe_result_summary_and_game_event(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    monkeypatch.setattr(config, "REVELRY_CALLBACK_URL", "https://api-gamma.revelryapp.me/api/games/localplay/callback")
+    calls = []
+    monkeypatch.setattr("socket_manager.httpx.Client", lambda *args, **kwargs: _FakeSyncClient(calls, *args, **kwargs))
+
+    socket_manager._send_integration_callback(
+        "session.completed",
+        {
+            "id": "lp_runtime",
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": "party-runtime",
+            "room_code": "RUN123",
+            "status": "complete",
+            "game_type": "quiz",
+            "game_title": "Runtime Quiz",
+        },
+        {
+            "game_title": "Runtime Quiz",
+            "game_type": "quiz",
+            "player_count": 1,
+            "leaderboard": [{"nickname": "Ava", "avatar": "🎉", "score": 100}],
+            "answer_log": [{"answer_index": 0, "correct": True}],
+        },
+    )
+
+    assert calls
+    body = calls[0]["body"]
+    assert body["event_type"] == "game.completed"
+    assert body["host_app"] == "revelry"
+    assert body["external_container_id"] == "party-runtime"
+    assert body["session_id"] == "lp_runtime"
+    assert body["payload"]["result_summary"]["top_results"] == [{"nickname": "Ava", "avatar": "🎉", "score": 100}]
+    assert "answer_log" not in json.dumps(body)
 
 
 def test_revelry_party_workspace_is_non_personalized(monkeypatch):

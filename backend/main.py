@@ -1384,21 +1384,95 @@ def _authoring_url(req: Request, token: str) -> str:
     return f"{_public_base_url(req)}/revelry/author?authoring_token={token}"
 
 
+def _callback_event_type(event_type: str) -> str:
+    return {
+        "session.created": "game.session_created",
+        "session.started": "game.started",
+        "session.completed": "game.completed",
+        "session.cancelled": "game.cancelled",
+        "session.expired": "game.expired",
+        "session.superseded": "game.superseded",
+    }.get(event_type, event_type)
+
+
+def _callback_signing_secret() -> str:
+    return config.REVELRY_INTEGRATION_SECRET or config.REVELRY_CALLBACK_SECRET
+
+
+def _safe_result_summary(result: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    if not isinstance(result, dict):
+        return None
+    if isinstance(result.get("top_results"), list):
+        top_results = result["top_results"][:5]
+        winner = result.get("winner") if isinstance(result.get("winner"), dict) else (top_results[0] if top_results else None)
+        return {
+            "title": result.get("title") or result.get("game_title") or "LocalPlay results",
+            "game_type": result.get("game_type"),
+            "total_rounds": result.get("total_rounds") or result.get("total_questions"),
+            "player_count": result.get("player_count"),
+            "top_results": top_results,
+            "winner": winner,
+            "completed_at": result.get("completed_at"),
+        }
+    leaderboard = result.get("leaderboard") if isinstance(result.get("leaderboard"), list) else []
+    top_results = []
+    for row in leaderboard[:5]:
+        if not isinstance(row, dict):
+            continue
+        top_results.append({
+            "nickname": row.get("nickname"),
+            "avatar": row.get("avatar"),
+            "score": row.get("score"),
+        })
+    winner = top_results[0] if top_results else None
+    return {
+        "title": result.get("title") or result.get("game_title") or "LocalPlay results",
+        "game_type": result.get("game_type"),
+        "total_rounds": result.get("total_questions") or result.get("total_rounds"),
+        "player_count": result.get("player_count"),
+        "top_results": top_results,
+        "winner": winner,
+        "completed_at": result.get("completed_at"),
+    }
+
+
 async def _send_revelry_callback(event_type: str, payload: dict[str, Any]) -> None:
     if not config.REVELRY_CALLBACK_URL:
         return
+    event_type = _callback_event_type(event_type)
+    session = payload.get("session") if isinstance(payload.get("session"), dict) else {}
+    result_summary = _safe_result_summary(payload.get("result_summary") or payload.get("result"))
+    session_id = payload.get("session_id") or session.get("session_id") or session.get("id")
+    content_id = payload.get("content_id") or payload.get("localplay_content_id")
     body = {
         "event_id": f"lp_evt_{uuid.uuid4().hex}",
         "event_type": event_type,
         "occurred_at": _iso(_now_ts()),
-        "payload": payload,
+        "host_app": payload.get("host_app") or session.get("host_app") or "revelry",
+        "external_container_type": payload.get("external_container_type") or session.get("external_container_type") or "party",
+        "external_container_id": payload.get("external_container_id") or session.get("external_container_id"),
+        "session_id": session_id,
+        "content_id": content_id,
+        "idempotency_key": f"{event_type}:{session_id or content_id or uuid.uuid4().hex}:v1",
+        "payload": {
+            "status": payload.get("status") or session.get("status"),
+            "session": session or None,
+            "result_summary": result_summary,
+            "feed_card": payload.get("feed_card") or session.get("feed_card"),
+            "closed_reason": payload.get("closed_reason") or session.get("closed_reason"),
+            "closed_message": payload.get("closed_message") or session.get("closed_message"),
+            "superseded_by_session_id": payload.get("superseded_by_session_id") or session.get("superseded_by_session_id"),
+        },
     }
+    body["payload"] = {k: v for k, v in body["payload"].items() if v is not None}
+    body = {k: v for k, v in body.items() if v is not None}
     raw = json.dumps(body, separators=(",", ":")).encode()
     timestamp = str(int(time.time()))
     signature = ""
-    if config.REVELRY_CALLBACK_SECRET:
+    signing_secret = _callback_signing_secret()
+    if signing_secret:
         signature = hmac.new(
-            config.REVELRY_CALLBACK_SECRET.encode(),
+            signing_secret.encode(),
             f"{timestamp}.".encode() + raw,
             hashlib.sha256,
         ).hexdigest()
@@ -1487,7 +1561,7 @@ def _format_session(session: dict) -> dict:
     status = session.get("status", "lobby")
     joinable = bool(session.get("joinable", True))
     last_activity_at = session.get("last_activity_at")
-    if room:
+    if room and status not in ("complete", "expired", "cancelled", "superseded"):
         last_activity_at = int(room.last_activity)
         if room.state == "LOBBY":
             status = "lobby"
@@ -1618,13 +1692,14 @@ def _create_revelry_session_from_context(
         "updated_at": now,
     })
     if active:
-        db.update_game_session(active["id"], {
+        superseded = db.update_game_session(active["id"], {
             "status": "superseded",
             "joinable": False,
             "closed_reason": "superseded",
             "closed_message": "The host started a newer game.",
             "superseded_by_session_id": session_id,
         })
+        session["_superseded_session"] = superseded or db.get_game_session(active["id"]) or active
     return session
 
 
@@ -1872,6 +1947,14 @@ async def start_revelry_party_game(request: RevelryPartyGameStartRequest, req: R
         replacement_confirmed=request.replacement_confirmed,
         replace_session_id=request.replace_session_id,
     )
+    superseded = session.pop("_superseded_session", None)
+    if superseded:
+        await _send_revelry_callback("session.superseded", {
+            "host_app": context.host_app,
+            "external_container_type": context.external_container_type,
+            "external_container_id": context.external_container_id,
+            "session": _format_session(superseded),
+        })
     token, expires = _create_launch_token(session["id"], "organizer", "organizer", launch_context.get("return_url", ""))
     base_url = _public_base_url(req)
     await _send_revelry_callback("session.created", {
@@ -1900,6 +1983,14 @@ async def create_revelry_session(request: RevelrySessionCreateRequest, req: Requ
         replacement_confirmed=request.replacement_confirmed,
         replace_session_id=request.replace_session_id,
     )
+    superseded = session.pop("_superseded_session", None)
+    if superseded:
+        await _send_revelry_callback("session.superseded", {
+            "host_app": context.host_app,
+            "external_container_type": context.external_container_type,
+            "external_container_id": context.external_container_id,
+            "session": _format_session(superseded),
+        })
     await _send_revelry_callback("session.created", {
         "host_app": context.host_app,
         "external_container_type": context.external_container_type,
@@ -1972,12 +2063,15 @@ async def get_revelry_session_results(session_id: str, req: Request):
     if not result:
         for game in reversed(game_history):
             if game.get("room_code") == session.get("room_code"):
-                result = game
+                result = _safe_result_summary(game)
                 break
+    else:
+        result = _safe_result_summary(result)
     return {
         "session_id": session_id,
         "status": _format_session(session)["status"],
         "result": result,
+        "result_summary": result,
         "feed_card": {
             "title": f"{session.get('game_title') or 'LocalPlay'} results",
             "body": "Final results are ready.",

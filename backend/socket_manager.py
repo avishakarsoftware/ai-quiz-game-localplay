@@ -694,7 +694,10 @@ class SocketManager:
                             "message": "Internal error: wallet not configured.",
                         })
                         return
-                    spent, _ = token_module.spend_room(room.wallet_id)
+                    if room.billing_mode == "host_app_managed":
+                        spent = True
+                    else:
+                        spent, _ = token_module.spend_room(room.wallet_id)
                     if not spent:
                         await self._send_to_client(room, client_id, {
                             "type": "INSUFFICIENT_SPARKS",
@@ -1320,6 +1323,53 @@ class SocketManager:
             "wallet_id": room.wallet_id or "",
         }
 
+    def _callback_event_type(self, event_type: str) -> str:
+        return {
+            "session.created": "game.session_created",
+            "session.started": "game.started",
+            "session.completed": "game.completed",
+            "session.cancelled": "game.cancelled",
+            "session.expired": "game.expired",
+            "session.superseded": "game.superseded",
+        }.get(event_type, event_type)
+
+    def _callback_signing_secret(self) -> str:
+        return config.REVELRY_INTEGRATION_SECRET or config.REVELRY_CALLBACK_SECRET
+
+    def _safe_result_summary(self, summary: Optional[dict]) -> Optional[dict]:
+        if not isinstance(summary, dict):
+            return None
+        if isinstance(summary.get("top_results"), list):
+            top_results = summary["top_results"][:5]
+            return {
+                "title": summary.get("title") or summary.get("game_title") or "LocalPlay results",
+                "game_type": summary.get("game_type"),
+                "total_rounds": summary.get("total_rounds") or summary.get("total_questions"),
+                "player_count": summary.get("player_count"),
+                "top_results": top_results,
+                "winner": summary.get("winner") if isinstance(summary.get("winner"), dict) else (top_results[0] if top_results else None),
+                "completed_at": summary.get("completed_at"),
+            }
+        leaderboard = summary.get("leaderboard") if isinstance(summary.get("leaderboard"), list) else []
+        top_results = []
+        for row in leaderboard[:5]:
+            if not isinstance(row, dict):
+                continue
+            top_results.append({
+                "nickname": row.get("nickname"),
+                "avatar": row.get("avatar"),
+                "score": row.get("score"),
+            })
+        return {
+            "title": summary.get("title") or summary.get("game_title") or "LocalPlay results",
+            "game_type": summary.get("game_type"),
+            "total_rounds": summary.get("total_questions") or summary.get("total_rounds"),
+            "player_count": summary.get("player_count"),
+            "top_results": top_results,
+            "winner": top_results[0] if top_results else None,
+            "completed_at": summary.get("completed_at"),
+        }
+
     def _mark_game_session_complete(self, room: Room, summary: dict):
         """Attach completed result metadata to an integration session, if present."""
         try:
@@ -1328,36 +1378,47 @@ class SocketManager:
             if not session:
                 return
             now = int(time.time())
+            safe_summary = self._safe_result_summary(summary)
             updated = db.update_game_session(session["id"], {
                 "status": "complete",
                 "joinable": False,
-                "result_summary": summary,
+                "result_summary": safe_summary,
                 "completed_at": now,
                 "last_activity_at": now,
             })
-            self._send_integration_callback("session.completed", updated or session, summary)
+            self._send_integration_callback("session.completed", updated or session, safe_summary)
         except Exception:
             logger.warning("Could not update game session for room %s", room.room_code)
 
     def _send_integration_callback(self, event_type: str, session: dict, result_summary: Optional[dict] = None):
         if not config.REVELRY_CALLBACK_URL or session.get("host_app") != "revelry":
             return
+        event_type = self._callback_event_type(event_type)
+        session_id = session.get("id")
+        result_summary = self._safe_result_summary(result_summary) if result_summary else None
         body = {
             "event_id": f"lp_evt_{uuid.uuid4().hex}",
             "event_type": event_type,
             "occurred_at": int(time.time()),
+            "host_app": session.get("host_app"),
+            "external_container_type": session.get("external_container_type"),
+            "external_container_id": session.get("external_container_id"),
+            "session_id": session_id,
+            "idempotency_key": f"{event_type}:{session_id or uuid.uuid4().hex}:v1",
             "payload": {
-                "host_app": session.get("host_app"),
-                "external_container_type": session.get("external_container_type"),
-                "external_container_id": session.get("external_container_id"),
-                "session_id": session.get("id"),
                 "room_code": session.get("room_code"),
                 "status": session.get("status"),
                 "game_type": session.get("game_type"),
                 "game_title": session.get("game_title"),
-                "result": result_summary,
+                "result_summary": result_summary,
+                "feed_card": session.get("feed_card"),
+                "closed_reason": session.get("closed_reason"),
+                "closed_message": session.get("closed_message"),
+                "superseded_by_session_id": session.get("superseded_by_session_id"),
             },
         }
+        body["payload"] = {key: value for key, value in body["payload"].items() if value is not None}
+        body = {key: value for key, value in body.items() if value is not None}
         raw = json.dumps(body, separators=(",", ":")).encode()
         timestamp = str(int(time.time()))
         headers = {
@@ -1365,9 +1426,10 @@ class SocketManager:
             "X-LocalPlay-Event-Id": body["event_id"],
             "X-LocalPlay-Timestamp": timestamp,
         }
-        if config.REVELRY_CALLBACK_SECRET:
+        signing_secret = self._callback_signing_secret()
+        if signing_secret:
             signature = hmac.new(
-                config.REVELRY_CALLBACK_SECRET.encode(),
+                signing_secret.encode(),
                 f"{timestamp}.".encode() + raw,
                 hashlib.sha256,
             ).hexdigest()
@@ -1402,13 +1464,14 @@ class SocketManager:
             if not session or session.get("status") in ("complete", "superseded", "cancelled", "expired"):
                 return
             now = int(time.time())
-            db.update_game_session(session["id"], {
+            updated = db.update_game_session(session["id"], {
                 "status": reason,
                 "joinable": False,
                 "closed_reason": reason,
                 "closed_message": message,
                 "last_activity_at": now,
             })
+            self._send_integration_callback(f"session.{reason}", updated or session)
         except Exception:
             logger.warning("Could not mark game session closed for room %s", room.room_code)
 

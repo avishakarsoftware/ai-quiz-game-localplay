@@ -1197,6 +1197,28 @@ class TestSparkChargingResetRoom:
         finally:
             quizzes.pop("insuff-quiz", None)
 
+    @pytest.mark.asyncio
+    async def test_reset_room_skips_sparks_for_host_app_managed_rooms(self):
+        room = make_room()
+        sm = SocketManager()
+        add_organizer(room, "org-1")
+        add_player(room, "p1", "Alice")
+        room.state = "PODIUM"
+        room.wallet_id = "revelry:party:test"
+        room.billing_mode = "host_app_managed"
+        new_quiz = make_quiz(3)
+        from main import quizzes
+        quizzes["host-app-reset-quiz"] = new_quiz
+        try:
+            with patch("socket_manager.token_module.spend_room") as spend_room:
+                await sm.handle_message(room, "org-1", {
+                    "type": "RESET_ROOM", "content_id": "host-app-reset-quiz", "time_limit": 20
+                }, is_organizer=True)
+            spend_room.assert_not_called()
+            assert room.state == "LOBBY"
+        finally:
+            quizzes.pop("host-app-reset-quiz", None)
+
 
 # ---------------------------------------------------------------------------
 # Reset deepcopy isolation
