@@ -1,8 +1,8 @@
 # LocalPlay Revelry Integration Spec
 
-Status: Gamma bridge plus party-scoped quiz authoring implemented; production hardening remains
+Status: Gamma bridge plus party-scoped quiz authoring and party hub start flow implemented; production hardening remains
 
-Last updated: 2026-05-23
+Last updated: 2026-05-24
 
 ## Purpose
 
@@ -10,7 +10,7 @@ This document is the LocalPlay-side contract for integrating with the separate R
 
 Revelry's app-side integration plan lives in:
 
-`/Users/Avi/Desktop/dev/antigravity/revelryapp/SPEC-LOCALPLAY-INTEGRATION.md`
+`SPEC-LOCALPLAY-INTEGRATION.md` in the Revelry repo.
 
 `SPEC-PLATFORM.md` remains the broad LocalPlay platform strategy. This spec is narrower: the concrete LocalPlay work needed so Revelry can launch, embed, and summarize LocalPlay games without copying game logic into Revelry.
 
@@ -105,22 +105,24 @@ Current limitations and follow-up work:
 
 ### Phase 0: Safe MVP Bridge
 
-Goal: let Revelry prove the Games tab flow without baking LocalPlay internals into Revelry.
+Goal: let Revelry prove the Games tab flow without baking LocalPlay internals into Revelry. This phase is implemented on gamma; the list remains here as the durable minimum contract.
 
 Minimum LocalPlay work:
 
-1. Add the generic durable `game_sessions` slice needed for integration state; defer participant persistence until gameplay identity needs it.
-2. Add `GET /catalog?host_app=revelry` with launchability metadata.
-3. Add origin/frame allowlist for Revelry hosts.
-4. Add stable embeddable launch routes that do not expose long-lived organizer credentials.
-5. Add a short-lived launch token exchange for organizer/player/spectator scope.
-6. Add a service-only endpoint that wraps current room creation and writes the durable session record.
-7. Enforce one active game per `host_app` + `external_container_id`, with host-confirmed replacement.
-8. Return a normalized response with `session_id`, `room_code`, `launch_routes`, joinability state, and a safe feed-card payload.
-9. Add a polling status/result endpoint with safe result summaries.
-10. Add a party-scoped "Revelry Games" hub link and workspace sync endpoint so Revelry and LocalPlay show the same prepared games, active session, and results for a party.
+1. Add the generic durable `game_sessions` slice needed for integration state; defer participant persistence until gameplay identity needs it. Done.
+2. Add `GET /catalog?host_app=revelry` with launchability metadata. Done.
+3. Add origin/frame allowlist for Revelry hosts. Done.
+4. Add stable embeddable launch routes that do not expose long-lived organizer credentials. Done.
+5. Add a short-lived launch token exchange for organizer/player/spectator scope. Done.
+6. Add a service-only endpoint that wraps current room creation and writes the durable session record. Done.
+7. Enforce one active game per `host_app` + `external_container_id`, with host-confirmed replacement. Done; LocalPlay-owned party hub/start-intent flow owns detailed replacement/retry UX.
+8. Return a normalized response with `session_id`, `room_code`, `launch_routes`, joinability state, and a safe feed-card payload. Done.
+9. Add a polling status/result endpoint with safe result summaries. Done.
+10. Add a party-scoped "Revelry Games" hub link and workspace sync endpoint so Revelry and LocalPlay show the same prepared games, active session, and results for a party. Done.
 
 Phase 0 may still run gameplay in the existing in-memory `Room`, but the external contract should talk about `session_id`, not raw room internals. Durable session records are required for status polling, friendly expired/superseded states, one-active-game enforcement, and result summaries.
+
+Workspace sync and one-active-game checks must ignore sessions where `joinable = false` or status is `complete`, `expired`, `cancelled`, or `superseded`. Stale active records should be reconciled by status polling, callbacks, and LocalPlay's own active-session lookup before showing Start/Join actions.
 
 ### Phase 1: Session-First Integration
 
@@ -436,6 +438,8 @@ expired
 cancelled
 superseded
 ```
+
+`complete` is the canonical terminal session status value in LocalPlay APIs and persisted session rows. `game.completed` is the callback lifecycle event name for a transition into that status; host apps may map the value in their own database, but adapters should not compare `complete` and `completed` interchangeably without an explicit normalization layer.
 
 Closed sessions should return `joinable = false`, a stable `closed_reason`, and friendly `closed_message` suitable for organizer/player/spectator launch routes.
 `completed_at` is LocalPlay's canonical completion timestamp; host apps should persist or explicitly map it in their own session records.
@@ -1110,6 +1114,7 @@ Rules:
 - Revelry owns whether to post feed/memory entries automatically, as drafts, or only after host approval.
 - LocalPlay does best-effort delivery in the current implementation. It retries transient delivery failures, including Revelry HTTP `429` rate-limit responses and `5xx` errors, with short bounded backoff while preserving the same `event_id`, `idempotency_key`, and raw body for the retry attempt. Durable queued retry with long backoff remains backlog hardening; Revelry should poll `party-workspace` or session results on page open/app resume to recover missed callbacks.
 - Callback failures must not block gameplay completion. They affect sync latency only.
+- Durable callback queuing is not a production blocker for the first Revelry launch if polling recovery remains implemented and tested. It becomes a production hardening item when callbacks are used for irreversible side effects or higher-volume integrations.
 
 ## Handoff Token
 
@@ -1488,6 +1493,15 @@ LOCALPLAY_INTEGRATION_SECRET=<matching-secret-or-private-key>
 
 Gamma should use gamma URLs, a separate secret, and `PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me`.
 
+Adapter field-name mapping:
+
+| LocalPlay field | Revelry-facing field | Notes |
+| --- | --- | --- |
+| `launch_token_expires_at` | `expires_at` | Revelry wrapper may shorten the name, but should not pass the LocalPlay response through blindly. |
+| `status = complete` | `status = complete` | UI labels may say "Completed"; service comparisons should use `complete`. |
+| `game.completed` | callback event type | Lifecycle event, not a status value. |
+| `guest_join_url` | Revelry `/party/{id}/games/join` URL | Active-game share/QR/copy URL. |
+
 ## Testing
 
 Implemented LocalPlay tests cover:
@@ -1519,7 +1533,7 @@ Playwright smoke:
 
 Roll out the integration on gamma first.
 
-Current LocalPlay status: gamma is deployed from the TV room-code normalization slice (`5519067` on 2026-05-24) and has passed direct smoke for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, party workspace, party hub link/resolve, host-app-managed billing wallet behavior, LocalPlay-hosted quiz authoring, start from saved `localplay_content_id`, WebSocket organizer/player play-through, completion, result polling, host-app join-link QR/copy behavior, completed-game return to Revelry Games, spectator alias SPA routing, terminal organizer/player/spectator host-app error egress, and lowercase typed TV URL normalization to uppercase websocket room codes. Basic Revelry gamma end-to-end launch testing has worked for catalog, create session, organizer/player launch, and gameplay. Before each rollout or manual test pass, verify the deployed gamma container against the current repo HEAD because this spec intentionally does not act as the sole source of truth for deployed commit tracking. Deeper branded UX polish and production-scale callback durability remain required before production promotion.
+Current LocalPlay status: gamma has passed direct smoke for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, party workspace, party hub link/resolve, host-app-managed billing wallet behavior, LocalPlay-hosted quiz authoring, start from saved `localplay_content_id`, WebSocket organizer/player play-through, completion, result polling, host-app join-link QR/copy behavior, completed-game return to Revelry Games, spectator alias SPA routing, terminal organizer/player/spectator host-app error egress, and lowercase typed TV URL normalization to uppercase websocket room codes. Basic Revelry gamma end-to-end launch testing has worked for catalog, create session, organizer/player launch, and gameplay. Before each rollout or manual test pass, verify the deployed gamma container against the current repo HEAD because this spec intentionally does not act as the sole source of truth for deployed commit tracking. Deeper branded UX polish and production-scale callback durability remain required before production promotion.
 
 Gamma acceptance checklist:
 
@@ -1529,6 +1543,7 @@ Gamma acceptance checklist:
 - Mobile join opens externally/fullscreen with a working fallback.
 - One-active-game replacement warns in Revelry, then supersedes the old LocalPlay session only after confirmation.
 - Expired, cancelled, and superseded launch routes show friendly closed-game states.
+- Workspace sync and one-active enforcement never present `complete`, `expired`, `cancelled`, `superseded`, or `joinable = false` sessions as active/joinable.
 - Revelry gamma can poll status/results by `session_id`.
 - Result summary omits raw answers and private custom quiz contents.
 - Feed-card payloads are usable by Revelry but posting/visibility remains Revelry-owned.
