@@ -11,6 +11,7 @@ import { RemoteConfigProvider } from './context/RemoteConfigContext';
 import { AuthProvider } from './context/AuthContext';
 import MaintenanceOverlay from './components/MaintenanceOverlay';
 import AnnouncementBanner from './components/AnnouncementBanner';
+import PwaPrompts from './components/PwaPrompts';
 import { isHostAppSurfaceLocation } from './utils/hostAppMode';
 
 function AppShell() {
@@ -21,6 +22,7 @@ function AppShell() {
       <MaintenanceOverlay />
       {!isHostAppSurface && <AnnouncementBanner />}
       {!isHostAppSurface && <SettingsDrawer />}
+      <PwaPrompts isHostAppSurface={isHostAppSurface} />
       <Routes>
         <Route path="/" element={<OrganizerPage />} />
         <Route path="/organizer" element={<OrganizerPage />} />

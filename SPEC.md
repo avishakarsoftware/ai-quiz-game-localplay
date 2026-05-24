@@ -26,6 +26,7 @@ Launch readiness baseline:
 - Host-app launches must hide standalone economy/account/library chrome unless explicitly allowed by the host-app context.
 - All user-facing labels should treat the app as a multi-game surface, not as "Revelry Quiz".
 - Backend-served SPA and service worker routing must never allow API routes to be fulfilled by cached app shell HTML.
+- PWA prompts should improve continuity without interrupting gameplay: update prompts are allowed globally, while install and notification prompts are standalone-first and suppressed in Revelry/host-app embedded surfaces.
 
 ## Architecture
 
@@ -71,6 +72,7 @@ Key files:
 - `frontend/src/components/organizer/GameQuestionScreen.tsx`: host active-round display.
 - `frontend/src/components/organizer/LeaderboardScreen.tsx`: quiz leaderboard between rounds.
 - `frontend/src/components/organizer/PodiumScreen.tsx`: final results.
+- `frontend/src/components/PwaPrompts.tsx`: install, notification opt-in, and service-worker update prompts.
 - `frontend/src/gameModes.ts`: standalone and host-app-visible game catalog metadata.
 - `frontend/src/types.ts`: shared frontend types.
 
@@ -1234,6 +1236,7 @@ Historical review notes were consolidated into this section and the platform spe
 - **TV/cast polish:** Chromecast support is fragile as a primary user story. Keep `/tv/{room_code}` as a reliable fallback, then design a scalable phone-to-TV handoff that does not require typing a long URL into a TV browser.
 - **Result sharing polish:** Add shareable result cards/thumbnails and a "one more round" path from completed games.
 - **Late join policy:** Decide and implement per-game late-join behavior after a game starts: spectate, join with missed-round penalty, or block until next round.
+- **Push notifications:** Current PWA prompt only requests browser permission. Add real push subscriptions, notification preferences, and event triggers for game-start/result-ready after the product copy and native/web ownership are settled.
 
 ## Upgrade Backlog
 
@@ -1313,6 +1316,27 @@ Current deployed infrastructure:
 - A successful signed-in state is visible in the menu as **Signed in**, account/email prefix, and a **Sign Out** button.
 - LocalPlay sessions are independent from the main Revelry app session even if Google Cloud/Firebase project infrastructure is shared.
 - Verified browser sign-in: Google on gamma; Apple on gamma and IONOS production. Production Google is configured on the IONOS bundle and production backend and should be manually smoke-tested after auth/OAuth changes.
+
+### PWA Prompts And Updates
+
+The frontend is installable as a PWA and registers `frontend/public/sw.js` from `frontend/index.html`.
+
+Implemented behavior:
+
+- The service worker bypasses all API prefixes and known backend API hostnames. It caches static app assets and the offline fallback only.
+- New service-worker installs wait rather than taking over immediately. The app receives a `localplay-sw-update` event and shows a **New version ready** prompt.
+- Choosing **Refresh** posts `SKIP_WAITING` to the waiting worker and reloads after `controllerchange`.
+- Standalone web surfaces can show an install prompt when the browser fires `beforeinstallprompt`.
+- Standalone web surfaces can show a notification opt-in prompt. The browser permission dialog is only requested after the user taps **Enable**.
+- Revelry/host-app surfaces suppress install and notification prompts because Revelry is the party shell. They may still show update prompts so stale game code can be refreshed.
+- Prompt dismissals are stored in localStorage and should remain lightweight; do not use them for security state.
+
+Product rules:
+
+- Do not interrupt active rounds with forced reloads. The update prompt copy should encourage refreshing between rounds.
+- Do not ask for notification permission on first paint. Ask only through a user-facing LocalPlay prompt.
+- Notification permission by itself is not a push subscription. Real game-start/result notifications need a later push-subscription backend and host-app/native strategy.
+- Installed PWAs still use the origin from which they were installed; auth, CORS, remote config, and service-worker bypass rules must include backend-served prod/gamma origins and the IONOS origin as applicable.
 
 Operational follow-up:
 

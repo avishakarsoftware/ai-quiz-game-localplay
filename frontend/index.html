@@ -36,7 +36,28 @@
         window.addEventListener('load', () => {
           const base = document.querySelector('base')?.href || new URL('.', location.href).href;
           navigator.serviceWorker.register(new URL('sw.js', base).href)
-            .then((reg) => console.log('SW registered:', reg.scope))
+            .then((reg) => {
+              console.log('SW registered:', reg.scope);
+
+              const notifyUpdate = (worker) => {
+                if (!worker || !navigator.serviceWorker.controller) return;
+                window.dispatchEvent(new CustomEvent('localplay-sw-update', {
+                  detail: { worker },
+                }));
+              };
+
+              notifyUpdate(reg.waiting);
+
+              reg.addEventListener('updatefound', () => {
+                const worker = reg.installing;
+                if (!worker) return;
+                worker.addEventListener('statechange', () => {
+                  if (worker.state === 'installed') notifyUpdate(worker);
+                });
+              });
+
+              window.setInterval(() => reg.update(), 60 * 60 * 1000);
+            })
             .catch((err) => console.log('SW registration failed:', err));
         });
       }

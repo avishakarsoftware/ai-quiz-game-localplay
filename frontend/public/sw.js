@@ -1,4 +1,4 @@
-const CACHE_NAME = 'localplay-v4';
+const CACHE_NAME = 'localplay-v5';
 const OFFLINE_URL = 'offline.html';
 const API_PREFIXES = [
     '/system',
@@ -30,7 +30,6 @@ self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => cache.add(OFFLINE_URL))
     );
-    self.skipWaiting();
 });
 
 // Activate event - clean old caches
@@ -45,6 +44,12 @@ self.addEventListener('activate', (event) => {
         })
     );
     self.clients.claim();
+});
+
+self.addEventListener('message', (event) => {
+    if (event.data?.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
 });
 
 // Fetch event - network first, fallback to cache, then offline page

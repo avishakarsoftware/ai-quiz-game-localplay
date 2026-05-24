@@ -499,7 +499,7 @@ Expected behavior:
 
 Protected API prefixes include `/system`, `/providers`, `/quiz`, `/quiz-packs`, `/room`, `/ws`, `/mlt`, `/drawing`, `/history`, `/auth`, `/checkout`, `/webhook`, `/tokens`, `/entitlements`, `/purchases`, `/admin`, `/health`, `/sd`, `/catalog`, `/integrations`, `/media`, and `/config.json`.
 
-The frontend service worker must mirror this rule for same-origin backend-served builds. It should not cache or fulfill API requests for `gamesapi.revelryapp.me`, `gamesapi-gamma.revelryapp.me`, local backend port `8000`, or any protected API prefix; those requests must always reach the backend.
+The frontend service worker must mirror this rule for same-origin backend-served builds. It should not cache or fulfill API requests for `gamesapi.revelryapp.me`, `gamesapi-gamma.revelryapp.me`, local backend port `8000`, or any protected API prefix; those requests must always reach the backend. Service-worker updates should wait and surface the in-app **New version ready** prompt; do not restore automatic `skipWaiting()` unless the app also avoids mid-game reloads.
 
 The fallback route resolves candidate files under `/app/static` and rejects paths outside that directory to avoid directory traversal.
 
