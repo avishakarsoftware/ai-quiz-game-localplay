@@ -992,6 +992,7 @@ Generation:
 - Drawing calls `/drawing/generate`.
 - Successful generation moves to review.
 - `402`, `429`, and `503` are surfaced in an error modal.
+- In host-app party hub mode, prompt-list setup games such as WMLT and Drawing may call `/integrations/revelry/party-games/prompts/generate` with a party-scoped token. Generated prompts populate the editable setup form and are not persisted until the host saves the setup.
 
 Room creation:
 

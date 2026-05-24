@@ -59,6 +59,7 @@ type CatalogGame = {
     can_create_content?: boolean;
     can_edit_content?: boolean;
     can_quick_start?: boolean;
+    supports_ai_generation?: boolean;
     creation_modes?: string[];
     embedded_authoring_supported?: boolean;
     config_schema?: {
@@ -83,6 +84,8 @@ type SetupDraft = {
     timeLimit?: number;
 };
 
+const PROMPT_COUNT_OPTIONS = [5, 8, 10, 15, 20];
+
 function hasCapability(context: LaunchContext | null, capability: string): boolean {
     return Boolean(context?.capabilities?.includes(capability) || context?.capabilities?.includes('manage_games'));
 }
@@ -103,8 +106,10 @@ function actionLabelForGame(game: CatalogGame, canCreate: boolean): string {
 function cardMetaForGame(game: CatalogGame): string {
     const gameType = game.game_type || game.id;
     const modes = new Set(game.creation_modes || []);
-    const creationCopy = gameType === 'quiz' && (modes.has('manual') || modes.has('ai'))
-        ? 'Write your own or use AI'
+    const creationCopy = game.supports_ai_generation || modes.has('ai')
+        ? gameType === 'quiz'
+            ? 'Write your own or use AI'
+            : 'Ready-made or AI prompts'
         : modes.has('template')
             ? 'Ready-made prompts'
             : '';
@@ -160,6 +165,15 @@ function setupCopyForGame(gameType: string): { heading: string; promptLabel: str
     };
 }
 
+function promptLinesFromPayload(gameType: string, payload: Record<string, unknown>): string[] {
+    const gamePayload = payload?.game && typeof payload.game === 'object'
+        ? payload.game as Record<string, unknown>
+        : payload || {};
+    return gameType === 'wmlt'
+        ? ((gamePayload.statements as Array<{ text?: string }> | undefined) || []).map((item) => item.text || '').filter(Boolean)
+        : ((gamePayload.prompts as Array<{ text?: string }> | undefined) || []).map((item) => item.text || '').filter(Boolean);
+}
+
 function contentPayloadFromDraft(draft: SetupDraft) {
     const gameType = draft.game.game_type || draft.game.id;
     const prompts = draft.promptsText
@@ -204,6 +218,10 @@ export default function PartyHubPage() {
     const [startingId, setStartingId] = useState('');
     const [setupDraft, setSetupDraft] = useState<SetupDraft | null>(null);
     const [savingSetup, setSavingSetup] = useState(false);
+    const [generatingPrompts, setGeneratingPrompts] = useState(false);
+    const [aiPrompt, setAiPrompt] = useState('');
+    const [aiPromptCount, setAiPromptCount] = useState(10);
+    const [aiDifficulty, setAiDifficulty] = useState('medium');
     const [error, setError] = useState('');
     const [replacementPrompt, setReplacementPrompt] = useState<ReplacementPrompt | null>(null);
     const autoStartRef = useRef('');
@@ -333,13 +351,11 @@ export default function PartyHubPage() {
 
     function openSetup(game: CatalogGame, content?: PreparedContent, payload?: Record<string, unknown>) {
         const gameType = game.game_type || game.id;
-        const gamePayload = payload?.game && typeof payload.game === 'object'
-            ? payload.game as Record<string, unknown>
-            : payload || {};
-        const prompts = gameType === 'wmlt'
-            ? ((gamePayload.statements as Array<{ text?: string }> | undefined) || []).map((item) => item.text || '').filter(Boolean)
-            : ((gamePayload.prompts as Array<{ text?: string }> | undefined) || []).map((item) => item.text || '').filter(Boolean);
+        const prompts = promptLinesFromPayload(gameType, payload || {});
         const timeLimit = Number((payload?.time_limit as number | undefined) || content?.time_limit || game.config_schema?.time_limit?.default || 30);
+        const fallbackPrompt = launchContext?.external_container_title
+            ? `${launchContext.external_container_title} ${game.title}`
+            : game.title;
         setSetupDraft({
             game,
             contentId: content?.localplay_content_id,
@@ -347,6 +363,9 @@ export default function PartyHubPage() {
             promptsText: prompts.length ? prompts.join('\n') : defaultPromptsForGame(gameType),
             timeLimit: Number.isFinite(timeLimit) ? timeLimit : 30,
         });
+        setAiPrompt(fallbackPrompt);
+        setAiPromptCount(gameType === 'wmlt' ? 8 : 10);
+        setAiDifficulty(gameType === 'wmlt' ? 'party' : 'medium');
     }
 
     function createFromCatalog(game: CatalogGame) {
@@ -434,6 +453,39 @@ export default function PartyHubPage() {
             setError('Could not save that game. Please try again.');
         } finally {
             setSavingSetup(false);
+        }
+    }
+
+    async function generateSetupPrompts() {
+        if (!setupDraft) return;
+        const gameType = setupDraft.game.game_type || setupDraft.game.id;
+        setGeneratingPrompts(true);
+        setError('');
+        try {
+            const res = await fetch(`${API_URL}/integrations/revelry/party-games/prompts/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    party_games_token: partyGamesToken,
+                    game_type: gameType,
+                    prompt: aiPrompt.trim() || title,
+                    difficulty: aiDifficulty,
+                    num_prompts: aiPromptCount,
+                }),
+            });
+            if (!res.ok) throw new Error('generate_failed');
+            const data = await res.json();
+            const lines = promptLinesFromPayload(gameType, data.content_payload || {});
+            if (lines.length < 1) throw new Error('empty_generation');
+            setSetupDraft({
+                ...setupDraft,
+                title: (data.content_payload?.game?.game_title as string | undefined) || setupDraft.title,
+                promptsText: lines.join('\n'),
+            });
+        } catch {
+            setError('Could not generate prompts. Try a different theme or edit the prompts manually.');
+        } finally {
+            setGeneratingPrompts(false);
         }
     }
 
@@ -578,6 +630,55 @@ export default function PartyHubPage() {
                             onChange={(event) => setSetupDraft({ ...setupDraft, promptsText: event.target.value })}
                         />
                     </label>
+                    {setupDraft.game.supports_ai_generation && (
+                        <div className="party-hub__ai-box">
+                            <div>
+                                <strong>Generate prompts with AI</strong>
+                                <span>Use the party theme, then edit anything before saving.</span>
+                            </div>
+                            <label>
+                                <span>Theme</span>
+                                <input
+                                    value={aiPrompt}
+                                    onChange={(event) => setAiPrompt(event.target.value)}
+                                    placeholder="Christmas party, baby shower, game night..."
+                                    maxLength={140}
+                                />
+                            </label>
+                            <div className="party-hub__setup-row">
+                                <label>
+                                    <span>Prompts</span>
+                                    <select value={aiPromptCount} onChange={(event) => setAiPromptCount(Number(event.target.value))}>
+                                        {PROMPT_COUNT_OPTIONS.map((count) => (
+                                            <option key={count} value={count}>{count}</option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <label>
+                                    <span>{(setupDraft.game.game_type || setupDraft.game.id) === 'wmlt' ? 'Vibe' : 'Difficulty'}</span>
+                                    <select value={aiDifficulty} onChange={(event) => setAiDifficulty(event.target.value)}>
+                                        {(setupDraft.game.game_type || setupDraft.game.id) === 'wmlt' ? (
+                                            <>
+                                                <option value="party">Party</option>
+                                                <option value="wholesome">Wholesome</option>
+                                                <option value="spicy">Spicy</option>
+                                                <option value="work">Work-safe</option>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <option value="easy">Easy</option>
+                                                <option value="medium">Medium</option>
+                                                <option value="hard">Hard</option>
+                                            </>
+                                        )}
+                                    </select>
+                                </label>
+                            </div>
+                            <button className="party-hub__secondary" onClick={() => void generateSetupPrompts()} disabled={generatingPrompts}>
+                                {generatingPrompts ? 'Generating...' : 'Generate prompts'}
+                            </button>
+                        </div>
+                    )}
                     {(setupDraft.game.game_type || setupDraft.game.id) === 'drawing' && (
                         <label>
                             <span>Round timer</span>

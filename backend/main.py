@@ -415,7 +415,8 @@ GAME_CATALOG = [
         "can_create_content": True,
         "can_edit_content": True,
         "can_quick_start": False,
-        "creation_modes": ["template", "manual"],
+        "supports_ai_generation": True,
+        "creation_modes": ["template", "manual", "ai"],
         "default_content_available": True,
         "embedded_authoring_supported": False,
         "content_schema": {
@@ -438,7 +439,8 @@ GAME_CATALOG = [
         "can_create_content": True,
         "can_edit_content": True,
         "can_quick_start": False,
-        "creation_modes": ["template", "manual"],
+        "supports_ai_generation": True,
+        "creation_modes": ["template", "manual", "ai"],
         "default_content_available": True,
         "embedded_authoring_supported": False,
         "content_schema": {
@@ -1212,6 +1214,46 @@ class RevelryPartyGamesContentSaveRequest(BaseModel):
     def validate_game_type(cls, value: str) -> str:
         if value not in ("quiz", "wmlt", "drawing"):
             raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
+        return value
+
+
+class RevelryPartyGamesPromptGenerateRequest(BaseModel):
+    party_games_token: str
+    game_type: str
+    prompt: str = ""
+    difficulty: str = "medium"
+    num_prompts: int = 10
+    provider: str = ""
+
+    @field_validator("game_type")
+    @classmethod
+    def validate_game_type(cls, value: str) -> str:
+        if value not in ("wmlt", "drawing"):
+            raise ValueError('game_type must be "wmlt" or "drawing"')
+        return value
+
+    @field_validator("prompt")
+    @classmethod
+    def validate_prompt(cls, value: str) -> str:
+        value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', value)
+        value = re.sub(r'<[^>]+>', '', value).strip()
+        if len(value) > config.MAX_PROMPT_LENGTH:
+            raise ValueError(f'Prompt must be at most {config.MAX_PROMPT_LENGTH} characters')
+        return value
+
+    @field_validator("difficulty")
+    @classmethod
+    def validate_difficulty(cls, value: str) -> str:
+        value = value.lower().strip()
+        if value not in VALID_MLT_VIBES and value not in config.VALID_DIFFICULTIES:
+            raise ValueError('Invalid difficulty or vibe')
+        return value
+
+    @field_validator("num_prompts")
+    @classmethod
+    def validate_num_prompts(cls, value: int) -> int:
+        if value < 1 or value > 50:
+            raise ValueError('Number of prompts must be 1-50')
         return value
 
 
@@ -2108,6 +2150,48 @@ def _content_response(context: RevelryExternalContext, content: dict) -> dict:
     }
 
 
+async def _generate_party_prompt_content(context: RevelryExternalContext, request: RevelryPartyGamesPromptGenerateRequest) -> dict:
+    title_context = context.external_container_title or "this party"
+    prompt = request.prompt.strip() or f"{title_context} {request.game_type} prompts"
+    await remote_config.get_config()
+    provider = request.provider or remote_config.get_provider()
+    model_override = remote_config.get_free_model()
+    try:
+        if request.game_type == "wmlt":
+            vibe = request.difficulty if request.difficulty in VALID_MLT_VIBES else "party"
+            game_data = await mlt_engine.generate_statements(
+                prompt,
+                vibe,
+                max(3, min(25, request.num_prompts)),
+                provider,
+                model_override=model_override,
+            )
+            if not game_data:
+                raise HTTPException(status_code=500, detail="Failed to generate prompts")
+            game_data = _sanitize_mlt(game_data)
+            if not _validate_mlt(game_data, attempt=0):
+                raise HTTPException(status_code=500, detail="Failed to generate prompts")
+            return {"game": game_data}
+        difficulty = request.difficulty if request.difficulty in config.VALID_DIFFICULTIES else "medium"
+        game_data = await drawing_engine.generate_prompts(
+            prompt,
+            difficulty,
+            max(config.MIN_QUESTIONS, min(config.MAX_QUESTIONS, request.num_prompts)),
+            provider,
+            model_override=model_override,
+        )
+        if not game_data:
+            raise HTTPException(status_code=500, detail="Failed to generate prompts")
+        game_data = _sanitize_drawing_game(game_data)
+        if not _validate_drawing_game(game_data, attempt=0):
+            raise HTTPException(status_code=500, detail="Failed to generate prompts")
+        return {"game": game_data}
+    except DailyLimitExceeded:
+        raise HTTPException(status_code=429, detail="Daily generation limit reached. Please try again tomorrow!")
+    except AIQuotaExceeded:
+        raise HTTPException(status_code=503, detail="Generation is temporarily unavailable. Please try again later.")
+
+
 def _content_save_id_for_request(context: RevelryExternalContext, request: RevelryContentSaveRequest) -> tuple[Optional[str], Optional[str]]:
     if not request.content_id:
         return None, None
@@ -2386,6 +2470,22 @@ async def save_revelry_party_game_content(request: RevelryPartyGamesContentSaveR
         response["versioned_from_content_id"] = previous_content_id
         response["status"] = "version_created"
     return response
+
+
+@app.post("/integrations/revelry/party-games/prompts/generate")
+async def generate_revelry_party_game_prompts(request: RevelryPartyGamesPromptGenerateRequest):
+    launch_context = _resolve_party_games_token(request.party_games_token)
+    actor = _actor_from_launch_context(launch_context)
+    if not _author_can_author(actor):
+        raise HTTPException(status_code=403, detail="Missing capability to author content")
+    if request.game_type not in {game["game_type"] for game in GAME_CATALOG if game.get("supports_ai_generation")}:
+        raise HTTPException(status_code=422, detail="AI prompt generation is not available for this game")
+    context = _external_context_from_launch_context(launch_context)
+    payload = await _generate_party_prompt_content(context, request)
+    return {
+        "game_type": request.game_type,
+        "content_payload": payload,
+    }
 
 
 @app.get("/integrations/revelry/party-games/content/{content_id}")

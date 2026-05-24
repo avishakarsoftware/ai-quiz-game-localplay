@@ -105,6 +105,50 @@ test.describe('Revelry Games party hub', () => {
     });
   });
 
+  test('generates editable AI prompts for Drawing setup', async ({ page }) => {
+    let generateRequest: Record<string, unknown> | undefined;
+    await page.route('**/integrations/revelry/party-games/resolve?**', async (route) => {
+      await route.fulfill({
+        json: {
+          launch_context: revelryLaunchContext(),
+          workspace: revelryWorkspace({ prepared_content: [] }),
+        },
+      });
+    });
+    await page.route('**/integrations/revelry/party-games/prompts/generate', async (route) => {
+      generateRequest = route.request().postDataJSON();
+      await route.fulfill({
+        json: {
+          game_type: 'drawing',
+          content_payload: {
+            game: {
+              game_title: 'Christmas Drawing',
+              prompts: [
+                { id: 1, text: 'Santa hat', aliases: [] },
+                { id: 2, text: 'Snow globe', aliases: [] },
+              ],
+            },
+          },
+        },
+      });
+    });
+
+    await page.goto('/revelry/games?party_games_token=party-token');
+    await page.getByRole('button', { name: 'Set up drawing' }).click();
+    await expect(page.getByText('Generate prompts with AI')).toBeVisible();
+    await page.getByRole('button', { name: 'Generate prompts' }).click();
+
+    await expect(page.getByLabel('Title')).toHaveValue('Christmas Drawing');
+    await expect(page.getByLabel('Drawing prompts')).toHaveValue(/Santa hat[\s\S]*Snow globe/);
+    expect(generateRequest).toMatchObject({
+      party_games_token: 'party-token',
+      game_type: 'drawing',
+      prompt: 'Christmas 2026 Bash Drawing Game',
+      difficulty: 'medium',
+      num_prompts: 10,
+    });
+  });
+
   test('shows replacement confirmation and retries start with confirmation', async ({ page }) => {
     const startRequests: Request[] = [];
     await page.route('**/integrations/revelry/party-games/resolve?**', async (route) => {
@@ -165,4 +209,3 @@ test.describe('Revelry Games party hub', () => {
     });
   });
 });
-

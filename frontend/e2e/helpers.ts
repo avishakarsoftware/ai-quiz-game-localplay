@@ -74,7 +74,8 @@ export function revelryCatalog() {
       can_create_content: true,
       can_edit_content: true,
       can_quick_start: false,
-      creation_modes: ['template', 'manual'],
+      supports_ai_generation: true,
+      creation_modes: ['template', 'manual', 'ai'],
     },
     {
       id: 'drawing',
@@ -85,7 +86,8 @@ export function revelryCatalog() {
       can_create_content: true,
       can_edit_content: true,
       can_quick_start: false,
-      creation_modes: ['template', 'manual'],
+      supports_ai_generation: true,
+      creation_modes: ['template', 'manual', 'ai'],
       config_schema: { time_limit: { min: 5, max: 60, default: 30 } },
     },
     {
@@ -116,4 +118,3 @@ export function revelryWorkspace(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
-

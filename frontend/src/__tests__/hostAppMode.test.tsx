@@ -119,7 +119,8 @@ describe('host-app mode filtering', () => {
                             launchable: true,
                             can_create_content: true,
                             can_edit_content: true,
-                            creation_modes: ['template', 'manual'],
+                            supports_ai_generation: true,
+                            creation_modes: ['template', 'manual', 'ai'],
                         },
                         {
                             id: 'drawing',
@@ -129,7 +130,8 @@ describe('host-app mode filtering', () => {
                             launchable: true,
                             can_create_content: true,
                             can_edit_content: true,
-                            creation_modes: ['template', 'manual'],
+                            supports_ai_generation: true,
+                            creation_modes: ['template', 'manual', 'ai'],
                         },
                         {
                             id: 'rebus',
@@ -156,7 +158,7 @@ describe('host-app mode filtering', () => {
         expect(screen.getByRole('button', { name: /set up round/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /set up drawing/i })).toBeInTheDocument();
         expect(screen.getByText(/write your own or use ai/i)).toBeInTheDocument();
-        expect(screen.getAllByText(/ready-made prompts/i)).toHaveLength(2);
+        expect(screen.getAllByText(/ready-made or ai prompts/i)).toHaveLength(2);
         expect(screen.queryByText(/manual \/ ai/i)).not.toBeInTheDocument();
         expect(screen.queryByText(/^template$/i)).not.toBeInTheDocument();
     });
@@ -226,7 +228,8 @@ describe('host-app mode filtering', () => {
                             launchable: true,
                             can_create_content: true,
                             can_edit_content: true,
-                            creation_modes: ['template', 'manual'],
+                            supports_ai_generation: true,
+                            creation_modes: ['template', 'manual', 'ai'],
                             config_schema: { time_limit: { default: 30 } },
                         }],
                     },
@@ -267,6 +270,74 @@ describe('host-app mode filtering', () => {
             party_games_token: 'party-token',
             content_id: 'drawing-content-1',
             game_type: 'drawing',
+        });
+    });
+
+    it('generates AI prompts for party hub Drawing setup before saving', async () => {
+        window.history.pushState({}, '', '/revelry/games?party_games_token=party-token');
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    launch_context: {
+                        capabilities: ['author_content', 'operate_game'],
+                        external_container_title: 'Christmas Bash',
+                    },
+                    workspace: {
+                        active_session: null,
+                        prepared_content: [],
+                        catalog: [{
+                            id: 'drawing',
+                            game_type: 'drawing',
+                            title: 'Drawing Game',
+                            launchable: true,
+                            can_create_content: true,
+                            can_edit_content: true,
+                            supports_ai_generation: true,
+                            creation_modes: ['template', 'manual', 'ai'],
+                            config_schema: { time_limit: { default: 30 } },
+                        }],
+                    },
+                }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    game_type: 'drawing',
+                    content_payload: {
+                        game: {
+                            game_title: 'Christmas Drawing Game',
+                            prompts: [
+                                { id: 1, text: 'Santa hat', aliases: [] },
+                                { id: 2, text: 'Snow globe', aliases: [] },
+                            ],
+                        },
+                    },
+                }),
+            });
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(<PartyHubPage />);
+
+        fireEvent.click(await screen.findByRole('button', { name: /set up drawing/i }));
+        expect(await screen.findByRole('heading', { name: /set up drawing game/i })).toBeInTheDocument();
+        expect(screen.getByText(/generate prompts with ai/i)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /generate prompts/i }));
+
+        await waitFor(() => {
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+        });
+        expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
+            party_games_token: 'party-token',
+            game_type: 'drawing',
+            prompt: 'Christmas Bash Drawing Game',
+            difficulty: 'medium',
+            num_prompts: 10,
+        });
+        const promptsBox = screen.getByLabelText(/drawing prompts/i) as HTMLTextAreaElement;
+        await waitFor(() => {
+            expect(promptsBox.value).toContain('Santa hat');
+            expect(promptsBox.value).toContain('Snow globe');
         });
     });
 });

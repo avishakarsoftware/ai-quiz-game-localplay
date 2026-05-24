@@ -20,6 +20,7 @@ This spec should be implemented after the current LocalPlay platform work is sta
 
 - Add `drawing` as a first-class `GameType`.
 - Generate or select drawing prompts using the existing spark/generation model.
+- In Revelry/host-app party hub mode, allow the host to AI-generate drawing prompts from party context, edit them in the generic setup form, then save or save-and-start the party-scoped setup without exposing standalone sparks/wallet UI.
 - Support organizer, player, and spectator surfaces.
 - Let one player draw per round and all non-drawing players guess.
 - Score both the drawer and the correct guessers.
@@ -925,7 +926,7 @@ Recommended defaults:
 
 - Persist generated DrawingGame content in Supabase.
 - Persist final game result summaries.
-- Add custom prompt packs.
+- Add standalone saved custom prompt packs/library, equivalent to My Quizzes, so hosts can create, revisit, edit, and start custom DrawingGame sets outside a party context.
 - Add host-uploaded prompts.
 - Add drawing replay.
 - Add optional final image export.

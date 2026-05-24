@@ -150,6 +150,8 @@ def test_catalog_lists_launchable_games():
     assert drawing["can_create_content"] is True
     assert drawing["can_edit_content"] is True
     assert drawing["can_quick_start"] is False
+    assert drawing["supports_ai_generation"] is True
+    assert "ai" in drawing["creation_modes"]
     assert drawing["config_schema"]["time_limit"]["default"] == 30
 
 
@@ -840,6 +842,66 @@ def test_revelry_party_hub_can_save_and_start_catalog_game_content(monkeypatch):
     room = socket_manager.rooms[body["session"]["room_code"]]
     assert room.game_type == "drawing"
     assert room.time_limit == 25
+
+
+def test_revelry_party_hub_can_generate_drawing_setup_prompts(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-hub-drawing-ai-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Christmas Bash",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["author_content", "operate_game"],
+        },
+    }
+
+    async def fake_generate(prompt, difficulty, num_prompts, provider, model_override=None):
+        assert prompt == "Christmas Bash drawing prompts"
+        assert difficulty == "medium"
+        assert num_prompts == 3
+        return {
+            "game_title": "Christmas Drawing",
+            "prompts": [
+                {"id": 1, "text": "Santa hat", "aliases": ["hat"], "difficulty": "easy"},
+                {"id": 2, "text": "Snow globe", "aliases": ["globe"], "difficulty": "medium"},
+                {"id": 3, "text": "Gingerbread house", "aliases": ["gingerbread"], "difficulty": "medium"},
+            ],
+        }
+
+    monkeypatch.setattr(main.drawing_engine, "generate_prompts", fake_generate)
+
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+    assert link_res.status_code == 200
+    party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
+
+    generate_res = client.post(
+        "/integrations/revelry/party-games/prompts/generate",
+        json={
+            "party_games_token": party_token,
+            "game_type": "drawing",
+            "prompt": "Christmas Bash drawing prompts",
+            "difficulty": "medium",
+            "num_prompts": 3,
+        },
+    )
+
+    assert generate_res.status_code == 200
+    body = generate_res.json()
+    assert body["game_type"] == "drawing"
+    assert [item["text"] for item in body["content_payload"]["game"]["prompts"]] == [
+        "Santa hat",
+        "Snow globe",
+        "Gingerbread house",
+    ]
+    assert db.list_game_content(f"revelry:party:{container_id}") == []
 
 
 def test_revelry_party_hub_rejects_invalid_catalog_game_content(monkeypatch):
