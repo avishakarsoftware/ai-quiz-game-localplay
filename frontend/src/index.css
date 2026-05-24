@@ -2866,6 +2866,40 @@ body {
     margin: 0 auto 28px;
 }
 
+.party-hub__setup {
+    display: grid;
+    gap: 14px;
+    padding: 18px;
+    border: 1px solid color-mix(in srgb, var(--party-accent, #ff4f9a) 30%, rgba(255, 255, 255, 0.12));
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.party-hub__setup label {
+    display: grid;
+    gap: 8px;
+}
+
+.party-hub__setup label span {
+    color: var(--ink-mute);
+    font-weight: 800;
+}
+
+.party-hub__setup input,
+.party-hub__setup textarea {
+    width: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    padding: 12px;
+    color: var(--ink);
+    background: rgba(5, 2, 10, 0.5);
+    font: inherit;
+}
+
+.party-hub__setup textarea {
+    resize: vertical;
+}
+
 .party-hub__section-head {
     display: flex;
     align-items: center;

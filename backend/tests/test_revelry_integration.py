@@ -147,8 +147,9 @@ def test_catalog_lists_launchable_games():
     assert quiz["can_create_content"] is True
     assert quiz["embedded_authoring_supported"] is True
     assert "manual" in quiz["creation_modes"]
-    assert drawing["can_create_content"] is False
-    assert drawing["can_quick_start"] is True
+    assert drawing["can_create_content"] is True
+    assert drawing["can_edit_content"] is True
+    assert drawing["can_quick_start"] is False
     assert drawing["config_schema"]["time_limit"]["default"] == 30
 
 
@@ -735,7 +736,7 @@ def test_revelry_party_hub_can_mint_authoring_link(monkeypatch):
     assert "/revelry/author?authoring_token=" in authoring_res.json()["authoring_url"]
 
 
-def test_revelry_party_hub_can_quick_start_catalog_game_without_content(monkeypatch):
+def test_revelry_party_hub_can_save_and_start_catalog_game_content(monkeypatch):
     monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
     db.init_db()
     container_id = f"party-hub-drawing-{uuid.uuid4().hex}"
@@ -750,16 +751,41 @@ def test_revelry_party_hub_can_quick_start_catalog_game_without_content(monkeypa
             "external_user_id": "host-1",
             "display_name": "Ava",
             "role": "host",
-            "capabilities": ["operate_game"],
+            "capabilities": ["author_content", "operate_game"],
         },
     }
     link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
     assert link_res.status_code == 200
     party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
 
+    save_res = client.post(
+        "/integrations/revelry/party-games/content",
+        json={
+            "party_games_token": party_token,
+            "game_type": "drawing",
+            "title": "Christmas Drawing",
+            "content_payload": {
+                "game": {
+                    "game_title": "Christmas Drawing",
+                    "prompts": [
+                        {"id": 1, "text": "gingerbread house", "aliases": ["gingerbread"], "difficulty": "medium"},
+                        {"id": 2, "text": "snow globe", "aliases": ["snowglobe"], "difficulty": "medium"},
+                    ],
+                },
+                "time_limit": 25,
+            },
+        },
+    )
+
+    assert save_res.status_code == 200
+    saved = save_res.json()["content"]
+    assert saved["game_type"] == "drawing"
+    assert saved["question_count"] == 2
+    assert saved["time_limit"] == 25
+
     start_res = client.post(
         "/integrations/revelry/party-games/start",
-        json={"party_games_token": party_token, "game_type": "drawing", "time_limit": 30},
+        json={"party_games_token": party_token, "game_type": "drawing", "content_id": saved["localplay_content_id"]},
     )
 
     assert start_res.status_code == 200
@@ -768,7 +794,7 @@ def test_revelry_party_hub_can_quick_start_catalog_game_without_content(monkeypa
     assert body["session"]["room_code"] in socket_manager.rooms
     room = socket_manager.rooms[body["session"]["room_code"]]
     assert room.game_type == "drawing"
-    assert room.time_limit == 30
+    assert room.time_limit == 25
 
 
 def test_revelry_party_hub_delete_sends_content_deleted_callback(monkeypatch):

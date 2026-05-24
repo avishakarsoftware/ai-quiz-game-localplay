@@ -21,6 +21,7 @@ type PreparedContent = {
     status: string;
     thumbnail_url?: string;
     question_count?: number;
+    time_limit?: number;
     updated_at?: string;
     action_requirements?: Record<string, string[]>;
 };
@@ -70,6 +71,14 @@ type StartableGame = {
     time_limit?: number;
 };
 
+type SetupDraft = {
+    game: CatalogGame;
+    contentId?: string;
+    title: string;
+    promptsText: string;
+    timeLimit?: number;
+};
+
 function hasCapability(context: LaunchContext | null, capability: string): boolean {
     return Boolean(context?.capabilities?.includes(capability) || context?.capabilities?.includes('manage_games'));
 }
@@ -78,7 +87,9 @@ function actionLabelForGame(game: CatalogGame, canCreate: boolean): string {
     const gameType = game.game_type || game.id;
     if (canCreate) {
         if (gameType === 'quiz') return 'Create quiz';
-        return `Create ${game.title}`;
+        if (gameType === 'wmlt') return 'Set up round';
+        if (gameType === 'drawing') return 'Set up drawing';
+        return `Set up ${game.title}`;
     }
     if (gameType === 'wmlt') return 'Start a round';
     if (gameType === 'drawing') return 'Start drawing';
@@ -105,8 +116,76 @@ function savedContentSummary(content: PreparedContent): string {
     const count = content.question_count || 0;
     const unit = content.game_type === 'quiz'
         ? `${count} question${count === 1 ? '' : 's'}`
-        : content.game_type;
+        : `${count || 'Saved'} prompt${count === 1 ? '' : 's'}`;
     return `${unit} · ${content.status}`;
+}
+
+function defaultPromptsForGame(gameType: string): string {
+    if (gameType === 'wmlt') {
+        return [
+            'Most likely to start the dance floor',
+            'Most likely to remember every tiny detail',
+            'Most likely to make everyone laugh',
+        ].join('\n');
+    }
+    if (gameType === 'drawing') {
+        return ['birthday cake', 'dance party', 'confetti'].join('\n');
+    }
+    return '';
+}
+
+function setupCopyForGame(gameType: string): { heading: string; promptLabel: string; help: string } {
+    if (gameType === 'wmlt') {
+        return {
+            heading: 'Set up Most Likely To',
+            promptLabel: 'Prompts',
+            help: 'Add one “most likely to” prompt per line.',
+        };
+    }
+    if (gameType === 'drawing') {
+        return {
+            heading: 'Set up Drawing Game',
+            promptLabel: 'Drawing prompts',
+            help: 'Add one drawable prompt per line.',
+        };
+    }
+    return {
+        heading: 'Set up game',
+        promptLabel: 'Prompts',
+        help: 'Add one prompt per line.',
+    };
+}
+
+function contentPayloadFromDraft(draft: SetupDraft) {
+    const gameType = draft.game.game_type || draft.game.id;
+    const prompts = draft.promptsText
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(0, 50);
+    if (gameType === 'wmlt') {
+        return {
+            game: {
+                game_title: draft.title,
+                statements: prompts.map((text, index) => ({ id: index + 1, text })),
+            },
+        };
+    }
+    if (gameType === 'drawing') {
+        return {
+            game: {
+                game_title: draft.title,
+                prompts: prompts.map((text, index) => ({
+                    id: index + 1,
+                    text,
+                    aliases: [],
+                    difficulty: 'medium',
+                })),
+            },
+            time_limit: draft.timeLimit || 30,
+        };
+    }
+    return { game: { game_title: draft.title, prompts } };
 }
 
 function returnToHostApp(returnUrl: string) {
@@ -131,6 +210,8 @@ export default function PartyHubPage() {
     const [workspace, setWorkspace] = useState<Workspace | null>(null);
     const [loading, setLoading] = useState(true);
     const [startingId, setStartingId] = useState('');
+    const [setupDraft, setSetupDraft] = useState<SetupDraft | null>(null);
+    const [savingSetup, setSavingSetup] = useState(false);
     const [error, setError] = useState('');
     const [replacementPrompt, setReplacementPrompt] = useState<ReplacementPrompt | null>(null);
     const autoStartRef = useRef('');
@@ -256,8 +337,30 @@ export default function PartyHubPage() {
         }
     }
 
+    function openSetup(game: CatalogGame, content?: PreparedContent, payload?: Record<string, unknown>) {
+        const gameType = game.game_type || game.id;
+        const gamePayload = payload?.game && typeof payload.game === 'object'
+            ? payload.game as Record<string, unknown>
+            : payload || {};
+        const prompts = gameType === 'wmlt'
+            ? ((gamePayload.statements as Array<{ text?: string }> | undefined) || []).map((item) => item.text || '').filter(Boolean)
+            : ((gamePayload.prompts as Array<{ text?: string }> | undefined) || []).map((item) => item.text || '').filter(Boolean);
+        const timeLimit = Number((payload?.time_limit as number | undefined) || content?.time_limit || game.config_schema?.time_limit?.default || 30);
+        setSetupDraft({
+            game,
+            contentId: content?.localplay_content_id,
+            title: content?.title || game.title,
+            promptsText: prompts.length ? prompts.join('\n') : defaultPromptsForGame(gameType),
+            timeLimit: Number.isFinite(timeLimit) ? timeLimit : 30,
+        });
+    }
+
     function createFromCatalog(game: CatalogGame) {
         if (game.can_create_content || game.embedded_authoring_supported) {
+            if ((game.game_type || game.id) !== 'quiz') {
+                openSetup(game);
+                return;
+            }
             void openAuthoring('create', game.game_type || game.id);
             return;
         }
@@ -267,6 +370,76 @@ export default function PartyHubPage() {
                 title: game.title,
                 time_limit: game.config_schema?.time_limit?.default,
             });
+        }
+    }
+
+    async function editSavedContent(content: PreparedContent) {
+        if (content.game_type === 'quiz') {
+            void openAuthoring('edit', content.game_type, content);
+            return;
+        }
+        const game = catalogGames.find((item) => (item.game_type || item.id) === content.game_type);
+        if (!game) {
+            setError('That game type is not available for this party.');
+            return;
+        }
+        setStartingId(content.localplay_content_id);
+        setError('');
+        try {
+            const res = await fetch(`${API_URL}/integrations/revelry/party-games/content/${encodeURIComponent(content.localplay_content_id)}?party_games_token=${encodeURIComponent(partyGamesToken)}&include_payload=true`);
+            if (!res.ok) throw new Error('load_failed');
+            const data = await res.json();
+            openSetup(game, content, data.content_payload || {});
+        } catch {
+            setError('Could not open that setup. Please try again.');
+        } finally {
+            setStartingId('');
+        }
+    }
+
+    async function saveSetup(startAfterSave = false) {
+        if (!setupDraft) return;
+        const gameType = setupDraft.game.game_type || setupDraft.game.id;
+        const payload = contentPayloadFromDraft(setupDraft);
+        const promptCount = gameType === 'wmlt'
+            ? (payload.game.statements || []).length
+            : (payload.game.prompts || []).length;
+        if (!setupDraft.title.trim() || promptCount < 1) {
+            setError('Add a title and at least one prompt.');
+            return;
+        }
+        setSavingSetup(true);
+        setError('');
+        try {
+            const res = await fetch(`${API_URL}/integrations/revelry/party-games/content`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    party_games_token: partyGamesToken,
+                    game_type: gameType,
+                    title: setupDraft.title.trim(),
+                    content_id: setupDraft.contentId,
+                    content_payload: payload,
+                    status: 'ready',
+                }),
+            });
+            if (!res.ok) throw new Error('save_failed');
+            const data = await res.json();
+            setWorkspace(data.workspace);
+            setSetupDraft(null);
+            if (startAfterSave) {
+                const saved = data.content || {};
+                void startGame({
+                    localplay_content_id: data.localplay_content_id,
+                    game_type: saved.game_type || gameType,
+                    title: saved.title || setupDraft.title,
+                    time_limit: saved.time_limit || setupDraft.timeLimit,
+                });
+            }
+        } catch {
+            setError('Could not save that game. Please try again.');
+        } finally {
+            setSavingSetup(false);
         }
     }
 
@@ -378,6 +551,57 @@ export default function PartyHubPage() {
                 )}
             </section>
 
+            {setupDraft && (
+                <section className="party-hub__section party-hub__setup">
+                    <div className="party-hub__section-head">
+                        <div>
+                            <h2>{setupCopyForGame(setupDraft.game.game_type || setupDraft.game.id).heading}</h2>
+                            <p>{setupCopyForGame(setupDraft.game.game_type || setupDraft.game.id).help}</p>
+                        </div>
+                    </div>
+                    <label>
+                        <span>Title</span>
+                        <input
+                            value={setupDraft.title}
+                            onChange={(event) => setSetupDraft({ ...setupDraft, title: event.target.value })}
+                        />
+                    </label>
+                    <label>
+                        <span>{setupCopyForGame(setupDraft.game.game_type || setupDraft.game.id).promptLabel}</span>
+                        <textarea
+                            value={setupDraft.promptsText}
+                            rows={7}
+                            onChange={(event) => setSetupDraft({ ...setupDraft, promptsText: event.target.value })}
+                        />
+                    </label>
+                    {(setupDraft.game.game_type || setupDraft.game.id) === 'drawing' && (
+                        <label>
+                            <span>Round timer</span>
+                            <input
+                                type="number"
+                                min={5}
+                                max={60}
+                                value={setupDraft.timeLimit || 30}
+                                onChange={(event) => setSetupDraft({ ...setupDraft, timeLimit: Number(event.target.value) })}
+                            />
+                        </label>
+                    )}
+                    <div className="party-hub__actions">
+                        <button onClick={() => void saveSetup(false)} disabled={savingSetup}>
+                            {savingSetup ? 'Saving...' : 'Save'}
+                        </button>
+                        {canStart && (
+                            <button onClick={() => void saveSetup(true)} disabled={savingSetup}>
+                                {savingSetup ? 'Saving...' : 'Save and start'}
+                            </button>
+                        )}
+                        <button className="party-hub__secondary" onClick={() => setSetupDraft(null)} disabled={savingSetup}>
+                            Cancel
+                        </button>
+                    </div>
+                </section>
+            )}
+
             <section className="party-hub__section">
                 <div className="party-hub__section-head">
                     <h2>Saved games</h2>
@@ -407,8 +631,8 @@ export default function PartyHubPage() {
                                             {startingId === content.localplay_content_id ? 'Starting...' : 'Start'}
                                         </button>
                                     )}
-                                    {canEdit && content.game_type === 'quiz' && (
-                                        <button onClick={() => void openAuthoring('edit', content.game_type, content)}>Edit/Open</button>
+                                    {canEdit && (
+                                        <button onClick={() => void editSavedContent(content)}>Edit/Open</button>
                                     )}
                                     {canDelete && (
                                         <button className="party-hub__danger" onClick={() => void deleteContent(content)} disabled={startingId === content.localplay_content_id}>

@@ -30,7 +30,7 @@ config.setup_logging()
 
 from quiz_engine import quiz_engine, _sanitize_quiz, _validate_quiz, VALID_QUIZ_MODES, DailyLimitExceeded, AIQuotaExceeded
 from mlt_engine import mlt_engine, _sanitize_mlt, _validate_mlt
-from drawing_engine import drawing_engine, _sanitize_drawing_game
+from drawing_engine import drawing_engine, _sanitize_drawing_game, _validate_drawing_game
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -410,14 +410,19 @@ GAME_CATALOG = [
         "launchable": True,
         "host_app_supported": True,
         "supported_host_apps": ["revelry"],
-        "supports_custom_content": False,
+        "supports_custom_content": True,
         "supports_images": False,
-        "can_create_content": False,
-        "can_edit_content": False,
-        "can_quick_start": True,
-        "creation_modes": ["template"],
+        "can_create_content": True,
+        "can_edit_content": True,
+        "can_quick_start": False,
+        "creation_modes": ["template", "manual"],
         "default_content_available": True,
         "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "prompt_list",
+            "prompt_count": {"min": 1, "max": 50},
+            "supported_media": [],
+        },
     },
     {
         "id": "drawing",
@@ -428,14 +433,19 @@ GAME_CATALOG = [
         "launchable": True,
         "host_app_supported": True,
         "supported_host_apps": ["revelry"],
-        "supports_custom_content": False,
+        "supports_custom_content": True,
         "supports_images": False,
-        "can_create_content": False,
-        "can_edit_content": False,
-        "can_quick_start": True,
-        "creation_modes": ["template"],
+        "can_create_content": True,
+        "can_edit_content": True,
+        "can_quick_start": False,
+        "creation_modes": ["template", "manual"],
         "default_content_available": True,
         "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "prompt_list",
+            "prompt_count": {"min": 1, "max": 50},
+            "supported_media": [],
+        },
         "config_schema": {
             "time_limit": {"min": 5, "max": 60, "default": 30},
         },
@@ -521,8 +531,9 @@ def _resolve_revelry_runtime_content(
     content_id: str = "",
     title: str = "",
 ) -> tuple[str, dict]:
+    wallet_id = _revelry_party_wallet_id(context.external_container_id)
     if game_type == "quiz" and content_id and content_id not in quizzes:
-        pack = db.get_quiz_pack(_revelry_party_wallet_id(context.external_container_id), content_id)
+        pack = db.get_quiz_pack(wallet_id, content_id)
         if not pack:
             raise HTTPException(status_code=404, detail="Quiz content not found for this party")
         quiz_data = _sanitize_quiz(_pack_to_quiz(pack))
@@ -530,8 +541,36 @@ def _resolve_revelry_runtime_content(
             raise HTTPException(status_code=422, detail="Invalid quiz content")
         quizzes[content_id] = quiz_data
         quiz_timestamps[content_id] = time.time()
-        content_owners[content_id] = _revelry_party_wallet_id(context.external_container_id)
+        content_owners[content_id] = wallet_id
         return content_id, quiz_data
+    if game_type in ("wmlt", "drawing") and content_id:
+        if game_type == "wmlt" and content_id in mlt_scenarios:
+            return content_id, mlt_scenarios[content_id]
+        if game_type == "drawing" and content_id in drawing_games:
+            return content_id, drawing_games[content_id]
+        content = db.get_game_content(wallet_id, content_id)
+        if not content or content.get("game_type") != game_type:
+            raise HTTPException(status_code=404, detail="Game content not found for this party")
+        payload = _game_content_payload(content)
+        game_data = payload.get("game") if isinstance(payload.get("game"), dict) else payload
+        if not isinstance(game_data, dict):
+            raise HTTPException(status_code=422, detail="Invalid game content")
+        if game_type == "wmlt":
+            game_data = _sanitize_mlt(game_data)
+            if not _validate_mlt(game_data, attempt=0):
+                raise HTTPException(status_code=422, detail="Invalid Most Likely To content")
+            mlt_scenarios[content_id] = game_data
+            mlt_timestamps[content_id] = time.time()
+        else:
+            game_data = _sanitize_drawing_game(game_data)
+            if not _validate_drawing_game(game_data, attempt=0):
+                raise HTTPException(status_code=422, detail="Invalid drawing game content")
+            if payload.get("time_limit"):
+                game_data["time_limit"] = int(payload["time_limit"])
+            drawing_games[content_id] = game_data
+            drawing_timestamps[content_id] = time.time()
+        content_owners[content_id] = wallet_id
+        return content_id, game_data
     return _resolve_runtime_content(game_type, content_id, title)
 
 
@@ -1068,8 +1107,8 @@ class RevelrySessionCreateRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value not in ("quiz", "wmlt", "drawing"):
-            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
+        if value != "quiz":
+            raise ValueError('Only "quiz" uses the dedicated authoring route')
         return value
 
 
@@ -1112,8 +1151,8 @@ class RevelryPartyGamesLinkRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value not in ("quiz", "wmlt", "drawing"):
-            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
+        if value != "quiz":
+            raise ValueError('Only "quiz" uses the dedicated authoring route')
         return value
 
 
@@ -1130,8 +1169,8 @@ class RevelryContentAuthoringLinkRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value != "quiz":
-            raise ValueError('Only "quiz" authoring is supported')
+        if value not in ("quiz", "wmlt", "drawing"):
+            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
         return value
 
     @field_validator("mode")
@@ -1151,13 +1190,29 @@ class RevelryPartyGamesAuthoringLinkRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value != "quiz":
-            raise ValueError('Only "quiz" authoring is supported')
+        if value not in ("quiz", "wmlt", "drawing"):
+            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
         return value
 
 
 class RevelryPartyGamesContentDeleteRequest(BaseModel):
     party_games_token: str
+
+
+class RevelryPartyGamesContentSaveRequest(BaseModel):
+    party_games_token: str
+    game_type: str = "quiz"
+    title: str = "Saved Game"
+    content_id: Optional[str] = None
+    content_payload: dict[str, Any] = Field(default_factory=dict)
+    status: str = "ready"
+
+    @field_validator("game_type")
+    @classmethod
+    def validate_game_type(cls, value: str) -> str:
+        if value not in ("quiz", "wmlt", "drawing"):
+            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
+        return value
 
 
 class RevelryContentSaveRequest(BaseModel):
@@ -1172,8 +1227,8 @@ class RevelryContentSaveRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value != "quiz":
-            raise ValueError('Only "quiz" content is supported')
+        if value not in ("quiz", "wmlt", "drawing"):
+            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
         return value
 
 
@@ -1602,9 +1657,63 @@ def _quiz_pack_summary(pack: dict) -> dict:
     }
 
 
+def _game_content_payload(content: dict) -> dict:
+    payload = content.get("payload") or {}
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            payload = {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _count_game_items(game_type: str, payload: dict) -> int:
+    game = payload.get("game") if isinstance(payload.get("game"), dict) else payload
+    if game_type == "wmlt":
+        return len(game.get("statements") or [])
+    if game_type == "drawing":
+        return len(game.get("prompts") or [])
+    if game_type == "quiz":
+        return len(game.get("questions") or [])
+    return 0
+
+
+def _game_content_summary(content: dict) -> dict:
+    payload = _game_content_payload(content)
+    game_type = content.get("game_type") or "wmlt"
+    count = _count_game_items(game_type, payload)
+    return {
+        "localplay_content_id": content["id"],
+        "game_type": game_type,
+        "title": content.get("title") or ("Drawing Game" if game_type == "drawing" else "Most Likely To"),
+        "status": content.get("status") or "ready",
+        "thumbnail_url": "",
+        "question_count": count,
+        "item_count": count,
+        "time_limit": payload.get("time_limit"),
+        "created_by": "",
+        "updated_at": _iso(content.get("updated_at")),
+        "last_used_at": None,
+        "action_requirements": {
+            "start": ["operate_game"],
+            "edit": ["author_content"],
+            "delete": ["manage_games"],
+        },
+    }
+
+
+def _prepared_content_summary(content: dict) -> dict:
+    if content.get("game_type") == "quiz" or "questions" in content:
+        return _quiz_pack_summary(content)
+    return _game_content_summary(content)
+
+
 def _workspace_payload(context: RevelryExternalContext) -> dict:
     wallet_id = _revelry_party_wallet_id(context.external_container_id)
     packs = db.list_quiz_packs(wallet_id)
+    saved_games = db.list_game_content(wallet_id, ["wmlt", "drawing"])
+    prepared = [_quiz_pack_summary(pack) for pack in packs] + [_game_content_summary(game) for game in saved_games]
+    prepared.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
     active = db.get_active_game_session(context.host_app, context.external_container_id)
     return {
         "external_context": {
@@ -1614,7 +1723,7 @@ def _workspace_payload(context: RevelryExternalContext) -> dict:
             "external_container_title": context.external_container_title,
         },
         "catalog": GAME_CATALOG,
-        "prepared_content": [_quiz_pack_summary(pack) for pack in packs],
+        "prepared_content": prepared,
         "active_session": _format_session(active) if active else None,
         "recent_results": [],
     }
@@ -1745,10 +1854,10 @@ def _create_revelry_session_from_context(
         if not replace_session_id or replace_session_id != active["id"]:
             raise HTTPException(status_code=409, detail="replace_session_id must match the active LocalPlay session")
 
-    time_limit = int(settings.get("time_limit") or _default_time_limit_for_game(game_type))
-    time_limit = max(5, min(60, time_limit))
     title = context.external_container_title or next((g["title"] for g in GAME_CATALOG if g["game_type"] == game_type), "LocalPlay Game")
     content_id, game_data = _resolve_revelry_runtime_content(context, game_type, str(settings.get("content_id") or ""), title)
+    time_limit = int(settings.get("time_limit") or game_data.get("time_limit") or _default_time_limit_for_game(game_type))
+    time_limit = max(5, min(60, time_limit))
     wallet_id = f"revelry:{context.host_user_id or actor.external_user_id or context.external_container_id}"
     db.get_or_create_wallet(wallet_id, signup_bonus=False)
     room_code, organizer_token = _create_runtime_room(
@@ -1932,10 +2041,37 @@ def _content_quiz_from_payload(request: RevelryContentSaveRequest) -> dict:
     return quiz_data
 
 
-def _content_response(context: RevelryExternalContext, pack: dict) -> dict:
+def _content_game_from_payload(game_type: str, title: str, payload: dict[str, Any]) -> dict:
+    raw = payload or {}
+    game_data = raw.get("game") if isinstance(raw.get("game"), dict) else raw
+    if not isinstance(game_data, dict):
+        raise HTTPException(status_code=422, detail="Invalid content payload")
+    if game_type == "wmlt":
+        if "game_title" not in game_data and title:
+            game_data = {**game_data, "game_title": title}
+        game_data = _sanitize_mlt(game_data)
+        if not _validate_mlt(game_data, attempt=0):
+            raise HTTPException(status_code=422, detail="Invalid Most Likely To content")
+        return {"game": game_data}
+    if game_type == "drawing":
+        if "game_title" not in game_data and title:
+            game_data = {**game_data, "game_title": title}
+        game_data = _sanitize_drawing_game(game_data)
+        if not _validate_drawing_game(game_data, attempt=0):
+            raise HTTPException(status_code=422, detail="Invalid drawing game content")
+        time_limit = raw.get("time_limit") or game_data.get("time_limit") or 30
+        try:
+            time_limit = int(time_limit)
+        except (TypeError, ValueError):
+            time_limit = 30
+        return {"game": game_data, "time_limit": max(5, min(60, time_limit))}
+    raise HTTPException(status_code=422, detail="Unsupported game_type")
+
+
+def _content_response(context: RevelryExternalContext, content: dict) -> dict:
     return {
-        "content": _quiz_pack_summary(pack),
-        "localplay_content_id": pack["id"],
+        "content": _prepared_content_summary(content),
+        "localplay_content_id": content["id"],
         "workspace": _workspace_payload(context),
     }
 
@@ -1946,6 +2082,19 @@ def _content_save_id_for_request(context: RevelryExternalContext, request: Revel
     if db.game_content_has_sessions(context.host_app, context.external_container_id, request.content_id):
         return None, request.content_id
     return request.content_id, None
+
+
+def _save_revelry_content(context: RevelryExternalContext, request: RevelryContentSaveRequest) -> tuple[dict, str, Optional[str]]:
+    wallet_id = _revelry_party_wallet_id(context.external_container_id)
+    save_content_id, previous_content_id = _content_save_id_for_request(context, request)
+    if request.game_type == "quiz":
+        quiz_data = _content_quiz_from_payload(request)
+        content = db.save_quiz_pack(wallet_id, quiz_data.get("quiz_title", request.title or "Custom Quiz"), quiz_data["questions"], save_content_id)
+    else:
+        payload = _content_game_from_payload(request.game_type, request.title, request.content_payload)
+        content = db.save_game_content(wallet_id, request.game_type, request.title or payload["game"].get("game_title", "Saved Game"), payload, save_content_id)
+    event_type = "content.updated" if request.content_id and not previous_content_id else "content.created"
+    return content, event_type, previous_content_id
 
 
 @app.post("/integrations/revelry/content")
@@ -1966,22 +2115,18 @@ async def create_revelry_content(request: RevelryContentSaveRequest, req: Reques
         actor = request.actor
     if not _author_can_author(actor):
         raise HTTPException(status_code=403, detail="Missing capability to author content")
-    quiz_data = _content_quiz_from_payload(request)
-    wallet_id = _revelry_party_wallet_id(context.external_container_id)
-    save_content_id, previous_content_id = _content_save_id_for_request(context, request)
-    pack = db.save_quiz_pack(wallet_id, quiz_data.get("quiz_title", request.title or "Custom Quiz"), quiz_data["questions"], save_content_id)
-    event_type = "content.updated" if request.content_id and not previous_content_id else "content.created"
+    content, event_type, previous_content_id = _save_revelry_content(context, request)
     await _send_revelry_callback(event_type, {
         "host_app": context.host_app,
         "external_container_type": context.external_container_type,
         "external_container_id": context.external_container_id,
-        "content_id": pack["id"],
-        "localplay_content_id": pack["id"],
+        "content_id": content["id"],
+        "localplay_content_id": content["id"],
         "previous_content_id": previous_content_id,
         "versioned_from_content_id": previous_content_id,
-        "content": _quiz_pack_summary(pack),
+        "content": _prepared_content_summary(content),
     })
-    response = _content_response(context, pack)
+    response = _content_response(context, content)
     if previous_content_id:
         response["previous_content_id"] = previous_content_id
         response["versioned_from_content_id"] = previous_content_id
@@ -2005,11 +2150,16 @@ async def get_revelry_content(
     if claims and claims.get("content_id") and claims.get("content_id") != content_id:
         raise HTTPException(status_code=403, detail="content_id does not match authoring token")
     pack = db.get_quiz_pack(_revelry_party_wallet_id(context.external_container_id), content_id)
-    if not pack:
+    wallet_id = _revelry_party_wallet_id(context.external_container_id)
+    content = pack or db.get_game_content(wallet_id, content_id)
+    if not content:
         raise HTTPException(status_code=404, detail="Content not found")
-    response = {"content": _quiz_pack_summary(pack), "localplay_content_id": pack["id"]}
+    response = {"content": _prepared_content_summary(content), "localplay_content_id": content["id"]}
     if include_payload:
-        response["quiz"] = _pack_to_quiz(pack)
+        if pack:
+            response["quiz"] = _pack_to_quiz(pack)
+        else:
+            response["content_payload"] = _game_content_payload(content)
     return response
 
 
@@ -2039,9 +2189,11 @@ async def delete_revelry_content(
         raise HTTPException(status_code=403, detail="Missing capability to delete content")
     wallet_id = _revelry_party_wallet_id(context.external_container_id)
     pack = db.get_quiz_pack(wallet_id, content_id)
-    if not pack:
+    content = pack or db.get_game_content(wallet_id, content_id)
+    if not content:
         raise HTTPException(status_code=404, detail="Content not found")
-    if not db.delete_quiz_pack(wallet_id, content_id):
+    deleted = db.delete_quiz_pack(wallet_id, content_id) if pack else db.delete_game_content(wallet_id, content_id)
+    if not deleted:
         raise HTTPException(status_code=404, detail="Content not found")
     await _send_revelry_callback("content.deleted", {
         "host_app": context.host_app,
@@ -2050,7 +2202,7 @@ async def delete_revelry_content(
         "content_id": content_id,
         "localplay_content_id": content_id,
         "status": "deleted_by_host",
-        "content": {**_quiz_pack_summary(pack), "status": "deleted_by_host"},
+        "content": {**_prepared_content_summary(content), "status": "deleted_by_host"},
     })
     return {"status": "deleted_by_host", "localplay_content_id": content_id, "workspace": _workspace_payload(context)}
 
@@ -2168,6 +2320,62 @@ async def start_revelry_party_game(request: RevelryPartyGameStartRequest, req: R
     }
 
 
+@app.post("/integrations/revelry/party-games/content")
+async def save_revelry_party_game_content(request: RevelryPartyGamesContentSaveRequest):
+    launch_context = _resolve_party_games_token(request.party_games_token)
+    actor = _actor_from_launch_context(launch_context)
+    if not _author_can_author(actor):
+        raise HTTPException(status_code=403, detail="Missing capability to author content")
+    context = _external_context_from_launch_context(launch_context)
+    save_request = RevelryContentSaveRequest(
+        external_context=context,
+        actor=actor,
+        game_type=request.game_type,
+        title=request.title,
+        content_id=request.content_id,
+        content_payload=request.content_payload,
+        status=request.status,
+    )
+    content, event_type, previous_content_id = _save_revelry_content(context, save_request)
+    await _send_revelry_callback(event_type, {
+        "host_app": context.host_app,
+        "external_container_type": context.external_container_type,
+        "external_container_id": context.external_container_id,
+        "content_id": content["id"],
+        "localplay_content_id": content["id"],
+        "previous_content_id": previous_content_id,
+        "versioned_from_content_id": previous_content_id,
+        "content": _prepared_content_summary(content),
+    })
+    response = _content_response(context, content)
+    if previous_content_id:
+        response["previous_content_id"] = previous_content_id
+        response["versioned_from_content_id"] = previous_content_id
+        response["status"] = "version_created"
+    return response
+
+
+@app.get("/integrations/revelry/party-games/content/{content_id}")
+async def get_revelry_party_game_content(content_id: str, party_games_token: str, include_payload: bool = False):
+    launch_context = _resolve_party_games_token(party_games_token)
+    actor = _actor_from_launch_context(launch_context)
+    if not _author_can_author(actor):
+        raise HTTPException(status_code=403, detail="Missing capability to author content")
+    context = _external_context_from_launch_context(launch_context)
+    wallet_id = _revelry_party_wallet_id(context.external_container_id)
+    pack = db.get_quiz_pack(wallet_id, content_id)
+    content = pack or db.get_game_content(wallet_id, content_id)
+    if not content:
+        raise HTTPException(status_code=404, detail="Content not found")
+    response = {"content": _prepared_content_summary(content), "localplay_content_id": content["id"]}
+    if include_payload:
+        if pack:
+            response["quiz"] = _pack_to_quiz(pack)
+        else:
+            response["content_payload"] = _game_content_payload(content)
+    return response
+
+
 @app.delete("/integrations/revelry/party-games/content/{content_id}")
 async def delete_revelry_party_game_content(content_id: str, request: RevelryPartyGamesContentDeleteRequest):
     launch_context = _resolve_party_games_token(request.party_games_token)
@@ -2177,9 +2385,11 @@ async def delete_revelry_party_game_content(content_id: str, request: RevelryPar
     context = _external_context_from_launch_context(launch_context)
     wallet_id = _revelry_party_wallet_id(context.external_container_id)
     pack = db.get_quiz_pack(wallet_id, content_id)
-    if not pack:
+    content = pack or db.get_game_content(wallet_id, content_id)
+    if not content:
         raise HTTPException(status_code=404, detail="Content not found")
-    if not db.delete_quiz_pack(wallet_id, content_id):
+    deleted = db.delete_quiz_pack(wallet_id, content_id) if pack else db.delete_game_content(wallet_id, content_id)
+    if not deleted:
         raise HTTPException(status_code=404, detail="Content not found")
     await _send_revelry_callback("content.deleted", {
         "host_app": context.host_app,
@@ -2188,7 +2398,7 @@ async def delete_revelry_party_game_content(content_id: str, request: RevelryPar
         "content_id": content_id,
         "localplay_content_id": content_id,
         "status": "deleted_by_host",
-        "content": {**_quiz_pack_summary(pack), "status": "deleted_by_host"},
+        "content": {**_prepared_content_summary(content), "status": "deleted_by_host"},
     })
     return {"status": "deleted_by_host", "localplay_content_id": content_id, "workspace": _workspace_payload(context)}
 

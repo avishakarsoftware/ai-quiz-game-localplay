@@ -117,8 +117,9 @@ describe('host-app mode filtering', () => {
                             title: 'Most Likely To',
                             description: 'Vote',
                             launchable: true,
-                            can_quick_start: true,
-                            creation_modes: ['template'],
+                            can_create_content: true,
+                            can_edit_content: true,
+                            creation_modes: ['template', 'manual'],
                         },
                         {
                             id: 'drawing',
@@ -126,8 +127,9 @@ describe('host-app mode filtering', () => {
                             title: 'Drawing Game',
                             description: 'Draw',
                             launchable: true,
-                            can_quick_start: true,
-                            creation_modes: ['template'],
+                            can_create_content: true,
+                            can_edit_content: true,
+                            creation_modes: ['template', 'manual'],
                         },
                         {
                             id: 'rebus',
@@ -151,8 +153,8 @@ describe('host-app mode filtering', () => {
         expect(screen.queryByText('Rebus Rush')).not.toBeInTheDocument();
         expect(screen.getByText('Saved Quiz')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /create quiz/i })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /start a round/i })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /start drawing/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /set up round/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /set up drawing/i })).toBeInTheDocument();
         expect(screen.getByText(/write your own or use ai/i)).toBeInTheDocument();
         expect(screen.getAllByText(/ready-made prompts/i)).toHaveLength(2);
         expect(screen.queryByText(/manual \/ ai/i)).not.toBeInTheDocument();
@@ -204,14 +206,14 @@ describe('host-app mode filtering', () => {
         });
     });
 
-    it('quick-starts non-authored catalog games without a saved content id', async () => {
+    it('sets up and saves catalog games before starting them', async () => {
         window.history.pushState({}, '', '/revelry/games?party_games_token=party-token');
         const fetchMock = vi.fn()
             .mockResolvedValueOnce({
                 ok: true,
                 json: async () => ({
                     launch_context: {
-                        capabilities: ['operate_game'],
+                        capabilities: ['author_content', 'operate_game'],
                         external_container_title: 'Ava Birthday',
                     },
                     workspace: {
@@ -222,11 +224,20 @@ describe('host-app mode filtering', () => {
                             game_type: 'drawing',
                             title: 'Drawing Game',
                             launchable: true,
-                            can_quick_start: true,
-                            creation_modes: ['template'],
+                            can_create_content: true,
+                            can_edit_content: true,
+                            creation_modes: ['template', 'manual'],
                             config_schema: { time_limit: { default: 30 } },
                         }],
                     },
+                }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    localplay_content_id: 'drawing-content-1',
+                    content: { localplay_content_id: 'drawing-content-1', game_type: 'drawing', title: 'Drawing Game', time_limit: 30 },
+                    workspace: { active_session: null, prepared_content: [], catalog: [] },
                 }),
             })
             .mockResolvedValueOnce({
@@ -237,16 +248,25 @@ describe('host-app mode filtering', () => {
 
         render(<PartyHubPage />);
 
-        fireEvent.click(await screen.findByRole('button', { name: /start drawing/i }));
+        fireEvent.click(await screen.findByRole('button', { name: /set up drawing/i }));
+        expect(await screen.findByRole('heading', { name: /set up drawing game/i })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /save and start/i }));
 
         await waitFor(() => {
-            expect(fetchMock).toHaveBeenCalledTimes(2);
+            expect(fetchMock).toHaveBeenCalledTimes(3);
         });
         expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
             party_games_token: 'party-token',
-            content_id: '',
             game_type: 'drawing',
-            time_limit: 30,
+            title: 'Drawing Game',
+            content_payload: {
+                time_limit: 30,
+            },
+        });
+        expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toMatchObject({
+            party_games_token: 'party-token',
+            content_id: 'drawing-content-1',
+            game_type: 'drawing',
         });
     });
 });

@@ -113,6 +113,23 @@ def init_db():
             processed_at INTEGER NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS generated_content (
+            id TEXT PRIMARY KEY,
+            wallet_id TEXT NOT NULL,
+            content_type TEXT NOT NULL CHECK (content_type IN ('quiz', 'mlt', 'drawing')),
+            title TEXT NOT NULL DEFAULT '',
+            payload TEXT NOT NULL,
+            prompt TEXT,
+            model TEXT,
+            provider TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_generated_content_wallet
+            ON generated_content(wallet_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_generated_content_type
+            ON generated_content(content_type, created_at DESC);
+
         CREATE TABLE IF NOT EXISTS custom_quiz_packs (
             id TEXT PRIMARY KEY,
             owner_wallet_id TEXT NOT NULL,
@@ -1297,6 +1314,78 @@ def delete_quiz_pack(owner_wallet_id: str, pack_id: str) -> bool:
     return cursor.rowcount > 0
 
 
+def _content_type_for_game(game_type: str) -> str:
+    return "mlt" if game_type == "wmlt" else game_type
+
+
+def _game_type_for_content_type(content_type: str) -> str:
+    return "wmlt" if content_type == "mlt" else content_type
+
+
+def _row_to_game_content(row) -> dict:
+    item = dict(row)
+    if isinstance(item.get("payload"), str):
+        item["payload"] = json.loads(item["payload"])
+    item["game_type"] = _game_type_for_content_type(item.get("content_type", ""))
+    item["updated_at"] = item.get("updated_at") or item.get("created_at")
+    return item
+
+
+def save_game_content(owner_wallet_id: str, game_type: str, title: str, payload: dict, content_id: Optional[str] = None) -> dict:
+    conn = _get_conn()
+    now = int(time.time())
+    content_id = content_id or os.urandom(16).hex()
+    content_type = _content_type_for_game(game_type)
+    existing = conn.execute(
+        "SELECT * FROM generated_content WHERE id = ? AND wallet_id = ?",
+        (content_id, owner_wallet_id),
+    ).fetchone()
+    created_at = existing["created_at"] if existing else now
+    conn.execute(
+        "INSERT INTO generated_content (id, wallet_id, content_type, title, payload, prompt, model, provider, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?) "
+        "ON CONFLICT(id) DO UPDATE SET title = excluded.title, payload = excluded.payload, updated_at = excluded.updated_at "
+        "WHERE wallet_id = excluded.wallet_id",
+        (content_id, owner_wallet_id, content_type, title, json.dumps(payload), created_at, now),
+    )
+    conn.commit()
+    content = get_game_content(owner_wallet_id, content_id)
+    if not content:
+        raise RuntimeError("Failed to save game content")
+    return content
+
+
+def list_game_content(owner_wallet_id: str, game_types: Optional[list[str]] = None, limit: int = 50) -> list[dict]:
+    conn = _get_conn()
+    content_types = [_content_type_for_game(game_type) for game_type in (game_types or ["wmlt", "drawing"])]
+    placeholders = ",".join("?" for _ in content_types)
+    rows = conn.execute(
+        f"SELECT * FROM generated_content WHERE wallet_id = ? AND content_type IN ({placeholders}) "
+        "ORDER BY COALESCE(updated_at, created_at) DESC LIMIT ?",
+        (owner_wallet_id, *content_types, limit),
+    ).fetchall()
+    return [_row_to_game_content(row) for row in rows]
+
+
+def get_game_content(owner_wallet_id: str, content_id: str) -> Optional[dict]:
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT * FROM generated_content WHERE id = ? AND wallet_id = ?",
+        (content_id, owner_wallet_id),
+    ).fetchone()
+    return _row_to_game_content(row) if row else None
+
+
+def delete_game_content(owner_wallet_id: str, content_id: str) -> bool:
+    conn = _get_conn()
+    cursor = conn.execute(
+        "DELETE FROM generated_content WHERE id = ? AND wallet_id = ?",
+        (content_id, owner_wallet_id),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
 def create_media_asset(asset_id: str, owner_wallet_id: str, storage_path: str, public_url: str, mime_type: str, bytes_size: int = 0, status: str = "pending", alt_text: str = "") -> dict:
     conn = _get_conn()
     now = int(time.time())
@@ -1511,6 +1600,10 @@ if config.DB_BACKEND == "supabase":
         "list_quiz_packs",
         "get_quiz_pack",
         "delete_quiz_pack",
+        "save_game_content",
+        "list_game_content",
+        "get_game_content",
+        "delete_game_content",
         "create_media_asset",
         "finalize_media_asset",
         "get_media_asset",

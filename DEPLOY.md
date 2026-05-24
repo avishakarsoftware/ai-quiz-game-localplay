@@ -785,9 +785,13 @@ All apps share one Supabase project. Prefixes prevent collisions.
 {prefix}quiz_packs
 {prefix}quiz_questions
 {prefix}media_assets
+{prefix}game_sessions
+{prefix}localplay_callback_events
 {prefix}game_history
 {prefix}rejections
 ```
+
+`{prefix}generated_content.content_type` must allow `quiz`, `mlt`, and `drawing`. The schema template includes a constraint refresh for existing Supabase tables; apply the rendered gamma/prod SQL before deploying a build that saves Drawing setups from the Revelry Games hub.
 
 ### LocalPlay RPCs (per prefix)
 

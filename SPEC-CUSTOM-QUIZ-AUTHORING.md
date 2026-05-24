@@ -320,6 +320,12 @@ Reason:
 
 However, launching a custom quiz can still materialize a runtime quiz object in the same shape as generated/imported quizzes, so the room engine stays unchanged.
 
+Host-app note:
+
+- Quiz authoring remains backed by quiz-pack tables because quizzes need question-level media, answer metadata, duplication, and retention behavior.
+- Generic non-quiz party setups can reuse `games_generated_content` when the payload is a simple reusable setup rather than a full quiz authoring model. The current Revelry Games hub uses this for WMLT (`content_type = mlt`) and Drawing (`content_type = drawing`) so hosts can edit ready-made prompts, save the setup, and start it later from a stable `localplay_content_id`.
+- This is an incremental bridge implementation, not a replacement for a future generalized content table. If future games need richer versioning, media, collaboration, or search, promote them to a dedicated content model instead of overloading generated content.
+
 ## API Surface
 
 All endpoints must use existing LocalPlay session/wallet ownership. The current implementation allows durable writes for the resolved wallet ID, whether that wallet comes from a signed-in user session or an anonymous device UUID. Product can later tighten this to signed-in users only if cross-device library behavior becomes the default expectation.

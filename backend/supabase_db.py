@@ -640,6 +640,80 @@ def delete_quiz_pack(owner_wallet_id: str, pack_id: str) -> bool:
     return bool(rows)
 
 
+def _content_type_for_game(game_type: str) -> str:
+    return "mlt" if game_type == "wmlt" else game_type
+
+
+def _game_type_for_content_type(content_type: str) -> str:
+    return "wmlt" if content_type == "mlt" else content_type
+
+
+def _game_content_from_row(row: dict) -> dict:
+    item = dict(row)
+    item["game_type"] = _game_type_for_content_type(item.get("content_type", ""))
+    item["updated_at"] = item.get("updated_at") or item.get("created_at")
+    return item
+
+
+def save_game_content(owner_wallet_id: str, game_type: str, title: str, payload: dict, content_id: Optional[str] = None) -> dict:
+    now = _now()
+    content_id = content_id or uuid.uuid4().hex
+    content_type = _content_type_for_game(game_type)
+    existing = _first(_sb().select(
+        "generated_content",
+        filters={"id": f"eq.{content_id}", "wallet_id": f"eq.{owner_wallet_id}"},
+        limit=1,
+    ))
+    created_at = existing["created_at"] if existing else now
+    rows = _sb().upsert("generated_content", {
+        "id": content_id,
+        "wallet_id": owner_wallet_id,
+        "content_type": content_type,
+        "title": title,
+        "payload": payload,
+        "prompt": None,
+        "model": None,
+        "provider": None,
+        "created_at": created_at,
+        "updated_at": now,
+    }, on_conflict="id")
+    content = _game_content_from_row(rows[0]) if rows else get_game_content(owner_wallet_id, content_id)
+    if not content:
+        raise SupabaseDBError("Failed to save game content")
+    return content
+
+
+def list_game_content(owner_wallet_id: str, game_types: Optional[list[str]] = None, limit: int = 50) -> list[dict]:
+    content_types = [_content_type_for_game(game_type) for game_type in (game_types or ["wmlt", "drawing"])]
+    rows = _sb().select(
+        "generated_content",
+        filters={
+            "wallet_id": f"eq.{owner_wallet_id}",
+            "content_type": f"in.({','.join(content_types)})",
+        },
+        order="updated_at.desc,created_at.desc",
+        limit=limit,
+    )
+    return [_game_content_from_row(row) for row in rows]
+
+
+def get_game_content(owner_wallet_id: str, content_id: str) -> Optional[dict]:
+    row = _first(_sb().select(
+        "generated_content",
+        filters={"id": f"eq.{content_id}", "wallet_id": f"eq.{owner_wallet_id}"},
+        limit=1,
+    ))
+    return _game_content_from_row(row) if row else None
+
+
+def delete_game_content(owner_wallet_id: str, content_id: str) -> bool:
+    rows = _sb().delete(
+        "generated_content",
+        filters={"id": f"eq.{content_id}", "wallet_id": f"eq.{owner_wallet_id}"},
+    )
+    return bool(rows)
+
+
 def create_media_asset(asset_id: str, owner_wallet_id: str, storage_path: str, public_url: str, mime_type: str, bytes_size: int = 0, status: str = "pending", alt_text: str = "") -> dict:
     now = _now()
     rows = _sb().insert("media_assets", {
