@@ -48,6 +48,8 @@ type CatalogGame = {
     runtime_type?: string;
     title: string;
     description?: string;
+    min_players?: number;
+    estimated_minutes?: number;
     launchable: boolean;
     can_create_content?: boolean;
     can_edit_content?: boolean;
@@ -70,6 +72,40 @@ type StartableGame = {
 
 function hasCapability(context: LaunchContext | null, capability: string): boolean {
     return Boolean(context?.capabilities?.includes(capability) || context?.capabilities?.includes('manage_games'));
+}
+
+function actionLabelForGame(game: CatalogGame, canCreate: boolean): string {
+    const gameType = game.game_type || game.id;
+    if (canCreate) {
+        if (gameType === 'quiz') return 'Create quiz';
+        return `Create ${game.title}`;
+    }
+    if (gameType === 'wmlt') return 'Start a round';
+    if (gameType === 'drawing') return 'Start drawing';
+    return 'Start now';
+}
+
+function cardMetaForGame(game: CatalogGame): string {
+    const modes = (game.creation_modes || []).map((mode) => {
+        if (mode === 'ai') return 'AI';
+        if (mode === 'manual') return 'Manual';
+        if (mode === 'template') return 'Ready to play';
+        return mode;
+    });
+    const details = [
+        modes.join(' + '),
+        game.min_players ? `${game.min_players}+ players` : '',
+        game.estimated_minutes ? `${game.estimated_minutes} min` : '',
+    ].filter(Boolean);
+    return details.join(' · ') || 'Party game';
+}
+
+function savedContentSummary(content: PreparedContent): string {
+    const count = content.question_count || 0;
+    const unit = content.game_type === 'quiz'
+        ? `${count} question${count === 1 ? '' : 's'}`
+        : content.game_type;
+    return `${unit} · ${content.status}`;
 }
 
 function returnToHostApp(returnUrl: string) {
@@ -305,7 +341,10 @@ export default function PartyHubPage() {
 
             <section className="party-hub__section">
                 <div className="party-hub__section-head">
-                    <h2>Create a game</h2>
+                    <div>
+                        <h2>Create a game</h2>
+                        <p>Pick what this party plays next.</p>
+                    </div>
                 </div>
                 {catalogGames.length === 0 ? (
                     <div className="party-hub__empty">No games are available for this party yet.</div>
@@ -313,8 +352,8 @@ export default function PartyHubPage() {
                     <div className="party-hub__grid party-hub__grid--catalog">
                         {catalogGames.map((game) => {
                             const mode = getGameModeConfig(game.id as Parameters<typeof getGameModeConfig>[0]);
-                            const canCreate = canEdit && (game.can_create_content || game.embedded_authoring_supported);
-                            const canQuickStart = canStart && game.can_quick_start;
+                            const canCreate = Boolean(canEdit && (game.can_create_content || game.embedded_authoring_supported));
+                            const canQuickStart = Boolean(canStart && game.can_quick_start);
                             const disabled = (!canCreate && !canQuickStart) || startingId === (game.game_type || game.id);
                             return (
                                 <article className="party-hub__card party-hub__catalog-card" key={game.id}>
@@ -323,14 +362,13 @@ export default function PartyHubPage() {
                                         <span>{game.creation_modes?.join(' / ') || 'party game'}</span>
                                         <h3>{game.title}</h3>
                                         <p>{game.description || mode.description}</p>
+                                        <small>{cardMetaForGame(game)}</small>
                                     </div>
                                     <div className="party-hub__actions">
                                         <button onClick={() => createFromCatalog(game)} disabled={disabled}>
                                             {startingId === (game.game_type || game.id)
                                                 ? 'Starting...'
-                                                : canCreate
-                                                    ? 'Create'
-                                                    : 'Start new'}
+                                                : actionLabelForGame(game, canCreate)}
                                         </button>
                                     </div>
                                 </article>
@@ -354,7 +392,7 @@ export default function PartyHubPage() {
                                 <div>
                                     <span>{content.game_type}</span>
                                     <h3>{content.title}</h3>
-                                    <p>{content.question_count || 0} questions · {content.status}</p>
+                                    <p>{savedContentSummary(content)}</p>
                                 </div>
                                 <div className="party-hub__actions">
                                     {canStart && (

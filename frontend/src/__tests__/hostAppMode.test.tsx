@@ -150,6 +150,9 @@ describe('host-app mode filtering', () => {
         expect(screen.getByText('Drawing Game')).toBeInTheDocument();
         expect(screen.queryByText('Rebus Rush')).not.toBeInTheDocument();
         expect(screen.getByText('Saved Quiz')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /create quiz/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /start a round/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /start drawing/i })).toBeInTheDocument();
     });
 
     it('opens new quiz authoring from catalog without using a saved game id', async () => {
@@ -185,7 +188,7 @@ describe('host-app mode filtering', () => {
 
         render(<PartyHubPage />);
 
-        fireEvent.click(await screen.findByRole('button', { name: /^create$/i }));
+        fireEvent.click(await screen.findByRole('button', { name: /create quiz/i }));
 
         await waitFor(() => {
             expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -230,7 +233,7 @@ describe('host-app mode filtering', () => {
 
         render(<PartyHubPage />);
 
-        fireEvent.click(await screen.findByRole('button', { name: /start new/i }));
+        fireEvent.click(await screen.findByRole('button', { name: /start drawing/i }));
 
         await waitFor(() => {
             expect(fetchMock).toHaveBeenCalledTimes(2);

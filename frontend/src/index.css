@@ -2879,6 +2879,11 @@ body {
     font-size: 1.4rem;
 }
 
+.party-hub__section-head p {
+    margin: 4px 0 0;
+    color: var(--ink-mute);
+}
+
 .party-hub__grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -2929,6 +2934,13 @@ body {
 .party-hub__card h3 {
     margin: 4px 0;
     font-size: 1.25rem;
+}
+
+.party-hub__card small {
+    display: block;
+    margin-top: 8px;
+    color: var(--ink-mute);
+    font-weight: 800;
 }
 
 .party-hub__actions {

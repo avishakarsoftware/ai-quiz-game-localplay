@@ -1028,6 +1028,7 @@ Expected hub behavior:
 - Creation actions must start a new item or new room for the selected catalog game; they must not reuse an arbitrary saved game. Saved/prepared games stay in a separate **Saved games** section with Start/Edit/Delete actions.
 - If a catalog entry has `can_create_content = true` or `embedded_authoring_supported = true`, the Create action opens LocalPlay's host-app-aware authoring route with `mode = create` and no existing `content_id`.
 - If a catalog entry has `can_quick_start = true` but no editable content authoring yet, the action may start a fresh LocalPlay room from default/template/generated content for that `game_type`, then enter organizer/lobby. This is valid for WMLT and Drawing until they get saved content authoring.
+- MVP card labels should be game-specific so hosts understand the path: AI Quiz uses "Create quiz" and opens authoring; Most Likely To uses "Start a round"; Drawing uses "Start drawing". Future games should define similar labels through catalog/config rather than hardcoding a generic "Create quiz" entry.
 - Unsupported standalone games and quiz variants must not appear in the Create section. Rebus and similar variants remain hidden until they have full bridge support.
 - The primary hub entry can be labeled like "Open Ava's Birthday Games Hub on Revelry Games" and should use party-safe cover art/metadata when provided.
 - Starting from the LocalPlay hub or a LocalPlay start-intent route is the canonical control-plane path: validate `settings.content_id`, enforce one active session per party, show an in-hub replacement confirmation when needed, create the replacement before superseding the old session, and return safe launch/result metadata.
@@ -1600,7 +1601,7 @@ Recommended LocalPlay order:
 14. Backlog: cleanup jobs for party drafts/content/media retention.
 15. Backlog: late-join policy, live Games tab refresh hooks, player-count display, result-card image generation, and play-again/new-round shortcuts.
 16. Backlog: make TV display Kahoot-style and party-safe. The organizer/lobby should be a TV-ready shared display, with full-screen guidance, QR/code entry for `/tv`, copy/open controls, and Chromecast/AirPlay/screen-mirroring as optional enhancements rather than the only path.
-17. Backlog: add editable/saved content authoring for non-quiz catalog games such as WMLT, Drawing, Bingo, Baby Bingo, and Housie when their payloads need persistence beyond quick-start templates.
+17. Backlog: add editable/saved content authoring for non-quiz catalog games such as WMLT, Drawing, Bingo, Baby Bingo, and Housie when their payloads need persistence beyond quick-start templates. That future slice should move labels, creation actions, content schemas, media support, and default prompts into catalog/server config instead of expanding hub-side conditionals.
 
 ## Open Questions
 
