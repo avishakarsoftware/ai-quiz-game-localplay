@@ -1,5 +1,29 @@
-const CACHE_NAME = 'localplay-v3';
+const CACHE_NAME = 'localplay-v4';
 const OFFLINE_URL = 'offline.html';
+const API_PREFIXES = [
+    '/system',
+    '/providers',
+    '/quiz',
+    '/quiz-packs',
+    '/room',
+    '/ws',
+    '/mlt',
+    '/drawing',
+    '/history',
+    '/auth',
+    '/checkout',
+    '/webhook',
+    '/tokens',
+    '/entitlements',
+    '/purchases',
+    '/admin',
+    '/health',
+    '/sd',
+    '/catalog',
+    '/integrations',
+    '/media',
+    '/config.json',
+];
 
 // Install event - pre-cache offline fallback page
 self.addEventListener('install', (event) => {
@@ -32,8 +56,14 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Skip backend API calls (different port locally, different host in prod)
-    if (url.port === '8000' || url.hostname === 'gamesapi.revelryapp.me') {
+    // Skip backend API calls. Backend-served deployments use the same origin
+    // for SPA assets and API routes, so path-based skipping is required.
+    if (
+        url.port === '8000'
+        || url.hostname === 'gamesapi.revelryapp.me'
+        || url.hostname === 'gamesapi-gamma.revelryapp.me'
+        || API_PREFIXES.some((prefix) => url.pathname === prefix || url.pathname.startsWith(`${prefix}/`))
+    ) {
         return;
     }
 

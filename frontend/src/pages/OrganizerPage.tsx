@@ -946,24 +946,22 @@ export default function OrganizerPage() {
                                 </div>
                             )}
                             {libraryPacks.map((pack) => (
-                                <div key={pack.id} className="review-question-card">
-                                    <div className="p-4">
-                                        <div className="flex items-center justify-between gap-4" style={{ flexWrap: 'wrap' }}>
-                                            <div style={{ minWidth: 0 }}>
-                                                <p className="font-semibold truncate">{pack.title}</p>
-                                                <p className="text-sm text-[--text-tertiary]">{pack.question_count} questions</p>
-                                            </div>
-                                            <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-                                                <button className="btn btn-primary" style={{ padding: '10px 14px', width: 'auto' }} onClick={() => void startQuizPack(pack.id)}>
-                                                    Start
-                                                </button>
-                                                <button className="btn btn-secondary" style={{ padding: '10px 14px', width: 'auto' }} onClick={() => void editQuizPack(pack.id)}>
-                                                    Edit
-                                                </button>
-                                                <button className="btn btn-secondary" style={{ padding: '10px 14px', width: 'auto' }} onClick={() => void deleteQuizPack(pack.id)}>
-                                                    Delete
-                                                </button>
-                                            </div>
+                                <div key={pack.id} className="quiz-library-card">
+                                    <div className="quiz-library-card__content">
+                                        <div className="quiz-library-card__meta">
+                                            <p className="quiz-library-card__title">{pack.title}</p>
+                                            <p className="quiz-library-card__subtitle">{pack.question_count} questions</p>
+                                        </div>
+                                        <div className="quiz-library-actions">
+                                            <button className="btn btn-primary quiz-library-action" onClick={() => void startQuizPack(pack.id)}>
+                                                Start
+                                            </button>
+                                            <button className="btn btn-secondary quiz-library-action" onClick={() => void editQuizPack(pack.id)}>
+                                                Edit
+                                            </button>
+                                            <button className="btn btn-secondary quiz-library-action quiz-library-action--danger" onClick={() => void deleteQuizPack(pack.id)}>
+                                                Delete
+                                            </button>
                                         </div>
                                     </div>
                                 </div>

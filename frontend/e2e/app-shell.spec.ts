@@ -118,6 +118,14 @@ test.describe('Standalone app shell', () => {
     await expect(page.getByRole('button', { name: 'Start' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Edit' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Delete' })).toBeVisible();
+    const startBox = await page.getByRole('button', { name: 'Start' }).boundingBox();
+    const editBox = await page.getByRole('button', { name: 'Edit' }).boundingBox();
+    const deleteBox = await page.getByRole('button', { name: 'Delete' }).boundingBox();
+    expect(startBox?.width).toBeGreaterThan(60);
+    expect(editBox?.width).toBeGreaterThan(60);
+    expect(deleteBox?.width).toBeGreaterThan(60);
+    expect(Math.abs((startBox?.y || 0) - (editBox?.y || 0))).toBeLessThan(4);
+    expect(Math.abs((startBox?.y || 0) - (deleteBox?.y || 0))).toBeLessThan(4);
 
     await page.getByRole('button', { name: 'Start' }).click();
     await expect(page.getByRole('heading', { name: 'Preparing Quiz' })).toBeVisible();

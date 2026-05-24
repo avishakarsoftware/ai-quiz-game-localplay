@@ -181,6 +181,9 @@ Signed-in hosts get **My Quizzes**:
 - Search by title.
 - Sort by recently updated.
 - Show question count and last edited date.
+- Show readable text actions for Start, Edit, and Delete; do not rely on icon-only controls for the library card.
+- Starting a saved quiz should use "Preparing Quiz" copy because the content already exists; do not show AI-generation/progress copy for saved pack materialization.
+- The Home/settings action must return to the main game catalog from library, loading, review, and editor states, and any pending saved-pack materialization response should be ignored after the user leaves the flow.
 - Actions:
   - Edit.
   - Duplicate.
@@ -686,6 +689,8 @@ Custom authoring should be PWA-friendly:
 - If network save fails, keep editing locally.
 - On reconnect, sync the latest draft if ownership still matches.
 - Avoid silent overwrites by comparing `updated_at`.
+- Standalone drafts and host-app/party-scoped drafts must use separate storage keys. Party-scoped draft content, images, and titles must never appear in standalone **Create Your Own** or another party's authoring surface.
+- The service worker must not intercept `/quiz-packs`, `/media`, `/integrations`, `/catalog`, or other backend API prefixes in same-origin backend-served deployments. API requests must always reach the backend, not cached `index.html`.
 
 Conflict policy for V1:
 
@@ -814,12 +819,17 @@ Frontend:
 2. Autosave signed-in packs. Backlog; explicit Save is implemented.
 3. Add duplicate/delete/export. Delete is implemented; duplicate/export are backlog.
 4. Add "Save as custom quiz" from AI-generated review screen. Backlog.
+5. Polish saved pack cards with readable Start/Edit/Delete actions on desktop and mobile. Implemented.
+6. Use non-generation loading copy and cancellable navigation for saved pack starts. Implemented.
 
 Acceptance:
 
 - Signed-in host can save, leave, return, edit, and start a quiz.
 - Gamma and production data are isolated by table prefix.
 - Anonymous drafts remain local and do not leak into another user account.
+- Host-app/party-scoped draft content does not leak into standalone authoring.
+- Saved quiz library actions fit and remain readable on desktop and mobile.
+- Starting a saved quiz shows "Preparing Quiz", reaches review, and Home returns to **Choose a Game**.
 
 ### Phase 2: Question Image Upload And Attachment
 

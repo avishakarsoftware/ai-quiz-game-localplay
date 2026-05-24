@@ -497,7 +497,9 @@ Expected behavior:
 - missing assets under `/assets/*` return JSON `404`
 - API routes stay API routes and never fall through to the SPA
 
-Protected API prefixes include `/system`, `/providers`, `/quiz`, `/room`, `/ws`, `/mlt`, `/history`, `/auth`, `/checkout`, `/webhook`, `/tokens`, `/entitlements`, `/purchases`, `/admin`, `/health`, and `/sd`.
+Protected API prefixes include `/system`, `/providers`, `/quiz`, `/quiz-packs`, `/room`, `/ws`, `/mlt`, `/drawing`, `/history`, `/auth`, `/checkout`, `/webhook`, `/tokens`, `/entitlements`, `/purchases`, `/admin`, `/health`, `/sd`, `/catalog`, `/integrations`, `/media`, and `/config.json`.
+
+The frontend service worker must mirror this rule for same-origin backend-served builds. It should not cache or fulfill API requests for `gamesapi.revelryapp.me`, `gamesapi-gamma.revelryapp.me`, local backend port `8000`, or any protected API prefix; those requests must always reach the backend.
 
 The fallback route resolves candidate files under `/app/static` and rejects paths outside that directory to avoid directory traversal.
 

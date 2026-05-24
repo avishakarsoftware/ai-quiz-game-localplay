@@ -1060,6 +1060,7 @@ Repo implementation and VM rollout are complete:
 - `scripts/deploy-gcp.sh --bootstrap-vm --skip-build` creates `/home/revelry-games`, env files, and prod/gamma data and backup directories.
 - The deploy script builds images with `--platform linux/amd64` for the AMD64 GCP VM.
 - Backend tests cover root behavior, SPA fallback, API 404 protection, missing static assets, and path traversal.
+- The frontend service worker must bypass backend API prefixes in same-origin builds, including `/quiz-packs`, `/media`, `/catalog`, `/integrations`, `/drawing`, and the core game/auth/payment prefixes. API requests must never be fulfilled with cached SPA HTML.
 
 Current deployed infrastructure:
 
