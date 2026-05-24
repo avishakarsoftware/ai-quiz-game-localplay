@@ -332,6 +332,7 @@ Persistence rules:
 - Feed cards should use tokenless join/open routes or Revelry-owned URLs that mint a fresh launch token before redirecting/opening LocalPlay.
 - If an iframe or external view is opened after the initial token expires, Revelry should call the launch-token endpoint again.
 - Expired launch tokens must not close active gameplay after LocalPlay has exchanged them for runtime credentials.
+- Player/spectator launch pages with a `launch_token` must render a neutral loading state such as "Opening game..." while the token is resolving. Do not show "Game Unavailable" or other terminal host-app error copy until the launch-token resolve request actually fails, returns no room code, or the resolved room later returns a terminal WebSocket error.
 
 ### Launch Token Exchange
 

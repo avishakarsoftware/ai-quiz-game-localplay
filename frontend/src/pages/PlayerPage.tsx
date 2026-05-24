@@ -66,6 +66,7 @@ export default function PlayerPage() {
     const [error, setError] = useState('');
     const [hostAppReturnUrl, setHostAppReturnUrl] = useState('');
     const [hostAppTerminalError, setHostAppTerminalError] = useState(false);
+    const [launchResolving, setLaunchResolving] = useState(() => searchParams.has('launch_token'));
     const [introCount, setIntroCount] = useState(3);
     const [lobbyPlayers, setLobbyPlayers] = useState<PlayerInfo[]>([]);
     const [powerUps, setPowerUps] = useState<PowerUps>({ double_points: true, fifty_fifty: true });
@@ -74,21 +75,26 @@ export default function PlayerPage() {
         const launchToken = searchParams.get('launch_token');
         if (!launchToken) return;
         let cancelled = false;
+        setLaunchResolving(true);
         (async () => {
             try {
                 const res = await fetch(apiUrl(`/integrations/revelry/launch-token/resolve?scope=player&launch_token=${encodeURIComponent(launchToken)}`));
                 if (!res.ok) throw new Error('Launch token rejected');
                 const data = await res.json();
+                if (!data.room_code) throw new Error('Launch token missing room code');
                 if (!cancelled && data.room_code) {
                     setRoomCode(data.room_code);
                     setHostAppReturnUrl(data.launch_context?.return_url || data.return_url || '');
                     setHostAppTerminalError(false);
+                    setError('');
                 }
             } catch {
                 if (!cancelled) {
                     setHostAppTerminalError(true);
                     setError('This game link expired. Return to Revelry and reopen it.');
                 }
+            } finally {
+                if (!cancelled) setLaunchResolving(false);
             }
         })();
         return () => { cancelled = true; };
@@ -483,7 +489,15 @@ export default function PlayerPage() {
                 {/* JOIN */}
                 {state === 'JOIN' && (
                     <div className="container-responsive safe-bottom animate-in" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                        {hostAppMode && hostAppTerminalError ? (
+                        {hostAppMode && launchResolving ? (
+                            <>
+                                <div className="hero-icon mb-4" style={{ background: 'none', boxShadow: 'none' }}>
+                                    <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="Revelry Games" style={{ width: '100%', height: '100%', borderRadius: '20px' }} />
+                                </div>
+                                <h1 className="hero-title mb-3">Opening game...</h1>
+                                <p className="text-[--text-tertiary] mb-6 text-center">Checking this Revelry game link.</p>
+                            </>
+                        ) : hostAppMode && hostAppTerminalError ? (
                             <>
                                 <div className="hero-icon mb-4" style={{ background: 'none', boxShadow: 'none' }}>
                                     <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="Revelry Games" style={{ width: '100%', height: '100%', borderRadius: '20px' }} />

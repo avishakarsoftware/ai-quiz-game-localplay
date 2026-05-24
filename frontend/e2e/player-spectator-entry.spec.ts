@@ -40,6 +40,34 @@ test.describe('Player and TV entry surfaces', () => {
     await expect(page.getByText(/sparks/i)).not.toBeVisible();
   });
 
+  test('player launch token shows loading instead of unavailable while resolving', async ({ page }) => {
+    let releaseResolve: () => void = () => {};
+    const waitToResolve = new Promise<void>((resolve) => {
+      releaseResolve = resolve;
+    });
+    await page.route('**/integrations/revelry/launch-token/resolve?**', async (route) => {
+      expect(route.request().url()).toContain('scope=player');
+      await waitToResolve;
+      await route.fulfill({
+        json: {
+          room_code: 'TVJVNA',
+          launch_context: {
+            host_app: 'revelry',
+            return_url: 'https://api-gamma.revelryapp.me/party/party-e2e?tab=games',
+          },
+        },
+      });
+    });
+
+    await page.goto('/join?launch_token=player-token&embed=1');
+
+    await expect(page.getByRole('heading', { name: 'Opening game...' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Game Unavailable' })).not.toBeVisible();
+    releaseResolve();
+    await expect(page.getByRole('heading', { name: 'Join Game' })).toBeVisible();
+    await expect(page.getByPlaceholder('Game PIN')).toHaveValue('TVJVNA');
+  });
+
   test('TV mode accepts direct room code entry', async ({ page }) => {
     await page.goto('/tv');
 

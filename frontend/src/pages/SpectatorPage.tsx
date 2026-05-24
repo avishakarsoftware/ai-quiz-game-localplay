@@ -62,16 +62,19 @@ export default function SpectatorPage() {
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [connectionError, setConnectionError] = useState('');
     const [hostAppReturnUrl, setHostAppReturnUrl] = useState('');
+    const [launchResolving, setLaunchResolving] = useState(() => searchParams.has('launch_token'));
 
     useEffect(() => {
         const launchToken = searchParams.get('launch_token');
         if (!launchToken) return;
         let cancelled = false;
+        setLaunchResolving(true);
         (async () => {
             try {
                 const res = await fetch(apiUrl(`/integrations/revelry/launch-token/resolve?scope=spectator&launch_token=${encodeURIComponent(launchToken)}`));
                 if (!res.ok) throw new Error('Launch token rejected');
                 const data = await res.json();
+                if (!data.room_code) throw new Error('Launch token missing room code');
                 if (!cancelled && data.room_code) {
                     setRoomCode(data.room_code);
                     setHostAppReturnUrl(data.launch_context?.return_url || data.return_url || '');
@@ -84,6 +87,8 @@ export default function SpectatorPage() {
                     setConnectionError('This spectator link expired. Open it from Revelry again.');
                     setGameState('ERROR');
                 }
+            } finally {
+                if (!cancelled) setLaunchResolving(false);
             }
         })();
         return () => { cancelled = true; };
@@ -385,6 +390,26 @@ export default function SpectatorPage() {
             soundManager.play('fireworkPop');
         }
     }, [podiumReveal]);
+
+    if (hostAppMode && launchResolving) {
+        return (
+            <div className="spectator-root">
+                <div className="app-container">
+                    <div className="content-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 60px' }}>
+                        <div className="animate-in text-center" style={{ maxWidth: 500, width: '100%' }}>
+                            <div className="hero-icon mb-4" style={{ background: 'none', boxShadow: 'none', marginLeft: 'auto', marginRight: 'auto' }}>
+                                <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="Revelry Games" style={{ width: '100%', height: '100%', borderRadius: '20px' }} />
+                            </div>
+                            <h1 className="hero-title" style={{ fontSize: '3rem', marginBottom: 8 }}>Opening TV view...</h1>
+                            <p className="text-[--text-tertiary]" style={{ fontSize: '1.25rem' }}>
+                                Checking this Revelry game link.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     if (!joined) {
         return (
