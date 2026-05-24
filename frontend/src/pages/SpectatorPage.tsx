@@ -33,6 +33,7 @@ export default function SpectatorPage() {
     const [roomInput, setRoomInput] = useState('');
     const [joined, setJoined] = useState(!!roomFromUrl);
     const [gameState, setGameState] = useState(roomFromUrl ? 'CONNECTING' : 'LOBBY');
+    const hostAppMode = searchParams.get('embed') === '1' || searchParams.has('launch_token') || searchParams.has('session_id');
     const gameStateRef = useRef(gameState);
     const preDisconnectRef = useRef('LOBBY');
     useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
@@ -55,6 +56,7 @@ export default function SpectatorPage() {
     const [wmltRoundResult, setWmltRoundResult] = useState<{ winner: string; winners: string[]; round_podium: { nickname: string; avatar: string; vote_count: number; voters: string[] }[]; unanimous: boolean; show_votes: boolean; statement: string } | null>(null);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [connectionError, setConnectionError] = useState('');
+    const [hostAppReturnUrl, setHostAppReturnUrl] = useState('');
 
     useEffect(() => {
         const launchToken = searchParams.get('launch_token');
@@ -67,6 +69,7 @@ export default function SpectatorPage() {
                 const data = await res.json();
                 if (!cancelled && data.room_code) {
                     setRoomCode(data.room_code);
+                    setHostAppReturnUrl(data.launch_context?.return_url || data.return_url || '');
                     setJoined(true);
                     setConnectionError('');
                     setGameState('CONNECTING');
@@ -117,6 +120,12 @@ export default function SpectatorPage() {
         terminalConnectionErrorRef.current = false;
         setGameState('CONNECTING');
         setSearchParams({ room: code });
+    };
+
+    const returnToHostApp = () => {
+        if (hostAppReturnUrl) {
+            window.location.assign(hostAppReturnUrl);
+        }
     };
 
     // Cast Receiver: dynamically load SDK and auto-join when sender sends room code
@@ -471,20 +480,30 @@ export default function SpectatorPage() {
                                 </div>
                             )}
                             {(gameState === 'ERROR' || gameState === 'DISCONNECTED') && (
-                                <button
-                                    onClick={() => {
-                                        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-                                        terminalConnectionErrorRef.current = false;
-                                        setConnectionError('');
-                                        setJoined(false);
-                                        setRoomInput('');
-                                        setSearchParams({});
-                                    }}
-                                    className="btn btn-secondary mt-6"
-                                    style={{ fontSize: '1.125rem' }}
-                                >
-                                    Try Another Room
-                                </button>
+                                hostAppMode && hostAppReturnUrl ? (
+                                    <button
+                                        onClick={returnToHostApp}
+                                        className="btn btn-secondary mt-6"
+                                        style={{ fontSize: '1.125rem' }}
+                                    >
+                                        Back to Revelry Games
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => {
+                                            if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+                                            terminalConnectionErrorRef.current = false;
+                                            setConnectionError('');
+                                            setJoined(false);
+                                            setRoomInput('');
+                                            setSearchParams({});
+                                        }}
+                                        className="btn btn-secondary mt-6"
+                                        style={{ fontSize: '1.125rem' }}
+                                    >
+                                        Try Another Room
+                                    </button>
+                                )
                             )}
                         </div>
                     )}

@@ -76,7 +76,7 @@ export default function OrganizerPage() {
     const [wmltRoundResult, setWmltRoundResult] = useState<{ winner: string; winners: string[]; round_podium: { nickname: string; avatar: string; vote_count: number; voters: string[] }[]; unanimous: boolean; show_votes: boolean; statement: string } | null>(null);
     const [drawingRoundResult, setDrawingRoundResult] = useState<{ prompt: string; drawer: string; correct_guessers: string[] } | null>(null);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
-    const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean } | null>(null);
+    const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean; returnToHostApp?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const stateRef = useRef<OrganizerState>('SELECT_GAME');
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -289,8 +289,16 @@ export default function OrganizerPage() {
             if (message.includes('players')) {
                 alert(message);
             } else {
-                setRoomCode('');
-                setState('SELECT_GAME');
+                if (hostAppMode) {
+                    setErrorModal({
+                        title: 'Game Unavailable',
+                        message: 'This Revelry-managed game is no longer available. Return to Revelry Games to start another one.',
+                        returnToHostApp: true,
+                    });
+                } else {
+                    setRoomCode('');
+                    setState('SELECT_GAME');
+                }
             }
         }
     }, [hostAppMode]);
@@ -713,7 +721,7 @@ export default function OrganizerPage() {
                 connectWsRef.current(data.room_code);
             } catch {
                 if (!cancelled) {
-                    setErrorModal({ title: 'Launch Expired', message: 'This game link expired. Ask the host to reopen the game.' });
+                    setErrorModal({ title: 'Launch Expired', message: 'This game link expired. Return to Revelry and reopen the game.', returnToHostApp: true });
                 }
             }
         })();
@@ -828,7 +836,19 @@ export default function OrganizerPage() {
         <div className="app-container">
             <div className="content-wrapper">
                 {state === 'SELECT_GAME' && (
-                    <GameSelectScreen onSelect={handleGameSelect} />
+                    hostAppMode ? (
+                        <div className="min-h-dvh flex flex-col items-center justify-center container-responsive safe-bottom animate-in text-center">
+                            <h1 className="hero-title mb-3">Open From Revelry</h1>
+                            <p className="text-[--text-tertiary] mb-6">This organizer view needs an active Revelry game launch.</p>
+                            {hostAppReturnUrl && (
+                                <button className="btn btn-primary w-full" onClick={returnToHostApp}>
+                                    Back to Revelry Games
+                                </button>
+                            )}
+                        </div>
+                    ) : (
+                        <GameSelectScreen onSelect={handleGameSelect} />
+                    )
                 )}
 
                 {state === 'PROMPT' && (
@@ -1176,7 +1196,11 @@ export default function OrganizerPage() {
                     title={errorModal.title}
                     message={errorModal.message}
                     upgradeAvailable={!hostAppMode && errorModal.upgradeAvailable}
-                    onDismiss={() => setErrorModal(null)}
+                    onDismiss={() => {
+                        const shouldReturn = errorModal.returnToHostApp;
+                        setErrorModal(null);
+                        if (hostAppMode && shouldReturn) returnToHostApp();
+                    }}
                     onUpgrade={async () => {
                         if (hostAppMode) return;
                         track('upgrade_clicked', { source: 'error_modal' });

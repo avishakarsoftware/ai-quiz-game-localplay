@@ -37,11 +37,13 @@ export default function PlayerPage() {
     const [searchParams] = useSearchParams();
     const { code: urlCode } = useParams();
     const saved = getSavedSession();
+    const hostAppMode = searchParams.get('embed') === '1' || searchParams.has('launch_token') || searchParams.has('session_id');
+    const savedSession = hostAppMode ? null : saved;
     const [state, setState] = useState<PlayerState>('JOIN');
-    const [roomCode, setRoomCode] = useState(urlCode || searchParams.get('room') || saved?.roomCode || '');
-    const [nickname, setNickname] = useState(saved?.nickname || '');
-    const [team, setTeam] = useState(saved?.team || '');
-    const [avatar, setAvatar] = useState(() => saved?.avatar || AVATAR_EMOJIS[Math.floor(Math.random() * AVATAR_EMOJIS.length)]);
+    const [roomCode, setRoomCode] = useState(urlCode || searchParams.get('room') || savedSession?.roomCode || '');
+    const [nickname, setNickname] = useState(savedSession?.nickname || '');
+    const [team, setTeam] = useState(savedSession?.team || '');
+    const [avatar, setAvatar] = useState(() => savedSession?.avatar || AVATAR_EMOJIS[Math.floor(Math.random() * AVATAR_EMOJIS.length)]);
     const [currentQuestion, setCurrentQuestion] = useState<PlayerQuestion | null>(null);
     const [questionNumber, setQuestionNumber] = useState(0);
     const [totalQuestions, setTotalQuestions] = useState(0);
@@ -57,6 +59,8 @@ export default function PlayerPage() {
     const [teamLeaderboard, setTeamLeaderboard] = useState<TeamLeaderboardEntry[]>([]);
     const [myRank, setMyRank] = useState(0);
     const [error, setError] = useState('');
+    const [hostAppReturnUrl, setHostAppReturnUrl] = useState('');
+    const [hostAppTerminalError, setHostAppTerminalError] = useState(false);
     const [introCount, setIntroCount] = useState(3);
     const [lobbyPlayers, setLobbyPlayers] = useState<PlayerInfo[]>([]);
     const [powerUps, setPowerUps] = useState<PowerUps>({ double_points: true, fifty_fifty: true });
@@ -72,9 +76,14 @@ export default function PlayerPage() {
                 const data = await res.json();
                 if (!cancelled && data.room_code) {
                     setRoomCode(data.room_code);
+                    setHostAppReturnUrl(data.launch_context?.return_url || data.return_url || '');
+                    setHostAppTerminalError(false);
                 }
             } catch {
-                if (!cancelled) setError('This game link expired. Ask the host to reopen it.');
+                if (!cancelled) {
+                    setHostAppTerminalError(true);
+                    setError('This game link expired. Return to Revelry and reopen it.');
+                }
             }
         })();
         return () => { cancelled = true; };
@@ -120,7 +129,7 @@ export default function PlayerPage() {
 
     // Auto-rejoin if we have a saved session (e.g. page refresh)
     useEffect(() => {
-        if (saved && !autoJoinedRef.current && !wsRef.current) {
+        if (savedSession && !autoJoinedRef.current && !wsRef.current) {
             autoJoinedRef.current = true;
             // Small delay to let state settle
             const timer = setTimeout(() => joinRoom(), 100);
@@ -132,6 +141,7 @@ export default function PlayerPage() {
     const joinRoom = () => {
         if (!roomCode.trim() || !nickname.trim()) return;
         setError('');
+        setHostAppTerminalError(false);
         kickedRef.current = false;
 
         const clientId = `player-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -152,6 +162,9 @@ export default function PlayerPage() {
                 setError(msg.message as string);
                 // If room doesn't exist, stop reconnection attempts
                 if (msg.message === 'Room not found' || msg.message === 'Room is full' || msg.message === 'Room is locked by the host' || msg.message === 'Nickname is taken') {
+                    if (hostAppMode && msg.message !== 'Nickname is taken') {
+                        setHostAppTerminalError(true);
+                    }
                     kickedRef.current = true;
                     wsRef.current?.close();
                     wsRef.current = null;
@@ -361,6 +374,7 @@ export default function PlayerPage() {
                 wsRef.current = null;
                 kickedRef.current = true; // prevent auto-reconnect
                 sessionStorage.removeItem('localplay_session');
+                if (hostAppMode) setHostAppTerminalError(true);
                 setState('JOIN');
                 setError('The host has left and the room was closed');
                 return;
@@ -451,6 +465,12 @@ export default function PlayerPage() {
         wsRef.current?.send(JSON.stringify({ type: 'USE_POWER_UP', power_up: powerUp }));
     };
 
+    const returnToHostApp = () => {
+        if (hostAppReturnUrl) {
+            window.location.assign(hostAppReturnUrl);
+        }
+    };
+
     return (
         <div className="app-container">
             <div className="content-wrapper">
@@ -458,6 +478,21 @@ export default function PlayerPage() {
                 {/* JOIN */}
                 {state === 'JOIN' && (
                     <div className="container-responsive safe-bottom animate-in" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        {hostAppMode && hostAppTerminalError ? (
+                            <>
+                                <div className="hero-icon mb-4" style={{ background: 'none', boxShadow: 'none' }}>
+                                    <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="Revelry" style={{ width: '100%', height: '100%', borderRadius: '20px' }} />
+                                </div>
+                                <h1 className="hero-title mb-3">Game Unavailable</h1>
+                                <p className="text-[--text-tertiary] mb-6 text-center">{error || 'Open this game from Revelry again.'}</p>
+                                {hostAppReturnUrl && (
+                                    <button onClick={returnToHostApp} className="btn btn-primary w-full">
+                                        Back to Revelry Games
+                                    </button>
+                                )}
+                            </>
+                        ) : (
+                            <>
                         <div className="hero-icon mb-4" style={{ background: 'none', boxShadow: 'none' }}>
                             <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="Revelry" style={{ width: '100%', height: '100%', borderRadius: '20px' }} />
                         </div>
@@ -557,6 +592,8 @@ export default function PlayerPage() {
                                 </button>
                             </div>
                         </div>
+                            </>
+                        )}
                     </div>
                 )}
 
