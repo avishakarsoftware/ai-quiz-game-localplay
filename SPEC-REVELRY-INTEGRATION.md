@@ -376,7 +376,7 @@ Rules:
 - `scope` must be one of `organizer`, `player`, or `spectator`.
 - `route` must match the requested scope: `organizer`, `join`, or `spectate`.
 - `embed` controls whether `embed=1` is added to the returned URL.
-- `return_url` is optional and must be validated against allowed Revelry origins before being reflected into a URL.
+- `return_url` is optional and must be validated against allowed Revelry origins before being reflected into a URL. Validation must parse the URL and compare scheme + hostname + port/origin; prefix checks are forbidden because hosts such as `app.revelryapp.me.evil.com` or userinfo tricks such as `app.revelryapp.me@evil.com` are not valid Revelry origins.
 - `guest_join_url` is optional and is carried inside the launch token's `launch_context.display` for host-app organizer/spectator UI. Use this when Revelry wants LocalPlay to show a party-safe QR code on the lobby or TV surface.
 - For compatibility, LocalPlay accepts `guest_join_url` at the top level, in `display.guest_join_url`, or in `external_context.guest_join_url`. `display.guest_join_url` is the presentation override; all three values, when present, should identify the same Revelry-owned party join route.
 - `display.guest_join_label` is optional QR/TV copy. It is presentation-only and must not affect routing or authorization.
@@ -903,7 +903,7 @@ Rules:
 - Helpers remain view-only for MVP unless Revelry explicitly grants authoring capabilities later.
 - Prepared content is party-scoped for MVP. A `content_id` created for one Revelry party cannot start a session in another party.
 - Once a `content_id` has been used to start a session, it becomes immutable. Editing after use creates a new `content_id` or version, and Revelry updates the prepared setup pointer after save.
-- Versioning callbacks include `previous_content_id` / `versioned_from_content_id` so Revelry can move the prepared setup pointer from the played content to the new editable content. If the callback is missed, Revelry should recover by refreshing party workspace after return/app resume.
+- Versioning callbacks use `event_type = content.updated` even when LocalPlay minted a new `content_id`; they include `previous_content_id` / `versioned_from_content_id` so Revelry can move the prepared setup pointer from the played content to the new editable content instead of creating a duplicate setup. If the callback is missed, Revelry should recover by refreshing party workspace after return/app resume.
 - In the current LocalPlay session schema, `game_sessions.game_id` stores the `localplay_content_id` used to materialize the session, not the broad game type. `game_type` remains the broad type such as `quiz`, `wmlt`, or `drawing`. Future schema cleanup can rename this to `content_id`, but adapters should treat the existing field as the session content/materialization id.
 - Draft autosave survives 7 days since last edit.
 - Free saved party content survives until 30 days after party end. If party end is unknown, use party start plus 48 hours, then 30 days.
@@ -1009,7 +1009,7 @@ Rules:
 - If `intent = hub`, `start_url` is empty and Revelry should use `party_games_url`.
 - `guest_join_url` is optional but recommended for party/TV flows. It must be a Revelry-owned web URL, universal/app link, or allowed custom scheme that lets guests join or open the party's active game from Revelry. LocalPlay may render this URL as a QR code in host-app organizer/spectator surfaces; it must not replace authorization checks.
 - `display.guest_join_url` overrides `external_context.guest_join_url` for presentation. `guest_join_label` is display copy only.
-- LocalPlay validates `guest_join_url` with the same allowlist rules as `return_url`.
+- LocalPlay validates `guest_join_url` with the same parsed-origin allowlist rules as `return_url`.
 - The same `guest_join_url` should power both TV/QR joining and copy/share joining. When LocalPlay shows a host-app lobby share action, it should copy/share this Revelry-owned URL, never a raw LocalPlay `/join/{room_code}` URL.
 - The token must carry the normalized host-app launch context, actor capabilities, allowlisted `return_url`, and display policy.
 - Party imagery/metadata in `display` is safe presentation context only. LocalPlay may use it for headers/cards, but Revelry remains authoritative for private party details.
@@ -1140,6 +1140,7 @@ Rules:
 
 - Current implementation sends callbacks only when `REVELRY_CALLBACK_URL` is configured. `content.created` / `content.updated` / `content.deleted`, `game.session_created`, and `game.superseded` are sent from the API path; `game.started` and `game.completed` are sent from the room runtime. Cancellation/expiration callbacks are emitted when those state transitions happen.
 - `occurred_at` must be an ISO 8601 UTC string ending in `Z`. Do not send Unix seconds in new LocalPlay callback code.
+- `game.session_created` and `game.started` callbacks should include safe actor metadata when available so Revelry can map ownership for games started from the LocalPlay hub: `payload.actor.external_user_id`, `external_guest_id`, `display_name`, and `role`. Do not include auth tokens, launch tokens, organizer tokens, participant secrets, private profile fields, raw answers, prompt payloads, or media internals.
 - Callbacks are signed with `REVELRY_INTEGRATION_SECRET`, the canonical shared Revelry integration secret. `REVELRY_CALLBACK_SECRET` may exist only as a temporary rotation alias or compatibility fallback and must not silently diverge from `REVELRY_INTEGRATION_SECRET` in normal gamma/prod configuration.
 - LocalPlay signs `HMAC_SHA256("${timestamp}.${raw_body}")` and sends `X-LocalPlay-Event-Id`, `X-LocalPlay-Timestamp`, and `X-LocalPlay-Signature: sha256=...`; Revelry should reject replays and dedupe by event id.
 - Callback payloads must contain safe metadata only. Do not include full quiz contents, answers, raw prompts, private media paths, organizer credentials, launch tokens, or participant secrets.
@@ -1609,6 +1610,8 @@ Recommended LocalPlay order:
 16. Backlog: make TV display Kahoot-style and party-safe. The organizer/lobby should be a TV-ready shared display, with full-screen guidance, QR/code entry for `/tv`, copy/open controls, and Chromecast/AirPlay/screen-mirroring as optional enhancements rather than the only path.
 17. Backlog: extend the generic setup/save/start model to future non-quiz catalog games such as Bingo, Baby Bingo, and Housie. WMLT and Drawing now use the party hub setup path. Future slices should keep labels, creation actions, content schemas, media support, and default prompts in catalog/server config instead of expanding hub-side conditionals.
 18. Backlog: revisit whether configurable party games must always persist a saved setup before start. Saving first is acceptable for the current WMLT/Drawing MVP because it gives Revelry a stable mirror pointer and supports pre-party setup, but some future games may be better as ephemeral setup-and-start flows or true quick-start rooms when the host does not intend to save/reuse them. Keep the catalog expressive enough to distinguish `requires_saved_content`, `can_save_setup`, and `can_start_ephemeral` if this becomes important.
+19. Backlog: add server-side draft/autosave recovery for generic WMLT/Drawing setup forms. Quiz authoring has browser-local draft isolation; generic setup forms should gain equivalent party-scoped draft ids before long editing flows become common.
+20. Backlog: move WMLT/Drawing default prompts and party-type recommendations into catalog/server config. Current MVP defaults are safe built-ins, but future party types should receive context-aware prompt suggestions without adding hub-side conditionals.
 
 ## Open Questions
 

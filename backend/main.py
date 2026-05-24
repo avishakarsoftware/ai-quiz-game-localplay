@@ -1481,21 +1481,49 @@ def _validate_revelry_return_url(return_url: str) -> str:
         return ""
     parsed = urlparse(return_url)
     if parsed.scheme in ("revelry", "revelryapp"):
+        if parsed.netloc and parsed.netloc not in ("party", "games", "open"):
+            raise HTTPException(status_code=422, detail="return_url is not allowed")
         return return_url
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise HTTPException(status_code=422, detail="Invalid return_url")
-    allowed = {origin.strip().rstrip("/") for origin in config.ALLOWED_ORIGINS.split(",") if origin.strip()}
+    allowed = set()
+    for origin in config.ALLOWED_ORIGINS.split(","):
+        origin = origin.strip()
+        if not origin:
+            continue
+        allowed_url = urlparse(origin)
+        if allowed_url.scheme in ("http", "https") and allowed_url.netloc:
+            allowed.add((allowed_url.scheme, allowed_url.hostname, allowed_url.port))
     allowed.update({
-        "https://app.revelryapp.me",
-        "https://api.revelryapp.me",
-        "https://api-gamma.revelryapp.me",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
+        ("https", "app.revelryapp.me", None),
+        ("https", "api.revelryapp.me", None),
+        ("https", "api-gamma.revelryapp.me", None),
+        ("http", "localhost", 5173),
+        ("http", "127.0.0.1", 5173),
     })
-    origin = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
-    if origin not in allowed:
+    if (parsed.scheme, parsed.hostname, parsed.port) not in allowed:
         raise HTTPException(status_code=422, detail="return_url is not allowed")
     return return_url
+
+
+def _safe_actor_payload(actor: Optional[Any] = None, session: Optional[dict[str, Any]] = None) -> Optional[dict[str, Any]]:
+    actor_data: dict[str, Any] = {}
+    if actor:
+        actor_data = {
+            "external_user_id": getattr(actor, "external_user_id", "") or "",
+            "external_guest_id": getattr(actor, "external_guest_id", None),
+            "display_name": getattr(actor, "display_name", "") or "",
+            "role": getattr(actor, "role", "") or "",
+        }
+    if session:
+        actor_data = {
+            "external_user_id": actor_data.get("external_user_id") or session.get("external_host_user_id") or "",
+            "external_guest_id": actor_data.get("external_guest_id"),
+            "display_name": actor_data.get("display_name") or session.get("external_host_display_name") or "",
+            "role": actor_data.get("role") or "host",
+        }
+    actor_data = {key: value for key, value in actor_data.items() if value}
+    return actor_data or None
 
 
 def _authoring_url(req: Request, token: str) -> str:
@@ -1572,6 +1600,7 @@ async def _send_revelry_callback(event_type: str, payload: dict[str, Any]) -> No
     result_summary = _safe_result_summary(payload.get("result_summary") or payload.get("result"))
     session_id = payload.get("session_id") or session.get("session_id") or session.get("id")
     content_id = payload.get("content_id") or payload.get("localplay_content_id")
+    actor_payload = payload.get("actor") if isinstance(payload.get("actor"), dict) else _safe_actor_payload(session=session)
     body = {
         "event_id": f"lp_evt_{uuid.uuid4().hex}",
         "event_type": event_type,
@@ -1586,6 +1615,7 @@ async def _send_revelry_callback(event_type: str, payload: dict[str, Any]) -> No
         "payload": {
             "status": payload.get("status") or session.get("status"),
             "session": session or None,
+            "actor": actor_payload,
             "result_summary": result_summary,
             "content": payload.get("content"),
             "previous_content_id": payload.get("previous_content_id") or payload.get("versioned_from_content_id"),
@@ -1847,6 +1877,8 @@ def _create_revelry_session_from_context(
             detail={
                 "code": "active_session_exists",
                 "session_id": active["id"],
+                "game_type": active.get("game_type"),
+                "game_title": active.get("game_title"),
                 "message": "An active LocalPlay session already exists for this party.",
             },
         )
@@ -2093,7 +2125,7 @@ def _save_revelry_content(context: RevelryExternalContext, request: RevelryConte
     else:
         payload = _content_game_from_payload(request.game_type, request.title, request.content_payload)
         content = db.save_game_content(wallet_id, request.game_type, request.title or payload["game"].get("game_title", "Saved Game"), payload, save_content_id)
-    event_type = "content.updated" if request.content_id and not previous_content_id else "content.created"
+    event_type = "content.updated" if request.content_id else "content.created"
     return content, event_type, previous_content_id
 
 
@@ -2312,6 +2344,7 @@ async def start_revelry_party_game(request: RevelryPartyGameStartRequest, req: R
         "external_container_type": context.external_container_type,
         "external_container_id": context.external_container_id,
         "session": _format_session(session),
+        "actor": _safe_actor_payload(actor),
     })
     return {
         "session": _format_session(session),
@@ -2429,6 +2462,7 @@ async def create_revelry_session(request: RevelrySessionCreateRequest, req: Requ
         "external_container_type": context.external_container_type,
         "external_container_id": context.external_container_id,
         "session": _format_session(session),
+        "actor": _safe_actor_payload(request.actor),
     })
     return _format_session(session)
 

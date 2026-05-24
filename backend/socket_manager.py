@@ -1380,6 +1380,15 @@ class SocketManager:
             "completed_at": summary.get("completed_at"),
         }
 
+    def _safe_actor_payload(self, session: dict) -> Optional[dict]:
+        actor = {
+            "external_user_id": session.get("external_host_user_id") or "",
+            "display_name": session.get("external_host_display_name") or "",
+            "role": "host",
+        }
+        actor = {key: value for key, value in actor.items() if value}
+        return actor or None
+
     def _mark_game_session_complete(self, room: Room, summary: dict):
         """Attach completed result metadata to an integration session, if present."""
         try:
@@ -1406,6 +1415,7 @@ class SocketManager:
         event_type = self._callback_event_type(event_type)
         session_id = session.get("id")
         result_summary = self._safe_result_summary(result_summary) if result_summary else None
+        actor_payload = self._safe_actor_payload(session)
         body = {
             "event_id": f"lp_evt_{uuid.uuid4().hex}",
             "event_type": event_type,
@@ -1418,6 +1428,7 @@ class SocketManager:
             "payload": {
                 "room_code": session.get("room_code"),
                 "status": session.get("status"),
+                "actor": actor_payload,
                 "game_type": session.get("game_type"),
                 "game_title": session.get("game_title"),
                 "result_summary": result_summary,

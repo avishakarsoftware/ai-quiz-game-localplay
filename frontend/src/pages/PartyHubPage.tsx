@@ -41,6 +41,8 @@ type ReplacementPrompt = {
     game: StartableGame;
     sessionId: string;
     message: string;
+    activeTitle?: string;
+    activeGameType?: string;
 };
 
 type CatalogGame = {
@@ -280,6 +282,8 @@ export default function PartyHubPage() {
                         game,
                         sessionId: detail.session_id || '',
                         message: detail.message || 'A LocalPlay game is already active for this party.',
+                        activeTitle: detail.game_title,
+                        activeGameType: detail.game_type,
                     });
                     return;
                 }
@@ -500,7 +504,17 @@ export default function PartyHubPage() {
                     <div>
                         <p>Active game</p>
                         <h2 id="replace-game-title">Replace the current game?</h2>
-                        <span>{replacementPrompt.message} Starting "{replacementPrompt.game.title}" will close the current room for this party.</span>
+                        <span>
+                            {replacementPrompt.message}
+                            {' '}
+                            {replacementPrompt.activeTitle
+                                ? `Current game: "${replacementPrompt.activeTitle}".`
+                                : replacementPrompt.activeGameType
+                                    ? `Current game type: ${replacementPrompt.activeGameType}.`
+                                    : ''}
+                            {' '}
+                            Starting "{replacementPrompt.game.title}" will close the current room for this party.
+                        </span>
                     </div>
                     <div className="party-hub__confirm-actions">
                         <button onClick={confirmReplacement} disabled={startingId === (replacementPrompt.game.localplay_content_id || replacementPrompt.game.game_type)}>

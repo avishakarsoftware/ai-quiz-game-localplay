@@ -26,6 +26,7 @@ interface CustomQuizEditorProps {
     packId?: string;
     authToken?: string;
     contextLabel?: string;
+    draftStorageKey?: string | null;
 }
 
 interface DraftData {
@@ -34,7 +35,7 @@ interface DraftData {
     selectedId: string;
 }
 
-const STORAGE_KEY = 'localplay_custom_quiz_draft_v1';
+const STORAGE_KEY = 'localplay_custom_quiz_draft_v2';
 
 function createQuestion(): DraftQuestion {
     return {
@@ -148,7 +149,7 @@ function normalizeDraftQuestion(question: Partial<DraftQuestion>): DraftQuestion
     };
 }
 
-function loadDraft(): DraftData {
+function loadDraft(storageKey: string | null): DraftData {
     const fallbackQuestion = createQuestion();
     const fallback = {
         title: 'Custom Quiz',
@@ -156,8 +157,10 @@ function loadDraft(): DraftData {
         selectedId: fallbackQuestion.id,
     };
 
+    if (!storageKey) return fallback;
+
     try {
-        const saved = localStorage.getItem(STORAGE_KEY);
+        const saved = localStorage.getItem(storageKey);
         if (!saved) return fallback;
         const parsed = JSON.parse(saved) as Partial<DraftData>;
         if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) return fallback;
@@ -168,14 +171,14 @@ function loadDraft(): DraftData {
             selectedId: parsed.selectedId || questions[0].id,
         };
     } catch {
-        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(storageKey);
         return fallback;
     }
 }
 
-export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz, packId, authToken, contextLabel }: CustomQuizEditorProps) {
+export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz, packId, authToken, contextLabel, draftStorageKey = STORAGE_KEY }: CustomQuizEditorProps) {
     const swipeProgress = useSwipeBack(onBack);
-    const [initialDraft] = useState(() => initialQuiz ? draftFromQuiz(initialQuiz) : loadDraft());
+    const [initialDraft] = useState(() => initialQuiz ? draftFromQuiz(initialQuiz) : loadDraft(draftStorageKey));
     const [title, setTitle] = useState(initialDraft.title);
     const [questions, setQuestions] = useState<DraftQuestion[]>(initialDraft.questions);
     const [selectedId, setSelectedId] = useState<string>(initialDraft.selectedId);
@@ -184,8 +187,9 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
     const [statusMessage, setStatusMessage] = useState('');
 
     useEffect(() => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ title, questions, selectedId }));
-    }, [title, questions, selectedId]);
+        if (!draftStorageKey) return;
+        localStorage.setItem(draftStorageKey, JSON.stringify({ title, questions, selectedId }));
+    }, [draftStorageKey, title, questions, selectedId]);
 
     const selectedQuestion = questions.find((question) => question.id === selectedId) || questions[0];
     const validCount = questions.filter(isQuestionValid).length;

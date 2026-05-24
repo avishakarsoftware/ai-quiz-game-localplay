@@ -5,6 +5,9 @@ import { type Quiz } from '../types';
 
 type AuthoringResolve = {
     launch_context: {
+        host_app?: string;
+        external_container_type?: string;
+        external_container_id?: string;
         external_container_title?: string;
         return_url?: string;
         display?: {
@@ -113,11 +116,19 @@ export default function RevelryAuthoringPage() {
         return <main className="party-hub party-hub--center">{error || 'Open this from Revelry again.'}</main>;
     }
 
+    const containerScope = [
+        resolved.launch_context.host_app || 'host_app',
+        resolved.launch_context.external_container_type || 'container',
+        resolved.launch_context.external_container_id || 'unknown',
+    ].join(':');
+    const contentScope = currentContentId || resolved.localplay_content_id || `new:${authoringToken.slice(0, 16)}`;
+
     return (
         <CustomQuizEditor
             initialQuiz={resolved.content?.quiz || null}
             packId={currentContentId || resolved.localplay_content_id || undefined}
             authToken={authoringToken}
+            draftStorageKey={`localplay_revelry_quiz_draft_v2:${containerScope}:${contentScope}`}
             contextLabel={resolved.launch_context.display?.container_label || resolved.launch_context.external_container_title || 'Revelry Games'}
             onBack={() => returnToRevelry()}
             onSave={saveQuiz}

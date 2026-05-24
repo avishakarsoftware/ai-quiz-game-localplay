@@ -132,4 +132,54 @@ describe('CustomQuizEditor', () => {
         expect(onReview.mock.calls[0][0].questions[0]).not.toHaveProperty('image_url');
         expect(onReview.mock.calls[0][0].questions[0]).not.toHaveProperty('image_alt');
     });
+
+    it('does not read old unscoped v1 drafts that may contain host-app content', () => {
+        mockLocalStorage.setItem('localplay_custom_quiz_draft_v1', JSON.stringify({
+            title: 'Christmas Quiz',
+            questions: [
+                {
+                    id: 'q_party',
+                    type: 'multiple_choice',
+                    text: 'When was the first Christmas celebrated?',
+                    options: ['1965', '2001', '1001', '501'],
+                    answerIndex: 0,
+                    imageUrl: 'https://media.revelryapp.me/apps/localplay/gamma/uploads/christmas.webp',
+                    imageAlt: 'Christmas party image',
+                },
+            ],
+            selectedId: 'q_party',
+        }));
+
+        render(<CustomQuizEditor onBack={() => {}} onReview={() => {}} />);
+
+        expect(screen.getByDisplayValue('Custom Quiz')).toBeInTheDocument();
+        expect(screen.queryByDisplayValue('Christmas Quiz')).not.toBeInTheDocument();
+        expect(screen.queryByDisplayValue('When was the first Christmas celebrated?')).not.toBeInTheDocument();
+    });
+
+    it('keeps host-app drafts scoped away from standalone drafts', () => {
+        render(<CustomQuizEditor
+            onBack={() => {}}
+            onReview={() => {}}
+            initialQuiz={{
+                quiz_title: 'Party Scoped Quiz',
+                questions: [
+                    {
+                        id: 1,
+                        text: 'Party-only question',
+                        options: ['A', 'B', 'C', 'D'],
+                        answer_index: 0,
+                        image_prompt: '',
+                    },
+                ],
+            }}
+            draftStorageKey="localplay_revelry_quiz_draft_v2:party-1"
+        />);
+
+        expect(mockLocalStorage.setItem).toHaveBeenCalledWith(
+            'localplay_revelry_quiz_draft_v2:party-1',
+            expect.stringContaining('Party Scoped Quiz'),
+        );
+        expect(store.localplay_custom_quiz_draft_v2).toBeUndefined();
+    });
 });

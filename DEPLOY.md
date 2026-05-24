@@ -1103,6 +1103,7 @@ curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/data
 All integration endpoints require `Authorization: Bearer <REVELRY_INTEGRATION_SECRET>`.
 
 LocalPlay callbacks to Revelry are signed with `REVELRY_INTEGRATION_SECRET` using HMAC-SHA256 over `${timestamp}.${raw_body}` and include `X-LocalPlay-Timestamp`, `X-LocalPlay-Event-Id`, and `X-LocalPlay-Signature: sha256=...`. Keep `REVELRY_CALLBACK_SECRET` unset unless doing a deliberate rotation/compatibility window; it must not silently diverge from the integration secret in normal gamma/prod.
+If both `REVELRY_INTEGRATION_SECRET` and `REVELRY_CALLBACK_SECRET` are set to different values, LocalPlay logs a startup warning and continues to use `REVELRY_INTEGRATION_SECRET` as canonical.
 Revelry-created sessions are LocalPlay `host_app_managed` billing sessions: LocalPlay does not grant signup-bonus sparks to the integration wallet and does not debit sparks when the host starts the game. Customer-facing billing/entitlement policy is owned by Revelry for this launch path. LocalPlay should receive normalized party capabilities from Revelry and enforce them; it should not need Revelry prices, provider receipt data, or transaction amounts in gamma/prod runtime requests.
 
 | Endpoint | Method | Purpose |

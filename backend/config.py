@@ -140,6 +140,12 @@ REVELRY_CALLBACK_URL = os.getenv("REVELRY_CALLBACK_URL", "").strip()
 REVELRY_CALLBACK_SECRET = os.getenv("REVELRY_CALLBACK_SECRET", "").strip()
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
 
+if REVELRY_INTEGRATION_SECRET and REVELRY_CALLBACK_SECRET and REVELRY_INTEGRATION_SECRET != REVELRY_CALLBACK_SECRET:
+    logging.getLogger(__name__).warning(
+        "REVELRY_CALLBACK_SECRET differs from REVELRY_INTEGRATION_SECRET; "
+        "REVELRY_INTEGRATION_SECRET is canonical and the callback secret should only be used during planned rotation."
+    )
+
 # --- Logging ---
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_FILE = os.getenv("LOG_FILE", "")  # empty = stdout only

@@ -216,6 +216,35 @@ def test_revelry_session_create_launch_token_and_status(monkeypatch):
         assert ws.receive_json()["type"] == "GAME_STARTING"
 
 
+def test_revelry_return_url_validation_parses_origins(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    payload = _create_payload(f"party-return-{uuid.uuid4().hex}")
+
+    for allowed in (
+        "https://app.revelryapp.me/party/1?tab=games",
+        "https://api-gamma.revelryapp.me/party/1?tab=games",
+        "revelry://party/1/games",
+    ):
+        payload["return_url"] = allowed
+        payload["external_context"]["return_url"] = allowed
+        res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+        assert res.status_code == 200
+
+    for blocked in (
+        "https://app.revelryapp.me.evil.com/steal",
+        "https://app.revelryapp.me@evil.com/steal",
+        "not-a-url",
+        "ftp://app.revelryapp.me/party/1",
+        "revelryevil://party/1/games",
+        "revelry://evil/party/1/games",
+    ):
+        payload["return_url"] = blocked
+        payload["external_context"]["return_url"] = blocked
+        res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+        assert res.status_code == 422
+
+
 def test_revelry_callbacks_use_game_events_top_level_context_and_integration_secret(monkeypatch):
     monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
     monkeypatch.setattr(config, "REVELRY_CALLBACK_SECRET", "different-callback-secret")
@@ -237,6 +266,12 @@ def test_revelry_callbacks_use_game_events_top_level_context_and_integration_sec
     assert body["external_container_id"] == container_id
     assert body["session_id"] == res.json()["session_id"]
     assert body["idempotency_key"] == f"game.session_created:{res.json()['session_id']}:v1"
+    assert body["payload"]["actor"] == {
+        "external_user_id": f"host-{container_id}",
+        "display_name": "Ava",
+        "role": "host",
+    }
+    assert "organizer_token" not in json.dumps(body["payload"]["actor"])
     assert re.match(r"^\d{4}-\d{2}-\d{2}T.*Z$", body["occurred_at"])
     timestamp = call["headers"]["X-LocalPlay-Timestamp"]
     expected = hmac.new(
@@ -276,6 +311,8 @@ def test_revelry_session_replacement_requires_confirmation(monkeypatch):
     conflict = client.post("/integrations/revelry/sessions", headers=_headers(), json=_create_payload(container_id))
     assert conflict.status_code == 409
     assert conflict.json()["detail"]["code"] == "active_session_exists"
+    assert conflict.json()["detail"]["game_type"] == "quiz"
+    assert conflict.json()["detail"]["game_title"]
 
     payload = _create_payload(container_id)
     payload["replace_session_id"] = first_id
@@ -403,12 +440,20 @@ def test_runtime_callback_retries_after_429(monkeypatch):
             "status": "active",
             "game_type": "quiz",
             "game_title": "Runtime Quiz",
+            "external_host_user_id": "host-runtime",
+            "external_host_display_name": "Ava",
         },
     )
 
     assert len(calls) == 2
     assert calls[0]["body"]["event_id"] == calls[1]["body"]["event_id"]
     assert calls[0]["raw"] == calls[1]["raw"]
+    assert calls[-1]["body"]["event_type"] == "game.started"
+    assert calls[-1]["body"]["payload"]["actor"] == {
+        "external_user_id": "host-runtime",
+        "display_name": "Ava",
+        "role": "host",
+    }
 
 
 def test_revelry_party_workspace_is_non_personalized(monkeypatch):
@@ -700,10 +745,10 @@ def test_revelry_editing_used_content_creates_new_version(monkeypatch):
     assert body["localplay_content_id"] != pack["id"]
     assert db.get_quiz_pack(owner_wallet_id, pack["id"])["title"] == "Played Quiz"
     assert db.get_quiz_pack(owner_wallet_id, body["localplay_content_id"])["title"] == "Played Quiz Edited"
-    created = [call["body"] for call in calls if call["body"]["event_type"] == "content.created"]
-    assert created
-    assert created[-1]["previous_content_id"] == pack["id"]
-    assert created[-1]["content_id"] == body["localplay_content_id"]
+    updated = [call["body"] for call in calls if call["body"]["event_type"] == "content.updated"]
+    assert updated
+    assert updated[-1]["previous_content_id"] == pack["id"]
+    assert updated[-1]["content_id"] == body["localplay_content_id"]
 
 
 def test_revelry_party_hub_can_mint_authoring_link(monkeypatch):
@@ -795,6 +840,42 @@ def test_revelry_party_hub_can_save_and_start_catalog_game_content(monkeypatch):
     room = socket_manager.rooms[body["session"]["room_code"]]
     assert room.game_type == "drawing"
     assert room.time_limit == 25
+
+
+def test_revelry_party_hub_rejects_invalid_catalog_game_content(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-hub-invalid-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["author_content", "operate_game"],
+        },
+    }
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+    assert link_res.status_code == 200
+    party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
+
+    save_res = client.post(
+        "/integrations/revelry/party-games/content",
+        json={
+            "party_games_token": party_token,
+            "game_type": "drawing",
+            "title": "Broken Drawing",
+            "content_payload": {"game": {"game_title": "Broken Drawing", "prompts": [{"id": 1, "text": ""}]}},
+        },
+    )
+
+    assert save_res.status_code == 422
+    assert "Invalid drawing game content" in save_res.text
+    assert db.list_game_content(f"revelry:party:{container_id}") == []
 
 
 def test_revelry_party_hub_delete_sends_content_deleted_callback(monkeypatch):
