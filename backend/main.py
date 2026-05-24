@@ -906,6 +906,11 @@ def _sign_media_upload(path: str, expires: int, mime_type: str, bytes_size: int)
     return hmac.new(config.MEDIA_UPLOAD_SECRET.encode(), payload, hashlib.sha256).hexdigest()
 
 
+def _media_owner_path_segment(wallet_id: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_-]+", "_", wallet_id).strip("_")
+    return (safe or "owner")[:48]
+
+
 def _media_wallet_id(req: Request) -> str:
     claims = _authoring_claims_from_request(req)
     if claims:
@@ -935,7 +940,7 @@ async def create_media_upload_url(request: MediaUploadUrlRequest, req: Request):
         raise HTTPException(status_code=422, detail="Unsupported image type")
     asset_id = f"img_{uuid.uuid4().hex}"
     date_part = time.strftime("%Y/%m/%d", time.gmtime())
-    storage_path = f"{config.MEDIA_PATH_PREFIX}/uploads/{wallet_id[:12]}/{date_part}/{asset_id}.{ext}"
+    storage_path = f"{config.MEDIA_PATH_PREFIX}/uploads/{_media_owner_path_segment(wallet_id)}/{date_part}/{asset_id}.{ext}"
     public_url = f"{config.MEDIA_PUBLIC_BASE_URL}/{storage_path}"
     expires = int(time.time()) + config.MEDIA_UPLOAD_TOKEN_TTL_SECONDS
     token = _sign_media_upload(storage_path, expires, request.mime_type, request.bytes)

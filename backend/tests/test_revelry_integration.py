@@ -334,3 +334,5 @@ def test_revelry_authoring_token_can_upload_media(monkeypatch):
     asset = sign_res.json()["asset"]
     assert asset["owner_wallet_id"] == f"revelry:party:{container_id}"
     assert asset["public_url"].startswith("https://media.revelryapp.me/apps/localplay/")
+    assert "revelry_party_" in asset["storage_path"]
+    assert ":" not in asset["storage_path"]

@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry } from '../types';
+import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending } from '../utils/storage';
 import { apiHeaders, apiUrl, generateIdempotencyKey } from '../utils/api';
+import { mediaUrl } from '../utils/media';
 import GameSelectScreen from '../components/organizer/GameSelectScreen';
 import PromptScreen, { type AIProvider } from '../components/organizer/PromptScreen';
 import QuizVariantPromptScreen from '../components/organizer/QuizVariantPromptScreen';
@@ -54,6 +55,7 @@ export default function OrganizerPage() {
     const [sdAvailable, setSdAvailable] = useState(false);
     const [imageProgress, setImageProgress] = useState(0);
     const [questionImages, setQuestionImages] = useState<Record<number, string>>({});
+    const [liveQuestion, setLiveQuestion] = useState<Question | null>(null);
     const [players, setPlayers] = useState<PlayerInfo[]>([]);
     const [answeredCount, setAnsweredCount] = useState(0);
     const [provider, setProvider] = useState('ollama');
@@ -154,6 +156,7 @@ export default function OrganizerPage() {
             setTimeRemaining(msg.time_limit as number);
             setAnsweredCount(0);
             setIsBonus(msg.is_bonus as boolean || false);
+            setLiveQuestion((msg.question as Question | undefined) || null);
             if (msg.is_bonus) setShowBonusSplash(true);
             // For WMLT, store the statement text
             if (msg.statement) {
@@ -251,6 +254,7 @@ export default function OrganizerPage() {
                 setTimeRemaining((msg.time_remaining ?? msg.time_limit) as number);
                 setAnsweredCount((msg.answered_count ?? msg.voted_count ?? 0) as number);
                 setIsBonus(msg.is_bonus as boolean || false);
+                setLiveQuestion((msg.question as Question | undefined) || null);
                 if (msg.statement) {
                     setCurrentStatement((msg.statement as { text: string }).text);
                 }
@@ -786,8 +790,8 @@ export default function OrganizerPage() {
         ? (import.meta.env.VITE_WEB_URL || 'https://games.revelryapp.me/quiz/')
         : `${window.location.origin}${import.meta.env.BASE_URL}`;
     const joinUrl = `${baseUrl}join/${roomCode}`;
-    const currentQ = quiz?.questions[currentQuestion - 1];
-    const currentImageUrl = currentQ ? questionImages[currentQ.id] : undefined;
+    const currentQ = liveQuestion || quiz?.questions[currentQuestion - 1];
+    const currentImageUrl = currentQ?.image_url ? mediaUrl(currentQ.image_url) : (currentQ ? questionImages[currentQ.id] : undefined);
 
     return (
         <div className="app-container">
