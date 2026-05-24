@@ -971,6 +971,7 @@ Rules:
 - `guest_join_url` is optional but recommended for party/TV flows. It must be a Revelry-owned web URL, universal/app link, or allowed custom scheme that lets guests join or open the party's active game from Revelry. LocalPlay may render this URL as a QR code in host-app organizer/spectator surfaces; it must not replace authorization checks.
 - `display.guest_join_url` overrides `external_context.guest_join_url` for presentation. `guest_join_label` is display copy only.
 - LocalPlay validates `guest_join_url` with the same allowlist rules as `return_url`.
+- The same `guest_join_url` should power both TV/QR joining and copy/share joining. When LocalPlay shows a host-app lobby share action, it should copy/share this Revelry-owned URL, never a raw LocalPlay `/join/{room_code}` URL.
 - The token must carry the normalized host-app launch context, actor capabilities, allowlisted `return_url`, and display policy.
 - Party imagery/metadata in `display` is safe presentation context only. LocalPlay may use it for headers/cards, but Revelry remains authoritative for private party details.
 - If the token expires before exchange, LocalPlay shows "Open this from Revelry again." Expiry after exchange must not interrupt authoring, lobby, or gameplay while runtime credentials remain valid.
@@ -1324,8 +1325,31 @@ Revelry-specific UI policy:
 - Keep gameplay essentials visible: room code when useful, QR/join affordances, player list, start controls, moderation, timer/scoring, and spectator controls.
 - Use host-app-aware share copy. Prefer Revelry-owned join/open URLs when sharing outside LocalPlay; raw `gamesapi.../join` URLs are acceptable for diagnostics but should not be the polished Revelry UX.
 - In Revelry-launched organizer/spectator lobby or TV surfaces, render a QR code only when the launch context contains a validated `guest_join_url`. That QR should point to Revelry's party-aware guest join/open flow so guests can join from the party context. If no `guest_join_url` is provided, show neutral copy such as "Players can join from Revelry" and continue hiding the raw LocalPlay share URL/button.
+- In host-app organizer lobby mode, LocalPlay may also render a "Copy join link" or platform share action when `guest_join_url` is present. That action must use the exact validated Revelry-owned `guest_join_url`, so hosts can drop the link into the Revelry feed, chat, SMS, or another party communication channel. If `guest_join_url` is absent, keep the host-app share action hidden rather than falling back to a raw LocalPlay room-code URL.
 - Preserve role labels for display, but gate actions by `capabilities`.
 - If context is missing or invalid on a privileged surface, fail closed with a friendly "Open this from Revelry again" state rather than falling back to standalone organizer controls.
+
+Implementation-ready host-app lobby behavior:
+
+- The LocalPlay organizer lobby should use the same lobby component for standalone and host-app launches. Do not fork a separate copied "Revelry lobby" that can drift when standalone lobby UI changes.
+- The shared lobby component should accept launch-context-derived props such as `mode`, `container_label`, `guest_join_url`, `guest_join_label`, `show_standalone_share`, and `show_host_app_share`.
+- Standalone mode renders the existing LocalPlay QR/share behavior using the direct LocalPlay join URL.
+- Host-app mode with `guest_join_url` renders a QR for `guest_join_url`, a host-facing "Copy join link" button, and optionally a native/platform share action using the same `guest_join_url`.
+- Host-app mode without `guest_join_url` renders no QR/share action and shows neutral copy directing guests to join from Revelry.
+- The host-app "Copy join link" success state should confirm the link was copied without exposing the raw URL if space is tight. If the URL is displayed, it must be the Revelry-owned URL.
+- The host-app copy/share action should be available only on organizer/spectator/TV-style surfaces where a host/cohost is expected to invite others. Player surfaces should not show host invite controls.
+- The button copy should be generic enough for web and app surfaces, for example "Copy join link"; QR copy may remain "Scan to join from Revelry" or a host-provided `guest_join_label`.
+- Tests should cover both modes: standalone still shows/copies the LocalPlay room URL, host-app with `guest_join_url` shows/copies the Revelry URL, and host-app without `guest_join_url` does not show a raw LocalPlay share fallback.
+
+Implementation-ready party-scoped UX architecture:
+
+- The party-scoped "Revelry Games" experience should not be a forked copy of standalone LocalPlay. It should be the same LocalPlay product surface running under a host-app launch context.
+- Use shared components and flows wherever the underlying game behavior is the same: catalog cards, quiz authoring fields, image upload controls, prepared/saved quiz cards, room setup, lobby, gameplay, spectator view, result summary, and error/retry states.
+- Host-app mode should be implemented as policy/configuration passed into those shared surfaces: allowed catalog ids, external party label/art, return action, `guest_join_url`, capability gates, and chrome visibility.
+- Standalone mode and host-app mode may differ only at explicit boundary points: standalone economy/account/library/nav, standalone LocalPlay share links, unsupported games/variants, host-app return/deep-link actions, party-scoped prepared content, and Revelry-owned join/feed/result callbacks.
+- When standalone LocalPlay UX improves, party-scoped LocalPlay should inherit the improvement by default. If the improvement touches a host-app boundary, add a launch-context policy prop rather than cloning the component.
+- New game surfaces should be built once with `LaunchContext` support from the start. Before a game appears in `GET /catalog?host_app=revelry`, verify the shared standalone surface can run with host-app chrome hidden, host-app share URLs, host-app result summaries, and capability-gated host actions.
+- Tests should include shared-component regression coverage for at least one standalone path and one host-app path for every promoted game surface, so changes to the standalone UX do not silently break the party-scoped version.
 
 Implementation guidance:
 
@@ -1465,7 +1489,7 @@ Recommended LocalPlay order:
 2. Add generic durable session schema and db facade methods. Done for `game_sessions`; participant persistence remains deferred.
 3. Add catalog endpoint. Done.
 4. Add handoff validation helper. Done for shared-secret bearer/JWT validation.
-5. Add embeddable launch shell/chrome mode. Done for Revelry-launched `/revelry/*`, tokenized organizer/player/spectator surfaces, standalone economy chrome hiding, raw LocalPlay share/join suppression in host-app lobby mode, and `guest_join_url` QR rendering when Revelry provides a party-aware join route. Further brand-specific polish remains.
+5. Add embeddable launch shell/chrome mode. Done for Revelry-launched `/revelry/*`, tokenized organizer/player/spectator surfaces, standalone economy chrome hiding, raw LocalPlay share/join suppression in host-app lobby mode, and `guest_join_url` QR rendering when Revelry provides a party-aware join route. Remaining: add host-app-safe "Copy join link" / share action that uses `guest_join_url` and is implemented in the shared lobby component rather than a forked Revelry-only copy.
 6. Add session wrapper around current `/room/create`. Done.
 7. Add `POST /integrations/revelry/sessions`. Done.
 8. Add safe one-active-game replacement handling. Done.
