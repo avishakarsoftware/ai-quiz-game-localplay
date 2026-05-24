@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { API_URL } from '../config';
 
 type LaunchContext = {
@@ -42,11 +42,15 @@ function hasCapability(context: LaunchContext | null, capability: string): boole
 export default function PartyHubPage() {
     const params = new URLSearchParams(window.location.search);
     const partyGamesToken = params.get('party_games_token') || '';
+    const startContentId = params.get('start_content_id') || params.get('content_id') || '';
+    const startGameType = params.get('game_type') || '';
+    const startTimeLimit = params.get('time_limit') || '';
     const [launchContext, setLaunchContext] = useState<LaunchContext | null>(null);
     const [workspace, setWorkspace] = useState<Workspace | null>(null);
     const [loading, setLoading] = useState(true);
     const [startingId, setStartingId] = useState('');
     const [error, setError] = useState('');
+    const autoStartRef = useRef('');
 
     useEffect(() => {
         let cancelled = false;
@@ -82,17 +86,19 @@ export default function PartyHubPage() {
 
     const preparedContent = useMemo(() => workspace?.prepared_content || [], [workspace]);
 
-    async function startGame(content: PreparedContent, replacement?: { confirmed: boolean; sessionId?: string }) {
+    const startGame = useCallback(async (content: PreparedContent, replacement?: { confirmed: boolean; sessionId?: string }) => {
         setStartingId(content.localplay_content_id);
         setError('');
         try {
+            const parsedTimeLimit = Number.parseInt(startTimeLimit, 10);
             const res = await fetch(`${API_URL}/integrations/revelry/party-games/start`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     party_games_token: partyGamesToken,
                     content_id: content.localplay_content_id,
-                    game_type: content.game_type,
+                    game_type: startGameType || content.game_type,
+                    time_limit: Number.isFinite(parsedTimeLimit) ? parsedTimeLimit : undefined,
                     replacement_confirmed: replacement?.confirmed || false,
                     replace_session_id: replacement?.sessionId,
                 }),
@@ -115,7 +121,20 @@ export default function PartyHubPage() {
         } finally {
             setStartingId('');
         }
-    }
+    }, [partyGamesToken, startGameType, startTimeLimit]);
+
+    useEffect(() => {
+        if (!startContentId || loading || !workspace || !canStart) return;
+        if (autoStartRef.current === startContentId) return;
+        const content = preparedContent.find((item) => item.localplay_content_id === startContentId);
+        if (!content) {
+            setError('That saved game was not found for this party.');
+            autoStartRef.current = startContentId;
+            return;
+        }
+        autoStartRef.current = startContentId;
+        void startGame(content);
+    }, [canStart, loading, preparedContent, startContentId, startGame, workspace]);
 
     async function openAuthoring(mode: 'create' | 'edit', content?: PreparedContent) {
         setError('');
@@ -209,7 +228,7 @@ export default function PartyHubPage() {
                                 </div>
                                 <div className="party-hub__actions">
                                     {canStart && (
-                                        <button onClick={() => startGame(content)} disabled={startingId === content.localplay_content_id}>
+                                        <button onClick={() => void startGame(content)} disabled={startingId === content.localplay_content_id}>
                                             {startingId === content.localplay_content_id ? 'Starting...' : 'Start'}
                                         </button>
                                     )}

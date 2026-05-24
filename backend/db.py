@@ -1426,6 +1426,15 @@ def get_active_game_session(host_app: str, external_container_id: str) -> Option
     return _session_row_to_dict(row) if row else None
 
 
+def game_content_has_sessions(host_app: str, external_container_id: str, game_id: str) -> bool:
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT 1 FROM game_sessions WHERE host_app = ? AND external_container_id = ? AND game_id = ? LIMIT 1",
+        (host_app, external_container_id, game_id),
+    ).fetchone()
+    return bool(row)
+
+
 def update_game_session(session_id: str, updates: dict) -> Optional[dict]:
     allowed = {
         "status", "joinable", "closed_reason", "closed_message", "superseded_by_session_id",
@@ -1509,6 +1518,7 @@ if config.DB_BACKEND == "supabase":
         "get_game_session",
         "get_game_session_by_room",
         "get_active_game_session",
+        "game_content_has_sessions",
         "update_game_session",
     ]
     for _name in _SUPABASE_EXPORTS:

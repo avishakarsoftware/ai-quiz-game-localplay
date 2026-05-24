@@ -1067,7 +1067,18 @@ class RevelryPartyGamesLinkRequest(BaseModel):
     return_url: str = ""
     guest_join_url: str = ""
     preferred_display: str = "fullscreen"
+    intent: str = "hub"
+    content_id: str = ""
+    game_type: str = "quiz"
+    time_limit: Optional[int] = None
     display: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("intent")
+    @classmethod
+    def validate_intent(cls, value: str) -> str:
+        if value not in ("hub", "start"):
+            raise ValueError("intent must be hub or start")
+        return value
 
 
 class RevelryContentAuthoringLinkRequest(BaseModel):
@@ -1267,9 +1278,10 @@ def _create_party_games_token(
     actor: RevelryActor,
     return_url: str = "",
     display: Optional[dict[str, Any]] = None,
+    ttl_seconds: Optional[int] = None,
 ) -> tuple[str, int, dict]:
     now = datetime.now(timezone.utc)
-    exp = now + timedelta(seconds=config.REVELRY_LAUNCH_TOKEN_TTL_SECONDS)
+    exp = now + timedelta(seconds=ttl_seconds or config.REVELRY_LAUNCH_TOKEN_TTL_SECONDS)
     launch_context = _revelry_launch_context(context, actor, "party_hub", return_url, display)
     payload = {
         "type": "revelry_party_games",
@@ -1478,12 +1490,14 @@ async def _send_revelry_callback(event_type: str, payload: dict[str, Any]) -> No
         "external_container_id": payload.get("external_container_id") or session.get("external_container_id"),
         "session_id": session_id,
         "content_id": content_id,
+        "previous_content_id": payload.get("previous_content_id") or payload.get("versioned_from_content_id"),
         "idempotency_key": f"{event_type}:{session_id or content_id or uuid.uuid4().hex}:v1",
         "payload": {
             "status": payload.get("status") or session.get("status"),
             "session": session or None,
             "result_summary": result_summary,
             "content": payload.get("content"),
+            "previous_content_id": payload.get("previous_content_id") or payload.get("versioned_from_content_id"),
             "feed_card": payload.get("feed_card") or session.get("feed_card"),
             "closed_reason": payload.get("closed_reason") or session.get("closed_reason"),
             "closed_message": payload.get("closed_message") or session.get("closed_message"),
@@ -1764,8 +1778,20 @@ async def create_revelry_party_games_link(request: RevelryPartyGamesLinkRequest,
         display,
     )
     base_url = _public_base_url(req)
+    party_games_url = f"{base_url}/integrations/revelry/games?party_games_token={token}"
+    start_url = ""
+    if request.intent == "start" or request.content_id:
+        if not request.content_id:
+            raise HTTPException(status_code=422, detail="content_id is required for start intent")
+        start_url = (
+            f"{party_games_url}&start_content_id={request.content_id}"
+            f"&game_type={request.game_type}"
+        )
+        if request.time_limit is not None:
+            start_url += f"&time_limit={request.time_limit}"
     return {
-        "party_games_url": f"{base_url}/integrations/revelry/games?party_games_token={token}",
+        "party_games_url": party_games_url,
+        "start_url": start_url,
         "party_games_token_expires_at": _iso(expires),
         "return_url": launch_context.get("return_url", ""),
         "display": launch_context.get("display", {}),
@@ -1876,6 +1902,14 @@ def _content_response(context: RevelryExternalContext, pack: dict) -> dict:
     }
 
 
+def _content_save_id_for_request(context: RevelryExternalContext, request: RevelryContentSaveRequest) -> tuple[Optional[str], Optional[str]]:
+    if not request.content_id:
+        return None, None
+    if db.game_content_has_sessions(context.host_app, context.external_container_id, request.content_id):
+        return None, request.content_id
+    return request.content_id, None
+
+
 @app.post("/integrations/revelry/content")
 async def create_revelry_content(request: RevelryContentSaveRequest, req: Request):
     context, actor, claims = _require_authoring_or_service(req, request.external_context)
@@ -1896,16 +1930,25 @@ async def create_revelry_content(request: RevelryContentSaveRequest, req: Reques
         raise HTTPException(status_code=403, detail="Missing capability to author content")
     quiz_data = _content_quiz_from_payload(request)
     wallet_id = _revelry_party_wallet_id(context.external_container_id)
-    pack = db.save_quiz_pack(wallet_id, quiz_data.get("quiz_title", request.title or "Custom Quiz"), quiz_data["questions"], request.content_id)
-    await _send_revelry_callback("content.updated" if request.content_id else "content.created", {
+    save_content_id, previous_content_id = _content_save_id_for_request(context, request)
+    pack = db.save_quiz_pack(wallet_id, quiz_data.get("quiz_title", request.title or "Custom Quiz"), quiz_data["questions"], save_content_id)
+    event_type = "content.updated" if request.content_id and not previous_content_id else "content.created"
+    await _send_revelry_callback(event_type, {
         "host_app": context.host_app,
         "external_container_type": context.external_container_type,
         "external_container_id": context.external_container_id,
         "content_id": pack["id"],
         "localplay_content_id": pack["id"],
+        "previous_content_id": previous_content_id,
+        "versioned_from_content_id": previous_content_id,
         "content": _quiz_pack_summary(pack),
     })
-    return _content_response(context, pack)
+    response = _content_response(context, pack)
+    if previous_content_id:
+        response["previous_content_id"] = previous_content_id
+        response["versioned_from_content_id"] = previous_content_id
+        response["status"] = "version_created"
+    return response
 
 
 @app.get("/integrations/revelry/content/{content_id}")
@@ -1993,11 +2036,23 @@ async def resolve_revelry_party_games(party_games_token: str):
 
 
 @app.get("/integrations/revelry/games")
-async def open_revelry_party_games(party_games_token: str = ""):
+async def open_revelry_party_games(
+    party_games_token: str = "",
+    start_content_id: str = "",
+    game_type: str = "",
+    time_limit: Optional[int] = None,
+):
     if not party_games_token:
         raise HTTPException(status_code=401, detail="party_games_token is required")
     _resolve_party_games_token(party_games_token)
-    return RedirectResponse(f"/revelry/games?party_games_token={party_games_token}", status_code=302)
+    redirect = f"/revelry/games?party_games_token={party_games_token}"
+    if start_content_id:
+        redirect += f"&start_content_id={start_content_id}"
+    if game_type:
+        redirect += f"&game_type={game_type}"
+    if time_limit is not None:
+        redirect += f"&time_limit={time_limit}"
+    return RedirectResponse(redirect, status_code=302)
 
 
 @app.get("/integrations/revelry/party-workspace")
@@ -2041,12 +2096,24 @@ async def start_revelry_party_game(request: RevelryPartyGameStartRequest, req: R
             "external_container_id": context.external_container_id,
             "session": _format_session(superseded),
         })
+    return_token, _return_expires, return_context = _create_party_games_token(
+        context,
+        actor,
+        launch_context.get("return_url", ""),
+        launch_context.get("display") or {},
+        ttl_seconds=config.REVELRY_PARTY_HUB_RETURN_TOKEN_TTL_SECONDS,
+    )
     token, expires = _create_launch_token(
         session["id"],
         "organizer",
         "organizer",
         launch_context.get("return_url", ""),
-        launch_context,
+        {
+            **launch_context,
+            "party_hub_url": f"{_public_base_url(req)}/revelry/games?party_games_token={return_token}",
+            "party_hub_token_expires_at": _iso(_return_expires),
+            "display": return_context.get("display") or launch_context.get("display") or {},
+        },
     )
     base_url = _public_base_url(req)
     await _send_revelry_callback("session.created", {

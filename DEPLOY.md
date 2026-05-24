@@ -158,6 +158,7 @@ PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me
 REVELRY_INTEGRATION_SECRET=<strong gamma shared secret matching Revelry gamma>
 REVELRY_LAUNCH_TOKEN_TTL_SECONDS=600
 REVELRY_AUTHORING_TOKEN_TTL_SECONDS=3600
+REVELRY_PARTY_HUB_RETURN_TOKEN_TTL_SECONDS=14400
 REVELRY_SESSION_LOBBY_TTL_SECONDS=14400
 REVELRY_SESSION_IDLE_TTL_SECONDS=7200
 REVELRY_CALLBACK_URL=<optional Revelry gamma callback endpoint>
@@ -184,6 +185,7 @@ PUBLIC_BASE_URL=https://gamesapi.revelryapp.me
 REVELRY_INTEGRATION_SECRET=<strong prod shared secret matching Revelry prod>
 REVELRY_LAUNCH_TOKEN_TTL_SECONDS=600
 REVELRY_AUTHORING_TOKEN_TTL_SECONDS=3600
+REVELRY_PARTY_HUB_RETURN_TOKEN_TTL_SECONDS=14400
 REVELRY_SESSION_LOBBY_TTL_SECONDS=14400
 REVELRY_SESSION_IDLE_TTL_SECONDS=7200
 REVELRY_CALLBACK_URL=<optional Revelry prod callback endpoint>
@@ -1052,6 +1054,7 @@ Both LocalPlay and Revelry need a shared secret:
 | LocalPlay backend | `REVELRY_INTEGRATION_SECRET` | shared HMAC secret (hex, 64 chars) |
 | LocalPlay backend | `PUBLIC_BASE_URL` | `https://gamesapi-gamma.revelryapp.me` (gamma) or `https://gamesapi.revelryapp.me` (prod) |
 | LocalPlay backend | `REVELRY_AUTHORING_TOKEN_TTL_SECONDS` | authoring token lifetime; default `3600` |
+| LocalPlay backend | `REVELRY_PARTY_HUB_RETURN_TOKEN_TTL_SECONDS` | party hub return-token lifetime after a LocalPlay-owned start; default `14400` |
 | LocalPlay backend | `REVELRY_CALLBACK_URL` | optional Revelry callback endpoint for content/session/result sync |
 | LocalPlay backend | `REVELRY_CALLBACK_SECRET` | temporary rotation-only alias; normal callback signing uses `REVELRY_INTEGRATION_SECRET` |
 | Revelry backend | `LOCALPLAY_INTEGRATION_SECRET` | same value as `REVELRY_INTEGRATION_SECRET` |
@@ -1101,6 +1104,8 @@ Revelry-created sessions are LocalPlay `host_app_managed` billing sessions: Loca
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/catalog?host_app=revelry` | GET | List available games with metadata |
+| `/integrations/revelry/party-games-link` | POST | Mint a party hub URL and optional LocalPlay-owned start-intent URL |
+| `/integrations/revelry/games?party_games_token=...` | GET | Open the party-scoped LocalPlay hub; may include `start_content_id` for Start shortcuts |
 | `/integrations/revelry/sessions` | POST | Create a game session for a Revelry party |
 | `/integrations/revelry/sessions/{id}/launch-token` | POST | Generate a signed JWT launch URL |
 | `/integrations/revelry/sessions/{id}` | GET | Check session status |

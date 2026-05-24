@@ -740,6 +740,18 @@ def get_active_game_session(host_app: str, external_container_id: str) -> Option
     ))
 
 
+def game_content_has_sessions(host_app: str, external_container_id: str, game_id: str) -> bool:
+    return bool(_first(_sb().select(
+        "game_sessions",
+        filters={
+            "host_app": f"eq.{host_app}",
+            "external_container_id": f"eq.{external_container_id}",
+            "game_id": f"eq.{game_id}",
+        },
+        limit=1,
+    )))
+
+
 def update_game_session(session_id: str, updates: dict) -> Optional[dict]:
     allowed = {
         "status", "joinable", "closed_reason", "closed_message", "superseded_by_session_id",

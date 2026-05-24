@@ -938,6 +938,10 @@ Request:
   "return_url": "https://app.revelryapp.me/party/party_uuid?tab=games",
   "guest_join_url": "https://app.revelryapp.me/party/party_uuid/games/join",
   "preferred_display": "fullscreen",
+  "intent": "hub",
+  "content_id": "",
+  "game_type": "quiz",
+  "time_limit": 30,
   "display": {
     "link_label": "Open Ava's Birthday Games Hub on Revelry Games",
     "container_label": "Ava's Birthday",
@@ -955,6 +959,7 @@ Response:
 ```json
 {
   "party_games_url": "https://gamesapi.revelryapp.me/integrations/revelry/games?party_games_token=...",
+  "start_url": "",
   "party_games_token_expires_at": "2026-05-23T21:00:00Z",
   "return_url": "https://app.revelryapp.me/party/party_uuid?tab=games",
   "display": {
@@ -973,6 +978,8 @@ Rules:
 
 - Requires service authorization from Revelry. Browser/native clients must never receive the shared integration secret.
 - The `party_games_token` is a short-lived exchange token. After exchange, LocalPlay issues a session-scoped runtime credential for the hub, authoring, and start actions.
+- For Start shortcuts, Revelry may pass `intent = start`, `content_id`, `game_type`, and optional `time_limit`. LocalPlay returns a `start_url` that opens the party hub with `start_content_id`. This URL is still LocalPlay-owned ingress: the hub/start-intent route validates capabilities, content ownership, active-session state, replacement confirmation, and room creation before opening organizer/lobby.
+- If `intent = hub`, `start_url` is empty and Revelry should use `party_games_url`.
 - `guest_join_url` is optional but recommended for party/TV flows. It must be a Revelry-owned web URL, universal/app link, or allowed custom scheme that lets guests join or open the party's active game from Revelry. LocalPlay may render this URL as a QR code in host-app organizer/spectator surfaces; it must not replace authorization checks.
 - `display.guest_join_url` overrides `external_context.guest_join_url` for presentation. `guest_join_label` is display copy only.
 - LocalPlay validates `guest_join_url` with the same allowlist rules as `return_url`.
@@ -985,6 +992,7 @@ LocalPlay hub route:
 
 ```text
 GET /integrations/revelry/games?party_games_token=...
+GET /integrations/revelry/games?party_games_token=...&start_content_id=lp_content_uuid
 ```
 
 Expected hub behavior:
@@ -1360,6 +1368,7 @@ Implementation-ready host-app lobby behavior:
 - The button copy should be generic enough for web and app surfaces, for example "Copy join link"; QR copy may remain "Scan to join from Revelry" or a host-provided `guest_join_label`.
 - Tests should cover both modes: standalone still shows/copies the LocalPlay room URL, host-app with `guest_join_url` shows/copies the Revelry URL, and host-app without `guest_join_url` does not show a raw LocalPlay share fallback.
 - Completed host-app games must not expose the standalone LocalPlay "Play Again" loop, because that flow creates standalone-owned content/rooms. In Revelry mode, the final results action should return to the same party's LocalPlay hub by default. The hub may then offer Start Another Game, edit/create content, or an explicit Back to Revelry action using the validated `return_url`.
+- Organizer launches created by the LocalPlay party hub/start-intent route should include a longer-lived `party_hub_url` in launch context. This allows post-game and terminal recovery actions to return to LocalPlay's party hub even when the original short-lived party ingress token has expired.
 - Host-app egress paths must be audited across organizer, player, spectator/TV, party hub, authoring, and error states. A Revelry-launched user should never be sent to standalone LocalPlay setup, generic join, standalone saved library, checkout, or raw share recovery after a terminal host-app error. Recoverable in-game states, such as "nickname is taken," may stay in place when the user can fix the input without leaving the party context.
 - Default runtime exits from a Revelry-launched LocalPlay surface should return to the same party's LocalPlay hub. This includes Start Another Game, Play Again, Done, room expired, room superseded, connection failed, host left, and spectator/player terminal states. An explicit Back to Revelry action may use the allowlisted host-app return URL, but the LocalPlay in-product home base remains the party hub.
 - Fatal organizer errors, expired launch tokens, superseded/closed rooms, room-not-found responses, and terminal spectator websocket errors should show host-app copy and use the validated `return_url` when available. If no return URL is available, fail closed with "Open this from Revelry again" rather than falling back to standalone flows.
@@ -1459,6 +1468,7 @@ LocalPlay:
 REVELRY_INTEGRATION_SECRET=<prod-or-gamma-secret>
 REVELRY_LAUNCH_TOKEN_TTL_SECONDS=600
 REVELRY_AUTHORING_TOKEN_TTL_SECONDS=3600
+REVELRY_PARTY_HUB_RETURN_TOKEN_TTL_SECONDS=14400
 REVELRY_SESSION_LOBBY_TTL_SECONDS=14400
 REVELRY_SESSION_IDLE_TTL_SECONDS=7200
 REVELRY_CALLBACK_URL=<optional-revelry-callback-endpoint>
@@ -1543,9 +1553,11 @@ Recommended LocalPlay order:
 8. Add safe one-active-game replacement handling. Done.
 9. Add on-demand launch-token exchange. Done.
 10. Add status/result polling endpoint. Done.
-11. Add embedded host-app authoring mode for manual quiz content, including host-app content APIs and session creation via `settings.content_id`. Done for quiz content using party-scoped quiz packs.
+11. Add embedded host-app authoring mode for manual quiz content, including host-app content APIs and session creation via `settings.content_id`. Done for quiz content using party-scoped quiz packs. Used content now versions on edit by creating a new `localplay_content_id` rather than mutating a played pack.
 12. Add signed callback/webhook delivery for content/session/result events, with polling as recovery. Done as best-effort delivery when callback env vars are configured, including short bounded retry for `429` and transient `5xx`; durable queued retry remains backlog.
 13. Add postMessage events only where they improve embedded UX.
+14. Backlog: cleanup jobs for party drafts/content/media retention.
+15. Backlog: late-join policy, Quick Start, live Games tab refresh hooks, player-count display, TV/cast launcher, result-card image generation, and play-again/new-round shortcuts.
 
 ## Open Questions
 
@@ -1565,7 +1577,7 @@ Recommended LocalPlay order:
 - Decision: MVP should deliver a narrow Revelry-to-LocalPlay bridge on top of the generic durable session model: catalog, create session, enforce one active game, launch organizer/player/spectator, support embedded/open-external play, poll status/results, and return safe result summaries. Webhooks, full Cloud Run room persistence, richer feed automation, and deep analytics are deferred until the bridge is playable on gamma.
 - Decision: Roll out on gamma first and do not promote to production until Revelry gamma can create, launch, play, supersede, expire, poll, and summarize a LocalPlay session end to end.
 - Decision: Expose `GET /catalog` as part of the MVP. Revelry should use it to render available LocalPlay games, filtered by host app/environment where needed. LocalPlay still validates launch requests server-side. The catalog may include `live`, `gamma`, `planned`, or `disabled` status values, but Revelry should only enable launch for games LocalPlay marks `launchable`.
-- Decision: Custom quiz authoring remains owned by LocalPlay. The MVP authoring path is LocalPlay-hosted prepared content: Revelry opens the authoring link, LocalPlay returns canonical `localplay_content_id`, Revelry stores a prepared setup pointer, and session creation passes `settings.content_id`. Do not add or revive a separate generic quiz/`quiz_pack_id` bypass for Revelry-launched custom quizzes.
+- Decision: Custom quiz authoring remains owned by LocalPlay. The MVP authoring path is LocalPlay-hosted prepared content: Revelry opens the authoring link, LocalPlay returns canonical `localplay_content_id`, Revelry stores a prepared setup pointer, and session creation passes `settings.content_id`. Do not add or revive a separate generic quiz/`quiz_pack_id` bypass for Revelry-launched custom quizzes. Once a content id has been used to start a session, future edits create a new LocalPlay content id/version and Revelry should update the prepared setup pointer after save.
 - Decision: Reuse existing custom quiz tables for Revelry quiz content now. Existing quiz-pack tables already serve the non-Revelry custom quiz use case and can also support Revelry by scoping ownership to `revelry:party:<party_id>`, so the quiz authoring implementation should not be blocked on a new generic content-table migration. Add a generic host-app content table later when non-quiz editable game types need it.
 - Decision: A generic Games/LocalPlay entry from Revelry opens a party-scoped LocalPlay "Revelry Games" hub, not standalone LocalPlay. The hub shows the same party prepared games, drafts, active session, recent results, and launchable catalog that Revelry mirrors in its Games tab. LocalPlay hub/start-intent surfaces are the canonical place for Start, replacement confirmation, runtime recovery, and "start another game"; Revelry may expose shortcuts, but they are ingress into LocalPlay rather than a separate control plane.
 - Decision: Embedded host-app authoring must run in host-app-aware mode. The UI may reuse standalone LocalPlay components, but it must hide unsupported games, standalone economy/account chrome, and standalone-only content paths. Authored content should be saved as LocalPlay host-app content and attached to the Revelry-managed session with `settings.content_id`.

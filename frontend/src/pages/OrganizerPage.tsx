@@ -52,6 +52,7 @@ export default function OrganizerPage() {
     const [hostAppJoinUrl, setHostAppJoinUrl] = useState('');
     const [hostAppJoinLabel, setHostAppJoinLabel] = useState('Scan to join from Revelry');
     const [hostAppReturnUrl, setHostAppReturnUrl] = useState('');
+    const [hostAppPartyHubUrl, setHostAppPartyHubUrl] = useState('');
     const [timeLimit, setTimeLimit] = useState(15);
     const [playerCount, setPlayerCount] = useState(0);
     const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -716,6 +717,7 @@ export default function OrganizerPage() {
                 setHostAppJoinUrl(display.guest_join_url || data.launch_context?.guest_join_url || '');
                 setHostAppJoinLabel(display.guest_join_label || 'Scan to join from Revelry');
                 setHostAppReturnUrl(data.launch_context?.return_url || data.return_url || '');
+                setHostAppPartyHubUrl(data.launch_context?.party_hub_url || '');
                 organizerTokenRef.current = data.organizer_token || '';
                 setState('ROOM');
                 connectWsRef.current(data.room_code);
@@ -813,6 +815,10 @@ export default function OrganizerPage() {
     };
 
     const returnToHostApp = () => {
+        if (hostAppPartyHubUrl) {
+            window.location.assign(hostAppPartyHubUrl);
+            return;
+        }
         if (hostAppReturnUrl) {
             window.location.assign(hostAppReturnUrl);
             return;
@@ -840,7 +846,7 @@ export default function OrganizerPage() {
                         <div className="min-h-dvh flex flex-col items-center justify-center container-responsive safe-bottom animate-in text-center">
                             <h1 className="hero-title mb-3">Open From Revelry</h1>
                             <p className="text-[--text-tertiary] mb-6">This organizer view needs an active Revelry game launch.</p>
-                            {hostAppReturnUrl && (
+                            {(hostAppPartyHubUrl || hostAppReturnUrl) && (
                                 <button className="btn btn-primary w-full" onClick={returnToHostApp}>
                                     Back to Revelry Games
                                 </button>

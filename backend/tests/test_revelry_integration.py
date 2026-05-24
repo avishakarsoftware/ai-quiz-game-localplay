@@ -497,6 +497,48 @@ def test_revelry_party_games_link_resolve_and_start_saved_pack(monkeypatch):
     launch_context = launch_res.json()["launch_context"]
     assert launch_context["display"]["guest_join_url"] == "https://app.revelryapp.me/party/1/games/join"
     assert launch_context["display"]["guest_join_label"] == "Scan to join Ava's Birthday"
+    assert "/revelry/games?party_games_token=" in launch_context["party_hub_url"]
+
+
+def test_revelry_party_games_link_can_mint_start_intent_url(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-start-link-{uuid.uuid4().hex}"
+    owner_wallet_id = f"revelry:party:{container_id}"
+    pack = db.save_quiz_pack(
+        owner_wallet_id,
+        "Start Intent Quiz",
+        [{"text": "Start?", "options": ["Yes", "No", "Maybe", "Later"], "answer_index": 0}],
+    )
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Ava's Birthday",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["manage_games", "author_content", "operate_game"],
+        },
+        "intent": "start",
+        "content_id": pack["id"],
+        "game_type": "quiz",
+        "time_limit": 30,
+    }
+
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+
+    assert link_res.status_code == 200
+    start_url = link_res.json()["start_url"]
+    assert "/integrations/revelry/games?party_games_token=" in start_url
+    assert f"start_content_id={pack['id']}" in start_url
+    assert "time_limit=30" in start_url
+    route_res = client.get(start_url.replace("http://testserver", ""), follow_redirects=False)
+    assert route_res.status_code == 302
+    assert f"start_content_id={pack['id']}" in route_res.headers["location"]
 
 
 def test_revelry_authoring_link_save_and_fetch_content(monkeypatch):
@@ -552,6 +594,68 @@ def test_revelry_authoring_link_save_and_fetch_content(monkeypatch):
     )
     assert get_res.status_code == 200
     assert get_res.json()["quiz"]["quiz_title"] == "Party Facts"
+
+
+def test_revelry_editing_used_content_creates_new_version(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    monkeypatch.setattr(config, "REVELRY_CALLBACK_URL", "https://api-gamma.revelryapp.me/api/games/localplay/callback")
+    calls = []
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *args, **kwargs: _FakeAsyncClient(calls, *args, **kwargs))
+    db.init_db()
+    container_id = f"party-version-{uuid.uuid4().hex}"
+    owner_wallet_id = f"revelry:party:{container_id}"
+    pack = db.save_quiz_pack(
+        owner_wallet_id,
+        "Played Quiz",
+        [{"text": "Original?", "options": ["Yes", "No", "Maybe", "Later"], "answer_index": 0}],
+    )
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Ava's Birthday",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["manage_games", "author_content", "operate_game"],
+        },
+    }
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+    party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
+    start_res = client.post(
+        "/integrations/revelry/party-games/start",
+        json={"party_games_token": party_token, "content_id": pack["id"], "game_type": "quiz"},
+    )
+    assert start_res.status_code == 200
+
+    edit_link_res = client.post(
+        "/integrations/revelry/party-games/authoring-link",
+        json={"party_games_token": party_token, "game_type": "quiz", "mode": "edit", "content_id": pack["id"]},
+    )
+    token = edit_link_res.json()["authoring_url"].split("authoring_token=", 1)[1]
+    edited_quiz = {
+        "quiz_title": "Played Quiz Edited",
+        "questions": [{"id": 1, "text": "Edited?", "options": ["Yes", "No", "Maybe", "Later"], "answer_index": 0, "image_prompt": ""}],
+    }
+    save_res = client.post(
+        "/integrations/revelry/content",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"game_type": "quiz", "title": "Played Quiz Edited", "content_payload": {"quiz": edited_quiz}},
+    )
+
+    assert save_res.status_code == 200
+    body = save_res.json()
+    assert body["previous_content_id"] == pack["id"]
+    assert body["localplay_content_id"] != pack["id"]
+    assert db.get_quiz_pack(owner_wallet_id, pack["id"])["title"] == "Played Quiz"
+    assert db.get_quiz_pack(owner_wallet_id, body["localplay_content_id"])["title"] == "Played Quiz Edited"
+    created = [call["body"] for call in calls if call["body"]["event_type"] == "content.created"]
+    assert created
+    assert created[-1]["previous_content_id"] == pack["id"]
+    assert created[-1]["content_id"] == body["localplay_content_id"]
 
 
 def test_revelry_party_hub_can_mint_authoring_link(monkeypatch):
