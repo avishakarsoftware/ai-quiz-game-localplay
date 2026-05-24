@@ -51,6 +51,7 @@ export default function OrganizerPage() {
     const [roomCode, setRoomCode] = useState('');
     const [hostAppJoinUrl, setHostAppJoinUrl] = useState('');
     const [hostAppJoinLabel, setHostAppJoinLabel] = useState('Scan to join from Revelry');
+    const [hostAppReturnUrl, setHostAppReturnUrl] = useState('');
     const [timeLimit, setTimeLimit] = useState(15);
     const [playerCount, setPlayerCount] = useState(0);
     const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -706,6 +707,7 @@ export default function OrganizerPage() {
                 setRoomCode(data.room_code);
                 setHostAppJoinUrl(display.guest_join_url || data.launch_context?.guest_join_url || '');
                 setHostAppJoinLabel(display.guest_join_label || 'Scan to join from Revelry');
+                setHostAppReturnUrl(data.launch_context?.return_url || data.return_url || '');
                 organizerTokenRef.current = data.organizer_token || '';
                 setState('ROOM');
                 connectWsRef.current(data.room_code);
@@ -800,6 +802,17 @@ export default function OrganizerPage() {
         setPrompt('');
         setCurrentStatement('');
         setState('SELECT_GAME');
+    };
+
+    const returnToHostApp = () => {
+        if (hostAppReturnUrl) {
+            window.location.assign(hostAppReturnUrl);
+            return;
+        }
+        setErrorModal({
+            title: 'Back to Revelry',
+            message: 'Open this party from Revelry to start another game.',
+        });
     };
 
     // In Capacitor, window.location.origin is capacitor://localhost — use the web URL instead
@@ -1152,7 +1165,8 @@ export default function OrganizerPage() {
                         leaderboard={leaderboard}
                         teamLeaderboard={teamLeaderboard}
                         superlatives={superlatives}
-                        onPlayAgain={playAgain}
+                        onPlayAgain={hostAppMode ? returnToHostApp : playAgain}
+                        playAgainLabel={hostAppMode ? 'Back to Revelry Games' : 'Play Again'}
                     />
                 )}
             </div>

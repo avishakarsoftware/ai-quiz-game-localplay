@@ -181,6 +181,21 @@ describe('SpectatorPage', () => {
             // Should stay on the presentation intro state
             expect(screen.getByText('Quiz Incoming')).toBeInTheDocument();
         });
+
+        it('shows server errors without retrying forever', () => {
+            renderSpectator('BAD1');
+            simulateWsOpen();
+            simulateWsMessage({ type: 'ERROR', message: 'Room not found' });
+
+            expect(screen.getByText('Connection Error')).toBeInTheDocument();
+            expect(screen.getByText('Room not found')).toBeInTheDocument();
+
+            const ws = getLatestWs();
+            act(() => { ws.onclose?.(); });
+            act(() => { vi.advanceTimersByTime(5000); });
+
+            expect(MockWebSocket.instances).toHaveLength(1);
+        });
     });
 
     // --- Tie Detection (Fix 7) ---

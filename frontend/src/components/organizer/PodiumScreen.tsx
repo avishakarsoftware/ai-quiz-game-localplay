@@ -18,9 +18,10 @@ interface PodiumScreenProps {
     teamLeaderboard?: TeamLeaderboardEntry[];
     superlatives?: Superlative[];
     onPlayAgain: () => void;
+    playAgainLabel?: string;
 }
 
-export default function PodiumScreen({ leaderboard, teamLeaderboard, superlatives, onPlayAgain }: PodiumScreenProps) {
+export default function PodiumScreen({ leaderboard, teamLeaderboard, superlatives, onPlayAgain, playAgainLabel = 'Play Again' }: PodiumScreenProps) {
     const [revealPhase, setRevealPhase] = useState(0);
 
     useEffect(() => {
@@ -192,7 +193,7 @@ export default function PodiumScreen({ leaderboard, teamLeaderboard, superlative
             {revealPhase >= 4 && (
                 <button onClick={onPlayAgain} className="btn btn-primary w-full mt-8 stagger-in"
                         style={{ position: 'relative', zIndex: 11 }}>
-                    Play Again
+                    {playAgainLabel}
                 </button>
             )}
         </div>

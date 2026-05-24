@@ -54,6 +54,7 @@ export default function SpectatorPage() {
     const [showFullscreenPrompt, setShowFullscreenPrompt] = useState(true);
     const [wmltRoundResult, setWmltRoundResult] = useState<{ winner: string; winners: string[]; round_podium: { nickname: string; avatar: string; vote_count: number; voters: string[] }[]; unanimous: boolean; show_votes: boolean; statement: string } | null>(null);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
+    const [connectionError, setConnectionError] = useState('');
 
     useEffect(() => {
         const launchToken = searchParams.get('launch_token');
@@ -67,10 +68,14 @@ export default function SpectatorPage() {
                 if (!cancelled && data.room_code) {
                     setRoomCode(data.room_code);
                     setJoined(true);
+                    setConnectionError('');
                     setGameState('CONNECTING');
                 }
             } catch {
-                if (!cancelled) setGameState('CLOSED');
+                if (!cancelled) {
+                    setConnectionError('This spectator link expired. Open it from Revelry again.');
+                    setGameState('ERROR');
+                }
             }
         })();
         return () => { cancelled = true; };
@@ -86,6 +91,14 @@ export default function SpectatorPage() {
     const roomClosedRef = useRef(false);
     const [roomClosed, setRoomClosed] = useState(false);
     const mountedRef = useRef(true);
+    const terminalConnectionErrorRef = useRef(false);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
 
     // In Capacitor, window.location.origin is capacitor://localhost — use the web URL
     const isCapacitor = window.location.protocol === 'capacitor:' || (window.location.hostname === 'localhost' && !window.location.port);
@@ -100,6 +113,8 @@ export default function SpectatorPage() {
         if (code.length < 4) return;
         setRoomCode(code);
         setJoined(true);
+        setConnectionError('');
+        terminalConnectionErrorRef.current = false;
         setGameState('CONNECTING');
         setSearchParams({ room: code });
     };
@@ -123,6 +138,8 @@ export default function SpectatorPage() {
                         if (data.type === 'JOIN_ROOM' && /^[A-Z0-9]{4,6}$/.test(code)) {
                             setRoomCode(code);
                             setJoined(true);
+                            setConnectionError('');
+                            terminalConnectionErrorRef.current = false;
                             setGameState('CONNECTING');
                             setSearchParams({ room: code });
                         }
@@ -148,6 +165,8 @@ export default function SpectatorPage() {
     const connectWs = useRef<() => void>(() => {});
     const connectWsImpl = () => {
         if (!joined || !roomCode) return;
+        setConnectionError('');
+        terminalConnectionErrorRef.current = false;
         const clientId = `spectator-${Date.now()}`;
         const ws = new WebSocket(`${WS_URL}/ws/${roomCode}/${clientId}?spectator=true`);
         wsRef.current = ws;
@@ -161,6 +180,12 @@ export default function SpectatorPage() {
             let msg: any;
             try { msg = JSON.parse(event.data); } catch { return; }
             if (msg.type === 'PING') return; // heartbeat — no action needed
+            if (msg.type === 'ERROR') {
+                terminalConnectionErrorRef.current = true;
+                setConnectionError(String(msg.message || 'Unable to connect to this room.'));
+                setGameState('ERROR');
+                return;
+            }
             if (msg.type === 'SPECTATOR_SYNC') {
                 setPlayers(msg.players || []);
                 setPlayerCount(msg.player_count);
@@ -295,10 +320,13 @@ export default function SpectatorPage() {
             }
         };
 
-        ws.onerror = () => setGameState('ERROR');
+        ws.onerror = () => {
+            setConnectionError('Unable to connect to the room.');
+            setGameState('ERROR');
+        };
         ws.onclose = () => {
             wsRef.current = null;
-            if (roomClosedRef.current || !mountedRef.current) return;
+            if (roomClosedRef.current || !mountedRef.current || terminalConnectionErrorRef.current) return;
             setGameState('DISCONNECTED');
             // Exponential backoff: 2s, 4s, 8s, 16s, capped at 30s
             const delay = reconnectDelayRef.current;
@@ -316,7 +344,6 @@ export default function SpectatorPage() {
         reconnectDelayRef.current = 2000;
         connectWs.current();
         return () => {
-            mountedRef.current = false;
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
             wsRef.current?.close();
             wsRef.current = null;
@@ -434,7 +461,7 @@ export default function SpectatorPage() {
                             <h1 className="hero-title mb-2">
                                 {gameState === 'CONNECTING' ? 'Connecting...' : gameState === 'ERROR' ? 'Connection Error' : roomClosed ? 'Disconnected' : 'Reconnecting...'}
                             </h1>
-                            <p className="text-[--text-tertiary] text-lg">Room: {roomCode}</p>
+                            <p className="text-[--text-tertiary] text-lg">{connectionError || `Room: ${roomCode}`}</p>
                             {(gameState === 'CONNECTING' || (gameState === 'DISCONNECTED' && !roomClosed)) && (
                                 <div className="flex gap-1.5 mt-6">
                                     {[0, 1, 2].map((i) => (
@@ -445,7 +472,14 @@ export default function SpectatorPage() {
                             )}
                             {(gameState === 'ERROR' || gameState === 'DISCONNECTED') && (
                                 <button
-                                    onClick={() => { if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current); setJoined(false); setRoomInput(''); setSearchParams({}); }}
+                                    onClick={() => {
+                                        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+                                        terminalConnectionErrorRef.current = false;
+                                        setConnectionError('');
+                                        setJoined(false);
+                                        setRoomInput('');
+                                        setSearchParams({});
+                                    }}
                                     className="btn btn-secondary mt-6"
                                     style={{ fontSize: '1.125rem' }}
                                 >

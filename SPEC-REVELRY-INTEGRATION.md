@@ -80,6 +80,11 @@ PUT  /integrations/revelry/content/{content_id}
 GET  /sessions/{session_id}/organizer
 GET  /sessions/{session_id}/join
 GET  /sessions/{session_id}/spectate
+GET  /spectator
+GET  /spectate
+GET  /spectate/{room_code}
+GET  /tv
+GET  /tv/{room_code}
 GET  /revelry/games
 GET  /revelry/author
 ```
@@ -1340,6 +1345,9 @@ Implementation-ready host-app lobby behavior:
 - The host-app copy/share action should be available only on organizer/spectator/TV-style surfaces where a host/cohost is expected to invite others. Player surfaces should not show host invite controls.
 - The button copy should be generic enough for web and app surfaces, for example "Copy join link"; QR copy may remain "Scan to join from Revelry" or a host-provided `guest_join_label`.
 - Tests should cover both modes: standalone still shows/copies the LocalPlay room URL, host-app with `guest_join_url` shows/copies the Revelry URL, and host-app without `guest_join_url` does not show a raw LocalPlay share fallback.
+- Completed host-app games must not expose the standalone LocalPlay "Play Again" loop, because that flow creates standalone-owned content/rooms. In Revelry mode, the final results action should use the validated `return_url` to take the host back to the party-scoped Revelry Games surface, where they can start another prepared game or create a new one.
+- Spectator/TV launch should support the canonical session route `/sessions/{session_id}/spectate` plus shared spectator aliases `/spectator`, `/spectate`, `/spectate/{room_code}`, `/tv`, and `/tv/{room_code}`. These aliases should all use the same spectator page/component and websocket connection behavior so TV-specific launch paths cannot drift from the normal spectator view.
+- Spectator websocket failures should show a clear recovery state. Server terminal errors such as "Room not found" or expired launch tokens should not trigger an endless reconnect loop; transient closes should continue bounded reconnect behavior.
 
 Implementation-ready party-scoped UX architecture:
 

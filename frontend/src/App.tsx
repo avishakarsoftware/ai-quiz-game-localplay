@@ -27,6 +27,8 @@ function AppShell() {
         <Route path="/join" element={<PlayerPage />} />
         <Route path="/join/:code" element={<PlayerPage />} />
         <Route path="/spectator" element={<SpectatorPage />} />
+        <Route path="/spectate" element={<SpectatorPage />} />
+        <Route path="/spectate/:code" element={<SpectatorPage />} />
         <Route path="/tv" element={<SpectatorPage />} />
         <Route path="/tv/:code" element={<SpectatorPage />} />
         <Route path="/revelry/games" element={<PartyHubPage />} />
