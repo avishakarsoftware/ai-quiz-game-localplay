@@ -8,15 +8,27 @@ const LOADING_MESSAGES = [
     'Almost there...',
 ];
 
-export default function LoadingScreen() {
+const PREPARING_MESSAGES = [
+    'Loading your saved questions...',
+    'Preparing answer choices...',
+    'Checking images...',
+    'Almost ready...',
+];
+
+interface LoadingScreenProps {
+    title?: string;
+    messages?: string[];
+}
+
+export default function LoadingScreen({ title = 'Generating Quiz', messages = LOADING_MESSAGES }: LoadingScreenProps) {
     const [msgIndex, setMsgIndex] = useState(0);
 
     useEffect(() => {
         const interval = setInterval(() => {
-            setMsgIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
+            setMsgIndex((prev) => (prev + 1) % messages.length);
         }, 2500);
         return () => clearInterval(interval);
-    }, []);
+    }, [messages.length]);
 
     return (
         <div
@@ -29,7 +41,7 @@ export default function LoadingScreen() {
             }}
             className="container-responsive animate-in"
         >
-            <h1 className="hero-title mb-8">Generating Quiz</h1>
+            <h1 className="hero-title mb-8">{title}</h1>
 
             {/* Animated concentric rings */}
             <div className="loading-rings mb-8">
@@ -40,8 +52,10 @@ export default function LoadingScreen() {
             </div>
 
             <p className="text-[--text-tertiary] loading-message-fade" key={msgIndex}>
-                {LOADING_MESSAGES[msgIndex]}
+                {messages[msgIndex] || messages[0]}
             </p>
         </div>
     );
 }
+
+export { PREPARING_MESSAGES };

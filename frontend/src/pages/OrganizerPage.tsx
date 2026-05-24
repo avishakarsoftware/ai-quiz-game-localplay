@@ -12,7 +12,7 @@ import QuizVariantPromptScreen from '../components/organizer/QuizVariantPromptSc
 import CustomQuizEditor from '../components/organizer/CustomQuizEditor';
 import MLTPromptScreen from '../components/organizer/MLTPromptScreen';
 import DrawingPromptScreen from '../components/organizer/DrawingPromptScreen';
-import LoadingScreen from '../components/organizer/LoadingScreen';
+import LoadingScreen, { PREPARING_MESSAGES } from '../components/organizer/LoadingScreen';
 import ReviewScreen from '../components/organizer/ReviewScreen';
 import MLTReviewScreen from '../components/organizer/MLTReviewScreen';
 import DrawingReviewScreen from '../components/organizer/DrawingReviewScreen';
@@ -68,6 +68,7 @@ export default function OrganizerPage() {
     const [answeredCount, setAnsweredCount] = useState(0);
     const [provider, setProvider] = useState('ollama');
     const [providers, setProviders] = useState<AIProvider[]>([]);
+    const [loadingCopy, setLoadingCopy] = useState<{ title: string; messages?: string[] }>({ title: 'Generating Quiz' });
     const [isBonus, setIsBonus] = useState(false);
     const [showBonusSplash, setShowBonusSplash] = useState(false);
     const [roomLocked, setRoomLocked] = useState(false);
@@ -83,6 +84,7 @@ export default function OrganizerPage() {
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const roomCodeRef = useRef('');
     const organizerTokenRef = useRef('');
+    const flowEpochRef = useRef(0);
     const mountedRef = useRef(true);
     const connectWsRef = useRef<(code: string) => void>(() => {});
     const gameTypeRef = useRef<GameType>('quiz');
@@ -102,7 +104,27 @@ export default function OrganizerPage() {
     // Listen for home navigation from hamburger menu
     useEffect(() => {
         const handler = () => {
-            if (stateRef.current === 'PROMPT' || stateRef.current === 'QUIZ_VARIANT_PROMPT' || stateRef.current === 'CUSTOM_QUIZ' || stateRef.current === 'QUIZ_LIBRARY' || stateRef.current === 'MLT_PROMPT' || stateRef.current === 'DRAWING_PROMPT' || stateRef.current === 'SELECT_GAME') {
+            const homeSafeStates: OrganizerState[] = [
+                'SELECT_GAME',
+                'PROMPT',
+                'QUIZ_VARIANT_PROMPT',
+                'CUSTOM_QUIZ',
+                'QUIZ_LIBRARY',
+                'MLT_PROMPT',
+                'DRAWING_PROMPT',
+                'LOADING',
+                'REVIEW',
+                'MLT_REVIEW',
+                'DRAWING_REVIEW',
+            ];
+            if (homeSafeStates.includes(stateRef.current)) {
+                flowEpochRef.current += 1;
+                setQuiz(null);
+                setMltGame(null);
+                setDrawingGame(null);
+                setEditingPackId(undefined);
+                setContentId('');
+                setQuestionImages({});
                 setState('SELECT_GAME');
             }
         };
@@ -321,6 +343,7 @@ export default function OrganizerPage() {
             setErrorModal({ title: 'Temporarily Unavailable', message: 'Game generation is temporarily disabled. Please try again later.' });
             return;
         }
+        setLoadingCopy({ title: 'Generating Quiz' });
         setState('LOADING');
         try {
             const res = await fetch(apiUrl('/quiz/generate'), {
@@ -372,6 +395,7 @@ export default function OrganizerPage() {
     };
 
     const importCustomQuiz = async (customQuiz: Quiz) => {
+        setLoadingCopy({ title: 'Preparing Quiz', messages: PREPARING_MESSAGES });
         setState('LOADING');
         try {
             const res = await fetch(apiUrl('/quiz/import'), {
@@ -451,6 +475,8 @@ export default function OrganizerPage() {
     };
 
     const startQuizPack = async (packId: string) => {
+        const flowEpoch = ++flowEpochRef.current;
+        setLoadingCopy({ title: 'Preparing Quiz', messages: PREPARING_MESSAGES });
         setState('LOADING');
         try {
             const res = await fetch(apiUrl(`/quiz-packs/${packId}/materialize`), {
@@ -462,6 +488,7 @@ export default function OrganizerPage() {
             const fullRes = await fetch(apiUrl(`/quiz-packs/${packId}`), { headers: apiHeaders() });
             const fullData = fullRes.ok ? await fullRes.json() : null;
             const customQuiz = fullData?.quiz || data.quiz;
+            if (flowEpoch !== flowEpochRef.current) return;
             setGameType('quiz');
             setQuizOrigin('custom');
             setQuiz(customQuiz);
@@ -471,6 +498,7 @@ export default function OrganizerPage() {
             setEditingPackId(packId);
             setState('REVIEW');
         } catch {
+            if (flowEpoch !== flowEpochRef.current) return;
             setErrorModal({ title: 'Quiz Library', message: 'Could not start that quiz.' });
             setState('QUIZ_LIBRARY');
         }
@@ -494,6 +522,7 @@ export default function OrganizerPage() {
             setErrorModal({ title: 'Temporarily Unavailable', message: 'Game generation is temporarily disabled. Please try again later.' });
             return;
         }
+        setLoadingCopy({ title: 'Generating Game' });
         setState('LOADING');
         try {
             const res = await fetch(apiUrl('/mlt/generate'), {
@@ -542,6 +571,7 @@ export default function OrganizerPage() {
             setErrorModal({ title: 'Temporarily Unavailable', message: 'Game generation is temporarily disabled. Please try again later.' });
             return;
         }
+        setLoadingCopy({ title: 'Generating Prompts' });
         setState('LOADING');
         try {
             const res = await fetch(apiUrl('/drawing/generate'), {
@@ -918,15 +948,21 @@ export default function OrganizerPage() {
                             {libraryPacks.map((pack) => (
                                 <div key={pack.id} className="review-question-card">
                                     <div className="p-4">
-                                        <div className="flex items-center justify-between gap-3">
+                                        <div className="flex items-center justify-between gap-4" style={{ flexWrap: 'wrap' }}>
                                             <div style={{ minWidth: 0 }}>
                                                 <p className="font-semibold truncate">{pack.title}</p>
                                                 <p className="text-sm text-[--text-tertiary]">{pack.question_count} questions</p>
                                             </div>
-                                            <div className="flex gap-2">
-                                                <button className="review-action-btn" title="Start" onClick={() => void startQuizPack(pack.id)}>▶</button>
-                                                <button className="review-action-btn" title="Edit" onClick={() => void editQuizPack(pack.id)}>✎</button>
-                                                <button className="review-action-btn review-action-delete" title="Delete" onClick={() => void deleteQuizPack(pack.id)}>✕</button>
+                                            <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+                                                <button className="btn btn-primary" style={{ padding: '10px 14px', width: 'auto' }} onClick={() => void startQuizPack(pack.id)}>
+                                                    Start
+                                                </button>
+                                                <button className="btn btn-secondary" style={{ padding: '10px 14px', width: 'auto' }} onClick={() => void editQuizPack(pack.id)}>
+                                                    Edit
+                                                </button>
+                                                <button className="btn btn-secondary" style={{ padding: '10px 14px', width: 'auto' }} onClick={() => void deleteQuizPack(pack.id)}>
+                                                    Delete
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
@@ -1003,7 +1039,7 @@ export default function OrganizerPage() {
                     />
                 )}
 
-                {state === 'LOADING' && <LoadingScreen />}
+                {state === 'LOADING' && <LoadingScreen title={loadingCopy.title} messages={loadingCopy.messages} />}
 
                 {state === 'REVIEW' && quiz && (
                     <ReviewScreen
