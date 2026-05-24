@@ -35,6 +35,12 @@ type Workspace = {
     catalog?: { id: string; title: string; launchable: boolean }[];
 };
 
+type ReplacementPrompt = {
+    content: PreparedContent;
+    sessionId: string;
+    message: string;
+};
+
 function hasCapability(context: LaunchContext | null, capability: string): boolean {
     return Boolean(context?.capabilities?.includes(capability) || context?.capabilities?.includes('manage_games'));
 }
@@ -50,6 +56,7 @@ export default function PartyHubPage() {
     const [loading, setLoading] = useState(true);
     const [startingId, setStartingId] = useState('');
     const [error, setError] = useState('');
+    const [replacementPrompt, setReplacementPrompt] = useState<ReplacementPrompt | null>(null);
     const autoStartRef = useRef('');
 
     useEffect(() => {
@@ -89,6 +96,7 @@ export default function PartyHubPage() {
     const startGame = useCallback(async (content: PreparedContent, replacement?: { confirmed: boolean; sessionId?: string }) => {
         setStartingId(content.localplay_content_id);
         setError('');
+        if (replacement?.confirmed) setReplacementPrompt(null);
         try {
             const parsedTimeLimit = Number.parseInt(startTimeLimit, 10);
             const res = await fetch(`${API_URL}/integrations/revelry/party-games/start`, {
@@ -106,10 +114,11 @@ export default function PartyHubPage() {
             if (res.status === 409) {
                 const detail = (await res.json()).detail;
                 if (detail?.code === 'active_session_exists') {
-                    const confirmed = window.confirm('A LocalPlay game is already active for this party. Start this game and close the old one?');
-                    if (confirmed) {
-                        await startGame(content, { confirmed: true, sessionId: detail.session_id });
-                    }
+                    setReplacementPrompt({
+                        content,
+                        sessionId: detail.session_id || '',
+                        message: detail.message || 'A LocalPlay game is already active for this party.',
+                    });
                     return;
                 }
             }
@@ -122,6 +131,11 @@ export default function PartyHubPage() {
             setStartingId('');
         }
     }, [partyGamesToken, startGameType, startTimeLimit]);
+
+    const confirmReplacement = useCallback(() => {
+        if (!replacementPrompt) return;
+        void startGame(replacementPrompt.content, { confirmed: true, sessionId: replacementPrompt.sessionId });
+    }, [replacementPrompt, startGame]);
 
     useEffect(() => {
         if (!startContentId || loading || !workspace || !canStart) return;
@@ -208,6 +222,24 @@ export default function PartyHubPage() {
             </header>
 
             {error && <div className="party-hub__error">{error}</div>}
+
+            {replacementPrompt && (
+                <section className="party-hub__confirm" role="dialog" aria-modal="true" aria-labelledby="replace-game-title">
+                    <div>
+                        <p>Active game</p>
+                        <h2 id="replace-game-title">Replace the current game?</h2>
+                        <span>{replacementPrompt.message} Starting "{replacementPrompt.content.title}" will close the current room for this party.</span>
+                    </div>
+                    <div className="party-hub__confirm-actions">
+                        <button onClick={confirmReplacement} disabled={startingId === replacementPrompt.content.localplay_content_id}>
+                            {startingId === replacementPrompt.content.localplay_content_id ? 'Replacing...' : 'Replace and start'}
+                        </button>
+                        <button className="party-hub__secondary" onClick={() => setReplacementPrompt(null)}>
+                            Keep current game
+                        </button>
+                    </div>
+                </section>
+            )}
 
             <section className="party-hub__section">
                 <div className="party-hub__section-head">

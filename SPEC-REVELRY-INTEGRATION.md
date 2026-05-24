@@ -883,6 +883,8 @@ Rules:
 - Helpers remain view-only for MVP unless Revelry explicitly grants authoring capabilities later.
 - Prepared content is party-scoped for MVP. A `content_id` created for one Revelry party cannot start a session in another party.
 - Once a `content_id` has been used to start a session, it becomes immutable. Editing after use creates a new `content_id` or version, and Revelry updates the prepared setup pointer after save.
+- Versioning callbacks include `previous_content_id` / `versioned_from_content_id` so Revelry can move the prepared setup pointer from the played content to the new editable content. If the callback is missed, Revelry should recover by refreshing party workspace after return/app resume.
+- In the current LocalPlay session schema, `game_sessions.game_id` stores the `localplay_content_id` used to materialize the session, not the broad game type. `game_type` remains the broad type such as `quiz`, `wmlt`, or `drawing`. Future schema cleanup can rename this to `content_id`, but adapters should treat the existing field as the session content/materialization id.
 - Draft autosave survives 7 days since last edit.
 - Free saved party content survives until 30 days after party end. If party end is unknown, use party start plus 48 hours, then 30 days.
 - Deleting a prepared setup in Revelry detaches/hides the pointer and asks LocalPlay to mark the content `deleted_by_host`; IONOS media deletion happens asynchronously after a grace period.
@@ -983,6 +985,7 @@ Rules:
 - Requires service authorization from Revelry. Browser/native clients must never receive the shared integration secret.
 - The `party_games_token` is a short-lived exchange token. After exchange, LocalPlay issues a session-scoped runtime credential for the hub, authoring, and start actions.
 - For Start shortcuts, Revelry may pass `intent = start`, `content_id`, `game_type`, and optional `time_limit`. LocalPlay returns a `start_url` that opens the party hub with `start_content_id`. This URL is still LocalPlay-owned ingress: the hub/start-intent route validates capabilities, content ownership, active-session state, replacement confirmation, and room creation before opening organizer/lobby.
+- `start_url` query parameters must be generated with structured URL encoding. Do not concatenate raw `content_id`, tokens, or game parameters into URLs.
 - If `intent = hub`, `start_url` is empty and Revelry should use `party_games_url`.
 - `guest_join_url` is optional but recommended for party/TV flows. It must be a Revelry-owned web URL, universal/app link, or allowed custom scheme that lets guests join or open the party's active game from Revelry. LocalPlay may render this URL as a QR code in host-app organizer/spectator surfaces; it must not replace authorization checks.
 - `display.guest_join_url` overrides `external_context.guest_join_url` for presentation. `guest_join_label` is display copy only.
@@ -991,6 +994,7 @@ Rules:
 - The token must carry the normalized host-app launch context, actor capabilities, allowlisted `return_url`, and display policy.
 - Party imagery/metadata in `display` is safe presentation context only. LocalPlay may use it for headers/cards, but Revelry remains authoritative for private party details.
 - If the token expires before exchange, LocalPlay shows "Open this from Revelry again." Expiry after exchange must not interrupt authoring, lobby, or gameplay while runtime credentials remain valid.
+- LocalPlay may mint a longer-lived party-hub return token for organizer/results egress so "Back to Revelry Games" works after a game lasts longer than the original launch token. This token is scoped to the party hub, not organizer control. Keep it environment-configured, short enough for party usage, and never expose the service integration secret.
 
 LocalPlay hub route:
 
@@ -1005,7 +1009,7 @@ Expected hub behavior:
 - Guests see only active/joinable games and completed summaries that Revelry/LocalPlay mark visible to party members.
 - Host/cohost can create, edit, delete, and start party-scoped games directly inside LocalPlay when granted `author_content` and/or `operate_game`.
 - The primary hub entry can be labeled like "Open Ava's Birthday Games Hub on Revelry Games" and should use party-safe cover art/metadata when provided.
-- Starting from the LocalPlay hub or a LocalPlay start-intent route is the canonical control-plane path: validate `settings.content_id`, enforce one active session per party, warn before replacement, create the replacement before superseding the old session, and return safe launch/result metadata.
+- Starting from the LocalPlay hub or a LocalPlay start-intent route is the canonical control-plane path: validate `settings.content_id`, enforce one active session per party, show an in-hub replacement confirmation when needed, create the replacement before superseding the old session, and return safe launch/result metadata.
 - Any game created in the hub remains party-scoped and must be visible later from the Revelry Games tab after sync. Do not save it only to a standalone LocalPlay library.
 - Clicking a saved game without choosing Start should open the LocalPlay authoring/details surface for that party-scoped content, not create a live room.
 - Host/cohost card actions must stay distinct, but both are LocalPlay launches from the user's perspective:

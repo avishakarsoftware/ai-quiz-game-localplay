@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 import uvicorn
 import uuid
 import string
@@ -1080,6 +1080,13 @@ class RevelryPartyGamesLinkRequest(BaseModel):
             raise ValueError("intent must be hub or start")
         return value
 
+    @field_validator("game_type")
+    @classmethod
+    def validate_game_type(cls, value: str) -> str:
+        if value not in ("quiz", "wmlt", "drawing"):
+            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
+        return value
+
 
 class RevelryContentAuthoringLinkRequest(BaseModel):
     external_context: RevelryExternalContext
@@ -1778,17 +1785,19 @@ async def create_revelry_party_games_link(request: RevelryPartyGamesLinkRequest,
         display,
     )
     base_url = _public_base_url(req)
-    party_games_url = f"{base_url}/integrations/revelry/games?party_games_token={token}"
+    party_games_url = f"{base_url}/integrations/revelry/games?{urlencode({'party_games_token': token})}"
     start_url = ""
     if request.intent == "start" or request.content_id:
         if not request.content_id:
             raise HTTPException(status_code=422, detail="content_id is required for start intent")
-        start_url = (
-            f"{party_games_url}&start_content_id={request.content_id}"
-            f"&game_type={request.game_type}"
-        )
+        start_params: dict[str, Any] = {
+            "party_games_token": token,
+            "start_content_id": request.content_id,
+            "game_type": request.game_type,
+        }
         if request.time_limit is not None:
-            start_url += f"&time_limit={request.time_limit}"
+            start_params["time_limit"] = request.time_limit
+        start_url = f"{base_url}/integrations/revelry/games?{urlencode(start_params)}"
     return {
         "party_games_url": party_games_url,
         "start_url": start_url,
@@ -2045,13 +2054,14 @@ async def open_revelry_party_games(
     if not party_games_token:
         raise HTTPException(status_code=401, detail="party_games_token is required")
     _resolve_party_games_token(party_games_token)
-    redirect = f"/revelry/games?party_games_token={party_games_token}"
+    redirect_params: dict[str, Any] = {"party_games_token": party_games_token}
     if start_content_id:
-        redirect += f"&start_content_id={start_content_id}"
+        redirect_params["start_content_id"] = start_content_id
     if game_type:
-        redirect += f"&game_type={game_type}"
+        redirect_params["game_type"] = game_type
     if time_limit is not None:
-        redirect += f"&time_limit={time_limit}"
+        redirect_params["time_limit"] = time_limit
+    redirect = f"/revelry/games?{urlencode(redirect_params)}"
     return RedirectResponse(redirect, status_code=302)
 
 

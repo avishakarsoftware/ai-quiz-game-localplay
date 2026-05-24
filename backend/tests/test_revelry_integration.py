@@ -5,6 +5,7 @@ import httpx
 import json
 import re
 import uuid
+from urllib.parse import parse_qs, urlparse
 
 import config
 import db
@@ -539,6 +540,43 @@ def test_revelry_party_games_link_can_mint_start_intent_url(monkeypatch):
     route_res = client.get(start_url.replace("http://testserver", ""), follow_redirects=False)
     assert route_res.status_code == 302
     assert f"start_content_id={pack['id']}" in route_res.headers["location"]
+
+
+def test_revelry_party_games_start_url_encodes_query_values(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": f"party-start-encoding-{uuid.uuid4().hex}",
+            "external_container_title": "Ava's Birthday",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["manage_games", "author_content", "operate_game"],
+        },
+        "intent": "start",
+        "content_id": "pack&evil=1",
+        "game_type": "quiz",
+        "time_limit": 30,
+    }
+
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+
+    assert link_res.status_code == 200
+    parsed = urlparse(link_res.json()["start_url"])
+    query = parse_qs(parsed.query)
+    assert query["start_content_id"] == ["pack&evil=1"]
+    assert "evil" not in query
+
+    route_res = client.get(link_res.json()["start_url"].replace("http://testserver", ""), follow_redirects=False)
+    assert route_res.status_code == 302
+    redirected = parse_qs(urlparse(route_res.headers["location"]).query)
+    assert redirected["start_content_id"] == ["pack&evil=1"]
+    assert "evil" not in redirected
 
 
 def test_revelry_authoring_link_save_and_fetch_content(monkeypatch):
