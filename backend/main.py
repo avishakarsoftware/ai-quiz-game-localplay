@@ -21,6 +21,7 @@ import hashlib
 import logging
 import socket as socketlib
 import json
+import asyncio
 import jwt
 import httpx
 
@@ -1403,6 +1404,16 @@ def _callback_signing_secret() -> str:
     return config.REVELRY_INTEGRATION_SECRET or config.REVELRY_CALLBACK_SECRET
 
 
+def _callback_retry_delay(response: Optional[httpx.Response], attempt: int) -> float:
+    if response is not None:
+        retry_after = response.headers.get("Retry-After", "")
+        try:
+            return max(0.0, min(float(retry_after), 5.0))
+        except ValueError:
+            pass
+    return min(0.25 * (2 ** attempt), 2.0)
+
+
 def _safe_result_summary(result: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
     if not isinstance(result, dict):
         return None
@@ -1488,12 +1499,23 @@ async def _send_revelry_callback(event_type: str, payload: dict[str, Any]) -> No
     }
     if signature:
         headers["X-LocalPlay-Signature"] = f"sha256={signature}"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.post(config.REVELRY_CALLBACK_URL, content=raw, headers=headers)
-            response.raise_for_status()
-    except httpx.HTTPError as exc:
-        logger.warning("Revelry callback failed for %s: %s", event_type, exc)
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        for attempt in range(3):
+            try:
+                response = await client.post(config.REVELRY_CALLBACK_URL, content=raw, headers=headers)
+                response.raise_for_status()
+                return
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                if status not in (429, 500, 502, 503, 504) or attempt == 2:
+                    logger.warning("Revelry callback failed for %s: %s", event_type, exc)
+                    return
+                await asyncio.sleep(_callback_retry_delay(exc.response, attempt))
+            except httpx.HTTPError as exc:
+                if attempt == 2:
+                    logger.warning("Revelry callback failed for %s: %s", event_type, exc)
+                    return
+                await asyncio.sleep(_callback_retry_delay(None, attempt))
 
 
 def _quiz_pack_summary(pack: dict) -> dict:

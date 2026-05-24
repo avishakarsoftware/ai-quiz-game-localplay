@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 import hashlib
 import hmac
+import httpx
 import json
 import re
 import uuid
@@ -52,6 +53,24 @@ class _FakeResponse:
         return None
 
 
+class _FakeAwaitable:
+    def __await__(self):
+        if False:
+            yield None
+        return None
+
+
+class _FakeStatusResponse:
+    def __init__(self, status_code, headers=None):
+        self.status_code = status_code
+        self.headers = headers or {}
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            request = httpx.Request("POST", "https://api-gamma.revelryapp.me/api/games/localplay/callback")
+            raise httpx.HTTPStatusError("status error", request=request, response=httpx.Response(self.status_code, headers=self.headers, request=request))
+
+
 class _FakeAsyncClient:
     def __init__(self, calls, *args, **kwargs):
         self.calls = calls
@@ -67,6 +86,23 @@ class _FakeAsyncClient:
         return _FakeResponse()
 
 
+class _FakeAsyncRetryClient:
+    def __init__(self, calls, statuses, *args, **kwargs):
+        self.calls = calls
+        self.statuses = statuses
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+    async def post(self, url, content, headers):
+        self.calls.append({"url": url, "body": json.loads(content.decode()), "raw": content, "headers": headers})
+        status = self.statuses.pop(0)
+        return _FakeStatusResponse(status, {"Retry-After": "0"})
+
+
 class _FakeSyncClient:
     def __init__(self, calls, *args, **kwargs):
         self.calls = calls
@@ -80,6 +116,23 @@ class _FakeSyncClient:
     def post(self, url, content, headers):
         self.calls.append({"url": url, "body": json.loads(content.decode()), "raw": content, "headers": headers})
         return _FakeResponse()
+
+
+class _FakeSyncRetryClient:
+    def __init__(self, calls, statuses, *args, **kwargs):
+        self.calls = calls
+        self.statuses = statuses
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+    def post(self, url, content, headers):
+        self.calls.append({"url": url, "body": json.loads(content.decode()), "raw": content, "headers": headers})
+        status = self.statuses.pop(0)
+        return _FakeStatusResponse(status, {"Retry-After": "0"})
 
 
 def test_catalog_lists_launchable_games():
@@ -170,6 +223,23 @@ def test_revelry_callbacks_use_game_events_top_level_context_and_integration_sec
         hashlib.sha256,
     ).hexdigest()
     assert call["headers"]["X-LocalPlay-Signature"] == f"sha256={expected}"
+
+
+def test_revelry_callback_retries_after_429(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    monkeypatch.setattr(config, "REVELRY_CALLBACK_URL", "https://api-gamma.revelryapp.me/api/games/localplay/callback")
+    calls = []
+    statuses = [429, 200]
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *args, **kwargs: _FakeAsyncRetryClient(calls, statuses, *args, **kwargs))
+    monkeypatch.setattr(main.asyncio, "sleep", lambda _delay: _FakeAwaitable())
+    db.init_db()
+
+    res = client.post("/integrations/revelry/sessions", headers=_headers(), json=_create_payload(f"party-429-{uuid.uuid4().hex}"))
+
+    assert res.status_code == 200
+    assert len(calls) == 2
+    assert calls[0]["body"]["event_id"] == calls[1]["body"]["event_id"]
+    assert calls[0]["raw"] == calls[1]["raw"]
 
 
 def test_revelry_session_replacement_requires_confirmation(monkeypatch):
@@ -290,6 +360,33 @@ def test_runtime_callback_uses_safe_result_summary_and_game_event(monkeypatch):
     assert re.match(r"^\d{4}-\d{2}-\d{2}T.*Z$", body["occurred_at"])
     assert body["payload"]["result_summary"]["top_results"] == [{"nickname": "Ava", "avatar": "🎉", "score": 100}]
     assert "answer_log" not in json.dumps(body)
+
+
+def test_runtime_callback_retries_after_429(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    monkeypatch.setattr(config, "REVELRY_CALLBACK_URL", "https://api-gamma.revelryapp.me/api/games/localplay/callback")
+    calls = []
+    statuses = [429, 200]
+    monkeypatch.setattr("socket_manager.httpx.Client", lambda *args, **kwargs: _FakeSyncRetryClient(calls, statuses, *args, **kwargs))
+    monkeypatch.setattr("socket_manager.time.sleep", lambda _delay: None)
+
+    socket_manager._send_integration_callback(
+        "session.started",
+        {
+            "id": "lp_runtime_429",
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": "party-runtime-429",
+            "room_code": "RUN429",
+            "status": "active",
+            "game_type": "quiz",
+            "game_title": "Runtime Quiz",
+        },
+    )
+
+    assert len(calls) == 2
+    assert calls[0]["body"]["event_id"] == calls[1]["body"]["event_id"]
+    assert calls[0]["raw"] == calls[1]["raw"]
 
 
 def test_revelry_party_workspace_is_non_personalized(monkeypatch):

@@ -1337,6 +1337,15 @@ class SocketManager:
     def _callback_signing_secret(self) -> str:
         return config.REVELRY_INTEGRATION_SECRET or config.REVELRY_CALLBACK_SECRET
 
+    def _callback_retry_delay(self, response: Optional[httpx.Response], attempt: int) -> float:
+        if response is not None:
+            retry_after = response.headers.get("Retry-After", "")
+            try:
+                return max(0.0, min(float(retry_after), 5.0))
+            except ValueError:
+                pass
+        return min(0.25 * (2 ** attempt), 2.0)
+
     def _safe_result_summary(self, summary: Optional[dict]) -> Optional[dict]:
         if not isinstance(summary, dict):
             return None
@@ -1435,11 +1444,23 @@ class SocketManager:
                 hashlib.sha256,
             ).hexdigest()
             headers["X-LocalPlay-Signature"] = f"sha256={signature}"
-        try:
-            with httpx.Client(timeout=5.0) as client:
-                client.post(config.REVELRY_CALLBACK_URL, content=raw, headers=headers).raise_for_status()
-        except httpx.HTTPError as exc:
-            logger.warning("Integration callback failed for %s: %s", event_type, exc)
+        with httpx.Client(timeout=5.0) as client:
+            for attempt in range(3):
+                try:
+                    response = client.post(config.REVELRY_CALLBACK_URL, content=raw, headers=headers)
+                    response.raise_for_status()
+                    return
+                except httpx.HTTPStatusError as exc:
+                    status = exc.response.status_code
+                    if status not in (429, 500, 502, 503, 504) or attempt == 2:
+                        logger.warning("Integration callback failed for %s: %s", event_type, exc)
+                        return
+                    time.sleep(self._callback_retry_delay(exc.response, attempt))
+                except httpx.HTTPError as exc:
+                    if attempt == 2:
+                        logger.warning("Integration callback failed for %s: %s", event_type, exc)
+                        return
+                    time.sleep(self._callback_retry_delay(None, attempt))
 
     def _mark_game_session_started(self, room: Room):
         try:

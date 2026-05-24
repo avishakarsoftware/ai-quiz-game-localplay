@@ -1071,7 +1071,7 @@ Rules:
 - LocalPlay signs `HMAC_SHA256("${timestamp}.${raw_body}")` and sends `X-LocalPlay-Event-Id`, `X-LocalPlay-Timestamp`, and `X-LocalPlay-Signature: sha256=...`; Revelry should reject replays and dedupe by event id.
 - Callback payloads must contain safe metadata only. Do not include full quiz contents, answers, raw prompts, private media paths, organizer credentials, launch tokens, or participant secrets.
 - Revelry owns whether to post feed/memory entries automatically, as drafts, or only after host approval.
-- LocalPlay does best-effort delivery in the current implementation and logs transient failures. Durable retry with backoff is backlog hardening; Revelry should poll `party-workspace` or session results on page open/app resume to recover missed callbacks.
+- LocalPlay does best-effort delivery in the current implementation. It retries transient delivery failures, including Revelry HTTP `429` rate-limit responses and `5xx` errors, with short bounded backoff while preserving the same `event_id`, `idempotency_key`, and raw body for the retry attempt. Durable queued retry with long backoff remains backlog hardening; Revelry should poll `party-workspace` or session results on page open/app resume to recover missed callbacks.
 - Callback failures must not block gameplay completion. They affect sync latency only.
 
 ## Handoff Token
