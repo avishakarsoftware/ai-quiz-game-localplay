@@ -653,6 +653,7 @@ Implemented behavior:
 
 - Request a signed upload target from the backend before uploading.
 - Upload image files to IONOS media storage through the signed PHP handler described in `SPEC-IMAGE-GAMES.md` and `DEPLOY.md`.
+- Keep storage implementation details out of the authoring UI. Hosts upload, preview, replace, or remove images; they should not see or edit IONOS paths, CDN URLs, `/media` paths, asset ids, or storage backend names in normal quiz creation.
 - Store media metadata in the shared media asset model from `SPEC-IMAGE-GAMES.md`.
 - Save `image_url`, `image_alt`, and media metadata; `image_asset_id` is supported by the runtime shape and remains the preferred durable reference.
 - Resolve `image_url` when reading/materializing packs so the quiz runtime receives the same shape as generated quizzes.

@@ -2209,6 +2209,13 @@ body {
     height: 40px;
     margin-bottom: 8px;
     font-size: 13px;
+    gap: 8px;
+}
+
+.custom-image-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 
 .custom-file-input {

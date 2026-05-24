@@ -869,7 +869,7 @@ Phase 0 is implemented:
 
 Implemented beyond Phase 0:
 
-1. Custom quiz image upload control.
+1. Custom quiz image upload control. The user-facing authoring surface must expose upload, preview, replace, remove, and alt text controls only; IONOS paths, CDN URLs, `/media` paths, asset ids, and storage backend names are internal implementation details.
 2. Thumbnail preview via `GameImage`.
 3. Alt text editing.
 4. Saved pack persistence and materialize/start preservation for uploaded image URLs.

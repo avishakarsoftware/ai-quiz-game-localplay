@@ -718,6 +718,7 @@ Rules:
 - Browser authoring calls use the authoring token, not the Revelry service secret.
 - LocalPlay validates `game_type` against the host-app catalog before accepting content.
 - LocalPlay validates the payload against the catalog `content_schema` or `config_schema`.
+- `image_url` and related media identifiers are LocalPlay internal/runtime fields. Embedded and standalone authoring UI must show image upload, preview, replace, remove, and alt text controls instead of asking hosts to paste or edit IONOS paths, CDN URLs, `/media` paths, asset ids, or storage backend names.
 - LocalPlay stores host-app content ownership metadata so session creation can enforce same-container or allowed-author access.
 - Revelry must use LocalPlay APIs for authoring and media; it must not write LocalPlay quiz, content, or media tables directly.
 - Content create/update requests should eventually include an idempotency key or stable `draft_id` so browser refreshes, mobile webview reloads, and upload retries can recover without duplicating partial games. Current implementation relies on `content_id` for edit idempotency and the editor's local draft for unsaved create recovery.

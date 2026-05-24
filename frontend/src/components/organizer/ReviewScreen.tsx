@@ -125,24 +125,32 @@ export default function ReviewScreen({
                                         className="input-field text-sm"
                                         maxLength={2000}
                                     />
-                                    <input
-                                        type="text"
-                                        value={editQuestion.image_url || ''}
-                                        onChange={(e) => setEditQuestion({ ...editQuestion, image_url: e.target.value.slice(0, 1000) || undefined })}
-                                        className="input-field text-xs"
-                                        maxLength={1000}
-                                        placeholder="Image URL"
-                                        aria-label="Question image URL"
-                                    />
-                                    <input
-                                        type="text"
-                                        value={editQuestion.image_alt || ''}
-                                        onChange={(e) => setEditQuestion({ ...editQuestion, image_alt: e.target.value.slice(0, 300) || undefined })}
-                                        className="input-field text-xs"
-                                        maxLength={300}
-                                        placeholder="Image alt text"
-                                        aria-label="Question image alt text"
-                                    />
+                                    {editQuestion.image_url && (
+                                        <div className="space-y-2">
+                                            <GameImage
+                                                src={mediaUrl(editQuestion.image_url)}
+                                                alt={editQuestion.image_alt || editQuestion.text}
+                                                mode="thumbnail"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={editQuestion.image_alt || ''}
+                                                onChange={(e) => setEditQuestion({ ...editQuestion, image_alt: e.target.value.slice(0, 300) || undefined })}
+                                                className="input-field text-xs"
+                                                maxLength={300}
+                                                placeholder="Image alt text"
+                                                aria-label="Question image alt text"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditQuestion({ ...editQuestion, image_url: undefined, image_alt: undefined })}
+                                                className="btn btn-secondary"
+                                                style={{ height: 36, fontSize: 13 }}
+                                            >
+                                                Remove Image
+                                            </button>
+                                        </div>
+                                    )}
                                     <div className="grid grid-cols-2 gap-2">
                                         {editQuestion.options.map((opt, j) => {
                                             const style = ANSWER_STYLES[j];

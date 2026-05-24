@@ -72,20 +72,28 @@ describe('CustomQuizEditor', () => {
         });
     });
 
-    it('preserves question image references', () => {
+    it('preserves saved question image references without exposing storage paths', () => {
         const onReview = vi.fn();
-        render(<CustomQuizEditor onBack={() => {}} onReview={onReview} />);
+        render(<CustomQuizEditor
+            onBack={() => {}}
+            onReview={onReview}
+            initialQuiz={{
+                quiz_title: 'Picture Round',
+                questions: [
+                    {
+                        id: 1,
+                        text: 'Who is pictured here?',
+                        options: ['A', 'B', 'C', 'D'],
+                        answer_index: 0,
+                        image_prompt: '',
+                        image_url: 'https://media.revelryapp.me/apps/localplay/gamma/uploads/test.webp',
+                        image_alt: 'A person holding a trophy',
+                    },
+                ],
+            }}
+        />);
 
-        fireEvent.change(screen.getByLabelText('Question text'), {
-            target: { value: 'Who is pictured here?' },
-        });
-        fireEvent.change(screen.getByLabelText('Answer A'), { target: { value: 'A' } });
-        fireEvent.change(screen.getByLabelText('Answer B'), { target: { value: 'B' } });
-        fireEvent.change(screen.getByLabelText('Answer C'), { target: { value: 'C' } });
-        fireEvent.change(screen.getByLabelText('Answer D'), { target: { value: 'D' } });
-        fireEvent.change(screen.getByLabelText('Question image URL'), {
-            target: { value: 'https://media.revelryapp.me/apps/localplay/gamma/uploads/test.webp' },
-        });
+        expect(screen.queryByLabelText('Question image URL')).toBeNull();
         fireEvent.change(screen.getByLabelText('Question image alt text'), {
             target: { value: 'A person holding a trophy' },
         });
@@ -95,5 +103,33 @@ describe('CustomQuizEditor', () => {
             image_url: 'https://media.revelryapp.me/apps/localplay/gamma/uploads/test.webp',
             image_alt: 'A person holding a trophy',
         });
+    });
+
+    it('removes a saved question image from the review payload', () => {
+        const onReview = vi.fn();
+        render(<CustomQuizEditor
+            onBack={() => {}}
+            onReview={onReview}
+            initialQuiz={{
+                quiz_title: 'Picture Round',
+                questions: [
+                    {
+                        id: 1,
+                        text: 'Who is pictured here?',
+                        options: ['A', 'B', 'C', 'D'],
+                        answer_index: 0,
+                        image_prompt: '',
+                        image_url: 'https://media.revelryapp.me/apps/localplay/gamma/uploads/test.webp',
+                        image_alt: 'A person holding a trophy',
+                    },
+                ],
+            }}
+        />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Remove Image' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Review & Start' }));
+
+        expect(onReview.mock.calls[0][0].questions[0]).not.toHaveProperty('image_url');
+        expect(onReview.mock.calls[0][0].questions[0]).not.toHaveProperty('image_alt');
     });
 });

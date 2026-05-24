@@ -4,7 +4,7 @@ import { useSwipeBack } from '../../utils/useSwipeBack';
 import { mediaUrl } from '../../utils/media';
 import GameImage from '../media/GameImage';
 import { apiFetch } from '../../utils/api';
-import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, ImagePlus, Plus, Trash2, X } from 'lucide-react';
 
 type QuestionType = 'multiple_choice' | 'true_false';
 
@@ -84,7 +84,7 @@ function questionIssues(question: DraftQuestion): string[] {
     if (options.some((option) => !option)) {
         issues.push(question.type === 'true_false' ? 'true/false answers' : 'all answer choices');
     }
-    if (!isAllowedImageReference(question.imageUrl)) issues.push('a LocalPlay image URL');
+    if (!isAllowedImageReference(question.imageUrl)) issues.push('image replacement');
     return issues;
 }
 
@@ -311,6 +311,8 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
         () => Math.max(0, questions.findIndex((question) => question.id === selectedQuestion?.id)),
         [questions, selectedQuestion?.id],
     );
+    const selectedImageUrl = selectedQuestion?.imageUrl.trim() || '';
+    const selectedImageIsUsable = Boolean(selectedImageUrl && isAllowedImageReference(selectedImageUrl));
 
     return (
         <div className="custom-quiz-shell container-responsive safe-top safe-bottom animate-in">
@@ -462,48 +464,55 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
 
                             <div>
                                 <p className="section-header mb-2">Question Image</p>
-                                {selectedQuestion.imageUrl.trim() && isAllowedImageReference(selectedQuestion.imageUrl) && (
+                                {selectedImageIsUsable && (
                                     <div className="mb-3">
                                         <GameImage
-                                            src={mediaUrl(selectedQuestion.imageUrl.trim())}
+                                            src={mediaUrl(selectedImageUrl)}
                                             alt={selectedQuestion.imageAlt.trim() || selectedQuestion.text || 'Question image'}
                                             mode="thumbnail"
                                         />
                                     </div>
                                 )}
-                                <input
-                                    value={selectedQuestion.imageUrl}
-                                    onChange={(event) => updateQuestion(selectedQuestion.id, { imageUrl: event.target.value.slice(0, 1000) })}
-                                    className="input-field text-sm mb-2"
-                                    maxLength={1000}
-                                    placeholder="IONOS media URL or /media asset path"
-                                    aria-label="Question image URL"
-                                />
-                                <label className="btn btn-secondary custom-upload-button">
-                                    {uploadingQuestionId === selectedQuestion.id ? 'Uploading...' : 'Upload Image'}
-                                    <input
-                                        type="file"
-                                        accept="image/png,image/jpeg,image/webp"
-                                        className="custom-file-input"
-                                        disabled={uploadingQuestionId === selectedQuestion.id}
-                                        onChange={(event) => {
-                                            const file = event.target.files?.[0];
-                                            event.target.value = '';
-                                            if (file) void uploadQuestionImage(selectedQuestion, file);
-                                        }}
-                                    />
-                                </label>
-                                {selectedQuestion.imageUrl.trim() && !isAllowedImageReference(selectedQuestion.imageUrl) && (
-                                    <p className="text-xs text-[--accent-danger] mb-2">Use a LocalPlay media URL from IONOS or /media.</p>
+                                {selectedImageUrl && !selectedImageIsUsable && (
+                                    <p className="text-xs text-[--accent-danger] mb-2">Image unavailable. Remove it and upload again.</p>
                                 )}
-                                <input
-                                    value={selectedQuestion.imageAlt}
-                                    onChange={(event) => updateQuestion(selectedQuestion.id, { imageAlt: event.target.value.slice(0, 300) })}
-                                    className="input-field text-sm"
-                                    maxLength={300}
-                                    placeholder="Image alt text"
-                                    aria-label="Question image alt text"
-                                />
+                                <div className="custom-image-actions">
+                                    <label className="btn btn-secondary custom-upload-button">
+                                        <ImagePlus size={16} aria-hidden="true" />
+                                        {uploadingQuestionId === selectedQuestion.id ? 'Uploading...' : selectedImageUrl ? 'Replace Image' : 'Upload Image'}
+                                        <input
+                                            type="file"
+                                            accept="image/png,image/jpeg,image/webp"
+                                            className="custom-file-input"
+                                            disabled={uploadingQuestionId === selectedQuestion.id}
+                                            onChange={(event) => {
+                                                const file = event.target.files?.[0];
+                                                event.target.value = '';
+                                                if (file) void uploadQuestionImage(selectedQuestion, file);
+                                            }}
+                                        />
+                                    </label>
+                                    {selectedImageUrl && (
+                                        <button
+                                            type="button"
+                                            onClick={() => updateQuestion(selectedQuestion.id, { imageUrl: '', imageAlt: '' })}
+                                            className="btn btn-secondary custom-upload-button"
+                                        >
+                                            <X size={16} aria-hidden="true" />
+                                            Remove Image
+                                        </button>
+                                    )}
+                                </div>
+                                {selectedImageUrl && (
+                                    <input
+                                        value={selectedQuestion.imageAlt}
+                                        onChange={(event) => updateQuestion(selectedQuestion.id, { imageAlt: event.target.value.slice(0, 300) })}
+                                        className="input-field text-sm"
+                                        maxLength={300}
+                                        placeholder="Image alt text"
+                                        aria-label="Question image alt text"
+                                    />
+                                )}
                             </div>
                         </div>
                     </div>

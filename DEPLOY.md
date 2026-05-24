@@ -1162,6 +1162,8 @@ This should follow the Revelry media-upload pattern:
 6. Frontend calls a finalize endpoint, e.g. `POST /media/{asset_id}/finalize`, so backend metadata becomes `ready`.
 7. Runtime quiz questions use `image_asset_id`, `image_url`, and `image_alt`; `image_url` may be `/media/{asset_id}` or a direct `media.revelryapp.me` URL.
 
+IONOS is not a product-facing authoring concept. Quiz authors should see upload, preview, replace, remove, and alt text controls only; IONOS paths, CDN URLs, `/media` paths, asset ids, and storage backend names are internal metadata/debugging details.
+
 The owner/context path segment must be sanitized before signing. Host-app wallets can contain unsafe characters, for example `revelry:party:{party_id}`; signed paths should use a path-safe segment such as `revelry_party_{party_id}`. Raw `:` characters are rejected by the IONOS PHP handler as `invalid_path`.
 
 Recommended public URL and server layout:
