@@ -26,6 +26,7 @@ import BonusSplash from '../components/BonusSplash';
 import ErrorModal from '../components/ErrorModal';
 import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
+import { isEmbeddedFrame, returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
 type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
 
@@ -845,12 +846,16 @@ export default function OrganizerPage() {
     };
 
     const returnToHostApp = () => {
+        if (hostAppReturnUrl && isEmbeddedFrame()) {
+            returnToHostAppParent(hostAppReturnUrl);
+            return;
+        }
         if (hostAppPartyHubUrl) {
             window.location.assign(hostAppPartyHubUrl);
             return;
         }
         if (hostAppReturnUrl) {
-            window.location.assign(hostAppReturnUrl);
+            returnToHostAppParent(hostAppReturnUrl);
             return;
         }
         setErrorModal({

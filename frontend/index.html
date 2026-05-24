@@ -31,11 +31,22 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      // Register Service Worker relative to current page
+      // Register Service Worker from the app root. Embedded host-app surfaces
+      // skip registration so nested iframe routes never resolve sw.js through
+      // the SPA fallback as text/html.
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          const base = document.querySelector('base')?.href || new URL('.', location.href).href;
-          navigator.serviceWorker.register(new URL('sw.js', base).href)
+          const params = new URLSearchParams(window.location.search);
+          const isHostAppSurface = window.parent !== window
+            || window.location.pathname.startsWith('/revelry/')
+            || params.get('embed') === '1'
+            || params.has('launch_token')
+            || params.has('party_games_token')
+            || params.has('authoring_token');
+          if (isHostAppSurface) return;
+
+          const manifestHref = document.querySelector('link[rel="manifest"]')?.href || new URL('manifest.json', window.location.origin).href;
+          navigator.serviceWorker.register(new URL('sw.js', manifestHref).href)
             .then((reg) => {
               console.log('SW registered:', reg.scope);
 

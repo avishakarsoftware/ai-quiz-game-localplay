@@ -1486,7 +1486,7 @@ Implemented where needed for embedded return/close, and optional elsewhere:
 LOCALPLAY_READY
 LOCALPLAY_SESSION_STARTED
 LOCALPLAY_SESSION_COMPLETE
-LOCALPLAY_REQUEST_CLOSE
+revelry.localplay.return_to_parent
 LOCALPLAY_HEIGHT_CHANGE
 LOCALPLAY_OPEN_EXTERNAL
 ```
@@ -1497,7 +1497,10 @@ Rules:
 - Revelry must validate `event.origin`
 - messages are UI hints only
 - backend result APIs remain the source of truth
-- In embedded Revelry mode, LocalPlay **Back to Revelry** / authoring return should send `LOCALPLAY_REQUEST_CLOSE` to the allowlisted `return_url` origin instead of navigating the iframe into a nested Revelry party page. External/mobile fallback may navigate to the same return URL.
+- In embedded Revelry mode, LocalPlay **Back to Revelry** / authoring return sends `window.parent.postMessage({ type: "revelry.localplay.return_to_parent", return_url }, targetOrigin)`.
+- `targetOrigin` must be derived from `parent_origin` when present, otherwise from `new URL(return_url).origin`. It must never use `window.location.origin`, because LocalPlay's iframe origin is `gamesapi-*` while the parent Revelry surface may be `api-gamma.revelryapp.me`, `app.revelryapp.me`, or an app/universal-link origin.
+- External/mobile/fullscreen fallback may navigate to the same validated `return_url`.
+- Host-app/iframe surfaces skip service-worker registration. Standalone/backend-served surfaces register `sw.js` from the app root (derived from the manifest path) so nested routes such as `/revelry/games` do not request `/revelry/sw.js` and receive SPA HTML with the wrong MIME type.
 
 ## Environment Variables
 

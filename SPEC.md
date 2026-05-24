@@ -1324,6 +1324,7 @@ The frontend is installable as a PWA and registers `frontend/public/sw.js` from 
 Implemented behavior:
 
 - The service worker bypasses all API prefixes and known backend API hostnames. It caches static app assets and the offline fallback only.
+- Host-app/iframe surfaces skip service-worker registration. Standalone surfaces register `sw.js` from the app root, derived from the manifest path, so nested routes do not accidentally request a route-relative service-worker URL and receive cached SPA HTML.
 - New service-worker installs wait rather than taking over immediately. The app receives a `localplay-sw-update` event and shows a **New version ready** prompt.
 - Choosing **Refresh** posts `SKIP_WAITING` to the waiting worker and reloads after `controllerchange`.
 - Standalone web surfaces can show an install prompt when the browser fires `beforeinstallprompt`.

@@ -1,10 +1,12 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { API_URL } from '../config';
 import { getGameModeConfig } from '../gameModes';
+import { returnToHostApp } from '../utils/hostAppReturn';
 
 type LaunchContext = {
     external_container_title?: string;
     return_url?: string;
+    parent_origin?: string;
     capabilities?: string[];
     display?: {
         container_label?: string;
@@ -188,18 +190,6 @@ function contentPayloadFromDraft(draft: SetupDraft) {
         };
     }
     return { game: { game_title: draft.title, prompts } };
-}
-
-function returnToHostApp(returnUrl: string) {
-    const url = new URL(returnUrl, window.location.origin);
-    if (window.parent && window.parent !== window) {
-        window.parent.postMessage({
-            type: 'LOCALPLAY_REQUEST_CLOSE',
-            return_url: url.toString(),
-        }, url.origin);
-        return;
-    }
-    window.location.href = url.toString();
 }
 
 export default function PartyHubPage() {
@@ -469,7 +459,7 @@ export default function PartyHubPage() {
 
     function returnToRevelry() {
         if (launchContext?.return_url) {
-            returnToHostApp(launchContext.return_url);
+            returnToHostApp(launchContext.return_url, { parentOrigin: launchContext.parent_origin });
         }
     }
 

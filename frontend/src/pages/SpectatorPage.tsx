@@ -15,6 +15,7 @@ import DrawingCanvas from '../components/DrawingCanvas';
 import GameImage from '../components/media/GameImage';
 import { mediaUrl } from '../utils/media';
 import { apiUrl } from '../utils/api';
+import { returnToHostApp } from '../utils/hostAppReturn';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
@@ -126,9 +127,9 @@ export default function SpectatorPage() {
         setSearchParams({ room: code });
     };
 
-    const returnToHostApp = () => {
+    const handleReturnToHostApp = () => {
         if (hostAppReturnUrl) {
-            window.location.assign(hostAppReturnUrl);
+            returnToHostApp(hostAppReturnUrl);
         }
     };
 
@@ -486,7 +487,7 @@ export default function SpectatorPage() {
                             {(gameState === 'ERROR' || gameState === 'DISCONNECTED') && (
                                 hostAppMode && hostAppReturnUrl ? (
                                     <button
-                                        onClick={returnToHostApp}
+                                        onClick={handleReturnToHostApp}
                                         className="btn btn-secondary mt-6"
                                         style={{ fontSize: '1.125rem' }}
                                     >

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import CustomQuizEditor from '../components/organizer/CustomQuizEditor';
 import { API_URL } from '../config';
 import { type Quiz } from '../types';
+import { returnToHostApp } from '../utils/hostAppReturn';
 
 type AuthoringResolve = {
     launch_context: {
@@ -14,6 +15,7 @@ type AuthoringResolve = {
             container_label?: string;
             return_label?: string;
         };
+        parent_origin?: string;
     };
     mode: string;
     localplay_content_id?: string | null;
@@ -21,18 +23,6 @@ type AuthoringResolve = {
         quiz?: Quiz;
     } | null;
 };
-
-function returnToHostApp(returnUrl: string) {
-    const url = new URL(returnUrl, window.location.origin);
-    if (window.parent && window.parent !== window) {
-        window.parent.postMessage({
-            type: 'LOCALPLAY_REQUEST_CLOSE',
-            return_url: url.toString(),
-        }, url.origin);
-        return;
-    }
-    window.location.href = url.toString();
-}
 
 export default function RevelryAuthoringPage() {
     const params = new URLSearchParams(window.location.search);
@@ -77,7 +67,7 @@ export default function RevelryAuthoringPage() {
             url.searchParams.set('game_type', 'quiz');
             url.searchParams.set('status', 'ready');
         }
-        returnToHostApp(url.toString());
+        returnToHostApp(url.toString(), { parentOrigin: resolved?.launch_context.parent_origin });
     }
 
     async function saveQuiz(quiz: Quiz, packId?: string) {

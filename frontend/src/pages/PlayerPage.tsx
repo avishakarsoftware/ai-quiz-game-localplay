@@ -15,6 +15,7 @@ import DrawingCanvas from '../components/DrawingCanvas';
 import GameImage from '../components/media/GameImage';
 import { mediaUrl } from '../utils/media';
 import { apiUrl } from '../utils/api';
+import { returnToHostApp } from '../utils/hostAppReturn';
 
 type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
@@ -469,9 +470,9 @@ export default function PlayerPage() {
         wsRef.current?.send(JSON.stringify({ type: 'USE_POWER_UP', power_up: powerUp }));
     };
 
-    const returnToHostApp = () => {
+    const handleReturnToHostApp = () => {
         if (hostAppReturnUrl) {
-            window.location.assign(hostAppReturnUrl);
+            returnToHostApp(hostAppReturnUrl);
         }
     };
 
@@ -490,7 +491,7 @@ export default function PlayerPage() {
                                 <h1 className="hero-title mb-3">Game Unavailable</h1>
                                 <p className="text-[--text-tertiary] mb-6 text-center">{error || 'Open this game from Revelry again.'}</p>
                                 {hostAppReturnUrl && (
-                                    <button onClick={returnToHostApp} className="btn btn-primary w-full">
+                                    <button onClick={handleReturnToHostApp} className="btn btn-primary w-full">
                                         Back to Revelry Games
                                     </button>
                                 )}
