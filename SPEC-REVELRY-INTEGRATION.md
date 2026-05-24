@@ -1411,7 +1411,7 @@ Playwright smoke:
 
 Roll out the integration on gamma first.
 
-Current LocalPlay status: gamma has passed direct smoke for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, party workspace, party hub link/resolve, and host-app-managed billing wallet behavior. Basic Revelry gamma end-to-end launch testing has worked for catalog, create session, organizer/player launch, and gameplay. The repo now implements quiz-only LocalPlay-hosted authoring and best-effort callbacks; deploy and smoke those before treating the authoring flow as gamma-ready. Before each rollout or manual test pass, verify the deployed Cloud Run revision against the current repo HEAD because this spec intentionally does not act as the source of truth for deployed commit tracking. Deeper embedded chrome cleanup remains required before production promotion.
+Current LocalPlay status: gamma is deployed from the callback retry/polish slice (`cbc218f` on 2026-05-23) and has passed direct smoke for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, party workspace, party hub link/resolve, host-app-managed billing wallet behavior, LocalPlay-hosted quiz authoring, start from saved `localplay_content_id`, WebSocket organizer/player play-through, completion, and result polling. Basic Revelry gamma end-to-end launch testing has worked for catalog, create session, organizer/player launch, and gameplay. Before each rollout or manual test pass, verify the deployed gamma container against the current repo HEAD because this spec intentionally does not act as the sole source of truth for deployed commit tracking. Deeper branded UX polish and production-scale callback durability remain required before production promotion.
 
 Gamma acceptance checklist:
 
@@ -1427,7 +1427,7 @@ Gamma acceptance checklist:
 - No standalone LocalPlay spark/paywall prompts appear in Revelry-managed sessions.
 - Revelry gamma can mint an authoring link, create/edit a quiz with an image, return with `localplay_content_id`, refresh party workspace, and start the saved quiz.
 - LocalPlay hub can create/edit/start party-scoped saved quizzes without exposing the Revelry service secret.
-- If configured, signed callbacks reach Revelry for content/session events; if not, polling recovers state.
+- If configured, signed callbacks reach Revelry for content/session events; LocalPlay signs `${timestamp}.${raw_body}` with `REVELRY_INTEGRATION_SECRET`, uses ISO UTC `occurred_at`, emits `content.deleted`, and retries `429` / transient `5xx` responses with short bounded backoff. If callbacks are unavailable, polling recovers state.
 
 Do not promote to production until the gamma flow is playable end to end.
 
@@ -1439,14 +1439,14 @@ Recommended LocalPlay order:
 2. Add generic durable session schema and db facade methods. Done for `game_sessions`; participant persistence remains deferred.
 3. Add catalog endpoint. Done.
 4. Add handoff validation helper. Done for shared-secret bearer/JWT validation.
-5. Add embeddable launch shell/chrome mode. Partially done via launch-token query resolution in the existing organizer/player/spectator routes; dedicated embedded chrome polish remains.
+5. Add embeddable launch shell/chrome mode. Done for Revelry-launched `/revelry/*`, tokenized organizer/player/spectator surfaces, standalone economy chrome hiding, and raw LocalPlay share/join suppression in host-app lobby mode. Further brand-specific polish remains.
 6. Add session wrapper around current `/room/create`. Done.
 7. Add `POST /integrations/revelry/sessions`. Done.
 8. Add safe one-active-game replacement handling. Done.
 9. Add on-demand launch-token exchange. Done.
 10. Add status/result polling endpoint. Done.
 11. Add embedded host-app authoring mode for manual quiz content, including host-app content APIs and session creation via `settings.content_id`. Done for quiz content using party-scoped quiz packs.
-12. Add signed callback/webhook delivery for content/session/result events, with polling as recovery. Done as best-effort delivery when callback env vars are configured; durable retry remains backlog.
+12. Add signed callback/webhook delivery for content/session/result events, with polling as recovery. Done as best-effort delivery when callback env vars are configured, including short bounded retry for `429` and transient `5xx`; durable queued retry remains backlog.
 13. Add postMessage events only where they improve embedded UX.
 
 ## Open Questions

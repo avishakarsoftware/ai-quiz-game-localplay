@@ -1139,11 +1139,12 @@ curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sess
 
 ### Gamma readiness status
 
-- Deployed the bridge + party hub slice to gamma from commit `1e6417b` on 2026-05-23 with `./scripts/deploy-gcp.sh --gamma --with-frontend`. The quiz authoring/callback slice in the current repo must be deployed separately before authoring gamma testing.
-- Supabase gamma schema includes `games_gamma_game_sessions`.
-- Gamma env includes `REVELRY_INTEGRATION_SECRET` and `PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me`.
-- Smoke-tested after deploy: `/health`, `/config.json`, `/catalog?host_app=revelry`, session creation, launch token generation, status polling, tokenless player launch redirect, party hub link/resolve, party workspace, and no signup-bonus sparks for the Revelry integration wallet.
-- Basic Revelry gamma end-to-end testing has worked for catalog, session creation, organizer/player launch, and gameplay. After deploying the current authoring slice, test before production promotion: authoring-link creation, create/edit quiz with image upload, return/deep-link behavior, workspace refresh, Start from saved content, replacement confirmation, completion, result polling/feed handling, callback delivery if configured, app/universal-link return flows, and host-app chrome cleanup.
+- Deployed the bridge, party hub, custom quiz authoring, host-app chrome cleanup, and callback retry slice to gamma from commit `cbc218f` on 2026-05-23 with `./scripts/deploy-gcp.sh --gamma --with-frontend`.
+- Supabase gamma schema includes `games_gamma_game_sessions`, `games_gamma_quiz_packs`, `games_gamma_quiz_questions`, and `games_gamma_media_assets`.
+- Gamma env includes `REVELRY_INTEGRATION_SECRET` and `PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me`; `REVELRY_CALLBACK_SECRET` should stay unset unless doing a deliberate rotation/compatibility window.
+- Smoke-tested after deploy: `/health`, `/config.json`, `/catalog?host_app=revelry`, session creation, launch token generation, status polling, tokenless player launch redirect, party hub link/resolve, party workspace, LocalPlay-hosted authoring, saved quiz start, organizer/player WebSocket play-through, completion, results polling, and no signup-bonus sparks for the Revelry integration wallet.
+- Callback behavior in gamma build: HMAC over `${timestamp}.${raw_body}` with `REVELRY_INTEGRATION_SECRET`, ISO UTC `occurred_at`, `content.deleted` support, and short bounded retry for Revelry `429` / transient `5xx`. Polling remains the recovery path if callbacks are disabled or miss delivery.
+- Basic Revelry gamma end-to-end testing has worked for catalog, session creation, organizer/player launch, and gameplay. Before production promotion, repeat from Revelry gamma: authoring-link creation, create/edit quiz with image upload, return/deep-link behavior, workspace refresh, Start from saved content, replacement confirmation, completion, result polling/feed handling, callback delivery, app/universal-link return flows, and host-app chrome cleanup.
 - Full spec: `SPEC-REVELRY-INTEGRATION.md`
 
 ---
