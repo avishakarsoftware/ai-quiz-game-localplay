@@ -91,6 +91,8 @@ Current limitations and follow-up work:
 - quiz-only LocalPlay-hosted authoring/content APIs are implemented by reusing durable quiz-pack storage scoped to `revelry:party:{external_container_id}`
 - the party-scoped "Revelry Games" hub is implemented for list/create/edit/start quiz flows
 - host-app launch chrome is hidden on `/revelry/*`; organizer/player/spectator surfaces still need deeper polish for fully branded host-app mode
+- organizer gameplay renders the live WebSocket `QUESTION` payload, because Revelry-launched organizer sessions may not have the original quiz object in browser state
+- host-app media upload paths sanitize synthetic owner ids such as `revelry:party:{party_id}` before signing IONOS paths; raw colons or other unsafe wallet characters must never appear in `storage_path`
 - callbacks are best-effort signed HTTP delivery when `REVELRY_CALLBACK_URL` is configured; polling remains the recovery path
 - result summaries exist but should be hardened as richer game variants are added
 

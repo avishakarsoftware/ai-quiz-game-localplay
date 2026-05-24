@@ -1162,6 +1162,8 @@ This should follow the Revelry media-upload pattern:
 6. Frontend calls a finalize endpoint, e.g. `POST /media/{asset_id}/finalize`, so backend metadata becomes `ready`.
 7. Runtime quiz questions use `image_asset_id`, `image_url`, and `image_alt`; `image_url` may be `/media/{asset_id}` or a direct `media.revelryapp.me` URL.
 
+The owner/context path segment must be sanitized before signing. Host-app wallets can contain unsafe characters, for example `revelry:party:{party_id}`; signed paths should use a path-safe segment such as `revelry_party_{party_id}`. Raw `:` characters are rejected by the IONOS PHP handler as `invalid_path`.
+
 Recommended public URL and server layout:
 
 ```text
@@ -1230,6 +1232,7 @@ Path validation:
 
 - PHP handlers must reject `..`, absolute paths, and unknown prefixes.
 - LocalPlay paths should start with `prod/` or `gamma/`.
+- Backend-generated paths must use sanitized owner/context segments.
 - Backend-generated paths should use UUID-like asset names, never user-provided filenames.
 - Delete should be best-effort: signed `delete.php` removes the IONOS file, while backend metadata is soft-deleted.
 

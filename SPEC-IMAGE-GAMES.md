@@ -95,6 +95,7 @@ Scope:
   - Production tables: `games_*`.
   - Gamma tables: `games_gamma_*`.
   - Production/gamma media paths must include an environment segment so assets cannot collide.
+- Sanitize the owner/context path segment before signing upload paths. Host-app wallets can contain unsafe characters, for example `revelry:party:{party_id}`; the signed IONOS path must use a path-safe segment such as `revelry_party_{party_id}` so `upload.php` accepts it.
 - Backend signs upload paths so the browser can upload directly to IONOS without giving it any server secret.
 - Backend can proxy, redirect, or return CDN URLs for reads, while `/media/{asset_id}` remains the stable app-facing asset URL.
 - Add cleanup jobs or manual retention scripts.
@@ -239,6 +240,8 @@ gamma/
   generated/{asset_id}.webp
   thumbs/{asset_id}.webp
 ```
+
+`wallet_prefix` is a sanitized path segment, not the raw wallet id. For example, `revelry:party:abc` must become something like `revelry_party_abc`.
 
 The IONOS PHP handler should live in this repo before deployment, e.g. `ionos/media/upload.php`, and be deployed to:
 

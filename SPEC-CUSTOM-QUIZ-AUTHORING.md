@@ -827,6 +827,7 @@ Backend:
 6. Allow quiz pack questions to attach/detach owned media assets. Attach via editor/upload is implemented; detach cleanup is backlog.
 7. Materialize `image_asset_id`, `image_url`, and `image_alt` into runtime quiz questions. Implemented for stored image fields.
 8. Ensure `/media/{asset_id}` and/or direct IONOS CDN URLs work for IONOS frontend, backend-served gamma, active rooms, and owner-only editor preview. Direct IONOS URLs are implemented.
+9. Sanitize host-app owner ids before creating signed IONOS upload paths. Implemented for synthetic Revelry party wallets such as `revelry:party:{party_id}`.
 
 Frontend:
 
@@ -839,7 +840,7 @@ Frontend:
 Acceptance:
 
 - Host can create a custom quiz with at least one uploaded question image in gamma and production.
-- Uploaded image questions render for organizer, player, and spectator views.
+- Uploaded image questions render for organizer, player, and spectator views, including Revelry-launched organizer sessions where the browser receives the live question over WebSocket rather than from locally generated quiz state.
 - Starting a room does not require Stable Diffusion or any local image generator.
 - Missing or failed image assets degrade gracefully to text-only questions.
 - Uploaded images survive backend container restart.
