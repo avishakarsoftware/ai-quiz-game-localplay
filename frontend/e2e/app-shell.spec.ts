@@ -16,6 +16,15 @@ test.describe('Standalone app shell', () => {
     await expectNoHorizontalOverflow(page);
   });
 
+  test('menu uses multi-game branding and fits without horizontal overflow', async ({ page }) => {
+    await page.goto('/');
+
+    await page.locator('.settings-trigger').click();
+    await expect(page.getByText('Revelry Games v1.0')).toBeVisible();
+    await expect(page.getByText('Revelry Quiz v1.0')).not.toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
+
   test('standalone custom quiz ignores old unscoped party drafts', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('localplay_custom_quiz_draft_v1', JSON.stringify({

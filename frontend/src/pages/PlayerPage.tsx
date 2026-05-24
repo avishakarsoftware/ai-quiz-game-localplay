@@ -485,7 +485,7 @@ export default function PlayerPage() {
                         {hostAppMode && hostAppTerminalError ? (
                             <>
                                 <div className="hero-icon mb-4" style={{ background: 'none', boxShadow: 'none' }}>
-                                    <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="Revelry" style={{ width: '100%', height: '100%', borderRadius: '20px' }} />
+                                    <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="Revelry Games" style={{ width: '100%', height: '100%', borderRadius: '20px' }} />
                                 </div>
                                 <h1 className="hero-title mb-3">Game Unavailable</h1>
                                 <p className="text-[--text-tertiary] mb-6 text-center">{error || 'Open this game from Revelry again.'}</p>
@@ -498,7 +498,7 @@ export default function PlayerPage() {
                         ) : (
                             <>
                         <div className="hero-icon mb-4" style={{ background: 'none', boxShadow: 'none' }}>
-                            <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="Revelry" style={{ width: '100%', height: '100%', borderRadius: '20px' }} />
+                            <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="Revelry Games" style={{ width: '100%', height: '100%', borderRadius: '20px' }} />
                         </div>
                         <h1 className="hero-title mb-2">Join Game</h1>
                         <p className="text-[--text-tertiary] mb-8">Enter the game PIN to play</p>

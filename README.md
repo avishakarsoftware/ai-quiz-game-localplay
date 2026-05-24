@@ -1,6 +1,6 @@
-# AI Quiz Game (LocalPlay)
+# Revelry Games / LocalPlay
 
-A multiplayer quiz game powered by local AI (Ollama). The organizer gives a prompt, AI generates questions, and players compete in real-time.
+An AI-powered party game platform for live groups. Hosts create or pick a game, players join from their phones, and quiz, voting, drawing, and future party games run in real time.
 
 ## Features
 

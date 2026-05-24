@@ -14,7 +14,7 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
             <div className="flex-1 flex flex-col justify-center py-8">
                 <div className="text-center mb-8">
                     <div className="hero-icon mb-4" style={{ background: 'none', boxShadow: 'none' }}>
-                        <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="Revelry" style={{ width: '100%', height: '100%', borderRadius: '20px' }} />
+                        <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="Revelry Games" style={{ width: '100%', height: '100%', borderRadius: '20px' }} />
                     </div>
                     <h1 className="hero-title">Choose a Game</h1>
                     <p className="text-[--text-tertiary] mt-2">Pick a game to play with your group</p>

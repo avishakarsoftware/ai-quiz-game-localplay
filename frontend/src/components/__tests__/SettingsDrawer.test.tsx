@@ -115,7 +115,7 @@ describe('SettingsDrawer', () => {
 
         await user.click(screen.getByTitle('Menu'));
 
-        expect(screen.getByText('Revelry Quiz v1.0')).toBeInTheDocument();
+        expect(screen.getByText('Revelry Games v1.0')).toBeInTheDocument();
     });
 
     it('shows sign-in prompt when not signed in', async () => {

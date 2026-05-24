@@ -114,7 +114,7 @@ export default function SettingsDrawer() {
                 type: 'standard',
                 theme: 'filled_black',
                 size: 'large',
-                width: 280,
+                width: 232,
                 text: 'continue_with',
                 shape: 'pill',
             });
@@ -424,7 +424,7 @@ export default function SettingsDrawer() {
                 )}
 
                 <div style={{ textAlign: 'center', marginTop: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <p style={{ fontSize: 11, color: 'var(--text-quaternary)' }}>Revelry Quiz v1.0</p>
+                    <p style={{ fontSize: 11, color: 'var(--text-quaternary)' }}>Revelry Games v1.0</p>
                     <a href="privacy.html" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: 'var(--text-tertiary)', textDecoration: 'underline' }}>Privacy Policy</a>
                 </div>
             </div>

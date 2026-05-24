@@ -1,4 +1,4 @@
-# LocalPlay / Revelry System Spec
+# LocalPlay System Spec
 
 This document describes the system as it exists now. It is intended as a baseline for planning new games and platform upgrades.
 
@@ -6,14 +6,26 @@ For the forward-looking LocalPlay platform vision, including the future Revelry 
 
 ## Product
 
-LocalPlay / Revelry is an AI-powered party game platform. A host generates game content with an LLM, creates a room, shares a room code or QR join URL, and players join from their phones. Gameplay happens in real time over WebSockets.
+LocalPlay, currently surfaced publicly as **Revelry Games**, is an AI-powered party game platform. A host creates or selects game content, creates a room, shares a room code or join URL, and players join from their phones. Gameplay happens in real time over WebSockets, with an optional spectator/TV surface.
 
 The platform currently supports:
 
-- `quiz`: AI-generated multiple-choice trivia.
+- `quiz`: AI-generated, imported, or manually authored multiple-choice trivia.
+- Quiz runtime variants: `rebus`, `emoji_charades`, `fact_fiction`, `timeline`, and `odd_one_out`.
 - `wmlt`: "Who's Most Likely To" voting rounds.
+- `drawing`: rotating drawer/guesser rounds with live canvas sync.
+- Standalone custom quiz authoring and saved quiz packs.
+- Host-app/party-scoped authoring and game setup through the Revelry Games hub.
 
-The system uses shared room, player, team, token, and WebSocket infrastructure. Game-specific rules are handled by `room.game_type` branches in backend and frontend code.
+The system uses shared room, player, team, token, media, and WebSocket infrastructure. Game-specific rules are handled by `room.game_type` branches in backend and frontend code while the platform is still single-server and deliberately simple.
+
+Launch readiness baseline:
+
+- Standalone hosts can choose a game, create content, review it, create a room, share a join link/QR, run the game, and play again without falling into dead-end screens.
+- Standalone **My Quizzes** is scoped to the current LocalPlay wallet/session and must not show Revelry party-scoped content or images.
+- Host-app launches must hide standalone economy/account/library chrome unless explicitly allowed by the host-app context.
+- All user-facing labels should treat the app as a multi-game surface, not as "Revelry Quiz".
+- Backend-served SPA and service worker routing must never allow API routes to be fulfilled by cached app shell HTML.
 
 ## Architecture
 
@@ -31,6 +43,7 @@ Key files:
 - `backend/tokens.py`: spark wallet and token economy.
 - `backend/quiz_engine.py`: LLM generation and validation for quiz content.
 - `backend/mlt_engine.py`: LLM generation and validation for WMLT content.
+- `backend/drawing_engine.py`: LLM generation and validation for drawing prompts.
 - `backend/image_engine.py`: optional Stable Diffusion image generation for quiz questions.
 - `backend/auth.py`: Google/Apple sign-in and session handling.
 - `backend/remote_config.py`: remote config for provider/model/operation flags.
@@ -43,15 +56,22 @@ Key files:
 
 - `frontend/src/pages/OrganizerPage.tsx`: host state machine and WebSocket client.
 - `frontend/src/pages/PlayerPage.tsx`: player join, game, result, reconnect, and podium flows.
+- `frontend/src/pages/SpectatorPage.tsx`: spectator and TV room-code entry/playback surface.
+- `frontend/src/pages/PartyHubPage.tsx`: Revelry/host-app party-scoped games hub.
+- `frontend/src/pages/RevelryAuthoringPage.tsx`: host-app quiz authoring entry point.
 - `frontend/src/components/organizer/GameSelectScreen.tsx`: game picker.
 - `frontend/src/components/organizer/PromptScreen.tsx`: quiz generation prompt.
 - `frontend/src/components/organizer/MLTPromptScreen.tsx`: WMLT generation prompt.
+- `frontend/src/components/organizer/DrawingPromptScreen.tsx`: drawing prompt setup.
+- `frontend/src/components/organizer/CustomQuizEditor.tsx`: manual custom quiz authoring.
 - `frontend/src/components/organizer/ReviewScreen.tsx`: quiz review/edit before room creation.
 - `frontend/src/components/organizer/MLTReviewScreen.tsx`: WMLT review/edit before room creation.
+- `frontend/src/components/organizer/DrawingReviewScreen.tsx`: drawing prompt review/edit before room creation.
 - `frontend/src/components/organizer/LobbyScreen.tsx`: host room lobby.
 - `frontend/src/components/organizer/GameQuestionScreen.tsx`: host active-round display.
 - `frontend/src/components/organizer/LeaderboardScreen.tsx`: quiz leaderboard between rounds.
 - `frontend/src/components/organizer/PodiumScreen.tsx`: final results.
+- `frontend/src/gameModes.ts`: standalone and host-app-visible game catalog metadata.
 - `frontend/src/types.ts`: shared frontend types.
 
 ### Production Topology
@@ -184,49 +204,73 @@ The Supabase objects have been created in the shared project. Gamma and producti
 
 ## Content Model
 
-Generated game content is stored in memory in `backend/main.py`.
+Generated game content is stored in memory in `backend/main.py` for immediate room creation. Durable custom/saved content is stored through the DB facade.
 
 Quiz storage:
 
 - `quizzes: Dict[str, dict]`
 - `quiz_timestamps: Dict[str, float]`
 - `quiz_images: Dict[str, Dict[int, str]]`
+- Saved custom quiz packs use `*_quiz_packs` and `*_quiz_questions`.
+- Question image metadata uses `*_media_assets`; image files live on IONOS.
 
 WMLT storage:
 
 - `mlt_scenarios: Dict[str, dict]`
 - `mlt_timestamps: Dict[str, float]`
 
+Drawing storage:
+
+- `drawing_games: Dict[str, dict]`
+- `drawing_timestamps: Dict[str, float]`
+
+Host-app/party setup storage:
+
+- Current WMLT and Drawing party setups reuse `*_generated_content` with scoped owner ids such as `revelry:party:{party_id}`.
+- Revelry party quiz authoring reuses quiz-pack storage under the same party-scoped ownership pattern.
+- A richer generic content table remains backlog for future games that need collaboration, search, versioning, richer media, or cross-party reuse.
+
 Ownership:
 
 - `content_owners: Dict[str, str]`
 - Content ids are mapped to wallet ids.
 - Update, delete, export, and image-generation actions require matching ownership.
+- Host-app content is scoped by host app and external container/party id and must not appear in standalone LocalPlay libraries.
 
 Eviction:
 
 - `_evict_old_content()` removes expired content and trims storage to `MAX_QUIZZES`.
 - Content used by active rooms is not evicted.
-- Quiz and WMLT content use the same TTL constant.
+- Quiz, WMLT, and Drawing generated content use the same TTL constant unless a game-specific retention rule is added.
 
 ## Game Types
 
 Frontend game types are defined in `frontend/src/types.ts`:
 
 ```ts
-export type GameType = 'quiz' | 'wmlt';
+export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | QuizVariantGameType;
 ```
 
-Backend room creation accepts:
+The frontend catalog in `frontend/src/gameModes.ts` maps visible game ids to runtime types:
+
+- `quiz`, `rebus`, `emoji_charades`, `fact_fiction`, `timeline`, and `odd_one_out` use the quiz runtime.
+- `wmlt` uses the WMLT runtime.
+- `drawing` uses the Drawing runtime.
+
+Backend room creation accepts runtime game types:
 
 - `quiz`
 - `wmlt`
+- `drawing`
 
 Unsupported game types are rejected by `RoomCreateRequest.validate_game_type`.
 
+Host-app mode applies an additional catalog gate. A game must be returned as launchable by `GET /catalog?host_app=...` before it appears in the host-app hub or menus. Standalone-only variants can remain visible in standalone LocalPlay while hidden from Revelry until their bridge contract is complete.
+
 ## LLM Generation Pattern
 
-Both existing generation engines follow the same pattern:
+Generation engines follow the same pattern:
 
 1. Build a system prompt.
 2. Wrap the user prompt/theme in boundary markers.
@@ -301,6 +345,30 @@ Validation requires:
 - `statements` exists and is a non-empty list.
 - Each statement has `id` and non-empty `text`.
 
+### Drawing Content Shape
+
+Drawing generation returns:
+
+```json
+{
+  "game_title": "string",
+  "prompts": [
+    {
+      "id": 1,
+      "text": "birthday cake",
+      "aliases": ["cake"],
+      "difficulty": "easy"
+    }
+  ]
+}
+```
+
+Validation requires:
+
+- `prompts` exists and is a non-empty list.
+- Each prompt has `id` and non-empty `text`.
+- Difficulty, if present, is one of `easy`, `medium`, or `hard`.
+
 ## REST API
 
 ### System
@@ -325,6 +393,7 @@ Validation requires:
     - `difficulty`
     - `num_questions`
     - `provider`
+    - `mode`, optional quiz variant such as `rebus` or `fact_fiction`.
   - Returns:
     - `quiz_id`
     - `quiz` with answers stripped.
@@ -355,6 +424,25 @@ Validation requires:
 - `POST /quiz/import`
   - Requires authentication.
   - Validates and stores imported quiz.
+
+### Saved Quiz Packs
+
+- `GET /quiz-packs`
+  - Lists saved custom quiz packs for the current wallet/session.
+  - Must not include host-app/party-scoped packs unless the request is made through a valid host-app context.
+
+- `POST /quiz-packs`
+  - Saves a custom quiz pack for the current wallet/session.
+
+- `GET /quiz-packs/{pack_id}`
+  - Returns pack metadata and quiz payload for editing/review.
+
+- `DELETE /quiz-packs/{pack_id}`
+  - Deletes a saved custom quiz pack owned by the current wallet/session.
+
+- `POST /quiz-packs/{pack_id}/materialize`
+  - Produces a temporary runtime `quiz_id` from a saved pack so the normal room/review flow can start.
+  - Frontend copy should say "Preparing Quiz", not "Generating Quiz".
 
 ### Stable Diffusion
 
@@ -395,6 +483,42 @@ Validation requires:
   - Requires authentication.
   - Validates and stores imported WMLT game.
 
+### Drawing
+
+- `POST /drawing/generate`
+  - Requires `X-Device-Id`.
+  - Charges `COST_GENERATE` after successful generation.
+  - Supports idempotency through `X-Idempotency-Key` or `Idempotency-Key`.
+  - Body:
+    - `prompt`
+    - `difficulty`, used as drawing prompt vibe.
+    - `num_prompts`
+    - `provider`
+  - Returns:
+    - `drawing_id`
+    - `game`
+
+- `GET /drawing/{drawing_id}`
+  - Returns generated Drawing game.
+
+- `PUT /drawing/{drawing_id}`
+  - Requires authenticated wallet ownership.
+  - Updates title and prompts.
+
+- `POST /drawing/import`
+  - Requires authentication.
+  - Validates and stores imported Drawing game.
+
+### Catalog And Host-App Integration
+
+- `GET /catalog`
+  - Returns LocalPlay game metadata, launchability, creation capabilities, and host-app gating information.
+
+- `/integrations/revelry/*`
+  - LocalPlay-side bridge for Revelry party hub, authoring links, launch tokens, content CRUD, session status/results, and callbacks.
+  - Detailed contract lives in `SPEC-REVELRY-INTEGRATION.md`.
+  - External apps must use LocalPlay APIs; they must not read/write LocalPlay Supabase tables directly.
+
 ### Rooms
 
 - `POST /room/create`
@@ -405,6 +529,7 @@ Validation requires:
     - `time_limit`
     - `quiz_id` for quiz.
     - `mlt_id` for WMLT.
+    - `drawing_id` for Drawing.
   - Returns:
     - `room_code`
     - `organizer_token`
@@ -469,6 +594,10 @@ Important fields:
 - `votes`
 - `show_votes`
 - `mlt_round_history`
+- `current_drawer_index`
+- `drawing_ops`
+- `drawing_guess_log`
+- `drawing_correct_guessers`
 
 Room states:
 
@@ -478,7 +607,7 @@ Room states:
 - `LEADERBOARD`
 - `PODIUM`
 
-The field name `current_question_index` is used for both quiz questions and WMLT statements.
+The field name `current_question_index` is used for quiz questions, WMLT statements, and Drawing prompts.
 
 ## WebSocket Security
 
@@ -521,6 +650,7 @@ Reconnection:
   - Charges `COST_ROOM`.
   - Locks room.
   - WMLT validates minimum player count before charging.
+  - Drawing validates minimum player count before charging.
   - Sets state to `INTRO`.
   - Broadcasts `GAME_STARTING`.
 
@@ -568,6 +698,18 @@ Reconnection:
   - Fields:
     - `voted_for`
 
+- `DRAW_OP`
+  - Drawing only.
+  - Sent by the current drawer.
+  - Fields:
+    - `op`: stroke, clear, or undo payload.
+
+- `GUESS`
+  - Drawing only.
+  - Sent by guessers.
+  - Fields:
+    - `guess`
+
 - `USE_POWER_UP`
   - Quiz only.
   - Fields:
@@ -607,6 +749,13 @@ WMLT-specific:
 
 - `VOTE_COUNT`
 - `VOTE_CONFIRMED`
+
+Drawing-specific:
+
+- `DRAW_OP`
+- `GUESS_RESULT`
+- `GUESS_ACCEPTED`
+- `GUESS_LOG`
 
 Spectator sync:
 
@@ -752,16 +901,73 @@ At podium time, WMLT may include:
 
 Superlatives are calculated from `mlt_round_history`.
 
+## Drawing Gameplay
+
+### Start Constraint
+
+Drawing requires at least `MIN_DRAWING_PLAYERS` players.
+
+### Round Start
+
+When `start_question()` runs for Drawing:
+
+1. Current round index increments.
+2. Previous leaderboard is stored.
+3. `answered_players` is cleared.
+4. `drawing_ops` and guess logs are cleared.
+5. The next drawer is selected.
+6. State becomes `QUESTION`.
+7. The drawer receives the full prompt text and aliases.
+8. Guessers and spectators receive safe public drawing state.
+9. Timer starts after optional intro/splash delay.
+
+Drawing `QUESTION` payload includes:
+
+- `game_type: "drawing"`
+- `drawing_prompt`, with hidden answer fields only for the drawer.
+- `drawer`
+- `drawing_ops`
+- `question_number`
+- `total_questions`
+- `time_limit`
+- `is_bonus`
+
+### Drawing And Guessing
+
+The drawer sends `DRAW_OP` messages. The backend rate-limits draw operations, trims sync payloads to `MAX_DRAW_OPS_PER_SYNC`, and broadcasts accepted operations to players and spectators.
+
+Guessers send `GUESS` messages. The backend normalizes guesses against prompt text and aliases, confirms accepted guesses, and tracks correct guessers for the round.
+
+### Round End
+
+Round ends when the timer expires or the organizer advances.
+
+Server broadcasts Drawing `QUESTION_OVER`:
+
+- `game_type: "drawing"`
+- `prompt`
+- `drawer`
+- `correct_guessers`
+- `leaderboard`
+- `previous_leaderboard`
+- `is_final`
+- `is_bonus`
+
 ## Frontend Organizer State Machine
 
 Organizer states:
 
 - `SELECT_GAME`
 - `PROMPT`
+- `QUIZ_VARIANT_PROMPT`
+- `CUSTOM_QUIZ`
+- `QUIZ_LIBRARY`
 - `MLT_PROMPT`
+- `DRAWING_PROMPT`
 - `LOADING`
 - `REVIEW`
 - `MLT_REVIEW`
+- `DRAWING_REVIEW`
 - `GENERATING_IMAGES`
 - `ROOM`
 - `QUESTION`
@@ -770,20 +976,25 @@ Organizer states:
 
 Game select:
 
-- `quiz` goes to `PROMPT`.
-- `wmlt` goes to `MLT_PROMPT`.
+- Host chooses from `frontend/src/gameModes.ts`.
+- Quiz and quiz variants go through quiz prompt/review or custom quiz authoring.
+- WMLT goes to `MLT_PROMPT` and `MLT_REVIEW`.
+- Drawing goes to `DRAWING_PROMPT` and `DRAWING_REVIEW`.
+- **My Quizzes** opens `QUIZ_LIBRARY`; starting a saved pack materializes it and enters normal review.
+- Home/menu navigation must reset safely from setup, loading, review, library, and terminal states.
 
 Generation:
 
 - Quiz calls `/quiz/generate`.
 - WMLT calls `/mlt/generate`.
+- Drawing calls `/drawing/generate`.
 - Successful generation moves to review.
 - `402`, `429`, and `503` are surfaced in an error modal.
 
 Room creation:
 
 - Calls `/room/create`.
-- Sends `quiz_id` or `mlt_id` based on `gameType`.
+- Sends `quiz_id`, `mlt_id`, or `drawing_id` based on `gameType`.
 - Opens organizer WebSocket with `organizer=true`.
 - Sends first-frame `AUTH`.
 
@@ -798,6 +1009,7 @@ Round progression:
 
 - Server `QUESTION` moves host to `QUESTION`.
 - `ANSWER_COUNT` and `VOTE_COUNT` update progress.
+- Drawing `DRAW_OP`, `GUESS_LOG`, and `GUESS_ACCEPTED` update live drawing/guess state.
 - `QUESTION_OVER` moves host to `LEADERBOARD`.
 - `PODIUM` moves host to final results.
 
@@ -837,10 +1049,18 @@ WMLT round UI:
 - Sends `VOTE`.
 - Waits for `VOTE_CONFIRMED`.
 
+Drawing round UI:
+
+- Current drawer sees the secret prompt and drawing canvas.
+- Guessers see the live canvas, guess input, and accepted guess feedback.
+- Sends `DRAW_OP` from the drawer and `GUESS` from guessers.
+- Spectator/TV shows public canvas, drawer, timer, and safe round state.
+
 Results:
 
 - Quiz result shows correctness, points, rank, and leaderboard.
 - WMLT result shows winner(s), vote count, majority feedback, and vote podium.
+- Drawing result shows prompt, drawer, correct guessers, points, rank, and leaderboard.
 
 Podium:
 
@@ -946,8 +1166,17 @@ Common commands:
 - `make test-all`: all tests.
 - `make lint`: frontend TypeScript type check.
 - `make build`: frontend production build.
+- `cd frontend && npm run test:e2e`: Playwright UX/regression coverage for organizer, player, spectator/TV, custom quiz authoring, saved quiz library, and Revelry party hub surfaces.
+- `cd frontend && npm test -- --run ...`: targeted Vitest component/unit coverage.
 
 The backend test suite includes API validation, game logic, WebSocket flows, power-ups, reconnection, bonus rounds, team leaderboard, token economy, auth, and thinking-leak defense. The exact count may drift over time.
+
+Launch-readiness checks should include:
+
+- Desktop and mobile screenshots of the standalone game catalog, menu, each setup/review flow, lobby, player join, and TV/spectator entry.
+- Saved quiz library flow: list, start, prepare copy, review, Home return, edit, delete.
+- Host-app flow: party hub, create game, save setup, start saved game, replacement confirmation, lobby, player join, completion, return.
+- Service worker/API check: `/quiz-packs`, `/media`, `/catalog`, `/integrations`, and game API routes return API responses, not cached HTML.
 
 ## Native / Capacitor
 
@@ -1001,6 +1230,10 @@ Historical review notes were consolidated into this section and the platform spe
 - **Spectator/player client-id collision:** Spectators and players use different client id prefixes, so real collisions are unlikely. Still, room cleanup paths should avoid assuming a `client_id` can only ever belong to one connection map.
 - **Reset-room tests:** Older tests once sent `RESET_ROOM` with inline `quiz_data`; current backend expects a valid `content_id`. Keep reset-room tests aligned with the content-id flow.
 - **Remote config announcement shape:** Historical review notes called out partial normalization of announcement entries. If remote config banners are expanded, normalize `type`, `dismissible`, and defaults explicitly.
+- **Quick play polish:** Add one-tap quick play for games that can start from default/template content, especially Drawing and WMLT. Current setup-first behavior is safer, but too slow for some live party moments.
+- **TV/cast polish:** Chromecast support is fragile as a primary user story. Keep `/tv/{room_code}` as a reliable fallback, then design a scalable phone-to-TV handoff that does not require typing a long URL into a TV browser.
+- **Result sharing polish:** Add shareable result cards/thumbnails and a "one more round" path from completed games.
+- **Late join policy:** Decide and implement per-game late-join behavior after a game starts: spectate, join with missed-round penalty, or block until next round.
 
 ## Upgrade Backlog
 

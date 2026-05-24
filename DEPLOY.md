@@ -1,4 +1,4 @@
-# Revelry Quiz — Production Deployment Guide
+# Revelry Games / LocalPlay — Production Deployment Guide
 
 ## Architecture Overview
 
@@ -56,7 +56,7 @@ curl -sS -i https://gamesapi-gamma.revelryapp.me/health
   site/          → revelryapp.me (marketing website)
   app/           → app.revelryapp.me (platform frontend, future)
   games/         → games.revelryapp.me
-    quiz/        → games.revelryapp.me/quiz (quiz game)
+    quiz/        → games.revelryapp.me/quiz (legacy public LocalPlay game surface)
   media/         → media.revelryapp.me
     apps/
       localplay/ → LocalPlay uploaded/generated game images
@@ -526,7 +526,7 @@ gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --c
 
 Nginx runs on the VM as a reverse proxy. Each subdomain has its own config file:
 
-- `/etc/nginx/sites-available/revelry-gamesapi` — `gamesapi.revelryapp.me` (quiz game backend)
+- `/etc/nginx/sites-available/revelry-gamesapi` — `gamesapi.revelryapp.me` (LocalPlay backend)
 - `/etc/nginx/sites-available/revelry-gamesapi-gamma` — `gamesapi-gamma.revelryapp.me` (gamma backend + frontend)
 - `/etc/nginx/sites-available/revelry-api` — `api.revelryapp.me` (legacy, kept for backward compat)
 

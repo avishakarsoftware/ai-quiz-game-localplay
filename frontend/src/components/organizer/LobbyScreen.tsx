@@ -54,8 +54,8 @@ export default function LobbyScreen({
         if (Capacitor.isNativePlatform()) {
             try {
                 await Share.share({
-                    title: 'Join my Revelry Quiz!',
-                    text: `Join my quiz game! Room code: ${roomCode}`,
+                    title: 'Join my Revelry Games room!',
+                    text: `Join my party game! Room code: ${roomCode}`,
                     url: joinUrl,
                     dialogTitle: 'Invite players',
                 });

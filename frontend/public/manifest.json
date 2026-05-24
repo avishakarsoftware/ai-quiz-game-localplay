@@ -1,10 +1,10 @@
 {
-    "name": "Revelry Quiz",
-    "short_name": "Revelry Quiz",
-    "description": "AI-powered quiz game for parties and events",
+    "name": "Revelry Games",
+    "short_name": "Revelry Games",
+    "description": "AI-powered party games for groups and events",
     "start_url": "./",
     "scope": "./",
-    "id": "revelry-quiz",
+    "id": "revelry-games",
     "display": "standalone",
     "background_color": "#46178F",
     "theme_color": "#46178F",
@@ -44,13 +44,13 @@
             "name": "Join Game",
             "short_name": "Join",
             "url": "join",
-            "description": "Join an existing quiz game"
+            "description": "Join an existing party game"
         },
         {
-            "name": "Create Quiz",
+            "name": "Create Game",
             "short_name": "Create",
             "url": ".",
-            "description": "Create a new quiz as organizer"
+            "description": "Create a new party game as organizer"
         }
     ]
 }
