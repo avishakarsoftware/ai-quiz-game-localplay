@@ -1,6 +1,6 @@
 # LocalPlay Revelry Integration Spec
 
-Status: Gamma bridge plus party-scoped quiz authoring and party hub start flow implemented; production hardening remains
+Status: Gamma bridge plus party-scoped quiz authoring, catalog-driven party hub creation, and party hub start flow implemented; production hardening remains
 
 Last updated: 2026-05-24
 
@@ -531,6 +531,8 @@ Response:
       "max_players": 50,
       "estimated_minutes": 15,
       "thumbnail_url": "https://gamesmedia.revelryapp.me/prod/catalog/quiz.jpg",
+      "host_app_supported": true,
+      "supported_host_apps": ["revelry"],
       "supports_ai_generation": true,
       "supports_custom_content": true,
       "supports_manual_authoring": true,
@@ -539,6 +541,10 @@ Response:
       "requires_content": true,
       "default_content_available": true,
       "embedded_authoring_supported": true,
+      "can_create_content": true,
+      "can_edit_content": true,
+      "can_quick_start": true,
+      "creation_modes": ["manual", "ai"],
       "min_questions": 3,
       "max_questions": 20,
       "supported_media": ["image/png", "image/jpeg", "image/webp"],
@@ -558,6 +564,15 @@ Response:
 }
 ```
 
+Catalog capability fields:
+
+- `host_app_supported` / `supported_host_apps`: whether this game is eligible for host-app mode and which adapters can show it.
+- `can_create_content`: the LocalPlay hub can create a new saved content item for this game type.
+- `can_edit_content`: saved content can be edited after creation; if already used, LocalPlay versions instead of mutating played content.
+- `can_quick_start`: the LocalPlay hub can start a fresh room without an existing saved content id, using default/template/generated content.
+- `creation_modes`: displayable creation paths such as `manual`, `ai`, `template`.
+- `embedded_authoring_supported`: this game has a host-app-aware authoring/details surface.
+
 Rules:
 
 - Revelry should use the catalog to render available LocalPlay games.
@@ -568,6 +583,7 @@ Rules:
 - Status values may include `live`, `gamma`, `planned`, and `disabled`.
 - Revelry should only enable launch actions for games where `launchable = true`.
 - The Revelry-launched LocalPlay UI must only expose games returned as `launchable = true` for `GET /catalog?host_app=revelry`.
+- The party hub's "Create a game" section must be driven by this catalog, not by hardcoded quiz-only UI. Quiz can open a new authoring flow; WMLT/Drawing can quick-start from default/template content until full editable authoring exists.
 - If a quiz variant such as Rebus, Timeline, or Odd One Out should appear in Revelry, it must first be represented in the bridge contract with catalog metadata, accepted `game_type` or mode validation, content/session creation semantics, launch-token handling, status, and result summary support.
 - Games not represented in the bridge contract must be hidden in Revelry-launched host-app mode even if they are available in standalone LocalPlay.
 - Backlog games such as Bingo, Baby Bingo, and Housie may appear as `planned` if Revelry wants to show coming-soon cards.
@@ -1008,6 +1024,11 @@ Expected hub behavior:
 - Host/cohost sees prepared content for the party, including drafts, ready games, locked/used games, expired items when useful for recovery, and recent completed sessions.
 - Guests see only active/joinable games and completed summaries that Revelry/LocalPlay mark visible to party members.
 - Host/cohost can create, edit, delete, and start party-scoped games directly inside LocalPlay when granted `author_content` and/or `operate_game`.
+- The hub must show a catalog-driven **Create a game** section using only entries returned by `GET /catalog?host_app=revelry` with `launchable = true`.
+- Creation actions must start a new item or new room for the selected catalog game; they must not reuse an arbitrary saved game. Saved/prepared games stay in a separate **Saved games** section with Start/Edit/Delete actions.
+- If a catalog entry has `can_create_content = true` or `embedded_authoring_supported = true`, the Create action opens LocalPlay's host-app-aware authoring route with `mode = create` and no existing `content_id`.
+- If a catalog entry has `can_quick_start = true` but no editable content authoring yet, the action may start a fresh LocalPlay room from default/template/generated content for that `game_type`, then enter organizer/lobby. This is valid for WMLT and Drawing until they get saved content authoring.
+- Unsupported standalone games and quiz variants must not appear in the Create section. Rebus and similar variants remain hidden until they have full bridge support.
 - The primary hub entry can be labeled like "Open Ava's Birthday Games Hub on Revelry Games" and should use party-safe cover art/metadata when provided.
 - Starting from the LocalPlay hub or a LocalPlay start-intent route is the canonical control-plane path: validate `settings.content_id`, enforce one active session per party, show an in-hub replacement confirmation when needed, create the replacement before superseding the old session, and return safe launch/result metadata.
 - Any game created in the hub remains party-scoped and must be visible later from the Revelry Games tab after sync. Do not save it only to a standalone LocalPlay library.
@@ -1451,7 +1472,7 @@ Risks and gotchas:
 
 ## postMessage Events
 
-Optional after Phase 0:
+Implemented where needed for embedded return/close, and optional elsewhere:
 
 ```text
 LOCALPLAY_READY
@@ -1468,6 +1489,7 @@ Rules:
 - Revelry must validate `event.origin`
 - messages are UI hints only
 - backend result APIs remain the source of truth
+- In embedded Revelry mode, LocalPlay **Back to Revelry** / authoring return should send `LOCALPLAY_REQUEST_CLOSE` to the allowlisted `return_url` origin instead of navigating the iframe into a nested Revelry party page. External/mobile fallback may navigate to the same return URL.
 
 ## Environment Variables
 
@@ -1576,7 +1598,9 @@ Recommended LocalPlay order:
 12. Add signed callback/webhook delivery for content/session/result events, with polling as recovery. Done as best-effort delivery when callback env vars are configured, including short bounded retry for `429` and transient `5xx`; durable queued retry remains backlog.
 13. Add postMessage events only where they improve embedded UX.
 14. Backlog: cleanup jobs for party drafts/content/media retention.
-15. Backlog: late-join policy, Quick Start, live Games tab refresh hooks, player-count display, TV/cast launcher, result-card image generation, and play-again/new-round shortcuts.
+15. Backlog: late-join policy, live Games tab refresh hooks, player-count display, result-card image generation, and play-again/new-round shortcuts.
+16. Backlog: make TV display Kahoot-style and party-safe. The organizer/lobby should be a TV-ready shared display, with full-screen guidance, QR/code entry for `/tv`, copy/open controls, and Chromecast/AirPlay/screen-mirroring as optional enhancements rather than the only path.
+17. Backlog: add editable/saved content authoring for non-quiz catalog games such as WMLT, Drawing, Bingo, Baby Bingo, and Housie when their payloads need persistence beyond quick-start templates.
 
 ## Open Questions
 

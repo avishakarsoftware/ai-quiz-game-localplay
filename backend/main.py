@@ -385,8 +385,21 @@ GAME_CATALOG = [
         "title": "AI Quiz",
         "description": "A fast trivia room with multiple-choice questions.",
         "launchable": True,
+        "host_app_supported": True,
+        "supported_host_apps": ["revelry"],
         "supports_custom_content": True,
         "supports_images": True,
+        "can_create_content": True,
+        "can_edit_content": True,
+        "can_quick_start": True,
+        "creation_modes": ["manual", "ai"],
+        "default_content_available": True,
+        "embedded_authoring_supported": True,
+        "content_schema": {
+            "kind": "quiz",
+            "question_count": {"min": 1, "max": 50},
+            "supported_media": ["image"],
+        },
     },
     {
         "id": "wmlt",
@@ -395,8 +408,16 @@ GAME_CATALOG = [
         "title": "Most Likely To",
         "description": "Vote on who best matches each prompt.",
         "launchable": True,
+        "host_app_supported": True,
+        "supported_host_apps": ["revelry"],
         "supports_custom_content": False,
         "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "creation_modes": ["template"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
     },
     {
         "id": "drawing",
@@ -405,8 +426,16 @@ GAME_CATALOG = [
         "title": "Drawing Game",
         "description": "Draw secret prompts while everyone guesses.",
         "launchable": True,
+        "host_app_supported": True,
+        "supported_host_apps": ["revelry"],
         "supports_custom_content": False,
         "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "creation_modes": ["template"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
         "config_schema": {
             "time_limit": {"min": 5, "max": 60, "default": 30},
         },
@@ -1150,7 +1179,7 @@ class RevelryContentSaveRequest(BaseModel):
 
 class RevelryPartyGameStartRequest(BaseModel):
     party_games_token: str
-    content_id: str
+    content_id: str = ""
     game_type: str = "quiz"
     time_limit: Optional[int] = None
     replacement_confirmed: bool = False

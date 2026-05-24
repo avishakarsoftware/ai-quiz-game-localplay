@@ -139,8 +139,17 @@ class _FakeSyncRetryClient:
 def test_catalog_lists_launchable_games():
     res = client.get("/catalog?host_app=revelry")
     assert res.status_code == 200
-    game_ids = {game["id"] for game in res.json()["games"]}
+    games = res.json()["games"]
+    game_ids = {game["id"] for game in games}
     assert {"quiz", "wmlt", "drawing"}.issubset(game_ids)
+    quiz = next(game for game in games if game["id"] == "quiz")
+    drawing = next(game for game in games if game["id"] == "drawing")
+    assert quiz["can_create_content"] is True
+    assert quiz["embedded_authoring_supported"] is True
+    assert "manual" in quiz["creation_modes"]
+    assert drawing["can_create_content"] is False
+    assert drawing["can_quick_start"] is True
+    assert drawing["config_schema"]["time_limit"]["default"] == 30
 
 
 def test_revelry_session_create_launch_token_and_status(monkeypatch):
@@ -724,6 +733,42 @@ def test_revelry_party_hub_can_mint_authoring_link(monkeypatch):
     )
     assert authoring_res.status_code == 200
     assert "/revelry/author?authoring_token=" in authoring_res.json()["authoring_url"]
+
+
+def test_revelry_party_hub_can_quick_start_catalog_game_without_content(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-hub-drawing-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Ava's Birthday",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["operate_game"],
+        },
+    }
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+    assert link_res.status_code == 200
+    party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
+
+    start_res = client.post(
+        "/integrations/revelry/party-games/start",
+        json={"party_games_token": party_token, "game_type": "drawing", "time_limit": 30},
+    )
+
+    assert start_res.status_code == 200
+    body = start_res.json()
+    assert body["session"]["status"] == "lobby"
+    assert body["session"]["room_code"] in socket_manager.rooms
+    room = socket_manager.rooms[body["session"]["room_code"]]
+    assert room.game_type == "drawing"
+    assert room.time_limit == 30
 
 
 def test_revelry_party_hub_delete_sends_content_deleted_callback(monkeypatch):

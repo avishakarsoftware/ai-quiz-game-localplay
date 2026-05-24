@@ -19,6 +19,18 @@ type AuthoringResolve = {
     } | null;
 };
 
+function returnToHostApp(returnUrl: string) {
+    const url = new URL(returnUrl, window.location.origin);
+    if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+            type: 'LOCALPLAY_REQUEST_CLOSE',
+            return_url: url.toString(),
+        }, url.origin);
+        return;
+    }
+    window.location.href = url.toString();
+}
+
 export default function RevelryAuthoringPage() {
     const params = new URLSearchParams(window.location.search);
     const authoringToken = params.get('authoring_token') || '';
@@ -62,7 +74,7 @@ export default function RevelryAuthoringPage() {
             url.searchParams.set('game_type', 'quiz');
             url.searchParams.set('status', 'ready');
         }
-        window.location.href = url.toString();
+        returnToHostApp(url.toString());
     }
 
     async function saveQuiz(quiz: Quiz, packId?: string) {

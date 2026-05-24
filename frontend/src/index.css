@@ -2863,7 +2863,7 @@ body {
 
 .party-hub__section {
     max-width: 1100px;
-    margin: 0 auto;
+    margin: 0 auto 28px;
 }
 
 .party-hub__section-head {
@@ -2897,6 +2897,26 @@ body {
     display: grid;
     gap: 14px;
     padding: 14px;
+}
+
+.party-hub__catalog-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+}
+
+.party-hub__catalog-card .party-hub__actions {
+    grid-column: 1 / -1;
+}
+
+.party-hub__icon {
+    width: 48px;
+    height: 48px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    font-size: 1.4rem;
 }
 
 .party-hub__card img {
