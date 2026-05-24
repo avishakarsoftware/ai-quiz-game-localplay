@@ -15,12 +15,27 @@ interface LobbyScreenProps {
     onStartGame: () => void;
     onToggleLock: () => void;
     hostAppMode?: boolean;
+    hostAppJoinUrl?: string;
+    hostAppJoinLabel?: string;
 }
 
-export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, locked, onStartGame, onToggleLock, hostAppMode = false }: LobbyScreenProps) {
+export default function LobbyScreen({
+    roomCode,
+    joinUrl,
+    playerCount,
+    players,
+    locked,
+    onStartGame,
+    onToggleLock,
+    hostAppMode = false,
+    hostAppJoinUrl = '',
+    hostAppJoinLabel = 'Scan to join from Revelry',
+}: LobbyScreenProps) {
     const prevCountRef = useRef(playerCount);
     const [justJoined, setJustJoined] = useState(false);
     const [copied, setCopied] = useState(false);
+    const qrUrl = hostAppMode ? hostAppJoinUrl : joinUrl;
+    const showQr = Boolean(qrUrl) && (!hostAppMode || Boolean(hostAppJoinUrl));
 
     useEffect(() => {
         if (playerCount > prevCountRef.current) {
@@ -60,13 +75,13 @@ export default function LobbyScreen({ roomCode, joinUrl, playerCount, players, l
         <div className="min-h-dvh flex flex-col items-center justify-center container-responsive safe-top safe-bottom animate-in">
             <div className="screen-hero">
                 <h1 className="hero-title">Game Lobby</h1>
-                <p className="hero-subtitle">{hostAppMode ? 'Players can join from Revelry' : 'Share the code below to invite players'}</p>
+                <p className="hero-subtitle">{hostAppMode ? (hostAppJoinUrl ? hostAppJoinLabel : 'Players can join from Revelry') : 'Share the code below to invite players'}</p>
             </div>
 
-            {!hostAppMode && (
+            {showQr && (
                 <div className="text-center mb-4">
                     <div className="qr-container">
-                        <QRCodeSVG value={joinUrl} size={180} bgColor="white" fgColor="#000000" level="H" />
+                        <QRCodeSVG value={qrUrl} size={180} bgColor="white" fgColor="#000000" level="H" />
                     </div>
                 </div>
             )}

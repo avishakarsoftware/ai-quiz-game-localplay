@@ -1022,6 +1022,7 @@ class RevelryExternalContext(BaseModel):
     brand_key: str = "revelry"
     host_user_id: str = ""
     return_url: str = ""
+    guest_join_url: str = ""
     cover_image_url: str = ""
     accent_color: str = ""
 
@@ -1048,6 +1049,7 @@ class RevelryLaunchTokenRequest(BaseModel):
     route: str = "join"
     embed: bool = True
     return_url: str = ""
+    guest_join_url: str = ""
 
     @field_validator("scope")
     @classmethod
@@ -1061,6 +1063,7 @@ class RevelryPartyGamesLinkRequest(BaseModel):
     external_context: RevelryExternalContext
     actor: RevelryActor = Field(default_factory=RevelryActor)
     return_url: str = ""
+    guest_join_url: str = ""
     preferred_display: str = "fullscreen"
     display: dict[str, Any] = Field(default_factory=dict)
 
@@ -1208,6 +1211,8 @@ def _revelry_party_wallet_id(external_container_id: str) -> str:
 def _revelry_display(context: RevelryExternalContext, display: Optional[dict[str, Any]] = None) -> dict:
     display = display or {}
     label = display.get("container_label") or context.external_container_title or "Revelry party"
+    guest_join_url = display.get("guest_join_url") or context.guest_join_url
+    guest_join_url = _validate_revelry_return_url(guest_join_url) if guest_join_url else ""
     return {
         "show_localplay_nav": False,
         "show_account_menu": False,
@@ -1220,6 +1225,8 @@ def _revelry_display(context: RevelryExternalContext, display: Optional[dict[str
         "accent_color": display.get("accent_color") or context.accent_color,
         "link_label": display.get("link_label") or f"Open {label} Games Hub on Revelry Games",
         "return_label": display.get("return_label") or "Back to Revelry",
+        "guest_join_url": guest_join_url,
+        "guest_join_label": display.get("guest_join_label") or "Scan to join from Revelry",
     }
 
 
@@ -1245,6 +1252,7 @@ def _revelry_launch_context(
         "role": actor.role,
         "capabilities": actor.capabilities,
         "return_url": return_url or context.return_url,
+        "guest_join_url": context.guest_join_url,
         "billing_mode": "host_app_managed",
         "allowed_game_ids": [game["id"] for game in GAME_CATALOG if game.get("launchable")],
         "surface": surface,
@@ -1580,6 +1588,7 @@ def _external_context_from_launch_context(launch_context: dict) -> RevelryExtern
         party_type=launch_context.get("party_type", ""),
         brand_key=launch_context.get("brand_key", "revelry"),
         return_url=launch_context.get("return_url", ""),
+        guest_join_url=launch_context.get("guest_join_url", "") or launch_context.get("display", {}).get("guest_join_url", ""),
     )
 
 
@@ -1618,7 +1627,13 @@ def _format_session(session: dict) -> dict:
     }
 
 
-def _create_launch_token(session_id: str, scope: str, route: str, return_url: str = "") -> tuple[str, int]:
+def _create_launch_token(
+    session_id: str,
+    scope: str,
+    route: str,
+    return_url: str = "",
+    launch_context: Optional[dict[str, Any]] = None,
+) -> tuple[str, int]:
     now = datetime.now(timezone.utc)
     exp = now + timedelta(seconds=config.REVELRY_LAUNCH_TOKEN_TTL_SECONDS)
     payload = {
@@ -1628,6 +1643,7 @@ def _create_launch_token(session_id: str, scope: str, route: str, return_url: st
         "scope": scope,
         "route": route,
         "return_url": return_url,
+        "launch_context": launch_context or {},
         "iat": int(now.timestamp()),
         "exp": int(exp.timestamp()),
         "jti": uuid.uuid4().hex,
@@ -1736,11 +1752,14 @@ async def create_revelry_party_games_link(request: RevelryPartyGamesLinkRequest,
     context = request.external_context
     if context.host_app != "revelry":
         raise HTTPException(status_code=422, detail="Unsupported host_app")
+    display = dict(request.display or {})
+    if request.guest_join_url and not display.get("guest_join_url"):
+        display["guest_join_url"] = request.guest_join_url
     token, expires, launch_context = _create_party_games_token(
         context,
         request.actor,
         _validate_revelry_return_url(request.return_url or context.return_url),
-        request.display,
+        display,
     )
     base_url = _public_base_url(req)
     return {
@@ -2020,7 +2039,13 @@ async def start_revelry_party_game(request: RevelryPartyGameStartRequest, req: R
             "external_container_id": context.external_container_id,
             "session": _format_session(superseded),
         })
-    token, expires = _create_launch_token(session["id"], "organizer", "organizer", launch_context.get("return_url", ""))
+    token, expires = _create_launch_token(
+        session["id"],
+        "organizer",
+        "organizer",
+        launch_context.get("return_url", ""),
+        launch_context,
+    )
     base_url = _public_base_url(req)
     await _send_revelry_callback("session.created", {
         "host_app": context.host_app,
@@ -2102,7 +2127,18 @@ async def create_revelry_launch_token(session_id: str, request: RevelryLaunchTok
     formatted = _format_session(session)
     if not formatted["joinable"] and request.scope != "spectator":
         raise HTTPException(status_code=409, detail="Session is not joinable")
-    token, expires = _create_launch_token(session_id, request.scope, request.route, request.return_url)
+    launch_context: dict[str, Any] = {}
+    if request.guest_join_url:
+        launch_context = {
+            "mode": "host_app",
+            "host_app": "revelry",
+            "surface": request.scope,
+            "display": {
+                "guest_join_url": _validate_revelry_return_url(request.guest_join_url),
+                "guest_join_label": "Scan to join from Revelry",
+            },
+        }
+    token, expires = _create_launch_token(session_id, request.scope, request.route, request.return_url, launch_context)
     base_url = _public_base_url(req)
     query = f"session_id={session_id}&launch_token={token}"
     if request.embed:
@@ -2128,6 +2164,7 @@ async def resolve_revelry_launch_token(launch_token: str, scope: str = ""):
         "room_code": session["room_code"],
         "scope": claims.get("scope"),
         "return_url": claims.get("return_url", ""),
+        "launch_context": claims.get("launch_context") or {},
     }
     if claims.get("scope") == "organizer":
         payload["organizer_token"] = session.get("organizer_token", "")

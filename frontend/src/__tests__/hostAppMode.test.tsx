@@ -41,4 +41,25 @@ describe('host-app mode filtering', () => {
         expect(screen.queryByText(/gamesapi-gamma\.revelryapp\.me/)).not.toBeInTheDocument();
         expect(screen.getByText(/players can join from revelry/i)).toBeInTheDocument();
     });
+
+    it('renders a Revelry-owned QR affordance in host-app lobby mode when provided', () => {
+        render(
+            <LobbyScreen
+                roomCode="ABCD12"
+                joinUrl="https://gamesapi-gamma.revelryapp.me/join/ABCD12"
+                hostAppJoinUrl="https://app.revelryapp.me/party/party-1/games/join"
+                hostAppJoinLabel="Scan to join Ava's Birthday"
+                playerCount={0}
+                players={[]}
+                locked={false}
+                onStartGame={() => {}}
+                onToggleLock={() => {}}
+                hostAppMode
+            />,
+        );
+
+        expect(screen.getByText(/scan to join ava's birthday/i)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /share link/i })).not.toBeInTheDocument();
+        expect(screen.queryByText(/gamesapi-gamma\.revelryapp\.me/)).not.toBeInTheDocument();
+    });
 });

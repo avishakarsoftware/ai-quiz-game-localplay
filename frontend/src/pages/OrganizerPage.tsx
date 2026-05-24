@@ -49,6 +49,8 @@ export default function OrganizerPage() {
     const [drawingGame, setDrawingGame] = useState<DrawingGame | null>(null);
     const [contentId, setContentId] = useState('');
     const [roomCode, setRoomCode] = useState('');
+    const [hostAppJoinUrl, setHostAppJoinUrl] = useState('');
+    const [hostAppJoinLabel, setHostAppJoinLabel] = useState('Scan to join from Revelry');
     const [timeLimit, setTimeLimit] = useState(15);
     const [playerCount, setPlayerCount] = useState(0);
     const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -700,7 +702,10 @@ export default function OrganizerPage() {
                 if (!res.ok) throw new Error('Launch token rejected');
                 const data = await res.json();
                 if (cancelled) return;
+                const display = data.launch_context?.display || {};
                 setRoomCode(data.room_code);
+                setHostAppJoinUrl(display.guest_join_url || data.launch_context?.guest_join_url || '');
+                setHostAppJoinLabel(display.guest_join_label || 'Scan to join from Revelry');
                 organizerTokenRef.current = data.organizer_token || '';
                 setState('ROOM');
                 connectWsRef.current(data.room_code);
@@ -1011,6 +1016,8 @@ export default function OrganizerPage() {
                         players={players}
                         locked={roomLocked}
                         hostAppMode={hostAppMode}
+                        hostAppJoinUrl={hostAppJoinUrl}
+                        hostAppJoinLabel={hostAppJoinLabel}
                         onStartGame={startGame}
                         onToggleLock={() => wsRef.current?.send(JSON.stringify({ type: 'TOGGLE_LOCK' }))}
                     />

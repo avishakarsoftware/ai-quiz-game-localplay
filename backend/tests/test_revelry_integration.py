@@ -442,6 +442,7 @@ def test_revelry_party_games_link_resolve_and_start_saved_pack(monkeypatch):
             "cover_image_url": "https://media.revelryapp.me/cover.jpg",
             "accent_color": "#ff4f9a",
             "return_url": "https://app.revelryapp.me/party/1?tab=games",
+            "guest_join_url": "https://app.revelryapp.me/party/1/games/join",
         },
         "actor": {
             "external_user_id": "host-1",
@@ -450,6 +451,9 @@ def test_revelry_party_games_link_resolve_and_start_saved_pack(monkeypatch):
             "capabilities": ["manage_games", "author_content", "operate_game"],
         },
         "return_url": "https://app.revelryapp.me/party/1?tab=games",
+        "display": {
+            "guest_join_label": "Scan to join Ava's Birthday",
+        },
     }
 
     link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
@@ -457,6 +461,8 @@ def test_revelry_party_games_link_resolve_and_start_saved_pack(monkeypatch):
     link_body = link_res.json()
     assert "party_games_token=" in link_body["party_games_url"]
     assert link_body["display"]["container_label"] == "Ava's Birthday"
+    assert link_body["display"]["guest_join_url"] == "https://app.revelryapp.me/party/1/games/join"
+    assert link_body["display"]["guest_join_label"] == "Scan to join Ava's Birthday"
     token = link_body["party_games_url"].split("party_games_token=", 1)[1]
 
     resolve_res = client.get(f"/integrations/revelry/party-games/resolve?party_games_token={token}")
@@ -474,6 +480,12 @@ def test_revelry_party_games_link_resolve_and_start_saved_pack(monkeypatch):
     assert start_body["session"]["session_id"].startswith("lp_")
     assert "launch_token=" in start_body["launch_url"]
     assert start_body["session"]["room_code"] in socket_manager.rooms
+    launch_token = start_body["launch_url"].split("launch_token=", 1)[1].split("&", 1)[0]
+    launch_res = client.get(f"/integrations/revelry/launch-token/resolve?scope=organizer&launch_token={launch_token}")
+    assert launch_res.status_code == 200
+    launch_context = launch_res.json()["launch_context"]
+    assert launch_context["display"]["guest_join_url"] == "https://app.revelryapp.me/party/1/games/join"
+    assert launch_context["display"]["guest_join_label"] == "Scan to join Ava's Birthday"
 
 
 def test_revelry_authoring_link_save_and_fetch_content(monkeypatch):
