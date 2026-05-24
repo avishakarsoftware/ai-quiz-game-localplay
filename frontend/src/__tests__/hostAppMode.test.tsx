@@ -153,6 +153,10 @@ describe('host-app mode filtering', () => {
         expect(screen.getByRole('button', { name: /create quiz/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /start a round/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /start drawing/i })).toBeInTheDocument();
+        expect(screen.getByText(/write your own or use ai/i)).toBeInTheDocument();
+        expect(screen.getAllByText(/ready-made prompts/i)).toHaveLength(2);
+        expect(screen.queryByText(/manual \/ ai/i)).not.toBeInTheDocument();
+        expect(screen.queryByText(/^template$/i)).not.toBeInTheDocument();
     });
 
     it('opens new quiz authoring from catalog without using a saved game id', async () => {

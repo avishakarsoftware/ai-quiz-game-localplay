@@ -86,14 +86,15 @@ function actionLabelForGame(game: CatalogGame, canCreate: boolean): string {
 }
 
 function cardMetaForGame(game: CatalogGame): string {
-    const modes = (game.creation_modes || []).map((mode) => {
-        if (mode === 'ai') return 'AI';
-        if (mode === 'manual') return 'Manual';
-        if (mode === 'template') return 'Ready to play';
-        return mode;
-    });
+    const gameType = game.game_type || game.id;
+    const modes = new Set(game.creation_modes || []);
+    const creationCopy = gameType === 'quiz' && (modes.has('manual') || modes.has('ai'))
+        ? 'Write your own or use AI'
+        : modes.has('template')
+            ? 'Ready-made prompts'
+            : '';
     const details = [
-        modes.join(' + '),
+        creationCopy,
         game.min_players ? `${game.min_players}+ players` : '',
         game.estimated_minutes ? `${game.estimated_minutes} min` : '',
     ].filter(Boolean);
@@ -359,7 +360,6 @@ export default function PartyHubPage() {
                                 <article className="party-hub__card party-hub__catalog-card" key={game.id}>
                                     <div className="party-hub__icon" aria-hidden="true">{mode.icon}</div>
                                     <div>
-                                        <span>{game.creation_modes?.join(' / ') || 'party game'}</span>
                                         <h3>{game.title}</h3>
                                         <p>{game.description || mode.description}</p>
                                         <small>{cardMetaForGame(game)}</small>
