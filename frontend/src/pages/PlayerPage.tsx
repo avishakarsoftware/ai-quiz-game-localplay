@@ -33,6 +33,10 @@ function getSavedSession() {
     return null;
 }
 
+function normalizeRoomCode(value: string | null | undefined): string {
+    return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+}
+
 export default function PlayerPage() {
     const [searchParams] = useSearchParams();
     const { code: urlCode } = useParams();
@@ -40,7 +44,7 @@ export default function PlayerPage() {
     const hostAppMode = searchParams.get('embed') === '1' || searchParams.has('launch_token') || searchParams.has('session_id');
     const savedSession = hostAppMode ? null : saved;
     const [state, setState] = useState<PlayerState>('JOIN');
-    const [roomCode, setRoomCode] = useState(urlCode || searchParams.get('room') || savedSession?.roomCode || '');
+    const [roomCode, setRoomCode] = useState(normalizeRoomCode(urlCode || searchParams.get('room') || savedSession?.roomCode || ''));
     const [nickname, setNickname] = useState(savedSession?.nickname || '');
     const [team, setTeam] = useState(savedSession?.team || '');
     const [avatar, setAvatar] = useState(() => savedSession?.avatar || AVATAR_EMOJIS[Math.floor(Math.random() * AVATAR_EMOJIS.length)]);

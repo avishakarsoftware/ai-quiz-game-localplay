@@ -25,10 +25,14 @@ interface SpectatorQuestion {
     image_url?: string;
 }
 
+function normalizeRoomCode(value: string | null | undefined): string {
+    return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+}
+
 export default function SpectatorPage() {
     const [searchParams, setSearchParams] = useSearchParams();
     const { code: routeCode } = useParams<{ code?: string }>();
-    const roomFromUrl = routeCode || searchParams.get('room') || '';
+    const roomFromUrl = normalizeRoomCode(routeCode || searchParams.get('room') || '');
     const [roomCode, setRoomCode] = useState(roomFromUrl);
     const [roomInput, setRoomInput] = useState('');
     const [joined, setJoined] = useState(!!roomFromUrl);

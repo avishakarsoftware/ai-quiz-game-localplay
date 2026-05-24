@@ -135,6 +135,12 @@ describe('SpectatorPage', () => {
     // --- Auto-Reconnect (Fix 5) ---
 
     describe('Auto-Reconnect', () => {
+        it('normalizes room codes from TV URLs before connecting', () => {
+            renderSpectator('abcd');
+
+            expect(getLatestWs().url).toContain('/ws/ABCD/');
+        });
+
         it('shows Reconnecting text on WebSocket close', () => {
             renderSpectator('ABCD');
             simulateWsOpen();
