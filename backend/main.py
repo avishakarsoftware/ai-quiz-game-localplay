@@ -357,11 +357,13 @@ class RoomCreateRequest(BaseModel):
     mlt_id: str = ""       # For MLT game
     drawing_id: str = ""   # For DrawingGame
     game_type: str = "quiz"
-    time_limit: int = 15
+    time_limit: Optional[int] = None
 
     @field_validator('time_limit')
     @classmethod
-    def validate_time_limit(cls, v: int) -> int:
+    def validate_time_limit(cls, v: Optional[int]) -> Optional[int]:
+        if v is None:
+            return v
         if v < 5 or v > 60:
             raise ValueError('Time limit must be between 5 and 60 seconds')
         return v
@@ -404,8 +406,15 @@ GAME_CATALOG = [
         "launchable": True,
         "supports_custom_content": False,
         "supports_images": False,
+        "config_schema": {
+            "time_limit": {"min": 5, "max": 60, "default": 30},
+        },
     },
 ]
+
+
+def _default_time_limit_for_game(game_type: str) -> int:
+    return 30 if game_type == "drawing" else config.DEFAULT_TIME_LIMIT
 
 
 def _now_ts() -> int:
@@ -1115,9 +1124,18 @@ class RevelryPartyGameStartRequest(BaseModel):
     party_games_token: str
     content_id: str
     game_type: str = "quiz"
-    time_limit: int = 15
+    time_limit: Optional[int] = None
     replacement_confirmed: bool = False
     replace_session_id: Optional[str] = None
+
+    @field_validator("time_limit")
+    @classmethod
+    def validate_time_limit(cls, value: Optional[int]) -> Optional[int]:
+        if value is None:
+            return value
+        if value < 5 or value > 60:
+            raise ValueError("time_limit must be between 5 and 60 seconds")
+        return value
 
     @field_validator("game_type")
     @classmethod
@@ -1558,7 +1576,7 @@ def _create_revelry_session_from_context(
         if not replace_session_id or replace_session_id != active["id"]:
             raise HTTPException(status_code=409, detail="replace_session_id must match the active LocalPlay session")
 
-    time_limit = int(settings.get("time_limit") or config.DEFAULT_TIME_LIMIT)
+    time_limit = int(settings.get("time_limit") or _default_time_limit_for_game(game_type))
     time_limit = max(5, min(60, time_limit))
     title = context.external_container_title or next((g["title"] for g in GAME_CATALOG if g["game_type"] == game_type), "LocalPlay Game")
     content_id, game_data = _resolve_revelry_runtime_content(context, game_type, str(settings.get("content_id") or ""), title)
@@ -2002,12 +2020,13 @@ async def sd_status():
 async def create_room(request: RoomCreateRequest, req: Request):
     content_id = request.quiz_id if request.game_type == "quiz" else request.mlt_id if request.game_type == "wmlt" else request.drawing_id
     content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
+    time_limit = request.time_limit if request.time_limit is not None else _default_time_limit_for_game(request.game_type)
     wallet_id = tokens.get_wallet_id(req)
     if not wallet_id:
         raise HTTPException(status_code=400, detail="Device ID required")
     tokens.ensure_wallet(wallet_id)
     _check_content_owner(content_id, wallet_id)
-    room_code, organizer_token = _create_runtime_room(request.game_type, content_id, game_data, wallet_id, request.time_limit)
+    room_code, organizer_token = _create_runtime_room(request.game_type, content_id, game_data, wallet_id, time_limit)
     return {"room_code": room_code, "organizer_token": organizer_token}
 
 

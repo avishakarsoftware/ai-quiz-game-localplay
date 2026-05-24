@@ -400,7 +400,7 @@ Sent by the drawer as compact vector operations.
     "kind": "stroke",
     "id": "stroke-uuid",
     "points": [[0.12, 0.44], [0.13, 0.45]],
-    "color": "#F8EBD9",
+    "color": "#111111",
     "width": 6
   }
 }
@@ -436,7 +436,7 @@ Broadcast to all non-drawer clients and spectators.
     "kind": "stroke",
     "id": "stroke-uuid",
     "points": [[0.12, 0.44], [0.13, 0.45]],
-    "color": "#F8EBD9",
+    "color": "#111111",
     "width": 6
   }
 }
@@ -537,6 +537,8 @@ Max ops per second per drawer: 30
 Max stored ops per round: 2500
 Max stroke width: 32
 Max color palette: fixed server-approved colors
+Initial drawing color: black (#111111)
+Default round timer: 30 seconds
 Max DRAW_OP message size: 2048 bytes
 ```
 
@@ -650,6 +652,7 @@ Drawer screen:
 - Full-width canvas.
 - Tool row:
   - color swatches
+  - black selected as the initial color
   - brush size
   - undo
   - clear

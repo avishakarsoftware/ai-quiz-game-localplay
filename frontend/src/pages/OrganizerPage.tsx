@@ -29,6 +29,10 @@ import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameMo
 
 type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'LEADERBOARD' | 'PODIUM';
 
+function defaultTimeLimitForGame(type: GameType): number {
+    return type === 'drawing' ? 30 : 15;
+}
+
 export default function OrganizerPage() {
     const { config: remoteConfig } = useRemoteConfigContext();
     const [state, setState] = useState<OrganizerState>('SELECT_GAME');
@@ -283,6 +287,7 @@ export default function OrganizerPage() {
     const handleGameSelect = (type: GameType) => {
         window.dispatchEvent(new CustomEvent('close-settings'));
         setGameType(type);
+        setTimeLimit(defaultTimeLimitForGame(type));
         if (type === 'wmlt') setDifficulty('party');
         else setDifficulty('medium');
         if (type === 'wmlt') setState('MLT_PROMPT');

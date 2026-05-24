@@ -538,6 +538,7 @@ Response:
 Rules:
 
 - Revelry should use the catalog to render available LocalPlay games.
+- Catalog entries may define different defaults by game. Drawing Game uses `config_schema.time_limit.default = 30` and LocalPlay selects black as the initial drawing brush color. Revelry should pass an explicit `time_limit` only when the host changes it; otherwise LocalPlay applies the game-specific default.
 - LocalPlay still validates every launch request server-side; catalog metadata is not authorization.
 - Gamma and production catalogs may differ.
 - `host_app` may filter availability, copy, thumbnails, and launchability.

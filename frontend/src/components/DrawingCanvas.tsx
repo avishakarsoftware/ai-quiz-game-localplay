@@ -8,7 +8,7 @@ interface DrawingCanvasProps {
     height?: number;
 }
 
-const COLORS = ['#ffffff', '#7dd3fc', '#a7f3d0', '#fde68a', '#f0abfc', '#fb7185'];
+const COLORS = ['#111111', '#ffffff', '#7dd3fc', '#a7f3d0', '#fde68a', '#f0abfc', '#fb7185'];
 
 export default function DrawingCanvas({ ops, drawable = false, onDrawOp, height = 360 }: DrawingCanvasProps) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -31,7 +31,7 @@ export default function DrawingCanvas({ ops, drawable = false, onDrawOp, height 
         ctx.lineJoin = 'round';
         for (const op of ops) {
             if (op.kind !== 'stroke' || !op.points?.length) continue;
-            ctx.strokeStyle = op.color || '#ffffff';
+            ctx.strokeStyle = op.color || '#111111';
             ctx.lineWidth = op.width || 5;
             ctx.beginPath();
             op.points.forEach(([x, y], index) => {

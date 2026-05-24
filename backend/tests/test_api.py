@@ -1,6 +1,7 @@
 """API endpoint tests using FastAPI TestClient."""
 import sys
 import os
+import time
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -16,9 +17,17 @@ import config
 def clear_state():
     """Clear in-memory state before each test."""
     quizzes.clear()
+    main.drawing_games.clear()
+    main.drawing_timestamps.clear()
+    main.content_owners.clear()
+    main.socket_manager.rooms.clear()
     media_store.clear()
     yield
     quizzes.clear()
+    main.drawing_games.clear()
+    main.drawing_timestamps.clear()
+    main.content_owners.clear()
+    main.socket_manager.rooms.clear()
     media_store.clear()
 
 
@@ -33,12 +42,12 @@ AUTH_HEADERS = {"X-Device-Id": "11111111-1111-4111-8111-111111111111"}
 class TestHealthEndpoints:
     def test_root(self):
         res = client.get("/")
-        assert res.status_code == 200
+        assert res.status_code == 200, res.text
         assert "running" in res.json()["message"].lower()
 
     def test_health(self):
         res = client.get("/health")
-        assert res.status_code == 200
+        assert res.status_code == 200, res.text
         assert res.json()["status"] == "healthy"
 
     def test_system_info_requires_admin(self):
@@ -367,6 +376,24 @@ class TestRoomCreation:
         qid = seed_quiz()
         res = client.post("/room/create", json={"quiz_id": qid})
         assert res.status_code == 200
+
+    def test_create_drawing_room_defaults_to_30_seconds(self):
+        drawing_id = "drawing-default"
+        main.drawing_games[drawing_id] = {
+            "game_title": "Drawing Game",
+            "prompts": [{"id": 1, "text": "birthday cake", "aliases": ["cake"]}],
+        }
+        main.drawing_timestamps[drawing_id] = time.time()
+
+        res = client.post(
+            "/room/create",
+            json={"game_type": "drawing", "drawing_id": drawing_id},
+            headers=AUTH_HEADERS,
+        )
+
+        assert res.status_code == 200, res.text
+        room_code = res.json()["room_code"]
+        assert main.socket_manager.rooms[room_code].time_limit == 30
 
 
 # ---------------------------------------------------------------------------
