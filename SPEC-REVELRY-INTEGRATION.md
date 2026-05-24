@@ -1608,6 +1608,7 @@ Recommended LocalPlay order:
 15. Backlog: late-join policy, live Games tab refresh hooks, player-count display, result-card image generation, and play-again/new-round shortcuts.
 16. Backlog: make TV display Kahoot-style and party-safe. The organizer/lobby should be a TV-ready shared display, with full-screen guidance, QR/code entry for `/tv`, copy/open controls, and Chromecast/AirPlay/screen-mirroring as optional enhancements rather than the only path.
 17. Backlog: extend the generic setup/save/start model to future non-quiz catalog games such as Bingo, Baby Bingo, and Housie. WMLT and Drawing now use the party hub setup path. Future slices should keep labels, creation actions, content schemas, media support, and default prompts in catalog/server config instead of expanding hub-side conditionals.
+18. Backlog: revisit whether configurable party games must always persist a saved setup before start. Saving first is acceptable for the current WMLT/Drawing MVP because it gives Revelry a stable mirror pointer and supports pre-party setup, but some future games may be better as ephemeral setup-and-start flows or true quick-start rooms when the host does not intend to save/reuse them. Keep the catalog expressive enough to distinguish `requires_saved_content`, `can_save_setup`, and `can_start_ephemeral` if this becomes important.
 
 ## Open Questions
 
