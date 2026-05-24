@@ -1050,6 +1050,8 @@ class RevelryLaunchTokenRequest(BaseModel):
     embed: bool = True
     return_url: str = ""
     guest_join_url: str = ""
+    external_context: Optional[RevelryExternalContext] = None
+    display: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("scope")
     @classmethod
@@ -2127,15 +2129,19 @@ async def create_revelry_launch_token(session_id: str, request: RevelryLaunchTok
     formatted = _format_session(session)
     if not formatted["joinable"] and request.scope != "spectator":
         raise HTTPException(status_code=409, detail="Session is not joinable")
+    guest_join_url = request.guest_join_url or request.display.get("guest_join_url")
+    if not guest_join_url and request.external_context:
+        guest_join_url = request.external_context.guest_join_url
+    guest_join_label = request.display.get("guest_join_label") or "Scan to join from Revelry"
     launch_context: dict[str, Any] = {}
-    if request.guest_join_url:
+    if guest_join_url:
         launch_context = {
             "mode": "host_app",
-            "host_app": "revelry",
+            "host_app": request.external_context.host_app if request.external_context else "revelry",
             "surface": request.scope,
             "display": {
-                "guest_join_url": _validate_revelry_return_url(request.guest_join_url),
-                "guest_join_label": "Scan to join from Revelry",
+                "guest_join_url": _validate_revelry_return_url(guest_join_url),
+                "guest_join_label": guest_join_label,
             },
         }
     token, expires = _create_launch_token(session_id, request.scope, request.route, request.return_url, launch_context)

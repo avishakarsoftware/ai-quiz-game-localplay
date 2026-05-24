@@ -341,7 +341,17 @@ Request:
   "route": "join",
   "embed": true,
   "return_url": "https://app.revelryapp.me/party/party_uuid?tab=games",
-  "guest_join_url": "https://app.revelryapp.me/party/party_uuid/games/join"
+  "guest_join_url": "https://app.revelryapp.me/party/party_uuid/games/join",
+  "external_context": {
+    "host_app": "revelry",
+    "external_container_type": "party",
+    "external_container_id": "party_uuid",
+    "guest_join_url": "https://app.revelryapp.me/party/party_uuid/games/join"
+  },
+  "display": {
+    "guest_join_url": "https://app.revelryapp.me/party/party_uuid/games/join",
+    "guest_join_label": "Scan to join Ava's Birthday"
+  }
 }
 ```
 
@@ -361,6 +371,8 @@ Rules:
 - `embed` controls whether `embed=1` is added to the returned URL.
 - `return_url` is optional and must be validated against allowed Revelry origins before being reflected into a URL.
 - `guest_join_url` is optional and is carried inside the launch token's `launch_context.display` for host-app organizer/spectator UI. Use this when Revelry wants LocalPlay to show a party-safe QR code on the lobby or TV surface.
+- For compatibility, LocalPlay accepts `guest_join_url` at the top level, in `display.guest_join_url`, or in `external_context.guest_join_url`. `display.guest_join_url` is the presentation override; all three values, when present, should identify the same Revelry-owned party join route.
+- `display.guest_join_label` is optional QR/TV copy. It is presentation-only and must not affect routing or authorization.
 - The returned `launch_url` is a just-in-time artifact and must not be persisted.
 - `launch_token_expires_at` is LocalPlay's canonical response field; host-app wrapper APIs may rename it, but adapters must map it explicitly.
 - The launch token should be short-lived and preferably one-time use.
@@ -1279,6 +1291,8 @@ Suggested shape:
     "container_image_url": "https://media.revelryapp.me/parties/party_uuid/cover.jpg",
     "accent_color": "#ff4f9a",
     "link_label": "Open Ava's Birthday Games Hub on Revelry Games",
+    "guest_join_url": "https://app.revelryapp.me/party/party_uuid/games/join",
+    "guest_join_label": "Scan to join Ava's Birthday",
     "return_label": "Back to Revelry"
   }
 }
@@ -1451,7 +1465,7 @@ Recommended LocalPlay order:
 2. Add generic durable session schema and db facade methods. Done for `game_sessions`; participant persistence remains deferred.
 3. Add catalog endpoint. Done.
 4. Add handoff validation helper. Done for shared-secret bearer/JWT validation.
-5. Add embeddable launch shell/chrome mode. Done for Revelry-launched `/revelry/*`, tokenized organizer/player/spectator surfaces, standalone economy chrome hiding, and raw LocalPlay share/join suppression in host-app lobby mode. Further brand-specific polish remains.
+5. Add embeddable launch shell/chrome mode. Done for Revelry-launched `/revelry/*`, tokenized organizer/player/spectator surfaces, standalone economy chrome hiding, raw LocalPlay share/join suppression in host-app lobby mode, and `guest_join_url` QR rendering when Revelry provides a party-aware join route. Further brand-specific polish remains.
 6. Add session wrapper around current `/room/create`. Done.
 7. Add `POST /integrations/revelry/sessions`. Done.
 8. Add safe one-active-game replacement handling. Done.

@@ -162,7 +162,17 @@ def test_revelry_session_create_launch_token_and_status(monkeypatch):
     token_res = client.post(
         f"/integrations/revelry/sessions/{body['session_id']}/launch-token",
         headers=_headers(),
-        json={"scope": "organizer", "route": "organizer", "embed": True},
+        json={
+            "scope": "organizer",
+            "route": "organizer",
+            "embed": True,
+            "external_context": {
+                "host_app": "revelry",
+                "external_container_id": container_id,
+                "guest_join_url": "https://app.revelryapp.me/party/party-1/games/join",
+            },
+            "display": {"guest_join_label": "Scan to join from Revelry"},
+        },
     )
     assert token_res.status_code == 200
     launch = token_res.json()
@@ -175,6 +185,7 @@ def test_revelry_session_create_launch_token_and_status(monkeypatch):
     resolved = resolve_res.json()
     assert resolved["room_code"] == body["room_code"]
     assert resolved["organizer_token"]
+    assert resolved["launch_context"]["display"]["guest_join_url"] == "https://app.revelryapp.me/party/party-1/games/join"
 
     status_res = client.get(f"/integrations/revelry/sessions/{body['session_id']}", headers=_headers())
     assert status_res.status_code == 200
