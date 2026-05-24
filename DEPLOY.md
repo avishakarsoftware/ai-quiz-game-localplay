@@ -1147,7 +1147,7 @@ curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sess
 - Callback behavior in gamma build: HMAC over `${timestamp}.${raw_body}` with `REVELRY_INTEGRATION_SECRET`, ISO UTC `occurred_at`, `content.deleted` support, and short bounded retry for Revelry `429` / transient `5xx`. Polling remains the recovery path if callbacks are disabled or miss delivery.
 - Deployed host-app completed-game action returns to the Revelry Games surface instead of the standalone LocalPlay setup loop; spectator aliases `/spectate`, `/spectate/{room_code}`, `/tv`, and `/tv/{room_code}` connect through the shared spectator page and show clear websocket error states.
 - Deployed broader host-app egress hardening so organizer/player/spectator terminal error states return to Revelry Games instead of exposing standalone LocalPlay picker/join recovery.
-- Pending next gamma deploy/smoke: standalone player/spectator URL room codes are normalized before websocket connection so typed TV URLs like `/tv/abcd12` connect to room `ABCD12`.
+- Deployed standalone player/spectator URL room-code normalization before websocket connection so typed TV URLs like `/tv/abcd12` connect to room `ABCD12`.
 - Basic Revelry gamma end-to-end testing has worked for catalog, session creation, organizer/player launch, and gameplay. Before production promotion, repeat from Revelry gamma: authoring-link creation, create/edit quiz with image upload, return/deep-link behavior, workspace refresh, Start from saved content, replacement confirmation, completion, result polling/feed handling, callback delivery, app/universal-link return flows, and host-app chrome cleanup.
 - Full spec: `SPEC-REVELRY-INTEGRATION.md`
 
