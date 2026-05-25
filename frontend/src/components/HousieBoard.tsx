@@ -1,23 +1,32 @@
 import type { HousieCell, HousiePattern, HousieTicket, HousieWinner } from '../types';
 
 export function HousieCalledBoard({ calledValues, latestValue }: { calledValues: Set<string>; latestValue?: string | number | null }) {
+    const rows = Array.from({ length: 9 }, (_, rowIndex) =>
+        Array.from({ length: 10 }, (_, colIndex) => rowIndex * 10 + colIndex + 1),
+    );
+
     return (
-        <div className="housie-called-board" role="grid" aria-label="Called Housie numbers">
-            {Array.from({ length: 90 }, (_, idx) => idx + 1).map((num) => {
-                const called = calledValues.has(String(num));
-                const latest = String(latestValue ?? '') === String(num);
-                return (
-                    <div
-                        key={num}
-                        role="gridcell"
-                        aria-label={`${num}${latest ? ', latest call' : called ? ', called' : ', not called'}`}
-                        className={`housie-called-cell ${called ? 'called' : ''} ${latest ? 'latest' : ''}`}
-                    >
-                        {num}
-                    </div>
-                );
-            })}
-        </div>
+        <table className="housie-called-table" aria-label="Called Housie numbers">
+            <tbody>
+                {rows.map((row, rowIndex) => (
+                    <tr key={rowIndex}>
+                        {row.map((num) => {
+                            const called = calledValues.has(String(num));
+                            const latest = String(latestValue ?? '') === String(num);
+                            return (
+                                <td
+                                    key={num}
+                                    aria-label={`${num}${latest ? ', latest call' : called ? ', called' : ', not called'}`}
+                                    className={`housie-called-cell ${called ? 'called' : ''} ${latest ? 'latest' : ''}`}
+                                >
+                                    {num}
+                                </td>
+                            );
+                        })}
+                    </tr>
+                ))}
+            </tbody>
+        </table>
     );
 }
 

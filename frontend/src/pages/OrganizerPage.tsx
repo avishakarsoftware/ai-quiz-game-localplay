@@ -1235,26 +1235,26 @@ export default function OrganizerPage() {
                 )}
 
                 {state === 'BINGO_CALLING' && (
-                    <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
-                        <div className="text-center mb-6">
-                            <p className="text-[--text-tertiary] text-sm">Housie caller</p>
+                    <div className="housie-caller-screen container-responsive safe-top safe-bottom animate-in">
+                        <div className="housie-runtime-header">
+                            <p>Housie caller</p>
                             <h1 className="hero-title">{housieLatest ? housieLatest.display : 'Ready to call'}</h1>
-                            <p className="text-[--text-secondary]">{housieCalled.length} of 90 numbers called</p>
+                            <span>{housieCalled.length} of 90 numbers called</span>
                         </div>
-                        <div className="card mb-4">
+                        <div className="housie-runtime-panel">
                             <HousieCalledBoard
                                 calledValues={new Set(housieCalled.map((item) => String(item.value)))}
                                 latestValue={housieLatest?.value}
                             />
                         </div>
-                        <div className="card mb-4">
-                            <h2 className="font-extrabold text-xl mb-3">Prizes</h2>
+                        <div className="housie-runtime-panel">
+                            <h2>Prizes</h2>
                             <HousieWinners winners={housieWinners} />
                         </div>
-                        <div className="mt-auto grid grid-cols-2 gap-3 pb-4">
-                            <button onClick={undoHousieCall} disabled={!housieCalled.length} className="btn btn-secondary disabled:opacity-40">Undo</button>
+                        <div className="housie-caller-actions">
+                            <button onClick={undoHousieCall} disabled={!housieCalled.length} className="btn btn-secondary">Undo</button>
                             <button onClick={callHousieNumber} className="btn btn-primary btn-glow">Call Next</button>
-                            <button onClick={endQuiz} className="btn btn-secondary col-span-2">End Game</button>
+                            <button onClick={endQuiz} className="btn btn-secondary">End Game</button>
                         </div>
                     </div>
                 )}

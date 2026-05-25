@@ -2024,25 +2024,39 @@ body {
 }
 
 /* Housie runtime */
-.housie-called-board {
-    display: grid;
-    grid-template-columns: repeat(10, minmax(0, 1fr));
-    gap: 4px;
+.housie-caller-screen {
+    display: flex;
+    flex-direction: column;
+    width: min(100%, 860px);
+    min-height: 100dvh;
+    margin: 0 auto;
+    padding-top: 28px;
+    padding-bottom: 32px;
+}
+
+.housie-called-table {
+    table-layout: fixed;
     width: 100%;
+    overflow: hidden;
+    border-collapse: collapse;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.055);
+    box-shadow: var(--shadow-soft);
 }
 
 .housie-called-cell {
-    display: grid;
-    place-items: center;
-    aspect-ratio: 1 / 1;
-    min-width: 0;
+    width: 10%;
+    height: clamp(34px, 6vw, 56px);
+    padding: 0;
     border: 1px solid var(--glass-border);
-    border-radius: 6px;
     background: rgba(255, 255, 255, 0.055);
     color: var(--text-tertiary);
     font-size: clamp(0.64rem, 1.7vw, 0.86rem);
     font-weight: 900;
     line-height: 1;
+    text-align: center;
+    vertical-align: middle;
 }
 
 .housie-called-cell.called {
@@ -2103,6 +2117,18 @@ body {
     margin: 0;
     font-size: 1.1rem;
     font-weight: 950;
+}
+
+.housie-caller-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: auto;
+    padding-top: 8px;
+}
+
+.housie-caller-actions button:last-child {
+    grid-column: 1 / -1;
 }
 
 .housie-ticket-table {
@@ -2232,12 +2258,16 @@ body {
         grid-template-columns: 1fr;
     }
 
-    .housie-called-board {
-        grid-template-columns: repeat(9, minmax(0, 1fr));
-    }
-
     .housie-claim-grid {
         grid-template-columns: 1fr;
+    }
+
+    .housie-caller-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .housie-caller-actions button:last-child {
+        grid-column: auto;
     }
 }
 
