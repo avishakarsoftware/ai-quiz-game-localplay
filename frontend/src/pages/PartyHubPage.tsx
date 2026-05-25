@@ -35,6 +35,11 @@ type Workspace = {
         status: string;
         room_code: string;
         joinable: boolean;
+        launch_routes?: Record<string, { path?: string; url?: string; scope?: string }>;
+        feed_card?: {
+            title?: string;
+            body?: string;
+        };
     } | null;
     catalog?: CatalogGame[];
 };
@@ -257,12 +262,29 @@ export default function PartyHubPage() {
     const canStart = hasCapability(launchContext, 'operate_game');
     const canEdit = hasCapability(launchContext, 'author_content');
     const canDelete = hasCapability(launchContext, 'manage_games');
+    const canManageGames = canStart || canEdit || canDelete;
 
     const preparedContent = useMemo(() => workspace?.prepared_content || [], [workspace]);
+    const activeSession = workspace?.active_session || null;
     const catalogGames = useMemo(
         () => (workspace?.catalog || []).filter((game) => game.launchable !== false),
         [workspace],
     );
+
+    function sessionRoute(scope: 'organizer' | 'player' | 'spectator'): string {
+        if (!activeSession) return '';
+        const routeKey = scope === 'player' ? 'player' : scope === 'spectator' ? 'spectator' : 'organizer';
+        const route = activeSession.launch_routes?.[routeKey];
+        if (route?.url) return route.url;
+        if (route?.path) return route.path.startsWith('/') ? route.path : `/${route.path}`;
+        const path = scope === 'organizer' ? 'organizer' : scope === 'player' ? 'join' : 'spectate';
+        return `/sessions/${activeSession.session_id}/${path}`;
+    }
+
+    function openActiveSession(scope: 'organizer' | 'player' | 'spectator') {
+        const route = sessionRoute(scope);
+        if (route) window.location.href = route;
+    }
 
     const startGame = useCallback(async (game: StartableGame, replacement?: { confirmed: boolean; sessionId?: string }) => {
         const actionId = game.localplay_content_id || game.game_type;
@@ -530,7 +552,7 @@ export default function PartyHubPage() {
                 <div className="party-hub__title-block">
                     <p>Revelry Games</p>
                     <h1>{title}</h1>
-                    <span>{workspace?.active_session ? `Active room ${workspace.active_session.room_code}` : 'Party game hub'}</span>
+                    <span>{activeSession ? `Active room ${activeSession.room_code}` : 'Party game hub'}</span>
                 </div>
                 {launchContext?.return_url && (
                     <button className="party-hub__return" onClick={returnToRevelry}>
@@ -540,6 +562,39 @@ export default function PartyHubPage() {
             </header>
 
             {error && <div className="party-hub__error">{error}</div>}
+
+            {activeSession && (
+                <section className="party-hub__section">
+                    <div className="party-hub__section-head">
+                        <div>
+                            <h2>Game in progress</h2>
+                            <p>
+                                {activeSession.joinable
+                                    ? 'Join the current game or open the watch view.'
+                                    : activeSession.feed_card?.body || 'This game is no longer joinable.'}
+                            </p>
+                        </div>
+                    </div>
+                    <article className="party-hub__card party-hub__active-card">
+                        <div>
+                            <span>{activeSession.status}</span>
+                            <h3>{activeSession.feed_card?.title || `Room ${activeSession.room_code}`}</h3>
+                            <p>{activeSession.joinable ? `Room code ${activeSession.room_code}` : 'Completed or closed'}</p>
+                        </div>
+                        <div className="party-hub__actions">
+                            {canStart && activeSession.joinable && (
+                                <button onClick={() => openActiveSession('organizer')}>Host game</button>
+                            )}
+                            {activeSession.joinable && (
+                                <button onClick={() => openActiveSession('player')}>Join to play</button>
+                            )}
+                            <button className="party-hub__secondary" onClick={() => openActiveSession('spectator')}>
+                                Join to watch
+                            </button>
+                        </div>
+                    </article>
+                </section>
+            )}
 
             {replacementPrompt && (
                 <section className="party-hub__confirm" role="dialog" aria-modal="true" aria-labelledby="replace-game-title">
@@ -569,43 +624,45 @@ export default function PartyHubPage() {
                 </section>
             )}
 
-            <section className="party-hub__section">
-                <div className="party-hub__section-head">
-                    <div>
-                        <h2>Create a game</h2>
-                        <p>Pick what this party plays next.</p>
+            {canManageGames && (
+                <section className="party-hub__section">
+                    <div className="party-hub__section-head">
+                        <div>
+                            <h2>Create a game</h2>
+                            <p>Pick what this party plays next.</p>
+                        </div>
                     </div>
-                </div>
-                {catalogGames.length === 0 ? (
-                    <div className="party-hub__empty">No games are available for this party yet.</div>
-                ) : (
-                    <div className="party-hub__grid party-hub__grid--catalog">
-                        {catalogGames.map((game) => {
-                            const mode = getGameModeConfig(game.id as Parameters<typeof getGameModeConfig>[0]);
-                            const canCreate = Boolean(canEdit && (game.can_create_content || game.embedded_authoring_supported));
-                            const canQuickStart = Boolean(canStart && game.can_quick_start);
-                            const disabled = (!canCreate && !canQuickStart) || startingId === (game.game_type || game.id);
-                            return (
-                                <article className="party-hub__card party-hub__catalog-card" key={game.id}>
-                                    <div className="party-hub__icon" aria-hidden="true">{mode.icon}</div>
-                                    <div>
-                                        <h3>{game.title}</h3>
-                                        <p>{game.description || mode.description}</p>
-                                        <small>{cardMetaForGame(game)}</small>
-                                    </div>
-                                    <div className="party-hub__actions">
-                                        <button onClick={() => createFromCatalog(game)} disabled={disabled}>
-                                            {startingId === (game.game_type || game.id)
-                                                ? 'Starting...'
-                                                : actionLabelForGame(game, canCreate)}
-                                        </button>
-                                    </div>
-                                </article>
-                            );
-                        })}
-                    </div>
-                )}
-            </section>
+                    {catalogGames.length === 0 ? (
+                        <div className="party-hub__empty">No games are available for this party yet.</div>
+                    ) : (
+                        <div className="party-hub__grid party-hub__grid--catalog">
+                            {catalogGames.map((game) => {
+                                const mode = getGameModeConfig(game.id as Parameters<typeof getGameModeConfig>[0]);
+                                const canCreate = Boolean(canEdit && (game.can_create_content || game.embedded_authoring_supported));
+                                const canQuickStart = Boolean(canStart && game.can_quick_start);
+                                const disabled = (!canCreate && !canQuickStart) || startingId === (game.game_type || game.id);
+                                return (
+                                    <article className="party-hub__card party-hub__catalog-card" key={game.id}>
+                                        <div className="party-hub__icon" aria-hidden="true">{mode.icon}</div>
+                                        <div>
+                                            <h3>{game.title}</h3>
+                                            <p>{game.description || mode.description}</p>
+                                            <small>{cardMetaForGame(game)}</small>
+                                        </div>
+                                        <div className="party-hub__actions">
+                                            <button onClick={() => createFromCatalog(game)} disabled={disabled}>
+                                                {startingId === (game.game_type || game.id)
+                                                    ? 'Starting...'
+                                                    : actionLabelForGame(game, canCreate)}
+                                            </button>
+                                        </div>
+                                    </article>
+                                );
+                            })}
+                        </div>
+                    )}
+                </section>
+            )}
 
             {setupDraft && (
                 <section className="party-hub__section party-hub__setup">
@@ -707,7 +764,8 @@ export default function PartyHubPage() {
                 </section>
             )}
 
-            <section className="party-hub__section">
+            {canManageGames && (
+                <section className="party-hub__section">
                 <div className="party-hub__section-head">
                     <h2>Saved games</h2>
                 </div>
@@ -749,7 +807,8 @@ export default function PartyHubPage() {
                         ))}
                     </div>
                 )}
-            </section>
+                </section>
+            )}
         </main>
     );
 }

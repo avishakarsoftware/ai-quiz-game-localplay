@@ -163,6 +163,45 @@ describe('host-app mode filtering', () => {
         expect(screen.queryByText(/^template$/i)).not.toBeInTheDocument();
     });
 
+    it('renders guest party hub as active-game join/watch without host creation controls', async () => {
+        window.history.pushState({}, '', '/revelry/games?party_games_token=guest-token');
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                launch_context: {
+                    capabilities: [],
+                    external_container_title: 'Ava Birthday',
+                },
+                workspace: {
+                    active_session: {
+                        session_id: 'lp-active',
+                        room_code: 'TVJVNA',
+                        status: 'lobby',
+                        joinable: true,
+                        launch_routes: {
+                            player: { path: '/sessions/lp-active/join' },
+                            spectator: { path: '/sessions/lp-active/spectate' },
+                        },
+                        feed_card: { title: 'Christmas Quiz' },
+                    },
+                    prepared_content: [{ localplay_content_id: 'saved-1', game_type: 'quiz', title: 'Saved Quiz', status: 'ready' }],
+                    catalog: [{ id: 'quiz', game_type: 'quiz', title: 'AI Quiz', launchable: true, can_create_content: true }],
+                },
+            }),
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(<PartyHubPage />);
+
+        expect(await screen.findByRole('heading', { name: /game in progress/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /join to play/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /join to watch/i })).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: /create a game/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: /saved games/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /create quiz/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /host game/i })).not.toBeInTheDocument();
+    });
+
     it('opens new quiz authoring from catalog without using a saved game id', async () => {
         window.history.pushState({}, '', '/revelry/games?party_games_token=party-token');
         const fetchMock = vi.fn()

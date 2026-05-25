@@ -149,6 +149,42 @@ test.describe('Revelry Games party hub', () => {
     });
   });
 
+  test('guest hub exposes active game play/watch ingress without host controls', async ({ page }) => {
+    await page.route('**/integrations/revelry/party-games/resolve?**', async (route) => {
+      await route.fulfill({
+        json: {
+          launch_context: {
+            ...revelryLaunchContext(),
+            capabilities: [],
+          },
+          workspace: revelryWorkspace({
+            active_session: {
+              session_id: 'lp-active',
+              room_code: 'TVJVNA',
+              status: 'lobby',
+              joinable: true,
+              feed_card: { title: 'Christmas Quiz' },
+              launch_routes: {
+                player: { path: '/sessions/lp-active/join' },
+                spectator: { path: '/sessions/lp-active/spectate' },
+              },
+            },
+          }),
+        },
+      });
+    });
+
+    await page.goto('/revelry/games?party_games_token=guest-token');
+
+    await expect(page.getByRole('heading', { name: 'Game in progress' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Join to play' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Join to watch' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Create a game' })).not.toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Saved games' })).not.toBeVisible();
+    await page.getByRole('button', { name: 'Join to watch' }).click();
+    await expect(page).toHaveURL(/\/sessions\/lp-active\/spectate/);
+  });
+
   test('shows replacement confirmation and retries start with confirmation', async ({ page }) => {
     const startRequests: Request[] = [];
     await page.route('**/integrations/revelry/party-games/resolve?**', async (route) => {
