@@ -1278,6 +1278,10 @@ class SocketManager:
         async with room.lock:
             if room.state != "BINGO_CALLING" or not room.housie_called:
                 return
+            # Block undo if any accepted claim was validated at or after the last call index.
+            last_call_index = len(room.housie_called)
+            if any(w.get("called_count", 0) >= last_call_index for w in room.housie_winners):
+                return
             item = room.housie_called.pop()
             room.housie_deck.insert(0, item)
             room.current_question_index = len(room.housie_called) - 1
@@ -1324,7 +1328,8 @@ class SocketManager:
             "winners": room.housie_winners,
             "leaderboard": self.get_leaderboard(room),
         })
-        if pattern_id == "full_house":
+        is_terminal = pattern.get("terminal", pattern_id == "full_house")
+        if is_terminal:
             await self._complete_housie(room)
 
     async def _complete_housie(self, room: Room):

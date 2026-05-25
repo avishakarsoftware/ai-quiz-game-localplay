@@ -9,6 +9,8 @@ export function HousieCalledBoard({ calledValues, latestValue }: { calledValues:
                 return (
                     <div
                         key={num}
+                        role="status"
+                        aria-label={`${num}${latest ? ', latest call' : called ? ', called' : ', not called'}`}
                         className={[
                             'aspect-square rounded-md grid place-items-center text-sm font-bold border',
                             latest ? 'bg-[--accent-pink] text-black border-[--accent-pink]' : called ? 'bg-[--accent-cyan]/20 text-[--accent-cyan] border-[--accent-cyan]/60' : 'bg-white/5 text-[--text-tertiary] border-white/10',
@@ -44,11 +46,13 @@ export function HousieTicketGrid({
                         const value = String(cell.value);
                         const called = calledValues.has(value);
                         const isMarked = marked.has(value);
+                        const label = `Column ${colIndex + 1}, row ${rowIndex + 1}, number ${cell.display}${isMarked ? ', marked' : called ? ', called' : ''}`;
                         return (
                             <button
                                 key={`${rowIndex}-${colIndex}`}
                                 type="button"
                                 onClick={() => onToggle?.(cell)}
+                                aria-label={label}
                                 className={[
                                     'aspect-square border border-white/10 text-lg font-black transition',
                                     called ? 'text-[--accent-cyan]' : 'text-[--text-primary]',

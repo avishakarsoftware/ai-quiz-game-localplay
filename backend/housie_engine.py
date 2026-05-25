@@ -19,18 +19,25 @@ DEFAULT_HOUSIE_PATTERNS = [
     {"id": "top_row", "label": "Top Row", "description": "All numbers in the top row"},
     {"id": "middle_row", "label": "Middle Row", "description": "All numbers in the middle row"},
     {"id": "bottom_row", "label": "Bottom Row", "description": "All numbers in the bottom row"},
-    {"id": "full_house", "label": "Full House", "description": "Every number on your ticket"},
+    {"id": "full_house", "label": "Full House", "description": "Every number on your ticket", "terminal": True},
 ]
 
 PATTERN_ORDER = [pattern["id"] for pattern in DEFAULT_HOUSIE_PATTERNS]
 
 
 def column_range(column: int) -> tuple[int, int]:
+    """Return inclusive (low, high) for a Housie column.
+
+    Classic Housie/Tambola buckets:
+      Col 0: 1-9, Col 1: 10-19, Col 2: 20-29, ... Col 7: 70-79, Col 8: 80-90
+    """
     if column < 0 or column >= HOUSIE_COLUMNS:
         raise ValueError("column must be 0-8")
+    if column == 0:
+        return 1, 9
     if column == HOUSIE_COLUMNS - 1:
         return 80, 90
-    return (column * 10) + 1, (column + 1) * 10 - 1
+    return column * 10, (column + 1) * 10 - 1
 
 
 def sanitize_patterns(pattern_ids: Iterable[str] | None = None) -> list[str]:

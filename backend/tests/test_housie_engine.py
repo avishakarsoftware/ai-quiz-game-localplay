@@ -16,8 +16,8 @@ from housie_engine import (
 
 def test_column_ranges_are_classic_housie_deciles():
     assert column_range(0) == (1, 9)
-    assert column_range(1) == (11, 19)
-    assert column_range(7) == (71, 79)
+    assert column_range(1) == (10, 19)
+    assert column_range(7) == (70, 79)
     assert column_range(8) == (80, 90)
     with pytest.raises(ValueError):
         column_range(9)
