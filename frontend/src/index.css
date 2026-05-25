@@ -3801,6 +3801,69 @@ body {
     font-size: 1.25rem;
 }
 
+.revelry-ai-authoring-panel {
+    display: grid;
+    gap: 16px;
+    width: min(100%, 980px);
+    margin: 0 auto;
+    padding-top: 18px;
+}
+
+.revelry-ai-authoring-panel h1,
+.revelry-ai-authoring-panel p,
+.revelry-ai-authoring-panel span {
+    margin: 0;
+}
+
+.revelry-ai-authoring-panel h1 {
+    font-size: clamp(1.8rem, 4vw, 3rem);
+    font-weight: 1000;
+}
+
+.revelry-ai-authoring-panel p,
+.revelry-ai-authoring-panel span {
+    color: var(--text-secondary);
+    font-weight: 800;
+}
+
+.revelry-ai-authoring-grid {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(130px, 170px) minmax(110px, 140px) auto;
+    gap: 12px;
+    align-items: end;
+    padding: 16px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: var(--glass-bg);
+    box-shadow: var(--shadow-soft);
+}
+
+.revelry-ai-authoring-grid label {
+    display: grid;
+    gap: 6px;
+    color: var(--text-tertiary);
+    font-size: 0.78rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.revelry-ai-authoring-grid input,
+.revelry-ai-authoring-grid select {
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.revelry-ai-authoring-error {
+    color: #ffc0d7;
+}
+
 @media (max-width: 640px) {
     .party-hub__header {
         grid-template-columns: 1fr;
@@ -3822,5 +3885,9 @@ body {
         width: 100%;
         height: auto;
         aspect-ratio: 16 / 9;
+    }
+
+    .revelry-ai-authoring-grid {
+        grid-template-columns: 1fr;
     }
 }

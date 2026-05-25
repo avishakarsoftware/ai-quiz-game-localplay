@@ -146,7 +146,9 @@ def test_catalog_lists_launchable_games():
     drawing = next(game for game in games if game["id"] == "drawing")
     assert quiz["can_create_content"] is True
     assert quiz["embedded_authoring_supported"] is True
+    assert quiz["supports_ai_generation"] is True
     assert "manual" in quiz["creation_modes"]
+    assert "ai" in quiz["creation_modes"]
     assert drawing["can_create_content"] is True
     assert drawing["can_edit_content"] is True
     assert drawing["can_quick_start"] is False
@@ -689,6 +691,67 @@ def test_revelry_authoring_link_save_and_fetch_content(monkeypatch):
     )
     assert get_res.status_code == 200
     assert get_res.json()["quiz"]["quiz_title"] == "Party Facts"
+
+
+def test_revelry_authoring_token_can_generate_ai_quiz(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-ai-quiz-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Ava's Birthday",
+            "return_url": "https://app.revelryapp.me/party/1?tab=games",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["author_content"],
+        },
+        "game_type": "quiz",
+        "mode": "create",
+    }
+
+    async def fake_generate(prompt, difficulty, num_questions, provider, model_override=None, mode="classic"):
+        assert prompt == "Ava birthday trivia"
+        assert difficulty == "easy"
+        assert num_questions == 3
+        assert mode == "classic"
+        return {
+            "quiz_title": "Ava Birthday Quiz",
+            "questions": [
+                {"id": 1, "text": "Theme?", "options": ["Space", "Ocean", "Garden", "Disco"], "answer_index": 0, "image_prompt": ""},
+                {"id": 2, "text": "Cake?", "options": ["Chocolate", "Vanilla", "Lemon", "Berry"], "answer_index": 1, "image_prompt": ""},
+                {"id": 3, "text": "Song?", "options": ["A", "B", "C", "D"], "answer_index": 2, "image_prompt": ""},
+            ],
+        }
+
+    monkeypatch.setattr(main.quiz_engine, "generate_quiz", fake_generate)
+
+    link_res = client.post("/integrations/revelry/content/authoring-link", headers=_headers(), json=payload)
+    assert link_res.status_code == 200
+    token = link_res.json()["authoring_url"].split("authoring_token=", 1)[1]
+
+    generate_res = client.post(
+        "/integrations/revelry/party-games/prompts/generate",
+        json={
+            "party_games_token": token,
+            "game_type": "quiz",
+            "prompt": "Ava birthday trivia",
+            "difficulty": "easy",
+            "num_prompts": 3,
+        },
+    )
+
+    assert generate_res.status_code == 200
+    body = generate_res.json()
+    assert body["game_type"] == "quiz"
+    quiz = body["content_payload"]["quiz"]
+    assert quiz["quiz_title"] == "Ava Birthday Quiz"
+    assert quiz["questions"][0]["answer_index"] == 0
 
 
 def test_revelry_editing_used_content_creates_new_version(monkeypatch):

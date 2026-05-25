@@ -818,7 +818,7 @@ Frontend:
 1. Add **My Quizzes** library. Implemented.
 2. Autosave signed-in packs. Backlog; explicit Save is implemented.
 3. Add duplicate/delete/export. Delete is implemented; duplicate/export are backlog.
-4. Add "Save as custom quiz" from AI-generated review screen. Backlog.
+4. Add "Save as custom quiz" from AI-generated review screen. Backlog for standalone; implemented for Revelry party-scoped authoring through the host-app AI quiz generation panel.
 5. Polish saved pack cards with readable Start/Edit/Delete actions on desktop and mobile. Implemented.
 6. Use non-generation loading copy and cancellable navigation for saved pack starts. Implemented.
 
@@ -828,6 +828,7 @@ Acceptance:
 - Gamma and production data are isolated by table prefix.
 - Anonymous drafts remain local and do not leak into another user account.
 - Host-app/party-scoped draft content does not leak into standalone authoring.
+- Revelry-launched quiz authoring supports both manual custom quiz creation and AI-generated quiz creation. AI generation loads the generated quiz into the same editor, then saving persists it as a party-scoped quiz pack under `revelry:party:{party_id}`.
 - Saved quiz library actions fit and remain readable on desktop and mobile.
 - Starting a saved quiz shows "Preparing Quiz", reaches review, and Home returns to **Choose a Game**.
 

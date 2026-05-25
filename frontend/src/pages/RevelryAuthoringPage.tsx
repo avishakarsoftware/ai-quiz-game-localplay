@@ -29,6 +29,13 @@ export default function RevelryAuthoringPage() {
     const authoringToken = params.get('authoring_token') || '';
     const [resolved, setResolved] = useState<AuthoringResolve | null>(null);
     const [currentContentId, setCurrentContentId] = useState<string>('');
+    const [generatedQuiz, setGeneratedQuiz] = useState<Quiz | null>(null);
+    const [generatedVersion, setGeneratedVersion] = useState(0);
+    const [aiPrompt, setAiPrompt] = useState('');
+    const [aiDifficulty, setAiDifficulty] = useState('medium');
+    const [aiQuestionCount, setAiQuestionCount] = useState(10);
+    const [generating, setGenerating] = useState(false);
+    const [generationError, setGenerationError] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
@@ -98,6 +105,36 @@ export default function RevelryAuthoringPage() {
         return contentId;
     }
 
+    async function generateAiQuiz() {
+        const prompt = aiPrompt.trim() || resolved?.launch_context.external_container_title || 'this party';
+        setGenerating(true);
+        setGenerationError('');
+        try {
+            const partyGamesToken = authoringToken;
+            const res = await fetch(`${API_URL}/integrations/revelry/party-games/prompts/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    party_games_token: partyGamesToken,
+                    game_type: 'quiz',
+                    prompt,
+                    difficulty: aiDifficulty,
+                    num_prompts: aiQuestionCount,
+                }),
+            });
+            if (!res.ok) throw new Error('generate_failed');
+            const data = await res.json();
+            const quiz = data.content_payload?.quiz as Quiz | undefined;
+            if (!quiz?.questions?.length) throw new Error('empty_quiz');
+            setGeneratedQuiz(quiz);
+            setGeneratedVersion((value) => value + 1);
+        } catch {
+            setGenerationError('Could not generate an AI quiz. Try a different topic or create one manually.');
+        } finally {
+            setGenerating(false);
+        }
+    }
+
     if (loading) {
         return <main className="party-hub party-hub--center">Loading editor...</main>;
     }
@@ -112,17 +149,63 @@ export default function RevelryAuthoringPage() {
         resolved.launch_context.external_container_id || 'unknown',
     ].join(':');
     const contentScope = currentContentId || resolved.localplay_content_id || `new:${authoringToken.slice(0, 16)}`;
+    const initialQuiz = generatedQuiz || resolved.content?.quiz || null;
 
     return (
-        <CustomQuizEditor
-            initialQuiz={resolved.content?.quiz || null}
-            packId={currentContentId || resolved.localplay_content_id || undefined}
-            authToken={authoringToken}
-            draftStorageKey={`localplay_revelry_quiz_draft_v2:${containerScope}:${contentScope}`}
-            contextLabel={resolved.launch_context.display?.container_label || resolved.launch_context.external_container_title || 'Revelry Games'}
-            onBack={() => returnToRevelry()}
-            onSave={saveQuiz}
-            onReview={saveAndReturn}
-        />
+        <>
+            {!resolved.content?.quiz && (
+                <section className="revelry-ai-authoring-panel container-responsive safe-top">
+                    <div>
+                        <p>{resolved.launch_context.display?.container_label || resolved.launch_context.external_container_title || 'Revelry Games'}</p>
+                        <h1>Create an AI quiz</h1>
+                        <span>Generate questions, edit anything, then save it to this party.</span>
+                    </div>
+                    <div className="revelry-ai-authoring-grid">
+                        <label>
+                            <span>Topic or theme</span>
+                            <input
+                                value={aiPrompt}
+                                onChange={(event) => setAiPrompt(event.target.value)}
+                                placeholder="Ava's birthday, Bollywood, cricket, inside jokes..."
+                                maxLength={500}
+                            />
+                        </label>
+                        <label>
+                            <span>Difficulty</span>
+                            <select value={aiDifficulty} onChange={(event) => setAiDifficulty(event.target.value)}>
+                                <option value="easy">Easy</option>
+                                <option value="medium">Medium</option>
+                                <option value="hard">Hard</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>Questions</span>
+                            <input
+                                type="number"
+                                min={3}
+                                max={20}
+                                value={aiQuestionCount}
+                                onChange={(event) => setAiQuestionCount(Math.max(3, Math.min(20, Number(event.target.value) || 10)))}
+                            />
+                        </label>
+                        <button className="btn btn-primary btn-glow" type="button" onClick={generateAiQuiz} disabled={generating}>
+                            {generating ? 'Generating...' : generatedQuiz ? 'Regenerate quiz' : 'Generate AI quiz'}
+                        </button>
+                    </div>
+                    {generationError && <p className="revelry-ai-authoring-error">{generationError}</p>}
+                </section>
+            )}
+            <CustomQuizEditor
+                key={`${contentScope}:${generatedVersion}`}
+                initialQuiz={initialQuiz}
+                packId={currentContentId || resolved.localplay_content_id || undefined}
+                authToken={authoringToken}
+                draftStorageKey={`localplay_revelry_quiz_draft_v2:${containerScope}:${contentScope}:${generatedVersion}`}
+                contextLabel={resolved.launch_context.display?.container_label || resolved.launch_context.external_container_title || 'Revelry Games'}
+                onBack={() => returnToRevelry()}
+                onSave={saveQuiz}
+                onReview={saveAndReturn}
+            />
+        </>
     );
 }

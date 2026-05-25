@@ -419,6 +419,7 @@ GAME_CATALOG = [
         "launchable": True,
         "host_app_supported": True,
         "supported_host_apps": ["revelry"],
+        "supports_ai_generation": True,
         "supports_custom_content": True,
         "supports_images": True,
         "can_create_content": True,
@@ -1350,8 +1351,8 @@ class RevelryPartyGamesPromptGenerateRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value not in ("wmlt", "drawing"):
-            raise ValueError('game_type must be "wmlt" or "drawing"')
+        if value not in ("quiz", "wmlt", "drawing"):
+            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
         return value
 
     @field_validator("prompt")
@@ -2286,6 +2287,22 @@ async def _generate_party_prompt_content(context: RevelryExternalContext, reques
     provider = request.provider or remote_config.get_provider()
     model_override = remote_config.get_free_model()
     try:
+        if request.game_type == "quiz":
+            difficulty = request.difficulty if request.difficulty in config.VALID_DIFFICULTIES else "medium"
+            quiz_data = await quiz_engine.generate_quiz(
+                prompt,
+                difficulty,
+                max(config.MIN_QUESTIONS, min(config.MAX_QUESTIONS, request.num_prompts)),
+                provider,
+                model_override=model_override,
+                mode="classic",
+            )
+            if not quiz_data:
+                raise HTTPException(status_code=500, detail="Failed to generate quiz")
+            quiz_data = _sanitize_quiz(quiz_data)
+            if not _validate_quiz(quiz_data, attempt=0):
+                raise HTTPException(status_code=500, detail="Failed to generate quiz")
+            return {"quiz": quiz_data}
         if request.game_type == "wmlt":
             vibe = request.difficulty if request.difficulty in VALID_MLT_VIBES else "party"
             game_data = await mlt_engine.generate_statements(
@@ -2603,7 +2620,15 @@ async def save_revelry_party_game_content(request: RevelryPartyGamesContentSaveR
 
 @app.post("/integrations/revelry/party-games/prompts/generate")
 async def generate_revelry_party_game_prompts(request: RevelryPartyGamesPromptGenerateRequest):
-    launch_context = _resolve_party_games_token(request.party_games_token)
+    try:
+        launch_context = _resolve_party_games_token(request.party_games_token)
+        token_game_type = ""
+    except HTTPException:
+        claims = _resolve_authoring_token(request.party_games_token)
+        launch_context = claims["launch_context"]
+        token_game_type = claims.get("game_type") or ""
+    if token_game_type and token_game_type != request.game_type:
+        raise HTTPException(status_code=422, detail="game_type does not match authoring token")
     actor = _actor_from_launch_context(launch_context)
     if not _author_can_author(actor):
         raise HTTPException(status_code=403, detail="Missing capability to author content")
