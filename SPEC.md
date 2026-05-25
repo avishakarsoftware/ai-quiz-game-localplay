@@ -1021,8 +1021,10 @@ Round progression:
 
 Play again:
 
-- The primary standalone `Play Again` action reuses the current content id, sends `RESET_ROOM`, keeps connected players in the same room, and returns the host to the lobby.
-- Hosts should only go back to game select when they explicitly choose to pick a different game or when no reusable content id/socket is available.
+- The final results screen should expose two separate host actions across all game types.
+- `Play Again` reuses the current content id, sends `RESET_ROOM`, keeps connected players in the same room, and returns the host to the lobby.
+- `Choose Another Game` intentionally leaves the current content path. In standalone mode it returns to game select while keeping the room/socket available so the next content can reset the existing room. In host-app mode it returns to the party-scoped LocalPlay/Revelry Games hub instead of standalone game select.
+- If no reusable content id/socket is available, `Play Again` may fall back to the same behavior as `Choose Another Game`.
 - `RESET_ROOM` validates the content id, charges the room-start cost, clears round-specific state, and broadcasts `ROOM_RESET` so players return to lobby with the same room code.
 
 ## Frontend Player State Machine

@@ -18,10 +18,20 @@ interface PodiumScreenProps {
     teamLeaderboard?: TeamLeaderboardEntry[];
     superlatives?: Superlative[];
     onPlayAgain: () => void;
+    onChooseAnotherGame?: () => void;
     playAgainLabel?: string;
+    chooseAnotherLabel?: string;
 }
 
-export default function PodiumScreen({ leaderboard, teamLeaderboard, superlatives, onPlayAgain, playAgainLabel = 'Play Again' }: PodiumScreenProps) {
+export default function PodiumScreen({
+    leaderboard,
+    teamLeaderboard,
+    superlatives,
+    onPlayAgain,
+    onChooseAnotherGame,
+    playAgainLabel = 'Play Again',
+    chooseAnotherLabel = 'Choose Another Game',
+}: PodiumScreenProps) {
     const [revealPhase, setRevealPhase] = useState(0);
 
     useEffect(() => {
@@ -191,10 +201,16 @@ export default function PodiumScreen({ leaderboard, teamLeaderboard, superlative
             )}
 
             {revealPhase >= 4 && (
-                <button onClick={onPlayAgain} className="btn btn-primary w-full mt-8 stagger-in"
-                        style={{ position: 'relative', zIndex: 11 }}>
-                    {playAgainLabel}
-                </button>
+                <div className="podium-actions stagger-in" style={{ position: 'relative', zIndex: 11 }}>
+                    <button onClick={onPlayAgain} className="btn btn-primary">
+                        {playAgainLabel}
+                    </button>
+                    {onChooseAnotherGame && (
+                        <button onClick={onChooseAnotherGame} className="btn btn-secondary">
+                            {chooseAnotherLabel}
+                        </button>
+                    )}
+                </div>
             )}
         </div>
     );

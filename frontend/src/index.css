@@ -1079,6 +1079,19 @@ body {
     padding: 24px 0;
 }
 
+.podium-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    width: 100%;
+    max-width: 520px;
+    margin-top: 32px;
+}
+
+.podium-actions .btn {
+    width: 100%;
+}
+
 .podium-place {
     display: flex;
     flex-direction: column;

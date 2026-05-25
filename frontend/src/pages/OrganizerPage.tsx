@@ -934,7 +934,25 @@ export default function OrganizerPage() {
             createRoom(contentId);
             return;
         }
-        setState('SELECT_GAME');
+        chooseAnotherGame();
+    };
+
+    const chooseAnotherGame = () => {
+        setQuiz(null);
+        setMltGame(null);
+        setDrawingGame(null);
+        setContentId('');
+        setQuestionImages({});
+        setPrompt('');
+        setCurrentStatement('');
+        setHousieCalled([]);
+        setHousieLatest(null);
+        setHousieWinners([]);
+        if (hostAppMode) {
+            returnToHostApp();
+        } else {
+            setState('SELECT_GAME');
+        }
     };
 
     const returnToHostApp = () => {
@@ -1356,8 +1374,10 @@ export default function OrganizerPage() {
                         leaderboard={leaderboard}
                         teamLeaderboard={teamLeaderboard}
                         superlatives={superlatives}
-                        onPlayAgain={hostAppMode ? returnToHostApp : playAgain}
-                        playAgainLabel={hostAppMode ? 'Back to Revelry Games' : 'Play Again'}
+                        onPlayAgain={playAgain}
+                        onChooseAnotherGame={chooseAnotherGame}
+                        playAgainLabel="Play Again"
+                        chooseAnotherLabel={hostAppMode ? 'Back to Revelry Games' : 'Choose Another Game'}
                     />
                 )}
             </div>

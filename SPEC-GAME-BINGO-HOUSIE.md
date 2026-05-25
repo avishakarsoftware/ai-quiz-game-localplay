@@ -867,6 +867,8 @@ If the current history schema cannot store game-specific metadata, v1 may store 
 
 Standalone Housie `Play Again` should reuse the current Housie setup/content id and issue `RESET_ROOM`, not reopen the setup form or create a new setup first. The room code and connected players remain, Housie call/ticket/winner state is cleared, and the host returns to the lobby. New tickets are generated when the host starts the next round.
 
+`Choose Another Game` is a separate final-results action. Standalone hosts return to the main game picker and can create/select different content that resets the same room. Host-app/party-scoped hosts return to the party's LocalPlay/Revelry Games hub, where game selection remains party-scoped.
+
 ### Catalog And API Guardrails
 
 Do not expose Housie in host-app catalog until the host-app contract is done. Standalone catalog can show Housie only when playable.
