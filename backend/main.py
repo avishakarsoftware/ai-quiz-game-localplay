@@ -502,13 +502,16 @@ GAME_CATALOG = [
         "creation_modes": ["manual", "template"],
         "default_content_available": True,
         "embedded_authoring_supported": False,
-        "content_schema": {
-            "kind": "housie_setup",
-            "ticket_layout": "housie_3x9_15",
-            "number_range": {"min": 1, "max": 90},
-            "patterns": [pattern["id"] for pattern in DEFAULT_HOUSIE_PATTERNS],
-            "supported_media": [],
-        },
+    "content_schema": {
+        "kind": "housie_setup",
+        "ticket_layout": "housie_3x9_15",
+        "number_range": {"min": 1, "max": 90},
+        "patterns": [pattern["id"] for pattern in DEFAULT_HOUSIE_PATTERNS],
+        "play_modes": ["beginner", "pro"],
+        "caller_modes": ["manual", "auto"],
+        "claim_requires_latest_call": True,
+        "supported_media": [],
+    },
     },
 ]
 
@@ -525,6 +528,9 @@ def _sanitize_housie_game(game: dict) -> dict:
     caller_mode = str(game.get("caller_mode") or "manual").strip().lower()
     if caller_mode not in ("manual", "auto"):
         caller_mode = "manual"
+    play_mode = str(game.get("play_mode") or "beginner").strip().lower()
+    if play_mode not in ("beginner", "pro"):
+        play_mode = "beginner"
     try:
         auto_interval = int(game.get("auto_interval_seconds") or 8)
     except (TypeError, ValueError):
@@ -534,9 +540,11 @@ def _sanitize_housie_game(game: dict) -> dict:
         "layout": "housie_3x9_15",
         "deck": game.get("deck") if isinstance(game.get("deck"), list) else default_housie_game(title)["deck"],
         "patterns": patterns,
+        "play_mode": play_mode,
         "caller_mode": caller_mode,
         "auto_interval_seconds": max(3, min(30, auto_interval)),
         "auto_pause_on_claim": bool(game.get("auto_pause_on_claim", True)),
+        "claim_requires_latest_call": True,
     }
 
 
@@ -3283,8 +3291,10 @@ async def delete_drawing_prompt(drawing_id: str, prompt_id: int, req: Request):
 class HousieCreateRequest(BaseModel):
     game_title: str = "Housie"
     pattern_ids: List[str] = Field(default_factory=lambda: [pattern["id"] for pattern in DEFAULT_HOUSIE_PATTERNS])
+    play_mode: str = "beginner"
     caller_mode: str = "manual"
     auto_interval_seconds: int = 8
+    auto_pause_on_claim: bool = True
 
     @field_validator("game_title")
     @classmethod
@@ -3300,6 +3310,14 @@ class HousieCreateRequest(BaseModel):
         value = (value or "manual").lower().strip()
         if value not in ("manual", "auto"):
             raise ValueError('caller_mode must be "manual" or "auto"')
+        return value
+
+    @field_validator("play_mode")
+    @classmethod
+    def validate_play_mode(cls, value: str) -> str:
+        value = (value or "beginner").lower().strip()
+        if value not in ("beginner", "pro"):
+            raise ValueError('play_mode must be "beginner" or "pro"')
         return value
 
     @field_validator("auto_interval_seconds")
@@ -3320,8 +3338,10 @@ async def create_housie(request: HousieCreateRequest, req: Request):
     game_data = _sanitize_housie_game({
         "game_title": request.game_title,
         "pattern_ids": request.pattern_ids,
+        "play_mode": request.play_mode,
         "caller_mode": request.caller_mode,
         "auto_interval_seconds": request.auto_interval_seconds,
+        "auto_pause_on_claim": request.auto_pause_on_claim,
     })
     housie_id = str(uuid.uuid4())
     housie_games[housie_id] = game_data
@@ -3349,8 +3369,10 @@ async def update_housie(housie_id: str, request: HousieCreateRequest, req: Reque
     game_data = _sanitize_housie_game({
         "game_title": request.game_title,
         "pattern_ids": request.pattern_ids,
+        "play_mode": request.play_mode,
         "caller_mode": request.caller_mode,
         "auto_interval_seconds": request.auto_interval_seconds,
+        "auto_pause_on_claim": request.auto_pause_on_claim,
     })
     housie_games[housie_id] = game_data
     return {"housie_id": housie_id, "game": game_data}

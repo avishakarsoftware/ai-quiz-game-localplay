@@ -84,6 +84,12 @@ class Room:
         self.housie_winners: List[dict] = []
         self.housie_claimed_patterns: set = set()
         self.housie_claim_log: List[dict] = []
+        self.housie_play_mode: str = str(game_data.get("play_mode") or "beginner").lower()
+        self.housie_caller_mode: str = str(game_data.get("caller_mode") or "manual").lower()
+        self.housie_auto_status: str = "stopped"
+        self.housie_auto_interval_seconds: int = int(game_data.get("auto_interval_seconds") or 8)
+        self.housie_auto_pause_on_claim: bool = bool(game_data.get("auto_pause_on_claim", True))
+        self.housie_next_auto_call_at: Optional[str] = None
         self.housie_auto_task: Optional[asyncio.Task] = None
 
     def reset_for_new_game(self, new_game_data: dict, new_time_limit: int,
@@ -140,6 +146,12 @@ class Room:
         self.housie_winners = []
         self.housie_claimed_patterns = set()
         self.housie_claim_log = []
+        self.housie_play_mode = str(new_game_data.get("play_mode") or "beginner").lower()
+        self.housie_caller_mode = str(new_game_data.get("caller_mode") or "manual").lower()
+        self.housie_auto_status = "stopped"
+        self.housie_auto_interval_seconds = int(new_game_data.get("auto_interval_seconds") or 8)
+        self.housie_auto_pause_on_claim = bool(new_game_data.get("auto_pause_on_claim", True))
+        self.housie_next_auto_call_at = None
         if self.housie_auto_task:
             self.housie_auto_task.cancel()
             self.housie_auto_task = None
@@ -232,6 +244,8 @@ class Room:
         if self.housie_auto_task:
             self.housie_auto_task.cancel()
             self.housie_auto_task = None
+        self.housie_auto_status = "stopped"
+        self.housie_next_auto_call_at = None
         for ws in list(self.connections.values()):
             try:
                 await ws.close()
@@ -519,6 +533,8 @@ class SocketManager:
                 room._organizer_just_disconnected = False
                 # Re-check: organizer may have already reconnected via a new socket
                 if room.organizer is None:
+                    if room.game_type == "housie" and room.housie_auto_status == "running":
+                        await self._set_housie_auto_status(room, "paused")
                     await room.broadcast({"type": "ORGANIZER_DISCONNECTED"})
                     # Start grace period — delete room if organizer doesn't reconnect
                     room._organizer_cleanup_task = asyncio.create_task(
@@ -652,6 +668,8 @@ class SocketManager:
                         self._start_housie_round(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": "housie"})
                         await self._broadcast_housie_sync(room)
+                        if room.housie_caller_mode == "auto":
+                            await self._set_housie_auto_status(room, "running")
                     else:
                         room.state = "INTRO"
                         await room.broadcast({"type": "GAME_STARTING"})
@@ -669,6 +687,30 @@ class SocketManager:
 
             elif msg_type == "BINGO_UNDO_LAST_CALL" and room.game_type == "housie":
                 await self._housie_undo_last_call(room)
+
+            elif msg_type == "BINGO_SET_CALLER_MODE" and room.game_type == "housie":
+                mode = str(message.get("caller_mode") or "").strip().lower()
+                if mode not in ("manual", "auto"):
+                    await self._send_to_client(room, client_id, {"type": "ERROR", "message": "Invalid caller mode"})
+                    return
+                interval = message.get("auto_interval_seconds")
+                if interval is not None:
+                    try:
+                        room.housie_auto_interval_seconds = max(3, min(30, int(interval)))
+                    except (TypeError, ValueError):
+                        pass
+                room.housie_caller_mode = mode
+                if mode == "auto":
+                    await self._set_housie_auto_status(room, "running")
+                else:
+                    await self._set_housie_auto_status(room, "stopped")
+
+            elif msg_type == "BINGO_PAUSE" and room.game_type == "housie":
+                await self._set_housie_auto_status(room, "paused")
+
+            elif msg_type == "BINGO_RESUME" and room.game_type == "housie":
+                room.housie_caller_mode = "auto"
+                await self._set_housie_auto_status(room, "running")
 
             elif msg_type == "SET_TIME_LIMIT":
                 if room.state in ("LOBBY", "LEADERBOARD", "PODIUM"):
@@ -1223,6 +1265,19 @@ class SocketManager:
         room.housie_claimed_patterns = set()
         room.housie_claim_log = []
         room.housie_tickets = {}
+        room.housie_play_mode = str(room.quiz.get("play_mode") or "beginner").lower()
+        if room.housie_play_mode not in ("beginner", "pro"):
+            room.housie_play_mode = "beginner"
+        room.housie_caller_mode = str(room.quiz.get("caller_mode") or "manual").lower()
+        if room.housie_caller_mode not in ("manual", "auto"):
+            room.housie_caller_mode = "manual"
+        try:
+            room.housie_auto_interval_seconds = max(3, min(30, int(room.quiz.get("auto_interval_seconds") or 8)))
+        except (TypeError, ValueError):
+            room.housie_auto_interval_seconds = 8
+        room.housie_auto_pause_on_claim = bool(room.quiz.get("auto_pause_on_claim", True))
+        room.housie_auto_status = "stopped"
+        room.housie_next_auto_call_at = None
         for idx, (client_id, player) in enumerate(room.players.items()):
             nickname = player["nickname"]
             ticket_id = f"{room.room_code}-{idx + 1}"
@@ -1243,6 +1298,13 @@ class SocketManager:
             "patterns": self._housie_patterns(room),
             "winners": room.housie_winners,
             "claim_log": room.housie_claim_log[-10:],
+            "play_mode": room.housie_play_mode,
+            "caller_mode": room.housie_caller_mode,
+            "auto_status": room.housie_auto_status,
+            "auto_interval_seconds": room.housie_auto_interval_seconds,
+            "auto_pause_on_claim": room.housie_auto_pause_on_claim,
+            "next_auto_call_at": room.housie_next_auto_call_at,
+            "claim_requires_latest_call": True,
         }
 
     def _housie_player_state(self, room: Room, nickname: str) -> dict:
@@ -1275,7 +1337,47 @@ class SocketManager:
             except Exception:
                 pass
 
-    async def _housie_call_next(self, room: Room):
+    async def _broadcast_housie_auto_status(self, room: Room):
+        await room.broadcast({
+            "type": "BINGO_AUTO_STATUS",
+            "game_type": "housie",
+            "caller_mode": room.housie_caller_mode,
+            "auto_status": room.housie_auto_status,
+            "auto_interval_seconds": room.housie_auto_interval_seconds,
+            "auto_pause_on_claim": room.housie_auto_pause_on_claim,
+            "next_auto_call_at": room.housie_next_auto_call_at,
+        })
+
+    async def _set_housie_auto_status(self, room: Room, status: str):
+        if room.housie_auto_task:
+            room.housie_auto_task.cancel()
+            room.housie_auto_task = None
+        room.housie_auto_status = status
+        room.housie_next_auto_call_at = None
+        if status == "running" and room.state == "BINGO_CALLING" and room.housie_deck:
+            room.housie_caller_mode = "auto"
+            room.housie_auto_task = asyncio.create_task(self._housie_auto_loop(room))
+        elif status == "stopped":
+            room.housie_caller_mode = "manual"
+        await self._broadcast_housie_auto_status(room)
+
+    async def _housie_auto_loop(self, room: Room):
+        try:
+            while room.state == "BINGO_CALLING" and room.housie_auto_status == "running" and room.housie_deck:
+                next_at = datetime.now(timezone.utc).timestamp() + room.housie_auto_interval_seconds
+                room.housie_next_auto_call_at = datetime.fromtimestamp(next_at, tz=timezone.utc).isoformat()
+                await self._broadcast_housie_auto_status(room)
+                await asyncio.sleep(room.housie_auto_interval_seconds)
+                if room.state != "BINGO_CALLING" or room.housie_auto_status != "running":
+                    break
+                await self._housie_call_next(room, from_auto=True)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if room.housie_auto_task is asyncio.current_task():
+                room.housie_auto_task = None
+
+    async def _housie_call_next(self, room: Room, from_auto: bool = False):
         async with room.lock:
             if room.state != "BINGO_CALLING" or not room.housie_deck:
                 return
@@ -1289,8 +1391,16 @@ class SocketManager:
             "item": item,
             "called_items": room.housie_called,
             "remaining_count": len(room.housie_deck),
+            "call_index": len(room.housie_called),
+            "animation": "latest_call",
+            "auto_status": room.housie_auto_status,
         })
         if not room.housie_deck:
+            if room.housie_auto_task and not from_auto:
+                room.housie_auto_task.cancel()
+                room.housie_auto_task = None
+            room.housie_auto_status = "stopped"
+            room.housie_next_auto_call_at = None
             await self._complete_housie(room)
 
     async def _housie_undo_last_call(self, room: Room):
@@ -1311,23 +1421,25 @@ class SocketManager:
             return
         pattern_id = str(message.get("pattern_id") or "").strip()
         if pattern_id not in {pattern["id"] for pattern in self._housie_patterns(room)}:
-            await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "message": "Unknown prize"})
+            await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "pattern_id": pattern_id, "reason": "unknown_pattern", "message": "Unknown prize"})
             return
         if pattern_id in room.housie_claimed_patterns:
-            await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "message": "That prize has already been awarded"})
+            await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "pattern_id": pattern_id, "reason": "already_awarded", "message": "That prize has already been awarded"})
             return
         nickname = room.players[client_id]["nickname"]
         ticket = room.housie_tickets.get(nickname)
-        valid, reason = validate_claim(ticket or {}, room.housie_called, pattern_id)
+        valid, reason = validate_claim(ticket or {}, room.housie_called, pattern_id, require_latest=True)
         if not valid:
-            await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "message": reason})
+            await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "pattern_id": pattern_id, "reason": reason, "message": reason})
             return
         pattern = next((p for p in self._housie_patterns(room) if p["id"] == pattern_id), {"label": pattern_id})
+        latest_item = room.housie_called[-1] if room.housie_called else {}
         winner = {
             "pattern_id": pattern_id,
             "label": pattern.get("label", pattern_id),
             "nickname": nickname,
             "called_count": len(room.housie_called),
+            "winning_number": latest_item.get("value"),
         }
         async with room.lock:
             if pattern_id in room.housie_claimed_patterns:
@@ -1346,14 +1458,21 @@ class SocketManager:
             "winner": winner,
             "winners": room.housie_winners,
             "leaderboard": self.get_leaderboard(room),
+            "announce": True,
         })
         is_terminal = pattern.get("terminal", pattern_id == "full_house")
         if is_terminal:
+            await self._set_housie_auto_status(room, "stopped")
             await self._complete_housie(room)
 
     async def _complete_housie(self, room: Room):
         if room.state == "PODIUM":
             return
+        if room.housie_auto_task and room.housie_auto_task is not asyncio.current_task():
+            room.housie_auto_task.cancel()
+            room.housie_auto_task = None
+        room.housie_auto_status = "stopped"
+        room.housie_next_auto_call_at = None
         room.state = "PODIUM"
         leaderboard = self.get_leaderboard(room)
         await room.broadcast({

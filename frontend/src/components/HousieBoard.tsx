@@ -34,11 +34,15 @@ export function HousieTicketGrid({
     ticket,
     calledValues,
     marked,
+    playMode = 'beginner',
+    winningValues,
     onToggle,
 }: {
     ticket: HousieTicket;
     calledValues: Set<string>;
     marked: Set<string>;
+    playMode?: 'beginner' | 'pro';
+    winningValues?: Set<string>;
     onToggle?: (cell: HousieCell) => void;
 }) {
     return (
@@ -51,11 +55,12 @@ export function HousieTicketGrid({
                             return <td key={`${rowIndex}-${colIndex}`} className="housie-ticket-cell empty" aria-label={`Column ${colIndex + 1}, row ${rowIndex + 1}, empty`} />;
                         }
                         const value = String(cell.value);
-                        const called = calledValues.has(value);
+                        const called = playMode === 'beginner' && calledValues.has(value);
                         const isMarked = marked.has(value);
-                        const label = `Column ${colIndex + 1}, row ${rowIndex + 1}, number ${cell.display}${isMarked ? ', marked' : called ? ', called' : ''}`;
+                        const isWinning = winningValues?.has(value) ?? false;
+                        const label = `Column ${colIndex + 1}, row ${rowIndex + 1}, number ${cell.display}${isMarked ? ', marked' : called ? ', called' : ''}${isWinning ? ', winning cell' : ''}`;
                         return (
-                            <td key={`${rowIndex}-${colIndex}`} className={`housie-ticket-cell filled ${called ? 'called' : ''} ${isMarked ? 'marked' : ''}`}>
+                            <td key={`${rowIndex}-${colIndex}`} className={`housie-ticket-cell filled ${called ? 'called' : ''} ${isMarked ? 'marked' : ''} ${isWinning ? 'winning' : ''}`}>
                                 <button
                                     type="button"
                                     onClick={() => onToggle?.(cell)}

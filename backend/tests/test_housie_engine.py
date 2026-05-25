@@ -63,6 +63,27 @@ def test_claim_validation_quick_5_and_rows():
     assert validate_claim(ticket, top_called[:-1], "top_row")[0] is False
 
 
+def test_claim_validation_requires_latest_number_to_complete_pattern():
+    ticket = generate_ticket("t1", "p1", "Avi", seed=7)
+    numbers = ticket_numbers(ticket)
+    called_6 = [{"kind": "number", "value": n, "display": str(n), "sort_value": n} for n in numbers[:6]]
+
+    accepted, reason = validate_claim(ticket, called_6[:5], "quick_5")
+    assert accepted is True
+    assert reason == "accepted"
+
+    accepted, reason = validate_claim(ticket, called_6, "quick_5")
+    assert accepted is False
+    assert reason == "stale_claim"
+
+    top = [cell["value"] for cell in ticket["rows"][0] if cell]
+    unrelated = next(number for number in numbers if number not in top)
+    called = [{"kind": "number", "value": n, "display": str(n), "sort_value": n} for n in [*top, unrelated]]
+    accepted, reason = validate_claim(ticket, called, "top_row")
+    assert accepted is False
+    assert reason == "latest_number_not_in_pattern"
+
+
 def test_four_corners_use_outermost_filled_cells_not_grid_corners():
     ticket = generate_ticket("t1", "p1", "Avi", seed=123)
     corners = corner_numbers(ticket)

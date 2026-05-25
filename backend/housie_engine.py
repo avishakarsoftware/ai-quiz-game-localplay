@@ -154,31 +154,80 @@ def corner_numbers(ticket: dict) -> list[int]:
     return corners
 
 
-def validate_claim(ticket: dict, called_items: Iterable[dict], pattern_id: str) -> tuple[bool, str]:
-    called = called_values(called_items)
+def validate_claim(
+    ticket: dict,
+    called_items: Iterable[dict],
+    pattern_id: str,
+    *,
+    require_latest: bool = True,
+) -> tuple[bool, str]:
+    called_list = list(called_items)
+    called = called_values(called_list)
+    latest_item = called_list[-1] if called_list else None
+    latest_value = str(latest_item.get("value")) if isinstance(latest_item, dict) and "value" in latest_item else ""
+    called_before_latest = called_values(called_list[:-1])
 
-    def all_called(numbers: Iterable[int]) -> bool:
-        return all(str(number) in called for number in numbers)
+    def all_called(numbers: Iterable[int], values: set[str]) -> bool:
+        return all(str(number) in values for number in numbers)
+
+    def latest_contributed(numbers: Iterable[int]) -> bool:
+        return bool(latest_value) and latest_value in {str(number) for number in numbers}
+
+    def apply_latest_rule(numbers: Iterable[int], was_complete_before: bool, is_complete_now: bool) -> tuple[bool, str]:
+        number_list = list(numbers)
+        if not is_complete_now:
+            return False, "not_complete"
+        if not require_latest:
+            return True, "accepted"
+        if not latest_value:
+            return False, "no_calls_yet"
+        if not latest_contributed(number_list):
+            return False, "latest_number_not_in_pattern"
+        if was_complete_before:
+            return False, "stale_claim"
+        return True, "accepted"
 
     if pattern_id == "quick_5":
-        count = ticket_called_count(ticket, called_items)
-        return (count >= 5, f"{count}/5 called")
+        numbers = ticket_numbers(ticket)
+        count = sum(1 for number in numbers if str(number) in called)
+        before_count = sum(1 for number in numbers if str(number) in called_before_latest)
+        return apply_latest_rule(numbers, before_count >= 5, count >= 5)
     if pattern_id == "four_corners":
         numbers = corner_numbers(ticket)
-        return (len(numbers) == 4 and all_called(numbers), "four corner numbers must be called")
+        return apply_latest_rule(
+            numbers,
+            len(numbers) == 4 and all_called(numbers, called_before_latest),
+            len(numbers) == 4 and all_called(numbers, called),
+        )
     if pattern_id == "top_row":
         numbers = row_numbers(ticket, 0)
-        return (len(numbers) == HOUSIE_NUMBERS_PER_ROW and all_called(numbers), "top row must be complete")
+        return apply_latest_rule(
+            numbers,
+            len(numbers) == HOUSIE_NUMBERS_PER_ROW and all_called(numbers, called_before_latest),
+            len(numbers) == HOUSIE_NUMBERS_PER_ROW and all_called(numbers, called),
+        )
     if pattern_id == "middle_row":
         numbers = row_numbers(ticket, 1)
-        return (len(numbers) == HOUSIE_NUMBERS_PER_ROW and all_called(numbers), "middle row must be complete")
+        return apply_latest_rule(
+            numbers,
+            len(numbers) == HOUSIE_NUMBERS_PER_ROW and all_called(numbers, called_before_latest),
+            len(numbers) == HOUSIE_NUMBERS_PER_ROW and all_called(numbers, called),
+        )
     if pattern_id == "bottom_row":
         numbers = row_numbers(ticket, 2)
-        return (len(numbers) == HOUSIE_NUMBERS_PER_ROW and all_called(numbers), "bottom row must be complete")
+        return apply_latest_rule(
+            numbers,
+            len(numbers) == HOUSIE_NUMBERS_PER_ROW and all_called(numbers, called_before_latest),
+            len(numbers) == HOUSIE_NUMBERS_PER_ROW and all_called(numbers, called),
+        )
     if pattern_id == "full_house":
         numbers = ticket_numbers(ticket)
-        return (len(numbers) == HOUSIE_NUMBERS_PER_TICKET and all_called(numbers), "all ticket numbers must be called")
-    return False, "Unknown prize pattern"
+        return apply_latest_rule(
+            numbers,
+            len(numbers) == HOUSIE_NUMBERS_PER_TICKET and all_called(numbers, called_before_latest),
+            len(numbers) == HOUSIE_NUMBERS_PER_TICKET and all_called(numbers, called),
+        )
+    return False, "unknown_pattern"
 
 
 def create_call_deck(seed: Optional[int] = None) -> list[dict]:
@@ -191,6 +240,7 @@ def default_housie_game(title: str = "Housie") -> dict:
         "layout": "housie_3x9_15",
         "deck": numeric_deck(1, 90),
         "patterns": DEFAULT_HOUSIE_PATTERNS[:],
+        "play_mode": "beginner",
         "caller_mode": "manual",
         "auto_interval_seconds": 8,
         "auto_pause_on_claim": True,

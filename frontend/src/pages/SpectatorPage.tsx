@@ -102,6 +102,8 @@ export default function SpectatorPage() {
     const [housieCalled, setHousieCalled] = useState<Array<{ value: number | string; display: string }>>([]);
     const [housieLatest, setHousieLatest] = useState<{ value: number | string; display: string } | null>(null);
     const [housieWinners, setHousieWinners] = useState<HousieWinner[]>([]);
+    const [housieCallFlash, setHousieCallFlash] = useState<{ display: string; key: number } | null>(null);
+    const [housieAnnouncement, setHousieAnnouncement] = useState<{ text: string; key: number } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -269,12 +271,15 @@ export default function SpectatorPage() {
                 setGameType('housie');
                 setHousieCalled(msg.called_items || []);
                 setHousieLatest(msg.item || null);
+                setHousieCallFlash({ display: String(msg.item?.display || ''), key: Date.now() });
                 setGameState('BINGO_CALLING');
                 soundManager.play('timerTick');
             }
             else if (msg.type === 'BINGO_CLAIM_ACCEPTED') {
                 setHousieWinners(msg.winners || []);
                 setLeaderboard(msg.leaderboard || []);
+                const winner = msg.winner as HousieWinner | undefined;
+                if (winner) setHousieAnnouncement({ text: `${winner.nickname} won ${winner.label}${winner.winning_number ? ` on ${winner.winning_number}` : ''}`, key: Date.now() });
                 soundManager.play('fanfare');
             }
             else if (msg.type === 'BINGO_COMPLETE') {
@@ -627,6 +632,13 @@ export default function SpectatorPage() {
 
                     {gameState === 'BINGO_CALLING' && (
                         <div className="flex-1 flex flex-col justify-center animate-in">
+                            {housieCallFlash && <div key={housieCallFlash.key} className="housie-call-overlay">{housieCallFlash.display}</div>}
+                            {housieAnnouncement && (
+                                <div key={housieAnnouncement.key} className="housie-win-overlay">
+                                    <div className="housie-confetti" aria-hidden="true">{Array.from({ length: 26 }, (_, index) => <i key={index} />)}</div>
+                                    <p>{housieAnnouncement.text}</p>
+                                </div>
+                            )}
                             <div className="text-center mb-8">
                                 <p className="text-[--text-tertiary] text-xl">Housie</p>
                                 <h1 className="hero-title" style={{ fontSize: '5rem' }}>{housieLatest ? housieLatest.display : 'Waiting for first call'}</h1>

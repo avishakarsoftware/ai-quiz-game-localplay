@@ -83,10 +83,16 @@ export default function OrganizerPage() {
     const [drawingRoundResult, setDrawingRoundResult] = useState<{ prompt: string; drawer: string; correct_guessers: string[] } | null>(null);
     const [housieTitle, setHousieTitle] = useState('Housie');
     const [housiePatterns, setHousiePatterns] = useState(['quick_5', 'four_corners', 'top_row', 'middle_row', 'bottom_row', 'full_house']);
+    const [housiePlayMode, setHousiePlayMode] = useState<'beginner' | 'pro'>('beginner');
     const [housieCallerMode, setHousieCallerMode] = useState<'manual' | 'auto'>('manual');
+    const [housieAutoStatus, setHousieAutoStatus] = useState<'running' | 'paused' | 'stopped'>('stopped');
+    const [housieAutoInterval, setHousieAutoInterval] = useState(8);
+    const [housieAutoPauseOnClaim, setHousieAutoPauseOnClaim] = useState(true);
     const [housieCalled, setHousieCalled] = useState<Array<{ value: number | string; display: string }>>([]);
     const [housieLatest, setHousieLatest] = useState<{ value: number | string; display: string } | null>(null);
     const [housieWinners, setHousieWinners] = useState<HousieWinner[]>([]);
+    const [housieCallFlash, setHousieCallFlash] = useState<{ display: string; key: number } | null>(null);
+    const [housieAnnouncement, setHousieAnnouncement] = useState<{ text: string; key: number } | null>(null);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean; returnToHostApp?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -253,23 +259,36 @@ export default function OrganizerPage() {
             soundManager.play('fanfare');
         }
         else if (msg.type === 'BINGO_SYNC') {
-            const bingo = msg.bingo as { called_items?: Array<{ value: number | string; display: string }>; latest_item?: { value: number | string; display: string } | null; patterns?: HousiePattern[]; winners?: HousieWinner[] } | undefined;
+            const bingo = msg.bingo as { called_items?: Array<{ value: number | string; display: string }>; latest_item?: { value: number | string; display: string } | null; patterns?: HousiePattern[]; winners?: HousieWinner[]; play_mode?: 'beginner' | 'pro'; caller_mode?: 'manual' | 'auto'; auto_status?: 'running' | 'paused' | 'stopped'; auto_interval_seconds?: number; auto_pause_on_claim?: boolean } | undefined;
             setGameType('housie');
             setHousieCalled(bingo?.called_items || []);
             setHousieLatest(bingo?.latest_item || null);
             setHousieWinners(bingo?.winners || []);
+            if (bingo?.play_mode) setHousiePlayMode(bingo.play_mode);
+            if (bingo?.caller_mode) setHousieCallerMode(bingo.caller_mode);
+            if (bingo?.auto_status) setHousieAutoStatus(bingo.auto_status);
+            if (bingo?.auto_interval_seconds) setHousieAutoInterval(bingo.auto_interval_seconds);
+            if (typeof bingo?.auto_pause_on_claim === 'boolean') setHousieAutoPauseOnClaim(bingo.auto_pause_on_claim);
             setState('BINGO_CALLING');
         }
         else if (msg.type === 'BINGO_CALL') {
             setGameType('housie');
             setHousieCalled(msg.called_items as Array<{ value: number | string; display: string }> || []);
             setHousieLatest(msg.item as { value: number | string; display: string });
+            setHousieCallFlash({ display: String((msg.item as { display?: string })?.display || ''), key: Date.now() });
             setState('BINGO_CALLING');
             soundManager.play('correct');
+        }
+        else if (msg.type === 'BINGO_AUTO_STATUS') {
+            if (msg.caller_mode === 'manual' || msg.caller_mode === 'auto') setHousieCallerMode(msg.caller_mode);
+            if (msg.auto_status === 'running' || msg.auto_status === 'paused' || msg.auto_status === 'stopped') setHousieAutoStatus(msg.auto_status);
+            if (typeof msg.auto_interval_seconds === 'number') setHousieAutoInterval(msg.auto_interval_seconds);
         }
         else if (msg.type === 'BINGO_CLAIM_ACCEPTED') {
             setHousieWinners(msg.winners as HousieWinner[] || []);
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+            const winner = msg.winner as HousieWinner | undefined;
+            if (winner) setHousieAnnouncement({ text: `${winner.nickname} won ${winner.label}${winner.winning_number ? ` on ${winner.winning_number}` : ''}`, key: Date.now() });
             soundManager.play('fanfare');
         }
         else if (msg.type === 'BINGO_COMPLETE') {
@@ -881,8 +900,10 @@ export default function OrganizerPage() {
                 body: JSON.stringify({
                     game_title: housieTitle.trim() || 'Housie',
                     pattern_ids: housiePatterns,
+                    play_mode: housiePlayMode,
                     caller_mode: housieCallerMode,
-                    auto_interval_seconds: 8,
+                    auto_interval_seconds: housieAutoInterval,
+                    auto_pause_on_claim: housieAutoPauseOnClaim,
                 }),
             });
             if (!res.ok) {
@@ -916,6 +937,12 @@ export default function OrganizerPage() {
     const nextQuestion = () => wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
     const callHousieNumber = () => wsRef.current?.send(JSON.stringify({ type: 'BINGO_CALL_NEXT' }));
     const undoHousieCall = () => wsRef.current?.send(JSON.stringify({ type: 'BINGO_UNDO_LAST_CALL' }));
+    const setHousieCallerModeRuntime = (mode: 'manual' | 'auto') => {
+        setHousieCallerMode(mode);
+        wsRef.current?.send(JSON.stringify({ type: 'BINGO_SET_CALLER_MODE', caller_mode: mode, auto_interval_seconds: housieAutoInterval }));
+    };
+    const pauseHousieAuto = () => wsRef.current?.send(JSON.stringify({ type: 'BINGO_PAUSE' }));
+    const resumeHousieAuto = () => wsRef.current?.send(JSON.stringify({ type: 'BINGO_RESUME' }));
     const endQuiz = () => wsRef.current?.send(JSON.stringify({ type: 'END_QUIZ' }));
 
     const playAgain = () => {
@@ -1152,10 +1179,16 @@ export default function OrganizerPage() {
                     <HousieSetupScreen
                         title={housieTitle}
                         setTitle={setHousieTitle}
+                        playMode={housiePlayMode}
+                        setPlayMode={setHousiePlayMode}
                         selectedPatterns={housiePatterns}
                         setSelectedPatterns={setHousiePatterns}
                         callerMode={housieCallerMode}
                         setCallerMode={setHousieCallerMode}
+                        autoIntervalSeconds={housieAutoInterval}
+                        setAutoIntervalSeconds={setHousieAutoInterval}
+                        autoPauseOnClaim={housieAutoPauseOnClaim}
+                        setAutoPauseOnClaim={setHousieAutoPauseOnClaim}
                         onCreateRoom={createHousieAndRoom}
                         onBack={() => setState('SELECT_GAME')}
                     />
@@ -1270,10 +1303,38 @@ export default function OrganizerPage() {
 
                 {state === 'BINGO_CALLING' && (
                     <div className="housie-caller-screen container-responsive safe-top safe-bottom animate-in">
+                        {housieCallFlash && <div key={housieCallFlash.key} className="housie-call-overlay">{housieCallFlash.display}</div>}
+                        {housieAnnouncement && (
+                            <div key={housieAnnouncement.key} className="housie-win-overlay">
+                                <div className="housie-confetti" aria-hidden="true">{Array.from({ length: 18 }, (_, index) => <i key={index} />)}</div>
+                                <p>{housieAnnouncement.text}</p>
+                            </div>
+                        )}
                         <div className="housie-runtime-header">
                             <p>Housie caller</p>
                             <h1 className="hero-title">{housieLatest ? housieLatest.display : 'Ready to call'}</h1>
-                            <span>{housieCalled.length} of 90 numbers called</span>
+                            <span>{housieCalled.length} of 90 numbers called · {housiePlayMode === 'pro' ? 'Pro' : 'Beginner'} · {housieCallerMode === 'auto' ? `Auto ${housieAutoStatus}` : 'Manual'}</span>
+                        </div>
+                        <div className="housie-runtime-panel housie-call-controls">
+                            <div>
+                                <p className="housie-muted-copy">Caller controls</p>
+                                <h2>{housieCallerMode === 'auto' ? `Auto every ${housieAutoInterval}s` : 'Manual calling'}</h2>
+                            </div>
+                            <div className="housie-caller-actions">
+                                <button onClick={undoHousieCall} disabled={!housieCalled.length} className="btn btn-secondary">Undo</button>
+                                <button onClick={callHousieNumber} className="btn btn-primary btn-glow">Call Next</button>
+                                {housieCallerMode === 'auto' && housieAutoStatus === 'running' ? (
+                                    <button onClick={pauseHousieAuto} className="btn btn-secondary">Pause Auto</button>
+                                ) : (
+                                    <button onClick={() => setHousieCallerModeRuntime('auto')} className="btn btn-secondary">Start Auto</button>
+                                )}
+                                {housieCallerMode === 'auto' && housieAutoStatus === 'paused' && (
+                                    <button onClick={resumeHousieAuto} className="btn btn-secondary">Resume</button>
+                                )}
+                                {housieCallerMode === 'auto' && (
+                                    <button onClick={() => setHousieCallerModeRuntime('manual')} className="btn btn-secondary">Manual</button>
+                                )}
+                            </div>
                         </div>
                         <div className="housie-runtime-panel">
                             <HousieCalledBoard
@@ -1286,8 +1347,6 @@ export default function OrganizerPage() {
                             <HousieWinners winners={housieWinners} />
                         </div>
                         <div className="housie-caller-actions">
-                            <button onClick={undoHousieCall} disabled={!housieCalled.length} className="btn btn-secondary">Undo</button>
-                            <button onClick={callHousieNumber} className="btn btn-primary btn-glow">Call Next</button>
                             <button onClick={endQuiz} className="btn btn-secondary">End Game</button>
                         </div>
                     </div>

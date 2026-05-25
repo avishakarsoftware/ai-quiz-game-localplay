@@ -12,17 +12,31 @@ const DEFAULT_PATTERNS: HousiePattern[] = [
 export default function HousieSetupScreen({
     title,
     setTitle,
+    playMode,
+    setPlayMode,
     selectedPatterns,
     setSelectedPatterns,
+    callerMode,
+    setCallerMode,
+    autoIntervalSeconds,
+    setAutoIntervalSeconds,
+    autoPauseOnClaim,
+    setAutoPauseOnClaim,
     onCreateRoom,
     onBack,
 }: {
     title: string;
     setTitle: (value: string) => void;
+    playMode: 'beginner' | 'pro';
+    setPlayMode: (value: 'beginner' | 'pro') => void;
     selectedPatterns: string[];
     setSelectedPatterns: (value: string[]) => void;
     callerMode: 'manual' | 'auto';
     setCallerMode: (value: 'manual' | 'auto') => void;
+    autoIntervalSeconds: number;
+    setAutoIntervalSeconds: (value: number) => void;
+    autoPauseOnClaim: boolean;
+    setAutoPauseOnClaim: (value: boolean) => void;
     onCreateRoom: () => void;
     onBack: () => void;
 }) {
@@ -55,9 +69,57 @@ export default function HousieSetupScreen({
                     />
                 </div>
 
+                <div className="housie-field">
+                    <div className="housie-section-label">Player mode</div>
+                    <div className="housie-mode-grid">
+                        <button type="button" className={`housie-prize-card ${playMode === 'beginner' ? 'selected' : ''}`} onClick={() => setPlayMode('beginner')}>
+                            <span>Beginner</span>
+                            <small>Shows called-number hints on player tickets.</small>
+                        </button>
+                        <button type="button" className={`housie-prize-card ${playMode === 'pro' ? 'selected' : ''}`} onClick={() => setPlayMode('pro')}>
+                            <span>Pro</span>
+                            <small>Classic play. Players mark manually with no ticket hints.</small>
+                        </button>
+                    </div>
+                </div>
+
+                <div className="housie-field">
+                    <div className="housie-section-label">Caller</div>
+                    <div className="housie-mode-grid">
+                        <button type="button" className={`housie-prize-card ${callerMode === 'manual' ? 'selected' : ''}`} onClick={() => setCallerMode('manual')}>
+                            <span>Manual</span>
+                            <small>Host presses Call Next for every number.</small>
+                        </button>
+                        <button type="button" className={`housie-prize-card ${callerMode === 'auto' ? 'selected' : ''}`} onClick={() => setCallerMode('auto')}>
+                            <span>Auto</span>
+                            <small>Numbers call themselves on a timer.</small>
+                        </button>
+                    </div>
+                </div>
+
                 <div className="housie-info-panel">
-                    <div>Manual caller</div>
-                    <p>The host calls numbers one by one. Auto-caller is planned after the first playable release.</p>
+                    <div>{callerMode === 'auto' ? 'Auto caller' : 'Manual caller'}</div>
+                    <p>{callerMode === 'auto' ? `Calls a number every ${autoIntervalSeconds} seconds. You can pause or switch to manual during play.` : 'The host calls numbers one by one. The Call Next button stays above prizes during play.'}</p>
+                    <label className="housie-inline-control">
+                        <span>Timer</span>
+                        <input
+                            type="number"
+                            min={3}
+                            max={30}
+                            value={autoIntervalSeconds}
+                            onChange={(event) => setAutoIntervalSeconds(Math.max(3, Math.min(30, Number(event.target.value) || 8)))}
+                            disabled={callerMode !== 'auto'}
+                        />
+                    </label>
+                    <label className="housie-check-control">
+                        <input
+                            type="checkbox"
+                            checked={autoPauseOnClaim}
+                            onChange={(event) => setAutoPauseOnClaim(event.target.checked)}
+                            disabled={callerMode !== 'auto'}
+                        />
+                        <span>Pause auto-caller on claims</span>
+                    </label>
                 </div>
 
                 <div className="housie-field">

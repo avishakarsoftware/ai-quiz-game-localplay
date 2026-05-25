@@ -1041,10 +1041,12 @@ Classic bingo, housie/tambola, and baby bingo are adjacent to quiz authoring but
 - Server generates unique player boards when players join.
 - Host/caller advances draws one at a time, with optional auto-caller mode.
 - Players mark called cells locally; server validates claims against the draw history.
+- Housie claim validation must require the prize to have become true on the latest called number; stale claims after later calls are rejected.
+- Creator setup should support Beginner and Pro modes. Beginner keeps assisted ticket hints; Pro hides called-number assistance on player tickets and requires players to mark manually.
 - Winning patterns should be configurable: one line, two lines, four corners, early five, full house, baby-gift row, etc.
-- Spectator view should show the latest call, call history, current claims, and winners.
+- Spectator view should show the latest call, call history, current claims, winners, large latest-call animation, and winner/confetti announcements.
 
-Complexity: medium. Standalone Housie now covers the new board/claim state: server-generated tickets, manual caller, claim validation, winners, and spectator sync. The next platform slice is polish and durable templates, then host-app/Revelry enablement once party-scoped setup and safe result callbacks are ready.
+Complexity: medium. Standalone Housie now covers the new board/claim state: server-generated tickets, manual caller, claim validation, winners, and spectator sync. The next platform slice is Beginner/Pro setup, auto-caller controls, latest-call/winner visual polish, last-called-number claim validation, and durable templates, then host-app/Revelry enablement once party-scoped setup and safe result callbacks are ready.
 
 ### Image-Based Game Modes
 
@@ -1609,6 +1611,8 @@ This is the main infrastructure investment needed before Chinese Whispers or Dra
   - **Recommendation**: Default to family-safe. WMLT already has the vibe system (party/spicy/wholesome/work). Extend this pattern: each game's generation has a "vibe" or "audience" selector that adjusts the LLM prompt. Spicy/adult modes should be opt-in per session.
 - Should LocalPlay monetize independently, share Revelry billing, or support both?
   - **Recommendation**: Keep gameplay launch/play free of surprise payment prompts in Revelry-managed sessions. Manual custom quiz authoring should remain free for competitiveness. LocalPlay can monetize long-term save/retention for free custom quizzes, larger libraries, media quotas, premium templates, optional AI assist, advanced branding, analytics, or cross-event reuse. This should remain a LocalPlay commerce feature; Revelry can link hosts into it later if needed.
+- How should paid Housie/Bingo features work later?
+  - **Recommendation**: Do not monetize live ticket claims, random ticket sales, prizes, or in-room advantages. Future Housie/Bingo monetization should be entitlement-gated before room creation or setup save: premium templates, theme packs, advanced auto-caller voices, branding, analytics, saved-template retention, AI Baby Bingo generation, party passes, or subscriptions. Standalone web one-time purchases should use Stripe Checkout Sessions; native iOS purchase paths must not use Stripe checkout and should use Apple IAP if introduced. Revelry-launched Housie should remain host-app-managed billing, with LocalPlay receiving capabilities instead of payment provider state.
 - Revelry integration hardening backlog:
   - Add service-level rate limiting and/or idempotency keys for `/integrations/revelry/sessions` before production scale.
   - Add a durable cleanup/archive job for expired `game_sessions`; completed summaries should remain attached to their host container, but stale lobby/active records should not grow without bounds.

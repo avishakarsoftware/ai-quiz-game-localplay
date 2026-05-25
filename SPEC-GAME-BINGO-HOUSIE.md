@@ -30,7 +30,10 @@ Standalone Housie is implemented as the first Bingo-family runtime:
 
 Known v1 limitations:
 
-- Auto-caller mode is present in setup data but not yet wired to a pause/resume UI.
+- Auto-caller mode is present in setup data but needs a complete host pause/resume/control UI.
+- Creator-facing play modes need to be explicit: Beginner keeps assisted marking/called-number hints, while Pro hides called-number assistance on player tickets and requires fully manual marking.
+- Claim validation must enforce the Housie/Tambola "last number" rule for all prize patterns: the claim is valid only when the latest called number is part of the claimed pattern and the pattern was not already complete before that call.
+- Latest-call and winner announcement animations need a full UX pass across organizer, player, and spectator screens.
 - Housie setup is in-memory like generated quiz/drawing content; durable saved Bingo templates are future work.
 - Host-app/Revelry mode remains disabled until party-scoped setup, callbacks, result summaries, and e2e tests are added.
 
@@ -39,12 +42,14 @@ Known v1 limitations:
 - Add a generic Bingo-family runtime that can support numbers, words, emojis, and images.
 - Ship Housie as the first implementation using classic 1-90 tickets.
 - Generate valid Housie tickets with 15 filled cells and configurable number-column layout.
-- Support manual calling in v1; add auto-caller pause/resume in the polish slice.
+- Support creator-selected Beginner and Pro modes.
+- Support manual calling and auto-caller pause/resume.
 - Stream the latest call and call history to organizer, player, and spectator screens.
 - Let players mark cells on their own ticket.
 - Let players claim configured prizes.
-- Validate claims server-side against the ticket, called history, and prize pattern.
-- Announce accepted claims to all surfaces.
+- Validate claims server-side against the ticket, called history, prize pattern, and latest-called-number rule.
+- Announce accepted claims to all surfaces with winner name and prize label.
+- Show a confetti animation on all organizer, player, and spectator screens when a prize is awarded.
 - Keep the spectator/TV screen useful: latest number, called board/history, live claims, winners, and player count.
 - Make the engine extensible enough for Baby Bingo and other event Bingo variants without rewriting the room lifecycle.
 - Support standalone LocalPlay first; expose to Revelry only after standalone UX and safe result summaries are polished.
@@ -105,6 +110,44 @@ Housie v1 uses:
 - Product decision: use 9 numeric columns for Housie. Earlier product notes mentioned 10 columns, but the "last column covers both 80s and 90" rule maps to the classic 9-column Housie/Tambola ticket. Keep `column_ranges` configurable in the engine so non-Housie Bingo variants can use different layouts later, but Housie v1 should be 3x9.
 - Numbers increase top-to-bottom within each column.
 - Numbers are called from a shuffled 1-90 deck without replacement.
+
+### Creator Play Modes
+
+Housie setup must offer a creator-facing mode selector:
+
+```json
+{
+  "play_mode": "beginner" | "pro"
+}
+```
+
+Mode controls player assistance only. It must not change the deck, ticket shape, prize definitions, server-side claim validation, result summaries, or house rules.
+
+`beginner` mode:
+
+- Default mode.
+- Preserves the existing player-ticket assistance behavior.
+- Player ticket cells may visually indicate called-but-unmarked numbers.
+- Player ticket cells may optionally auto-highlight markable cells after each call.
+- Claim buttons may show friendly eligibility hints, such as "Need 1 more for Quick 5."
+- The player still manually taps/marks cells unless an explicit separate `auto_mark` feature is added later.
+
+`pro` mode:
+
+- For traditional Housie/Tambola play.
+- The player ticket must not reveal which numbers have already been called.
+- Filled cells should only show neutral unmarked styling until the player manually marks them.
+- The player may still see the latest number in the shared call area, because that is equivalent to hearing the caller.
+- The player may see a compact recent-call feed outside the ticket only if the host enables a separate room setting. Default Pro behavior should not show full called history on the player screen.
+- Claim buttons should remain available but should not expose eligibility hints that reveal hidden called-number state.
+- Server validation remains authoritative and may reject claims that the player marked incorrectly.
+
+Organizer and spectator screens are not constrained by Pro ticket assistance rules. They may show the called board/history because they act as caller/TV surfaces.
+
+Recommended setup copy:
+
+- Beginner: "Helpful ticket mode. Called numbers are shown on each player ticket."
+- Pro: "Classic mode. Players mark tickets themselves; called numbers are not highlighted on tickets."
 
 ## Ticket Generation
 
@@ -172,6 +215,7 @@ The host sees:
 
 - Current/latest called item.
 - Next number button.
+- In manual mode, the primary `Call next` button must be placed above the prize panel so calling remains the host's first visible action.
 - Undo last call. Disabled when any accepted claim was validated against the last called number. The server checks whether removing the last call would invalidate any accepted claim; if so, undo is blocked and the organizer sees a disabled state with a tooltip or label explaining why.
 - Full called board/history.
 - Claim queue.
@@ -183,12 +227,16 @@ The host sees:
 Auto-caller mode should:
 
 - Call the next item every configured interval, default 8 seconds.
+- Let the host configure the timer before start and adjust it while paused, clamped to the supported interval range.
 - Let host pause/resume.
+- Let host switch between manual and auto while the game is active.
 - When `auto_pause_on_claim` is true, pause auto-caller while a claim is pending validation. Resume automatically after the claim is accepted or rejected, unless the accepted claim closes a terminal prize.
 - When `auto_pause_on_claim` is false, auto-caller continues calling while claims are processed.
 - Stop automatically when all numbers are called or a configured terminal prize is awarded.
-- Announce upcoming call visually with a short countdown on organizer/spectator.
+- Announce upcoming call visually with a short countdown on organizer/spectator and, if space allows, on player screens.
 - Never skip claim validation; players can still claim while auto-caller is running.
+- Never call more than one number at a time. The server-side auto task must await each broadcast/claim-lock step before sleeping for the next interval.
+- Clamp interval to a safe range, recommended 3-30 seconds.
 
 Auto-caller settings:
 
@@ -199,6 +247,20 @@ Auto-caller settings:
   "auto_pause_on_claim": true
 }
 ```
+
+Auto-caller state should be visible in sync payloads:
+
+```json
+{
+  "caller_mode": "auto",
+  "auto_status": "running" | "paused" | "stopped",
+  "auto_interval_seconds": 8,
+  "auto_pause_on_claim": true,
+  "next_auto_call_at": "2026-05-25T20:15:30Z"
+}
+```
+
+If the organizer disconnects during auto mode, the backend should pause the auto-caller during the organizer reconnect grace period rather than continuing unattended.
 
 ## Prize / Claim Patterns
 
@@ -259,8 +321,42 @@ Server validation:
 3. Pattern has not already reached `max_winners`.
 4. The pattern's required cells are all present on the ticket and have all been called. For row patterns and full house, the required cells are deterministic from the ticket layout. For `quick_5`, the server checks that at least 5 of the player's filled ticket numbers appear in the called history; the player does not choose which 5.
 5. For `four_corners`, the server identifies the outermost filled cells in the top and bottom rows and checks that all four have been called.
+6. The latest called number must be part of the winning evidence for the pattern.
+7. The pattern must not have been complete for that player before the latest called number.
 
 Do not trust client-side marked state. Client marks are local convenience. The server validates from ticket contents and called history.
+
+### Last-Called-Number Rule
+
+All Housie prize claims use the traditional last-called-number rule in both Beginner and Pro modes. A claim is valid only if the latest called number caused that specific pattern to become complete.
+
+This prevents stale claims. Example: if a player's Top Row became complete when 42 was called, but the player waits until after 73 is called to claim Top Row, the server rejects the claim with `stale_claim` because the match did not occur on the last number.
+
+Pattern-specific validation:
+
+- `quick_5`: accepted only when the latest called number is on the player's ticket, is among the called numbers, and the player had exactly 4 called ticket numbers before the latest call and at least 5 after it.
+- `four_corners`: accepted only when the latest called number is one of that ticket's four corner cells, all four corner cells are called after the latest call, and at least one corner cell was uncalled before the latest call.
+- `top_row`, `middle_row`, `bottom_row`: accepted only when the latest called number is in the claimed row, the row is complete after the latest call, and the row was incomplete before the latest call.
+- `full_house`: accepted only when the latest called number is on the ticket, all 15 filled cells are called after the latest call, and the ticket was incomplete before the latest call.
+
+Implementation detail:
+
+```python
+called_before_latest = called_numbers - {latest_number}
+```
+
+The validator should check the pattern against both `called_before_latest` and `called_numbers`. A valid claim is one where the pattern is false before the latest call and true after the latest call, and the latest number contributes to the claimed pattern.
+
+Claim rejection reasons should include:
+
+| Reason | Meaning |
+|---|---|
+| `unknown_pattern` | Pattern id is not enabled or not recognized. |
+| `already_awarded` | Pattern has reached `max_winners`. |
+| `not_complete` | Pattern is not complete after the latest call. |
+| `stale_claim` | Pattern was already complete before the latest call. |
+| `latest_number_not_in_pattern` | Latest call did not contribute to this claimed pattern. |
+| `no_calls_yet` | Player claimed before any number was called. |
 
 Claim response events:
 
@@ -271,7 +367,9 @@ Claim response events:
   "pattern_label": "Quick 5",
   "player_id": "p1",
   "player_name": "Avi",
-  "call_index": 23
+  "call_index": 23,
+  "winning_number": 42,
+  "announce": true
 }
 ```
 
@@ -279,7 +377,7 @@ Claim response events:
 {
   "type": "BINGO_CLAIM_REJECTED",
   "pattern_id": "quick_5",
-  "reason": "not_complete"
+  "reason": "stale_claim"
 }
 ```
 
@@ -301,9 +399,13 @@ type BingoRoomState = {
   patterns: BingoPrizePattern[];
   winners: BingoWinner[];
   claim_log: BingoClaim[];
+  play_mode: "beginner" | "pro";
   caller_mode: "manual" | "auto";
+  auto_status: "running" | "paused" | "stopped";
   auto_interval_seconds: number;
   auto_pause_on_claim: boolean;
+  next_auto_call_at?: string | null;
+  claim_requires_latest_call: true;
 };
 ```
 
@@ -327,6 +429,7 @@ Organizer to server:
 - `BINGO_CALL_NEXT`
 - `BINGO_UNDO_LAST_CALL`
 - `BINGO_SET_CALLER_MODE`
+- `BINGO_SET_PLAY_MODE` only before start, or via setup save before room creation.
 - `BINGO_PAUSE`
 - `BINGO_RESUME`
 - `BINGO_END_GAME`
@@ -341,9 +444,11 @@ Server to all:
 
 - `BINGO_SYNC`
 - `BINGO_CALL`
+- `BINGO_AUTO_STATUS`
 - `BINGO_CLAIM_ACCEPTED`
 - `BINGO_CLAIM_REJECTED`
 - `BINGO_PRIZE_CLOSED`
+- `BINGO_WINNER_ANNOUNCEMENT`
 - `BINGO_COMPLETE`
 
 `SPECTATOR_SYNC` should include the current Bingo/Housie state when a spectator joins mid-game.
@@ -357,11 +462,20 @@ The organizer UI should be caller-first:
 - Large latest call.
 - Manual `Call next` button.
 - Auto-caller controls.
+- Beginner/Pro mode shown as read-only once the game starts.
 - Called board/history.
 - Prize panel with open/awarded state.
 - Claim queue/log.
 - Player count.
 - End game button.
+
+Recommended host layout order:
+
+1. Latest call / auto-caller status.
+2. Primary call controls: `Call next`, pause/resume, timer.
+3. Called board/history.
+4. Prize panel.
+5. Claim queue/log.
 
 ### Player
 
@@ -374,13 +488,22 @@ The player UI should be ticket-first:
 - Claim status feedback.
 - Winners/prizes already awarded.
 
-Player cells should visibly distinguish:
+In Beginner mode, player cells should visibly distinguish:
 
 - Empty cells.
 - Uncalled filled cells.
 - Called but unmarked cells.
 - Marked cells.
 - Cells involved in a winning claim.
+
+In Pro mode, player ticket cells should visibly distinguish only:
+
+- Empty cells.
+- Unmarked filled cells.
+- Player-marked cells.
+- Cells involved in an accepted winning claim after the server announces the prize.
+
+Pro mode must not style unmarked cells based on called history. The frontend may still keep called history in memory if needed for sync/reconnect, but ticket rendering must not use it to reveal assistance.
 
 ### Spectator / TV
 
@@ -390,6 +513,7 @@ The spectator screen should be readable from across a room:
 - Draw history or called-number board.
 - Prize winners.
 - Claim announcements.
+- Confetti and winner name/prize announcement on accepted claims.
 - Player count.
 - QR/join link behavior should reuse existing host-app/standalone share policy.
 
@@ -402,8 +526,10 @@ For Housie, a 1-90 called board is better than a long list once enough calls hav
 Standalone setup fields:
 
 - Game title.
+- Play mode: Beginner or Pro.
 - Caller mode: manual or auto.
 - Auto interval.
+- Auto pause on claim.
 - Enabled prize patterns.
 - Tie behavior, future.
 - Number of tickets per player, future.
@@ -484,6 +610,13 @@ Standalone catalog entry:
   "can_quick_start": true,
   "supported_media": ["none"],
   "content_schema": "bingo_setup_v1",
+  "config_options": {
+    "play_modes": ["beginner", "pro"],
+    "caller_modes": ["manual", "auto"],
+    "default_play_mode": "beginner",
+    "default_caller_mode": "manual",
+    "claim_requires_latest_call": true
+  },
   "result_summary_schema": "bingo_result_v1"
 }
 ```
@@ -508,8 +641,10 @@ Safe result summary:
   "status": "complete",
   "called_count": 47,
   "player_count": 12,
+  "play_mode": "pro",
+  "caller_mode": "auto",
   "winners": [
-    { "pattern_id": "quick_5", "label": "Quick 5", "player_name": "Avi" },
+    { "pattern_id": "quick_5", "label": "Quick 5", "player_name": "Avi", "winning_number": 42 },
     { "pattern_id": "top_row", "label": "Top Row", "player_name": "Maya" },
     { "pattern_id": "full_house", "label": "Full House", "player_name": "Sam" }
   ]
@@ -536,6 +671,35 @@ Housie should start in standalone LocalPlay. Later, when enabled for Revelry:
 - Results callback posts safe winner/prize summaries.
 - Party type can influence templates later, such as holiday Housie or baby shower Bingo.
 
+## Future Payment Integration
+
+Do not implement Housie-specific payments in the current Housie gameplay slice.
+
+When LocalPlay later adds paid Housie/Bingo features, payments should stay outside the live draw/claim path. A player should never be blocked by a checkout prompt after joining an active room.
+
+Allowed future paid surfaces:
+
+- Standalone LocalPlay premium Housie templates or theme packs.
+- Larger saved template library/retention.
+- Premium host controls such as custom branding, advanced auto-caller voices, custom prize labels, or analytics.
+- Event/Baby Bingo AI generation packs.
+- Multi-session party pass or subscription entitlements.
+
+Disallowed monetization surfaces:
+
+- Real-money prizes, betting, cash-out, or wagering.
+- Randomized paid ticket sales.
+- Per-player paid ticket advantages.
+- Paid claim priority or paid second chances.
+
+Recommended payment architecture:
+
+- Use existing LocalPlay entitlement/wallet capability checks before room creation or setup save, not during gameplay.
+- For standalone web one-time purchases, use Stripe Checkout Sessions.
+- For native iOS purchases, continue to respect the existing server-side rule that blocks Stripe checkout from iOS and use Apple IAP if native purchases are introduced.
+- For Revelry-launched sessions, keep billing host-app-managed. LocalPlay should receive capabilities such as `premium_housie_templates`, `ai_bingo_generation`, or `party_games`, not raw payment provider state.
+- Result summaries and callbacks must not include Stripe session ids, receipt payloads, prices, refund state, or other payment data.
+
 ## Implementation Details
 
 This section is the build checklist. If it conflicts with higher-level product notes above, prefer this section for v1 implementation.
@@ -550,9 +714,10 @@ Add or update:
 - `backend/housie_engine.py`
   - Housie-specific ticket generation, default pattern definitions, and claim validation.
   - May import shared types/helpers from `bingo_engine.py`.
+  - Enforce the latest-called-number rule for every claim.
 - `backend/socket_manager.py`
   - Add `housie` runtime branch to `Room`.
-  - Add Housie state reset, sync, call, claim, completion, and history behavior.
+  - Add Housie state reset, sync, call, claim, auto-caller, completion, and history behavior.
 - `backend/main.py`
   - Accept `game_type = "housie"` in room creation validation.
   - Add optional `housie_id` or generic `content_id` handling for saved/default Housie setup.
@@ -585,15 +750,15 @@ Add or update:
 - `frontend/src/pages/SpectatorPage.tsx`
   - Add Housie spectator/called-board branch.
 - `frontend/src/components/organizer/HousieSetupScreen.tsx`
-  - Standalone setup: title, caller mode, interval, prize toggles.
+  - Standalone setup: title, Beginner/Pro mode, caller mode, interval, auto-pause-on-claim, prize toggles.
 - `frontend/src/components/organizer/HousieCallerScreen.tsx`
-  - Organizer/caller runtime controls.
+  - Organizer/caller runtime controls, auto-caller status, and latest-call animation.
 - `frontend/src/components/player/HousieTicket.tsx`
-  - Player ticket grid and claim buttons.
+  - Player ticket grid and claim buttons. Rendering must respect Beginner vs Pro assistance rules.
 - `frontend/src/components/spectator/HousieSpectatorScreen.tsx`
-  - TV/spectator latest call, called board, and winners.
+  - TV/spectator latest call, called board, winner announcements, and confetti.
 - `frontend/src/components/housie/`
-  - Optional shared visual pieces: ticket grid, called board, prize badge, latest call card.
+  - Optional shared visual pieces: ticket grid, called board, prize badge, latest call overlay, confetti layer.
 
 Keep Housie UI components shared between standalone and future host-app mode. Host-app behavior should be props/context policy, not a forked UI.
 
@@ -669,6 +834,7 @@ export interface BingoWinner {
   player_id: string;
   player_name: string;
   call_index: number;
+  winning_number?: number;
 }
 ```
 
@@ -704,9 +870,12 @@ def validate_housie_claim(
     ticket: dict,
     pattern_id: str,
     called_numbers: set[int],
+    latest_number: int | None,
     awarded_patterns: dict[str, list[dict]],
 ) -> tuple[bool, str]:
-    """Return (accepted, reason). Reasons include accepted, unknown_pattern, already_awarded, not_complete, uncalled_number."""
+    """Return (accepted, reason). Reasons include accepted, unknown_pattern,
+    already_awarded, not_complete, stale_claim, latest_number_not_in_pattern,
+    and no_calls_yet."""
 ```
 
 `bingo_engine.py` should contain generic helpers that future word/emoji/image Bingo can reuse:
@@ -749,9 +918,13 @@ self.bingo_tickets: dict[str, dict] = {}  # player_id -> ticket
 self.bingo_patterns: list[dict] = []
 self.bingo_winners: list[dict] = []
 self.bingo_claim_log: list[dict] = []
+self.bingo_play_mode: str = "beginner"
 self.bingo_caller_mode: str = "manual"
+self.bingo_auto_status: str = "stopped"
 self.bingo_auto_interval_seconds: int = 8
+self.bingo_auto_pause_on_claim: bool = True
 self.bingo_auto_task: Optional[asyncio.Task] = None
+self.bingo_next_auto_call_at: Optional[str] = None
 self.bingo_pending_claims: set[str] = set()
 ```
 
@@ -776,8 +949,10 @@ Avoid overloading `QUESTION` for Housie. It makes spectator/player branching con
 ```json
 {
   "type": "BINGO_START",
+  "play_mode": "beginner",
   "caller_mode": "manual",
   "auto_interval_seconds": 8,
+  "auto_pause_on_claim": true,
   "patterns": ["quick_5", "four_corners", "top_row", "middle_row", "bottom_row", "full_house"]
 }
 ```
@@ -803,7 +978,8 @@ Server broadcasts:
   "item": { "kind": "number", "value": 42, "display": "42" },
   "call_index": 12,
   "called_count": 12,
-  "remaining_count": 78
+  "remaining_count": 78,
+  "animation": "latest_call"
 }
 ```
 
@@ -843,7 +1019,38 @@ Housie tickets should look like traditional paper tickets:
 - Show visible gridlines between all cells.
 - Empty cells stay the same paper family as filled cells, but remain blank and non-interactive.
 - Filled cells use dark ink.
-- Called/marked cells use high-contrast accent styling without hiding the ticket grid.
+- Beginner mode may show called-but-unmarked cells using a high-contrast hint style without hiding the ticket grid.
+- Pro mode must not reveal called-but-unmarked cells on the ticket.
+- Marked cells use a player-applied daub/strike style that remains legible.
+- Winning cells may use a celebration ring/glow after the server accepts a claim.
+
+### Latest Call And Winner Visuals
+
+Latest call animation:
+
+- On every `BINGO_CALL`, show the called number as a large center-stage number on organizer, player, and spectator screens.
+- The number should enter quickly, hold briefly, then fade/scale away into the called board/history.
+- Recommended timing: 150-250ms entrance, 900-1400ms hold, 400-700ms fade.
+- Respect `prefers-reduced-motion`: replace movement with a brief opacity/highlight change.
+- The animation must not block ticket marking or host controls.
+
+Winner animation:
+
+- On every `BINGO_CLAIM_ACCEPTED`, show confetti on organizer, player, and spectator screens.
+- Announce: `{player_name} won {pattern_label}`.
+- Include the winning number when available: `{player_name} won Quick 5 on 42`.
+- The successful claimant's player screen should get the strongest treatment: full-screen confetti, a personal "You won {pattern_label}" banner, and highlighted winning cells.
+- Other player screens should show a smaller shared announcement so they know who won without losing ticket context.
+- Spectator/TV should use the largest announcement treatment.
+- Player screens should show the announcement without covering the ticket for too long.
+- Respect `prefers-reduced-motion`: use a static celebratory banner instead of falling confetti.
+- Use one shared confetti/announcement component where possible so behavior stays consistent across surfaces.
+
+Suggested component names:
+
+- `LatestCallOverlay`
+- `WinnerAnnouncement`
+- `ConfettiBurst`
 
 ### History And Results
 
@@ -859,6 +1066,8 @@ When a Housie room completes, write a `game_history` entry with:
   - `called_count`.
   - `winners`.
   - `patterns`.
+  - `play_mode`.
+  - `caller_mode`.
   - `duration_seconds`.
 
 If the current history schema cannot store game-specific metadata, v1 may store a safe summary in existing fields and add richer metadata in a later persistence migration. Document any compromise in `SPEC.md` before implementation.
@@ -878,8 +1087,10 @@ Required backend validation:
 - `RoomCreateRequest.validate_game_type` accepts `housie` only after runtime is implemented.
 - Unknown Bingo pattern ids are rejected.
 - Auto interval is clamped, recommended 3-30 seconds.
+- `play_mode` is either `beginner` or `pro`; unknown values fall back to `beginner` only during old-content migration, otherwise reject.
 - Enabled pattern list must not be empty.
 - Housie room creation never accepts arbitrary player tickets from clients.
+- Claim validation always enforces `claim_requires_latest_call = true` for Housie.
 
 ### Styling And UX
 
@@ -887,6 +1098,8 @@ Housie should feel like a real game, not a debug panel:
 
 - Use large tactile number tiles.
 - Called numbers should animate into history.
+- The latest number should briefly become the dominant element on screen and then gracefully disappear.
+- Accepted claims should trigger confetti plus a clear player-name/prize announcement on every surface.
 - Player ticket should be thumb-friendly on mobile.
 - Claims should be prominent but not easy to mis-tap; use confirmation for claim buttons if multiple patterns are available.
 - Spectator latest call should be huge and high contrast.
@@ -914,9 +1127,11 @@ Backend engine tests:
 - Repeated seeded generation is deterministic.
 - Duplicate ticket hashes cause retry.
 - `quick_5` accepts any 5 called ticket numbers and rejects 4.
+- `quick_5` rejects stale claims where 5 called ticket numbers were already present before the latest call.
+- Every prize rejects when the latest number is not part of the claimed pattern.
 - `four_corners` uses outermost filled top/bottom cells, not literal empty corner grid cells.
 - `top_row`, `middle_row`, `bottom_row`, and `full_house` validate correctly.
-- Claims reject unknown patterns, already-awarded patterns, uncalled numbers, and wrong-player tickets.
+- Claims reject unknown patterns, already-awarded patterns, uncalled numbers, wrong-player tickets, stale claims, and claims before any call.
 
 Backend WebSocket tests:
 
@@ -926,10 +1141,13 @@ Backend WebSocket tests:
 - Spectator receives `SPECTATOR_SYNC` with Housie state after joining mid-game.
 - `BINGO_CALL_NEXT` advances without repeating numbers.
 - `BINGO_UNDO_LAST_CALL` works before dependent claims and is rejected after dependent claims.
+- Beginner mode sync allows player ticket assistance.
+- Pro mode sync/rendering does not reveal called-but-unmarked cells on player tickets.
 - Accepted claim broadcasts to organizer, player, and spectator.
 - Rejected claim only notifies the claiming player plus optional organizer log.
 - Full House terminal claim completes the game and writes safe history.
-- Auto-caller can pause/resume and stops on terminal completion.
+- Auto-caller can start, pause, resume, switch back to manual, and stop on terminal completion.
+- Auto-caller pauses when organizer disconnects.
 
 Frontend unit tests:
 
@@ -938,6 +1156,9 @@ Frontend unit tests:
 - Claim buttons show available patterns and disabled/awarded states.
 - Organizer caller screen disables undo when server says undo is blocked.
 - Spectator screen renders latest call, called board, and winner announcements.
+- Latest-call overlay appears on `BINGO_CALL` and clears after the animation.
+- Winner announcement and confetti appear on accepted claims.
+- Reduced-motion mode suppresses movement-heavy call/confetti animations.
 
 Playwright tests:
 
@@ -945,6 +1166,9 @@ Playwright tests:
 - Two players join, receive different tickets, and see the lobby.
 - Host starts calling and both players see latest call updates.
 - Player claim flow shows accepted/rejected feedback.
+- Late/stale claims are rejected after another number has been called.
+- Pro mode requires manual ticket marking and does not highlight called-but-unmarked ticket cells.
+- Auto-caller can run several calls, pause, resume, and stop after Full House.
 - Spectator/TV view can connect before and after calls begin.
 - Mobile viewport ticket remains usable without horizontal overflow.
 
@@ -954,7 +1178,7 @@ Playwright tests:
 2. Backend room runtime: add `housie` type, WebSocket events, state sync, claim validation, and history summary.
 3. Frontend standalone setup and organizer caller surface.
 4. Frontend player ticket and spectator called-board surfaces.
-5. E2E polish: auto-caller, reconnect, accessibility, mobile layout, and Playwright coverage.
+5. E2E polish: Beginner/Pro modes, auto-caller, latest-call animation, confetti/winner announcements, reconnect, accessibility, mobile layout, and Playwright coverage.
 6. Catalog enablement for standalone.
 7. Host-app/Revelry enablement in a later slice after standalone gamma testing.
 
@@ -982,7 +1206,11 @@ Playwright tests:
 
 ### Phase 2: Polish
 
-- Auto-caller mode.
+- Beginner/Pro setup modes.
+- Auto-caller mode with pause/resume, interval clamp, and disconnect pause.
+- Last-called-number claim validation for every pattern.
+- Latest-call large-number animation.
+- Confetti and named winner announcements on all surfaces.
 - Claim queue animations and announcements.
 - Better TV called-board layout.
 - Player reconnect restores ticket.
@@ -1013,9 +1241,15 @@ Housie v1 is launch-ready when:
 - Numbers are valid, unique, sorted within columns, and within configured ranges.
 - Host can call numbers manually.
 - Auto-caller can pause/resume.
+- Creator can choose Beginner or Pro mode before starting.
+- Beginner mode preserves assisted ticket marking/called-number hints.
+- Pro mode hides called-number assistance from the player ticket and relies on manual marking.
 - Players can mark tickets.
 - Invalid claims are rejected with clear feedback.
+- Claims are accepted only when the prize match occurred on the latest called number.
 - Valid claims are accepted and announced.
+- Latest called number appears as a large transient visual on all active surfaces.
+- Accepted prizes trigger confetti and announce the winner name and prize on all active surfaces.
 - A pattern cannot be awarded more than configured `max_winners`.
 - Spectator can join mid-game and see current state.
 - Results summarize winners without leaking tickets or hidden deck state.

@@ -100,8 +100,10 @@ export interface HousiePattern {
 export interface HousieGame {
     game_title: string;
     patterns: HousiePattern[];
+    play_mode?: 'beginner' | 'pro';
     caller_mode?: 'manual' | 'auto';
     auto_interval_seconds?: number;
+    auto_pause_on_claim?: boolean;
 }
 
 export interface HousieCell {
@@ -126,6 +128,7 @@ export interface HousieWinner {
     label: string;
     nickname: string;
     called_count: number;
+    winning_number?: number | string;
 }
 
 export interface DrawOperation {

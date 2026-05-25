@@ -124,6 +124,9 @@ export default function PlayerPage() {
     const [housieLatest, setHousieLatest] = useState<{ value: number | string; display: string } | null>(null);
     const [housiePatterns, setHousiePatterns] = useState<HousiePattern[]>([]);
     const [housieWinners, setHousieWinners] = useState<HousieWinner[]>([]);
+    const [housiePlayMode, setHousiePlayMode] = useState<'beginner' | 'pro'>('beginner');
+    const [housieCallFlash, setHousieCallFlash] = useState<{ display: string; key: number } | null>(null);
+    const [housieAnnouncement, setHousieAnnouncement] = useState<{ text: string; personal: boolean; key: number; winningNumber?: string } | null>(null);
     const [markedNumbers, setMarkedNumbers] = useState<Set<string>>(new Set());
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
@@ -144,6 +147,7 @@ export default function PlayerPage() {
         latest_item?: { value: number | string; display: string } | null;
         patterns?: HousiePattern[];
         winners?: HousieWinner[];
+        play_mode?: 'beginner' | 'pro';
     }) => {
         setGameType('housie');
         setHousieTicket(bingo?.ticket || null);
@@ -151,6 +155,7 @@ export default function PlayerPage() {
         setHousieLatest(bingo?.latest_item || null);
         setHousiePatterns(bingo?.patterns || []);
         setHousieWinners(bingo?.winners || []);
+        if (bingo?.play_mode) setHousiePlayMode(bingo.play_mode);
         setState('BINGO');
     };
 
@@ -291,12 +296,23 @@ export default function PlayerPage() {
                 setGameType('housie');
                 setHousieCalled(msg.called_items as Array<{ value: number | string; display: string }> || []);
                 setHousieLatest(msg.item as { value: number | string; display: string });
+                setHousieCallFlash({ display: String((msg.item as { display?: string })?.display || ''), key: Date.now() });
                 setState('BINGO');
                 soundManager.play('timerTick');
             }
             if (msg.type === 'BINGO_CLAIM_ACCEPTED') {
                 setHousieWinners(msg.winners as HousieWinner[] || []);
                 setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+                const winner = msg.winner as HousieWinner | undefined;
+                if (winner) {
+                    const personal = winner.nickname === nickname;
+                    setHousieAnnouncement({
+                        text: personal ? `You won ${winner.label}!` : `${winner.nickname} won ${winner.label}`,
+                        personal,
+                        key: Date.now(),
+                        winningNumber: winner.winning_number != null ? String(winner.winning_number) : undefined,
+                    });
+                }
                 soundManager.play('fanfare');
             }
             if (msg.type === 'BINGO_CLAIM_REJECTED') {
@@ -771,10 +787,17 @@ export default function PlayerPage() {
 
                 {state === 'BINGO' && (
                     <div className="housie-player-screen container-responsive safe-top safe-bottom animate-in">
+                        {housieCallFlash && <div key={housieCallFlash.key} className="housie-call-overlay">{housieCallFlash.display}</div>}
+                        {housieAnnouncement && (
+                            <div key={housieAnnouncement.key} className={`housie-win-overlay ${housieAnnouncement.personal ? 'personal' : ''}`}>
+                                <div className="housie-confetti" aria-hidden="true">{Array.from({ length: housieAnnouncement.personal ? 26 : 12 }, (_, index) => <i key={index} />)}</div>
+                                <p>{housieAnnouncement.text}</p>
+                            </div>
+                        )}
                         <div className="housie-runtime-header">
                             <p>Housie</p>
                             <h1 className="hero-title">{housieLatest ? housieLatest.display : 'Waiting for first call'}</h1>
-                            <span>{housieCalled.length} numbers called</span>
+                            <span>{housiePlayMode === 'pro' ? 'Pro mode · mark manually' : `${housieCalled.length} numbers called`}</span>
                         </div>
                         {housieTicket && (
                             <div className="housie-ticket-wrap">
@@ -782,6 +805,8 @@ export default function PlayerPage() {
                                     ticket={housieTicket}
                                     calledValues={new Set(housieCalled.map((item) => String(item.value)))}
                                     marked={markedNumbers}
+                                    playMode={housiePlayMode}
+                                    winningValues={housieAnnouncement?.winningNumber ? new Set([housieAnnouncement.winningNumber]) : undefined}
                                     onToggle={(cell) => toggleHousieMark(cell.value)}
                                 />
                             </div>
