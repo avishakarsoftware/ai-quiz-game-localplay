@@ -1908,6 +1908,135 @@ body {
     }
 }
 
+/* Housie setup */
+.housie-setup {
+    width: min(100%, 760px);
+    margin: 0 auto;
+    padding: 24px 20px 28px;
+}
+
+.housie-setup-hero {
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+    text-align: center;
+    margin-bottom: 28px;
+}
+
+.housie-setup-hero p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 1.25rem;
+    line-height: 1.35;
+}
+
+.housie-setup-card {
+    display: grid;
+    gap: 24px;
+    padding: 24px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    box-shadow: var(--shadow-soft);
+}
+
+.housie-field {
+    display: grid;
+    gap: 10px;
+}
+
+.housie-field label,
+.housie-section-label {
+    display: block;
+    color: var(--text-tertiary);
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.housie-info-panel {
+    display: grid;
+    gap: 6px;
+    padding: 16px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.055);
+}
+
+.housie-info-panel div {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 900;
+}
+
+.housie-info-panel p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.45;
+}
+
+.housie-prize-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.housie-prize-card {
+    display: grid;
+    gap: 6px;
+    min-height: 96px;
+    padding: 16px;
+    text-align: left;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.055);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.housie-prize-card:active {
+    transform: scale(0.98);
+}
+
+.housie-prize-card.selected {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.housie-prize-card span {
+    font-size: 1.05rem;
+    font-weight: 900;
+}
+
+.housie-prize-card small {
+    color: var(--text-secondary);
+    font-size: 0.92rem;
+    line-height: 1.35;
+}
+
+.housie-setup-actions {
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    gap: 12px;
+    padding-top: 18px;
+}
+
+@media (max-width: 640px) {
+    .housie-setup {
+        padding: 18px 16px 24px;
+    }
+
+    .housie-setup-card {
+        padding: 18px;
+    }
+
+    .housie-prize-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .provider-name {
     font-size: 11px;
     white-space: nowrap;

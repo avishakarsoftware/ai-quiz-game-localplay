@@ -36,43 +36,49 @@ export default function HousieSetupScreen({
     };
 
     return (
-        <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
-            <div className="text-center mb-8">
+        <div className="housie-setup min-h-dvh flex flex-col safe-top safe-bottom animate-in">
+            <div className="housie-setup-hero">
                 <div className="hero-icon mb-4">🎱</div>
                 <h1 className="hero-title">Set Up Housie</h1>
-                <p className="text-[--text-secondary] mt-2">Classic 90-ball tickets with prize claims.</p>
+                <p>Classic 90-ball tickets with prize claims.</p>
             </div>
 
-            <div className="card space-y-6">
-                <div>
-                    <label className="label">Game title</label>
-                    <input className="input text-xl" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={120} />
+            <div className="housie-setup-card">
+                <div className="housie-field">
+                    <label htmlFor="housie-title">Game title</label>
+                    <input
+                        id="housie-title"
+                        className="input-field"
+                        value={title}
+                        onChange={(event) => setTitle(event.target.value)}
+                        maxLength={120}
+                    />
                 </div>
 
-                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                    <div className="font-extrabold">Manual caller</div>
-                    <p className="text-sm text-[--text-secondary]">The host calls numbers one by one. Auto-caller is planned after the first playable release.</p>
+                <div className="housie-info-panel">
+                    <div>Manual caller</div>
+                    <p>The host calls numbers one by one. Auto-caller is planned after the first playable release.</p>
                 </div>
 
-                <div>
-                    <label className="label">Prizes</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="housie-field">
+                    <div className="housie-section-label">Prizes</div>
+                    <div className="housie-prize-grid">
                         {DEFAULT_PATTERNS.map((pattern) => (
                             <button
                                 key={pattern.id}
                                 type="button"
                                 onClick={() => togglePattern(pattern.id)}
-                                className={`text-left rounded-xl border p-4 transition ${selected.has(pattern.id) ? 'border-[--accent-pink] bg-[--accent-pink]/15' : 'border-white/10 bg-white/5'}`}
+                                className={`housie-prize-card ${selected.has(pattern.id) ? 'selected' : ''}`}
                             >
-                                <div className="font-extrabold">{pattern.label}</div>
-                                <div className="text-sm text-[--text-secondary]">{pattern.description}</div>
+                                <span>{pattern.label}</span>
+                                <small>{pattern.description}</small>
                             </button>
                         ))}
                     </div>
                 </div>
             </div>
 
-            <div className="mt-auto pt-6 grid grid-cols-[72px_1fr] gap-3">
+            <div className="housie-setup-actions">
                 <button onClick={onBack} className="btn btn-secondary" aria-label="Back">‹</button>
                 <button onClick={onCreateRoom} className="btn btn-primary btn-glow">Create Room</button>
             </div>
