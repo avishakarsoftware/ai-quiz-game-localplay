@@ -18,6 +18,15 @@ export function getHostAppReturnTargetOrigin(returnUrl: string, parentOrigin?: s
     }
 }
 
+export function shouldNavigateWithinCurrentFrame(returnUrl: string): boolean {
+    if (!returnUrl) return false;
+    try {
+        return new URL(returnUrl, window.location.origin).origin === window.location.origin;
+    } catch {
+        return false;
+    }
+}
+
 export function postReturnToHostApp(returnUrl: string, options: ReturnOptions = {}): boolean {
     if (!isEmbeddedFrame() || !returnUrl) return false;
     const url = new URL(returnUrl, window.location.origin);
@@ -32,6 +41,10 @@ export function postReturnToHostApp(returnUrl: string, options: ReturnOptions = 
 export function returnToHostApp(returnUrl: string, options: ReturnOptions = {}): boolean {
     if (!returnUrl) return false;
     const url = new URL(returnUrl, window.location.origin);
+    if (shouldNavigateWithinCurrentFrame(url.toString())) {
+        window.location.assign(url.toString());
+        return true;
+    }
     if (postReturnToHostApp(url.toString(), options)) return true;
     window.location.assign(url.toString());
     return true;
