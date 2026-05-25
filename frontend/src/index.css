@@ -3233,6 +3233,22 @@ body {
     color: var(--ink-mute);
 }
 
+.party-hub__guest-empty {
+    display: grid;
+    gap: 8px;
+    text-align: left;
+}
+
+.party-hub__guest-empty h2,
+.party-hub__guest-empty p {
+    margin: 0;
+}
+
+.party-hub__guest-empty h2 {
+    color: var(--ink);
+    font-size: 1.25rem;
+}
+
 @media (max-width: 640px) {
     .party-hub__header {
         grid-template-columns: 1fr;

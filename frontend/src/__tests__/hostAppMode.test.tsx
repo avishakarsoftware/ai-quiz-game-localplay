@@ -202,6 +202,33 @@ describe('host-app mode filtering', () => {
         expect(screen.queryByRole('button', { name: /host game/i })).not.toBeInTheDocument();
     });
 
+    it('renders a clear guest waiting state when no game is active', async () => {
+        window.history.pushState({}, '', '/revelry/games?party_games_token=guest-token');
+        const fetchMock = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                launch_context: {
+                    capabilities: [],
+                    external_container_title: 'Ava Birthday',
+                },
+                workspace: {
+                    active_session: null,
+                    prepared_content: [{ localplay_content_id: 'saved-1', game_type: 'quiz', title: 'Saved Quiz', status: 'ready' }],
+                    catalog: [{ id: 'quiz', game_type: 'quiz', title: 'AI Quiz', launchable: true, can_create_content: true }],
+                },
+            }),
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(<PartyHubPage />);
+
+        expect(await screen.findByRole('heading', { name: /waiting for the host to start a game/i })).toBeInTheDocument();
+        expect(screen.getByText(/when a game starts, you will be able to join or watch from here/i)).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: /create a game/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: /saved games/i })).not.toBeInTheDocument();
+        expect(screen.queryByText('Saved Quiz')).not.toBeInTheDocument();
+    });
+
     it('opens new quiz authoring from catalog without using a saved game id', async () => {
         window.history.pushState({}, '', '/revelry/games?party_games_token=party-token');
         const fetchMock = vi.fn()

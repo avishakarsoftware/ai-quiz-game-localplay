@@ -596,6 +596,15 @@ export default function PartyHubPage() {
                 </section>
             )}
 
+            {!activeSession && !canManageGames && (
+                <section className="party-hub__section">
+                    <div className="party-hub__empty party-hub__guest-empty">
+                        <h2>Waiting for the host to start a game</h2>
+                        <p>When a game starts, you will be able to join or watch from here.</p>
+                    </div>
+                </section>
+            )}
+
             {replacementPrompt && (
                 <section className="party-hub__confirm" role="dialog" aria-modal="true" aria-labelledby="replace-game-title">
                     <div>
