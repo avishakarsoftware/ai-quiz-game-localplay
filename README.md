@@ -199,6 +199,7 @@ Backend-served prod/gamma SPA origins must also be registered in Google Cloud OA
 - [SPEC-GAME-QUIZ-VARIANTS.md](SPEC-GAME-QUIZ-VARIANTS.md) — five quiz-runtime game variants.
 - [SPEC-IMAGE-GAMES.md](SPEC-IMAGE-GAMES.md) — shared image media layer and image-based game modes.
 - [SPEC-GAME-DRAWING.md](SPEC-GAME-DRAWING.md) — DrawingGame.
+- [SPEC-GAME-BINGO-HOUSIE.md](SPEC-GAME-BINGO-HOUSIE.md) — reusable Bingo-family engine with Housie as the first ruleset.
 - [SPEC-SUPABASE-MIGRATION.md](SPEC-SUPABASE-MIGRATION.md) — Supabase migration and persistence plan.
 - [SPEC-THEME-VELVET.md](SPEC-THEME-VELVET.md) — Velvet visual system.
 

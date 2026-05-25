@@ -1035,7 +1035,7 @@ The event-specific value comes from themed AI prompts, not new game mechanics. T
 
 ### Bingo / Housie Runtime
 
-Classic bingo, housie/tambola, and baby bingo are adjacent to quiz authoring but need a different room model:
+Classic bingo, housie/tambola, and baby bingo are adjacent to quiz authoring but need a different room model. The implementation-ready spec is `SPEC-GAME-BINGO-HOUSIE.md`, with Housie as the first ruleset on a reusable Bingo-family engine:
 
 - Host creates or selects a board template: numbers, words, images, or event-specific phrases.
 - Server generates unique player boards when players join.

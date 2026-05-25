@@ -270,6 +270,8 @@ Unsupported game types are rejected by `RoomCreateRequest.validate_game_type`.
 
 Host-app mode applies an additional catalog gate. A game must be returned as launchable by `GET /catalog?host_app=...` before it appears in the host-app hub or menus. Standalone-only variants can remain visible in standalone LocalPlay while hidden from Revelry until their bridge contract is complete.
 
+Bingo-family games are planned as a separate runtime family rather than quiz variants. `SPEC-GAME-BINGO-HOUSIE.md` defines the reusable Bingo/Housie engine, with Housie as the first standalone target and Baby Bingo / word / emoji / image Bingo as later rulesets.
+
 ## LLM Generation Pattern
 
 Generation engines follow the same pattern:
