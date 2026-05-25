@@ -14,6 +14,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from socket_manager import Room, SocketManager
+from housie_engine import default_housie_game, ticket_numbers
 import config
 
 
@@ -108,6 +109,15 @@ def add_spectator(room, client_id="spec-1"):
     ws = MockWebSocket()
     room.spectators[client_id] = ws
     return ws
+
+
+def make_housie_room():
+    game = default_housie_game("Unit Housie")
+    game["auto_pause_on_claim"] = True
+    room = Room("HOU001", game, game_type="housie")
+    room.wallet_id = "test-wallet-id"
+    room.state = "BINGO_CALLING"
+    return room
 
 
 # ===========================================================================
@@ -1308,3 +1318,52 @@ class TestResetRoomContentOwnership:
         finally:
             quizzes.pop("own-quiz", None)
             content_owners.pop("own-quiz", None)
+
+
+# ---------------------------------------------------------------------------
+# Housie auto-caller claim pause behavior
+# ---------------------------------------------------------------------------
+
+class TestHousieAutoPauseOnClaim:
+    def _seed_player_ticket(self, room):
+        sm = SocketManager()
+        add_player(room, "p1", "Alice")
+        sm._start_housie_round(room)
+        ticket = room.housie_tickets["Alice"]
+        numbers = ticket_numbers(ticket)
+        room.housie_called = [
+            {"kind": "number", "value": number, "display": str(number), "sort_value": number}
+            for number in numbers[:5]
+        ]
+        room.housie_deck = []  # Avoid starting a background auto task when tests resume.
+        room.housie_auto_status = "running"
+        return sm, ticket
+
+    @pytest.mark.asyncio
+    async def test_valid_claim_pauses_before_acceptance_and_resumes(self):
+        room = make_housie_room()
+        sm, _ticket = self._seed_player_ticket(room)
+
+        await sm._handle_housie_claim(room, "p1", {"pattern_id": "quick_5"})
+
+        player_ws = room.connections["p1"]
+        auto_statuses = [msg["auto_status"] for msg in player_ws.all("BINGO_AUTO_STATUS")]
+        assert auto_statuses[:2] == ["paused", "running"]
+        assert player_ws.last("BINGO_CLAIM_ACCEPTED") is not None
+        assert room.housie_auto_status == "running"
+
+    @pytest.mark.asyncio
+    async def test_invalid_claim_pauses_during_validation_then_resumes(self):
+        room = make_housie_room()
+        sm, _ticket = self._seed_player_ticket(room)
+        room.housie_called = room.housie_called[:4]
+
+        await sm._handle_housie_claim(room, "p1", {"pattern_id": "quick_5"})
+
+        player_ws = room.connections["p1"]
+        auto_statuses = [msg["auto_status"] for msg in player_ws.all("BINGO_AUTO_STATUS")]
+        assert auto_statuses[:2] == ["paused", "running"]
+        rejected = player_ws.last("BINGO_CLAIM_REJECTED")
+        assert rejected is not None
+        assert rejected["reason"] == "not_complete"
+        assert room.housie_auto_status == "running"

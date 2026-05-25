@@ -1426,11 +1426,16 @@ class SocketManager:
         if pattern_id in room.housie_claimed_patterns:
             await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "pattern_id": pattern_id, "reason": "already_awarded", "message": "That prize has already been awarded"})
             return
+        auto_paused_for_claim = room.housie_auto_status == "running" and room.housie_auto_pause_on_claim
+        if auto_paused_for_claim:
+            await self._set_housie_auto_status(room, "paused")
         nickname = room.players[client_id]["nickname"]
         ticket = room.housie_tickets.get(nickname)
         valid, reason = validate_claim(ticket or {}, room.housie_called, pattern_id, require_latest=True)
         if not valid:
             await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "pattern_id": pattern_id, "reason": reason, "message": reason})
+            if auto_paused_for_claim:
+                await self._set_housie_auto_status(room, "running")
             return
         pattern = next((p for p in self._housie_patterns(room) if p["id"] == pattern_id), {"label": pattern_id})
         latest_item = room.housie_called[-1] if room.housie_called else {}
@@ -1443,15 +1448,22 @@ class SocketManager:
         }
         async with room.lock:
             if pattern_id in room.housie_claimed_patterns:
-                return
-            room.housie_claimed_patterns.add(pattern_id)
-            room.housie_winners.append(winner)
-            room.housie_claim_log.append(winner)
-            if pattern_id == "full_house":
-                room.players[client_id]["score"] += 1000
+                duplicate_claim = True
             else:
-                room.players[client_id]["score"] += 250
-            room.answer_log.append({"kind": "claim", **winner})
+                duplicate_claim = False
+                room.housie_claimed_patterns.add(pattern_id)
+                room.housie_winners.append(winner)
+                room.housie_claim_log.append(winner)
+                if pattern_id == "full_house":
+                    room.players[client_id]["score"] += 1000
+                else:
+                    room.players[client_id]["score"] += 250
+                room.answer_log.append({"kind": "claim", **winner})
+        if duplicate_claim:
+            if auto_paused_for_claim:
+                await self._set_housie_auto_status(room, "running")
+            await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "pattern_id": pattern_id, "reason": "already_awarded", "message": "That prize has already been awarded"})
+            return
         await room.broadcast({
             "type": "BINGO_CLAIM_ACCEPTED",
             "game_type": "housie",
@@ -1464,6 +1476,8 @@ class SocketManager:
         if is_terminal:
             await self._set_housie_auto_status(room, "stopped")
             await self._complete_housie(room)
+        elif auto_paused_for_claim:
+            await self._set_housie_auto_status(room, "running")
 
     async def _complete_housie(self, room: Room):
         if room.state == "PODIUM":

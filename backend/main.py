@@ -503,16 +503,16 @@ GAME_CATALOG = [
         "creation_modes": ["manual", "template"],
         "default_content_available": True,
         "embedded_authoring_supported": False,
-    "content_schema": {
-        "kind": "housie_setup",
-        "ticket_layout": "housie_3x9_15",
-        "number_range": {"min": 1, "max": 90},
-        "patterns": [pattern["id"] for pattern in DEFAULT_HOUSIE_PATTERNS],
-        "play_modes": ["beginner", "pro"],
-        "caller_modes": ["manual", "auto"],
-        "claim_requires_latest_call": True,
-        "supported_media": [],
-    },
+        "content_schema": {
+            "kind": "housie_setup",
+            "ticket_layout": "housie_3x9_15",
+            "number_range": {"min": 1, "max": 90},
+            "patterns": [pattern["id"] for pattern in DEFAULT_HOUSIE_PATTERNS],
+            "play_modes": ["beginner", "pro"],
+            "caller_modes": ["manual", "auto"],
+            "claim_requires_latest_call": True,
+            "supported_media": [],
+        },
     },
 ]
 
