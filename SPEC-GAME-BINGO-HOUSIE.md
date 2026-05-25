@@ -2,17 +2,17 @@
 
 ## Overview
 
-Add a reusable **Bingo-family engine** to LocalPlay, with **Housie** as the first full game.
+Add a reusable **Bingo-family engine** to LocalPlay, with **Housie** as the first full game and configurable Bingo variants as the next expansion.
 
 Housie, also known as Tambola, is a caller-led number game. Each player receives a ticket with 3 rows, usually arranged into number columns covering 1 through 90. Exactly 15 cells are filled. Numbers are called one by one by the host/caller, either manually or with auto-caller mode. Players mark matching numbers on their tickets and claim prizes such as Quick 5, Corners, Top Row, Middle Row, Bottom Row, and Full House.
 
-This spec deliberately treats Housie as the first ruleset on top of a broader Bingo engine. Later games such as Baby Bingo, Wedding Bingo, Emoji Bingo, Photo Bingo, and Word Bingo should reuse the same card/deck/draw/claim model with different card cell content, layouts, prize patterns, and theme packs.
+This spec deliberately treats Housie as the first ruleset on top of a broader Bingo engine. Bingo variants such as Baby Bingo, Wedding Bingo, Holiday Bingo, Emoji Bingo, Image Bingo, Photo Bingo, and Word Bingo should reuse the same card/deck/draw/claim model with different card cell content, layouts, prize patterns, and theme packs.
 
 ```text
 Engine family: bingo
 First game type: housie
-Future game types/rulesets: baby_bingo, word_bingo, emoji_bingo, photo_bingo
-Backend engine: bingo_engine.py / housie_engine.py
+Next game types/rulesets: bingo, baby_bingo, word_bingo, emoji_bingo, image_bingo, photo_bingo
+Backend engine: bingo_engine.py / housie_engine.py / bingo_content_engine.py
 Frontend display name: Housie
 ```
 
@@ -25,22 +25,24 @@ Standalone Housie is implemented as the first Bingo-family runtime:
 - `backend/socket_manager.py` has a dedicated `BINGO_CALLING` runtime path. Housie does not overload quiz `QUESTION` rounds.
 - Standalone catalog shows Housie. `GET /catalog?host_app=revelry` does not expose Housie yet because the host-app setup/result contract is not enabled.
 - Organizer can create a Housie setup, create a room, start with at least two players, call/undo numbers, view the called board, and end the game.
+- Organizer can choose Beginner/Pro mode, manual/auto caller mode, configurable auto interval, and auto-pause-on-claim behavior.
 - Players receive server-generated tickets, mark cells locally, submit prize claims, and see accepted claims.
 - Spectator/TV receives current called numbers, latest number, and winners through `SPECTATOR_SYNC` / `BINGO_*` messages.
+- Housie claim validation enforces the Tambola last-number rule: the prize must first become true on the latest called number.
 
 Known v1 limitations:
 
-- Auto-caller mode is present in setup data but needs a complete host pause/resume/control UI.
-- Creator-facing play modes need to be explicit: Beginner keeps assisted marking/called-number hints, while Pro hides called-number assistance on player tickets and requires fully manual marking.
-- Claim validation must enforce the Housie/Tambola "last number" rule for all prize patterns: the claim is valid only when the latest called number is part of the claimed pattern and the pattern was not already complete before that call.
-- Latest-call and winner announcement animations need a full UX pass across organizer, player, and spectator screens.
+- Latest-call and winner announcement animations exist, but need a final visual polish pass across organizer, player, and spectator screens.
 - Housie setup is in-memory like generated quiz/drawing content; durable saved Bingo templates are future work.
 - Host-app/Revelry mode remains disabled until party-scoped setup, callbacks, result summaries, and e2e tests are added.
+- Generic Bingo variants are not implemented yet. The next Bingo-family slice should add content-backed 5x5 Bingo cards, text/emoji/image deck generation, creator setup, and AI generation.
 
 ## Goals
 
 - Add a generic Bingo-family runtime that can support numbers, words, emojis, and images.
 - Ship Housie as the first implementation using classic 1-90 tickets.
+- Ship configurable Bingo variants after Housie: classic 5x5 text Bingo, Baby/Event Bingo, Emoji Bingo, Image Bingo, and Photo Bingo.
+- Let creators choose from ready-made templates, enter a prompt for AI-generated deck items, manually edit deck items, upload images, or ask AI to generate images for image Bingo.
 - Generate valid Housie tickets with 15 filled cells and configurable number-column layout.
 - Support creator-selected Beginner and Pro modes.
 - Support manual calling and auto-caller pause/resume.
@@ -52,6 +54,7 @@ Known v1 limitations:
 - Show a confetti animation on all organizer, player, and spectator screens when a prize is awarded.
 - Keep the spectator/TV screen useful: latest number, called board/history, live claims, winners, and player count.
 - Make the engine extensible enough for Baby Bingo and other event Bingo variants without rewriting the room lifecycle.
+- Make image-based Bingo reuse the shared media layer and image safety rules from `SPEC-IMAGE-GAMES.md`.
 - Support standalone LocalPlay first; expose to Revelry only after standalone UX and safe result summaries are polished.
 
 ## Constraints
@@ -64,7 +67,7 @@ Known v1 limitations:
 
 - No gambling, real-money prizes, betting, or cash-out mechanics.
 - No randomized paid ticket sales.
-- No player-submitted images in v1.
+- No player-submitted images in Housie v1. Image Bingo may allow host-uploaded or AI-generated deck images in the Bingo expansion slice.
 - No automatic optical/voice recognition of calls.
 - No multi-room tournaments in v1.
 - No real-time persistence beyond the current LocalPlay room model in v1.
@@ -85,6 +88,93 @@ A Bingo-family game has:
 - A `caller_mode`: manual or auto.
 
 The engine should not assume all cells are numbers. Housie uses numeric cells. Baby Bingo may use words, phrases, emojis, or images.
+
+### Configurable Bingo Rulesets
+
+Generic Bingo should be a sibling ruleset to Housie, not a forked runtime. It should use the same WebSocket room lifecycle, claim model, auto-caller controls, latest-call animation, confetti, result summaries, and host-app policy.
+
+Recommended game types:
+
+| Game type | Display name | Content | Default layout | Primary creation modes |
+|---|---|---|---|---|
+| `bingo` | Bingo | Words, short phrases, or numbers | 5x5 with optional free center | template, manual, AI prompt |
+| `baby_bingo` | Baby Bingo | Baby gifts, baby items, shower phrases, predictions | 5x5 with optional free center | template, AI prompt |
+| `word_bingo` | Word Bingo | Words or short phrases from a creator prompt | 5x5 with optional free center | manual, AI prompt |
+| `emoji_bingo` | Emoji Bingo | Emoji plus short labels for accessibility | 5x5 with optional free center | template, AI prompt |
+| `image_bingo` | Image Bingo | Host-uploaded or AI-generated images with labels | 4x4 or 5x5 | upload, AI image generation |
+| `photo_bingo` | Photo Bingo | Host-uploaded party/event photos or image prompts | 4x4 or 5x5 | upload, AI image generation |
+
+Product guidance:
+
+- `housie` remains the classic 90-ball/Tambola experience with 3x9 tickets and latest-called-number claim validation.
+- `bingo`, `baby_bingo`, `word_bingo`, `emoji_bingo`, `image_bingo`, and `photo_bingo` use a standard Bingo card model where the called item can be text, emoji, or an image.
+- The default non-Housie card is 5x5 with a free center. Image-heavy games may default to 4x4 for readability on phones.
+- The host should be able to choose a creation path:
+  - **Ready-made**: built-in themed template.
+  - **Write my own**: manual deck item editor.
+  - **AI prompt**: prompt-based text/emoji deck generation.
+  - **Upload images**: host uploads image deck items.
+  - **AI images**: AI generates image deck items from a prompt.
+- The generated deck is editable before saving or starting. AI output must never go straight into a live game without host review.
+- Saved Bingo setups should be reusable like WMLT/Drawing setups and future host-app party games.
+
+### Generic Bingo Card Shape
+
+Generic Bingo card payload:
+
+```ts
+type BingoCard = {
+  card_id: string;
+  player_id: string;
+  layout: {
+    rows: 4 | 5;
+    columns: 4 | 5;
+    free_center: boolean;
+  };
+  cells: Array<Array<BingoCell | null>>;
+};
+
+type BingoCell =
+  | { kind: "number"; item_id: string; value: number; display: string; row: number; column: number; marked: boolean }
+  | { kind: "word"; item_id: string; value: string; display: string; row: number; column: number; marked: boolean }
+  | { kind: "emoji"; item_id: string; value: string; display: string; label: string; row: number; column: number; marked: boolean }
+  | { kind: "image"; item_id: string; asset_id: string; public_url: string; alt_text: string; display: string; row: number; column: number; marked: boolean }
+  | { kind: "free"; value: "free"; display: "FREE"; row: number; column: number; marked: true };
+```
+
+Generic card generation:
+
+- The setup deck must contain enough unique playable items for the card:
+  - 5x5 with free center: at least 24 unique items.
+  - 5x5 without free center: at least 25 unique items.
+  - 4x4: at least 16 unique items.
+- Each player receives a shuffled card sampled without replacement from the setup deck.
+- Cards should be unique within a room by stable hash of cell item ids/values and positions.
+- Free center, if enabled, is marked from the start and does not appear in the call deck.
+- The call deck contains all setup items, shuffled without replacement. It may include more items than fit on any one player's card.
+
+### Generic Bingo Prize Patterns
+
+Generic Bingo should support these prize patterns:
+
+| Pattern | Meaning |
+|---|---|
+| `first_line` | Any complete row, column, or diagonal |
+| `two_lines` | Any two complete rows/columns/diagonals |
+| `four_corners` | Four literal corner cells are marked |
+| `postage_stamp` | Any 2x2 corner block is marked |
+| `blackout` | Every non-free cell is marked |
+| `custom_pattern` | Future named shape from template/config |
+
+Unlike Housie, generic Bingo does not need the "latest number made the prize true" rule by default. It should have a room setting:
+
+```json
+{
+  "claim_requires_latest_call": false
+}
+```
+
+If a host chooses classic strict validation, generic Bingo may set `claim_requires_latest_call = true` and reuse the same before/after latest-call validation pattern.
 
 ### Housie Ruleset
 
@@ -541,16 +631,145 @@ No AI is required for numeric Housie v1.
 
 Generic Bingo-family setup fields for future games:
 
+- Game type/ruleset: `bingo`, `baby_bingo`, `word_bingo`, `emoji_bingo`, `image_bingo`, or `photo_bingo`.
+- Game title.
 - Board/card layout.
+- Free center toggle.
 - Content source:
   - built-in template.
   - manual word/emoji list.
   - AI-generated list.
+  - AI-generated image set.
   - uploaded image set.
 - Minimum deck size.
 - Prize patterns.
+- Caller mode and auto-caller settings.
+- Claim rule: `claim_requires_latest_call`.
 - Theme/party type.
 - Media safety settings.
+
+### Creator Setup Flow For Bingo Variants
+
+The creator setup should be a single Bingo setup surface that adapts by selected content type.
+
+Step 1: Choose Bingo type:
+
+- Classic Bingo.
+- Baby Bingo.
+- Word/Phrase Bingo.
+- Emoji Bingo.
+- Image Bingo.
+- Photo Bingo.
+
+Step 2: Choose how to fill the board:
+
+- **Use a template**: select from built-in safe templates.
+- **Write my own**: edit deck items directly.
+- **Use AI prompt**: enter a prompt/theme such as "Ava's baby shower gifts", "wedding reception moments", or "office holiday party inside jokes".
+- **Upload images**: upload image items and labels.
+- **Generate AI images**: enter a prompt/theme and choose image style/count.
+
+Step 3: Review and edit:
+
+- The host sees all generated/uploaded deck items before saving.
+- Text/emoji items can be edited inline.
+- Image items must show thumbnail, label, alt text, and delete/regenerate actions.
+- The setup cannot be saved until it has the minimum unique playable items for the chosen layout.
+
+Step 4: Save or start:
+
+- **Save** creates a reusable `content_id`.
+- **Save and start** creates or updates the setup, then opens the room/lobby.
+- **Start without saving** may be allowed in standalone mode only if the setup is still materialized into a temporary `content_id` for room reset/history.
+
+### AI Text / Emoji Deck Generation
+
+Endpoint shape:
+
+```http
+POST /bingo/generate-items
+```
+
+Request:
+
+```json
+{
+  "game_type": "baby_bingo",
+  "prompt": "Ava's baby shower with forest animals theme",
+  "item_kind": "word" | "emoji",
+  "count": 40,
+  "vibe": "family" | "party" | "work" | "spicy",
+  "party_type": "baby_shower"
+}
+```
+
+Response:
+
+```json
+{
+  "items": [
+    { "kind": "word", "value": "Diaper cake", "display": "Diaper cake" },
+    { "kind": "emoji", "value": "🍼", "display": "🍼", "label": "Baby bottle" }
+  ],
+  "warnings": []
+}
+```
+
+Rules:
+
+- Generate at least the requested count when possible; require a minimum of 24 usable items for a 5x5 free-center card.
+- Deduplicate case-insensitively and by normalized emoji label.
+- Keep item text short enough to fit in card cells, recommended 1-4 words and max 32 visible characters.
+- Return family-safe content by default. Spicy/adult content must be opt-in and unavailable in host-app contexts unless the host-app capabilities allow it.
+- The endpoint should return structured items only, not raw provider output.
+
+### AI Image Deck Generation
+
+Endpoint shape:
+
+```http
+POST /bingo/generate-images
+```
+
+Request:
+
+```json
+{
+  "game_type": "image_bingo",
+  "prompt": "cute woodland baby shower objects",
+  "count": 24,
+  "style": "sticker" | "photo" | "illustration" | "icon",
+  "aspect_ratio": "1:1",
+  "labels_required": true
+}
+```
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "kind": "image",
+      "asset_id": "media_abc123",
+      "public_url": "/media/media_abc123",
+      "display": "Fox plushie",
+      "alt_text": "Cute fox plush toy in a woodland baby shower style"
+    }
+  ],
+  "warnings": []
+}
+```
+
+Rules:
+
+- Use the shared media layer from `SPEC-IMAGE-GAMES.md`; do not store image bytes in the Bingo setup payload.
+- Every image item must have `asset_id`, safe public URL, display label, and alt text.
+- The image generator should produce square, card-friendly images by default.
+- The host must review images before saving or starting.
+- Failed or unsafe image generations should be returned as warnings and omitted from the item list.
+- The setup editor should allow regenerating one image item, regenerating all, deleting an item, or replacing it with an upload.
+- Host-uploaded images use the existing `/media/upload-url` flow and then become `kind = "image"` Bingo items.
 
 ### Baby Bingo
 
@@ -561,7 +780,7 @@ Baby Bingo should be a ruleset on the same engine:
 - Card layout: likely 5x5 or configurable.
 - Center free square optional.
 - AI prompt generation from party context should be supported before Revelry launch.
-- Image cells can be supported later using the shared media layer from `SPEC-IMAGE-GAMES.md`.
+- Image cells should use the shared media layer from `SPEC-IMAGE-GAMES.md`.
 
 ## Persistence
 
@@ -574,10 +793,15 @@ Recommended durable objects:
   - `game_type`
   - `engine_family`
   - `title`
+  - `item_kind`: `number`, `word`, `emoji`, or `image`
   - `deck_config`
+  - `deck_items`: normalized playable items, with stable `item_id` values
   - `layout_config`
   - `patterns`
   - `caller_settings`
+  - `claim_requires_latest_call`
+  - `generation_config`: source prompt, template id, provider metadata, and warnings
+  - `media_asset_ids`: ids for uploaded or generated images
   - ownership scope
 - Game history summary:
   - called count.
@@ -589,6 +813,62 @@ Recommended durable objects:
 Do not persist raw per-player ticket state in feed/result summaries unless needed for recovery and explicitly safe.
 
 For host-app mode, saved content should use the existing party-scoped saved content model where possible. If the current generic `generated_content` payload becomes too loose for Bingo, add typed schema validation before enabling host-app launch.
+
+Generic Bingo setup payload shape:
+
+```json
+{
+  "content_id": "bingo_abc123",
+  "game_type": "image_bingo",
+  "engine_family": "bingo",
+  "title": "Woodland Baby Shower Bingo",
+  "item_kind": "image",
+  "layout_config": {
+    "rows": 5,
+    "columns": 5,
+    "free_center": true
+  },
+  "deck_items": [
+    {
+      "item_id": "item_fox_plushie",
+      "kind": "image",
+      "asset_id": "media_abc123",
+      "public_url": "/media/media_abc123",
+      "display": "Fox plushie",
+      "alt_text": "Cute fox plush toy in woodland baby shower style"
+    }
+  ],
+  "patterns": [
+    { "id": "first_line", "label": "First Line", "max_winners": 1 },
+    { "id": "blackout", "label": "Blackout", "max_winners": 1, "terminal": true }
+  ],
+  "caller_settings": {
+    "caller_mode": "manual",
+    "auto_interval_seconds": 8,
+    "auto_pause_on_claim": true
+  },
+  "claim_requires_latest_call": false,
+  "generation_config": {
+    "source": "ai_images",
+    "prompt": "cute woodland baby shower objects",
+    "style": "sticker",
+    "warnings": []
+  },
+  "media_asset_ids": ["media_abc123"],
+  "ownership_scope": {
+    "mode": "standalone",
+    "owner_user_id": "user_123"
+  }
+}
+```
+
+Persistence rules:
+
+- Do not persist a shuffled live call order in saved setup content. Shuffle the call deck when a room starts or resets.
+- Do not persist raw generated image bytes in setup payloads. Store only media ids/URLs from the shared media layer.
+- Store labels and alt text for image items because those are part of gameplay and accessibility.
+- Normalize item ids once at save time. Player card hashes and claim validation should use stable item ids, not display text alone.
+- Keep AI prompt/provider metadata in setup history for host review and debugging, but do not show provider internals to players.
 
 ## Catalog Metadata
 
@@ -619,6 +899,115 @@ Standalone catalog entry:
   },
   "result_summary_schema": "bingo_result_v1"
 }
+```
+
+Planned standalone catalog entries for Bingo-family expansion:
+
+```json
+[
+  {
+    "id": "bingo",
+    "game_type": "bingo",
+    "engine_family": "bingo",
+    "title": "Bingo",
+    "description": "Classic 5x5 Bingo with words, phrases, numbers, or templates.",
+    "status": "planned",
+    "launchable": false,
+    "supports_manual_authoring": true,
+    "supports_ai_generation": true,
+    "requires_content": true,
+    "can_create_content": true,
+    "can_quick_start": false,
+    "supported_media": ["none"],
+    "content_schema": "bingo_setup_v2",
+    "result_summary_schema": "bingo_result_v2"
+  },
+  {
+    "id": "baby_bingo",
+    "game_type": "baby_bingo",
+    "engine_family": "bingo",
+    "title": "Baby Bingo",
+    "description": "Baby shower Bingo using gifts, predictions, phrases, emojis, or images.",
+    "status": "planned",
+    "launchable": false,
+    "supports_manual_authoring": true,
+    "supports_ai_generation": true,
+    "requires_content": true,
+    "can_create_content": true,
+    "can_quick_start": true,
+    "supported_media": ["none", "image"],
+    "content_schema": "bingo_setup_v2",
+    "result_summary_schema": "bingo_result_v2"
+  },
+  {
+    "id": "word_bingo",
+    "game_type": "word_bingo",
+    "engine_family": "bingo",
+    "title": "Word Bingo",
+    "description": "Prompt-generated or creator-written word and phrase Bingo.",
+    "status": "planned",
+    "launchable": false,
+    "supports_manual_authoring": true,
+    "supports_ai_generation": true,
+    "requires_content": true,
+    "can_create_content": true,
+    "can_quick_start": false,
+    "supported_media": ["none"],
+    "content_schema": "bingo_setup_v2",
+    "result_summary_schema": "bingo_result_v2"
+  },
+  {
+    "id": "emoji_bingo",
+    "game_type": "emoji_bingo",
+    "engine_family": "bingo",
+    "title": "Emoji Bingo",
+    "description": "Emoji Bingo with accessible labels and editable themed decks.",
+    "status": "planned",
+    "launchable": false,
+    "supports_manual_authoring": true,
+    "supports_ai_generation": true,
+    "requires_content": true,
+    "can_create_content": true,
+    "can_quick_start": true,
+    "supported_media": ["none"],
+    "content_schema": "bingo_setup_v2",
+    "result_summary_schema": "bingo_result_v2"
+  },
+  {
+    "id": "image_bingo",
+    "game_type": "image_bingo",
+    "engine_family": "bingo",
+    "title": "Image Bingo",
+    "description": "Bingo with host-uploaded or AI-generated image cells.",
+    "status": "planned",
+    "launchable": false,
+    "supports_manual_authoring": true,
+    "supports_ai_generation": true,
+    "requires_content": true,
+    "can_create_content": true,
+    "can_quick_start": false,
+    "supported_media": ["image"],
+    "content_schema": "bingo_setup_v2",
+    "result_summary_schema": "bingo_result_v2"
+  },
+  {
+    "id": "photo_bingo",
+    "game_type": "photo_bingo",
+    "engine_family": "bingo",
+    "title": "Photo Bingo",
+    "description": "Bingo built from uploaded event photos or generated image prompts.",
+    "status": "planned",
+    "launchable": false,
+    "supports_manual_authoring": true,
+    "supports_ai_generation": true,
+    "requires_content": true,
+    "can_create_content": true,
+    "can_quick_start": false,
+    "supported_media": ["image"],
+    "content_schema": "bingo_setup_v2",
+    "result_summary_schema": "bingo_result_v2"
+  }
+]
 ```
 
 Revelry/host-app catalog should keep `launchable = false` until:
@@ -711,23 +1100,41 @@ Add or update:
 - `backend/bingo_engine.py`
   - Pure, deterministic Bingo-family helpers.
   - No FastAPI, WebSocket, token, or database imports.
+  - Generic card generation for 4x4/5x5 word, emoji, and image Bingo.
+  - Generic pattern validation for lines, corners, postage stamp, blackout, and configured custom shapes.
 - `backend/housie_engine.py`
   - Housie-specific ticket generation, default pattern definitions, and claim validation.
   - May import shared types/helpers from `bingo_engine.py`.
   - Enforce the latest-called-number rule for every claim.
+- `backend/bingo_content_engine.py`
+  - Normalize and validate Bingo setup payloads.
+  - Validate deck item counts, uniqueness, labels, alt text, media ids, and layout constraints.
+  - Build prompt requests for text/emoji deck generation and image deck generation.
+  - Sanitize provider responses into `BingoItem` records.
+  - Produce template decks for classic, baby, holiday, wedding, emoji, and office Bingo.
 - `backend/socket_manager.py`
   - Add `housie` runtime branch to `Room`.
   - Add Housie state reset, sync, call, claim, auto-caller, completion, and history behavior.
+  - Keep field names generic enough for later `bingo`/`image_bingo` runtime reuse.
+  - Sync generic Bingo card state without leaking hidden call order.
 - `backend/main.py`
   - Accept `game_type = "housie"` in room creation validation.
   - Add optional `housie_id` or generic `content_id` handling for saved/default Housie setup.
   - Add catalog metadata for standalone Housie as disabled/planned until runtime is implemented.
   - Add `/housie/default` or equivalent only if the frontend needs a setup preview endpoint; otherwise create content directly at room creation.
+  - Add `/bingo/create`, `/bingo/{content_id}`, `/bingo/generate-items`, and `/bingo/generate-images` when implementing the Bingo-family expansion.
+  - Extend `API_PREFIXES` in the backend static-serving fallback if `/bingo` is added as a new top-level route.
 - `backend/config.py`
   - Add `MIN_HOUSIE_PLAYERS = 2`.
   - Reuse `MAX_PLAYERS_PER_ROOM`.
 - `backend/tests/test_housie_engine.py`
   - Pure engine tests.
+- `backend/tests/test_bingo_engine.py`
+  - Generic card generation and pattern validation tests.
+- `backend/tests/test_bingo_content_engine.py`
+  - Setup validation, item normalization, template loading, prompt generation, and AI response sanitization tests.
+- `backend/tests/test_bingo_api.py`
+  - Create/update/get setup endpoints plus text/image generation endpoints with mocked providers.
 - `backend/tests/test_housie_ws.py` or existing WebSocket flow tests
   - Runtime/caller/claim/spectator tests.
 
@@ -740,8 +1147,10 @@ Add or update:
 - `frontend/src/types.ts`
   - Add `housie` to `GameType`.
   - Add shared Bingo/Housie types if used across surfaces.
+  - Add `BingoSetup`, `BingoDeckItem`, `BingoLayoutConfig`, `BingoGenerationConfig`, `BingoCard`, `BingoCell`, and `BingoPattern`.
 - `frontend/src/gameModes.ts`
   - Add a Housie catalog config with `runtimeType: "housie"` after `runtimeType` supports it.
+  - Add planned catalog configs for `bingo`, `baby_bingo`, `word_bingo`, `emoji_bingo`, `image_bingo`, and `photo_bingo` once their setup flow exists.
 - `frontend/src/pages/OrganizerPage.tsx`
   - Add Housie setup entry point.
   - Add caller runtime branch once room is created.
@@ -751,6 +1160,18 @@ Add or update:
   - Add Housie spectator/called-board branch.
 - `frontend/src/components/organizer/HousieSetupScreen.tsx`
   - Standalone setup: title, Beginner/Pro mode, caller mode, interval, auto-pause-on-claim, prize toggles.
+- `frontend/src/components/organizer/BingoSetupScreen.tsx`
+  - Generic Bingo setup: ruleset/type picker, layout controls, free center toggle, creation mode picker, AI prompt form, save/start actions.
+- `frontend/src/components/bingo/BingoDeckEditor.tsx`
+  - Text/emoji item editor with add, delete, reorder, dedupe warnings, and minimum-count validation.
+- `frontend/src/components/bingo/BingoImageDeckEditor.tsx`
+  - Image thumbnail grid with label/alt editing, upload, regenerate one, regenerate all, delete, and safety warnings.
+- `frontend/src/components/bingo/BingoCardGrid.tsx`
+  - Shared 4x4/5x5 player card renderer for word, emoji, image, and free cells.
+- `frontend/src/components/bingo/BingoCallerScreen.tsx`
+  - Generic caller UI for non-Housie Bingo, sharing auto-caller controls, latest-call animation, and winner announcements.
+- `frontend/src/components/bingo/BingoSpectatorScreen.tsx`
+  - TV/spectator surface for generic Bingo call history, latest item, winners, and confetti.
 - `frontend/src/components/organizer/HousieCallerScreen.tsx`
   - Organizer/caller runtime controls, auto-caller status, and latest-call animation.
 - `frontend/src/components/player/HousieTicket.tsx`
@@ -762,20 +1183,29 @@ Add or update:
 
 Keep Housie UI components shared between standalone and future host-app mode. Host-app behavior should be props/context policy, not a forked UI.
 
+Image Bingo UI requirements:
+
+- Image cells must use stable square aspect-ratio boxes so card layout does not shift while images load.
+- Every image has a visible short label and an accessible alt label.
+- Broken/missing image URLs render a neutral fallback tile with the text label.
+- The setup editor must block save/start if any image item is missing an asset id, public URL, display label, or alt text.
+- AI generation and upload states must be cancellable or safely retryable from the setup editor.
+
 ### TypeScript Runtime Types
 
 Add these types or close equivalents:
 
 ```ts
 export type BingoItem =
-  | { kind: "number"; value: number; display: string }
-  | { kind: "word"; value: string; display: string }
-  | { kind: "emoji"; value: string; display: string }
-  | { kind: "image"; asset_id: string; public_url: string; alt_text: string; display: string };
+  | { kind: "number"; item_id: string; value: number; display: string }
+  | { kind: "word"; item_id: string; value: string; display: string }
+  | { kind: "emoji"; item_id: string; value: string; display: string; label: string }
+  | { kind: "image"; item_id: string; asset_id: string; public_url: string; alt_text: string; display: string };
 
 export type BingoCell =
   | {
       kind: "number";
+      item_id: string;
       value: number;
       display: string;
       row: number;
@@ -784,14 +1214,17 @@ export type BingoCell =
     }
   | {
       kind: "word" | "emoji";
+      item_id: string;
       value: string;
       display: string;
+      label?: string;
       row: number;
       column: number;
       marked: boolean;
     }
   | {
       kind: "image";
+      item_id: string;
       asset_id: string;
       public_url: string;
       alt_text: string;
@@ -799,7 +1232,47 @@ export type BingoCell =
       row: number;
       column: number;
       marked: boolean;
+    }
+  | {
+      kind: "free";
+      value: "free";
+      display: "FREE";
+      row: number;
+      column: number;
+      marked: true;
     };
+
+export interface BingoLayoutConfig {
+  rows: 4 | 5;
+  columns: 4 | 5;
+  free_center: boolean;
+}
+
+export interface BingoGenerationConfig {
+  source: "template" | "manual" | "ai_text" | "ai_emoji" | "upload" | "ai_images";
+  template_id?: string;
+  prompt?: string;
+  style?: "sticker" | "photo" | "illustration" | "icon";
+  warnings?: string[];
+}
+
+export interface BingoSetup {
+  content_id: string;
+  game_type: "bingo" | "baby_bingo" | "word_bingo" | "emoji_bingo" | "image_bingo" | "photo_bingo";
+  engine_family: "bingo";
+  title: string;
+  item_kind: "number" | "word" | "emoji" | "image";
+  layout_config: BingoLayoutConfig;
+  deck_items: BingoItem[];
+  patterns: BingoPattern[];
+  caller_settings: {
+    caller_mode: "manual" | "auto";
+    auto_interval_seconds: number;
+    auto_pause_on_claim: boolean;
+  };
+  claim_requires_latest_call: boolean;
+  generation_config: BingoGenerationConfig;
+}
 
 export interface HousieCell {
   kind: "number";
@@ -882,9 +1355,96 @@ def validate_housie_claim(
 
 ```python
 def normalize_bingo_item(raw: dict) -> dict: ...
+def validate_bingo_setup(setup: dict) -> tuple[bool, list[str]]: ...
+def generate_bingo_card(setup: dict, player_id: str, rng: random.Random | None = None) -> dict: ...
+def validate_bingo_claim(card: dict, pattern_id: str, called_items: list[dict], latest_item: dict | None, awarded_patterns: dict[str, list[dict]], claim_requires_latest_call: bool = False) -> tuple[bool, str]: ...
 def called_value_set(called_items: list[dict]) -> set[str | int]: ...
 def count_markable_items(ticket: dict, called_values: set[str | int]) -> int: ...
 ```
+
+### Bingo REST API Contracts
+
+These endpoints are for standalone LocalPlay first. Host-app/Revelry can call them later through party-scoped wrappers once authorization, capabilities, and callbacks are complete.
+
+#### Create Bingo Setup
+
+```http
+POST /bingo/create
+```
+
+Request:
+
+```json
+{
+  "game_type": "image_bingo",
+  "title": "Woodland Baby Shower Bingo",
+  "layout_config": { "rows": 5, "columns": 5, "free_center": true },
+  "deck_items": [],
+  "patterns": ["first_line", "blackout"],
+  "caller_settings": {
+    "caller_mode": "manual",
+    "auto_interval_seconds": 8,
+    "auto_pause_on_claim": true
+  },
+  "claim_requires_latest_call": false,
+  "generation_config": {
+    "source": "ai_images",
+    "prompt": "cute woodland baby shower objects"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "content_id": "bingo_abc123",
+  "setup": {}
+}
+```
+
+Server behavior:
+
+- Validate game type, item kind, layout, deck minimum, labels, image media references, patterns, and caller settings.
+- Normalize item ids and text before storing.
+- Reject unsupported host-app contexts unless the caller has a capability such as `party_games` and `ai_bingo_generation`.
+- Return machine-readable validation errors so the editor can highlight individual deck items.
+
+#### Update Bingo Setup
+
+```http
+PUT /bingo/{content_id}
+```
+
+Rules:
+
+- Only the owner or host-app party scope may update the setup.
+- Existing running rooms should not silently mutate. Changes apply to future rooms unless the room is still in setup/lobby and explicitly reloads the setup.
+- Removing image items should not immediately delete media assets; media cleanup follows shared retention policy.
+
+#### Fetch Bingo Setup
+
+```http
+GET /bingo/{content_id}
+```
+
+Response includes the normalized setup but never includes hidden live call order, player cards, or private provider payloads.
+
+#### Generate Text Or Emoji Items
+
+```http
+POST /bingo/generate-items
+```
+
+Use the AI Text / Emoji Deck Generation contract above.
+
+#### Generate Image Items
+
+```http
+POST /bingo/generate-images
+```
+
+Use the AI Image Deck Generation contract above. This endpoint may internally call the shared media upload/storage layer after generation and must return media-backed Bingo items only.
 
 ### Ticket Generation Algorithm Details
 
@@ -1133,6 +1693,34 @@ Backend engine tests:
 - `top_row`, `middle_row`, `bottom_row`, and `full_house` validate correctly.
 - Claims reject unknown patterns, already-awarded patterns, uncalled numbers, wrong-player tickets, stale claims, and claims before any call.
 
+Generic Bingo engine/content tests:
+
+- `validate_bingo_setup` accepts 5x5/free-center setups with 24 unique deck items.
+- `validate_bingo_setup` rejects 5x5/no-free setups with fewer than 25 unique deck items.
+- `validate_bingo_setup` rejects 4x4 setups with fewer than 16 unique deck items.
+- `validate_bingo_setup` rejects duplicate normalized word/emoji items.
+- `validate_bingo_setup` rejects image items missing `asset_id`, `public_url`, `display`, or `alt_text`.
+- `generate_bingo_card` creates stable 4x4/5x5 layouts with correct free-center behavior.
+- `generate_bingo_card` samples without replacement and keeps cards unique by hash within bounded retries.
+- Generic `first_line`, `two_lines`, `four_corners`, `postage_stamp`, and `blackout` patterns validate correctly.
+- Generic strict mode rejects claims where `claim_requires_latest_call = true` and the latest item did not complete the claimed pattern.
+- Generic non-strict mode accepts complete claims even when the pattern became true on an earlier call.
+- AI text generation sanitizes provider output, caps visible text length, dedupes, and returns warnings for unusable items.
+- AI emoji generation requires accessible labels.
+- AI image generation returns only media-backed image items and omits unsafe/failed generations with warnings.
+- Template decks load with enough items for their default layout.
+
+Backend API tests:
+
+- `POST /bingo/create` stores a normalized word Bingo setup and returns a `content_id`.
+- `POST /bingo/create` stores a normalized image Bingo setup with media references.
+- `POST /bingo/create` rejects unsupported game types, malformed layouts, empty patterns, and insufficient deck size.
+- `PUT /bingo/{content_id}` updates only owner-scoped setup content.
+- `GET /bingo/{content_id}` returns safe setup payload without hidden live state.
+- `POST /bingo/generate-items` uses mocked AI provider output and returns sanitized items.
+- `POST /bingo/generate-images` uses mocked image generation/media storage and returns media-backed image items.
+- Host-app calls without required capabilities are rejected before paid or AI-only features are used.
+
 Backend WebSocket tests:
 
 - Organizer cannot start Housie calling with fewer than 2 players.
@@ -1148,6 +1736,10 @@ Backend WebSocket tests:
 - Full House terminal claim completes the game and writes safe history.
 - Auto-caller can start, pause, resume, switch back to manual, and stop on terminal completion.
 - Auto-caller pauses when organizer disconnects.
+- Generic Bingo rooms generate one card per player from the saved setup.
+- Generic Bingo call deck includes setup items without repeating calls.
+- Generic image Bingo sync payload includes only public media URLs and labels, not private storage paths.
+- Generic Bingo accepted claims broadcast winner, pattern, and latest item metadata to organizer, players, and spectator.
 
 Frontend unit tests:
 
@@ -1159,6 +1751,12 @@ Frontend unit tests:
 - Latest-call overlay appears on `BINGO_CALL` and clears after the animation.
 - Winner announcement and confetti appear on accepted claims.
 - Reduced-motion mode suppresses movement-heavy call/confetti animations.
+- Generic Bingo setup type picker switches between classic, baby, word, emoji, image, and photo flows.
+- Text/emoji deck editor blocks save below minimum item count and highlights duplicates.
+- Image deck editor blocks save when thumbnail items lack label or alt text.
+- Image cells keep square dimensions while loading and fall back cleanly on broken images.
+- AI text/image generation loading, warning, retry, and review states render without layout shift.
+- Generic Bingo card grid renders free center, text, emoji, and image cells with accessible labels.
 
 Playwright tests:
 
@@ -1171,6 +1769,12 @@ Playwright tests:
 - Auto-caller can run several calls, pause, resume, and stop after Full House.
 - Spectator/TV view can connect before and after calls begin.
 - Mobile viewport ticket remains usable without horizontal overflow.
+- Standalone host creates a Word Bingo setup from manual items, starts a room, and players receive cards.
+- Standalone host creates an Image Bingo setup from mocked media items, starts a room, and image cells render.
+- AI prompt generation flow returns editable items before save/start.
+- AI image generation flow returns editable thumbnails before save/start.
+- Generic Bingo player can claim First Line and Blackout.
+- Generic Bingo spectator sees image/word latest-call visuals and winner confetti.
 
 ### Recommended PR Order
 
@@ -1180,7 +1784,11 @@ Playwright tests:
 4. Frontend player ticket and spectator called-board surfaces.
 5. E2E polish: Beginner/Pro modes, auto-caller, latest-call animation, confetti/winner announcements, reconnect, accessibility, mobile layout, and Playwright coverage.
 6. Catalog enablement for standalone.
-7. Host-app/Revelry enablement in a later slice after standalone gamma testing.
+7. Generic Bingo setup/content engine: text, emoji, templates, card generation, and validation.
+8. Generic Bingo standalone runtime: player cards, caller surface, spectator surface, and claims.
+9. Image Bingo media slice: upload flow, image card rendering, media-backed setup persistence, and safety validation.
+10. AI Bingo generation slice: text/emoji prompts first, then AI image generation with review/edit.
+11. Host-app/Revelry enablement in a later slice after standalone gamma testing.
 
 ## Implementation Plan
 
@@ -1220,10 +1828,42 @@ Playwright tests:
 
 ### Phase 3: Bingo Family Expansion
 
-- Add generic word/emoji deck support.
-- Add Baby Bingo setup templates.
-- Add AI-generated word/prompt decks.
-- Add image-cell support using IONOS media and `SPEC-IMAGE-GAMES.md`.
+Phase 3A: Generic text/emoji Bingo setup and engine:
+
+- Add `bingo_content_engine.py` setup validation and item normalization.
+- Add 4x4/5x5 generic card generation with optional free center.
+- Add generic pattern validation for line, two lines, corners, postage stamp, and blackout.
+- Add manual word/phrase and emoji deck editor.
+- Add built-in templates for classic, baby, holiday, wedding, office, and emoji Bingo.
+- Keep catalog entries planned/hidden until setup, runtime, and tests are complete.
+
+Phase 3B: Generic Bingo standalone runtime:
+
+- Reuse the Housie room state where possible through generic `bingo_*` fields.
+- Add generic caller, player card, spectator, claim, latest-call, confetti, and result-summary handling.
+- Add room creation by saved `content_id`.
+- Add Playwright coverage for manual Word Bingo from setup through claim.
+
+Phase 3C: Image Bingo upload support:
+
+- Add media-backed `image` deck items.
+- Add upload-based image deck editor with label and alt-text requirements.
+- Add image card rendering, latest image call visuals, and spectator display.
+- Add tests for missing media fields, broken image fallbacks, and safe result summaries.
+
+Phase 3D: AI Bingo generation:
+
+- Add `/bingo/generate-items` with provider-mocked tests and host review before save/start.
+- Add `/bingo/generate-images` using the shared media layer from `SPEC-IMAGE-GAMES.md`.
+- Add regenerate-one, regenerate-all, delete, replace-upload, warning, and retry UI.
+- Gate AI generation through standalone entitlements or host-app capabilities before exposing externally.
+
+Phase 3E: Saved content and catalog enablement:
+
+- Persist Bingo setups with `bingo_setup_v2`.
+- Add standalone catalog cards for Classic Bingo, Baby Bingo, Word Bingo, Emoji Bingo, Image Bingo, and Photo Bingo.
+- Add safe result summaries for generic Bingo.
+- Only enable host-app/Revelry after party-scoped saved content and callbacks are tested.
 
 ### Phase 4: Host-App / Revelry Enablement
 
@@ -1256,6 +1896,20 @@ Housie v1 is launch-ready when:
 - Standalone UX works on desktop and mobile.
 - Tests cover ticket generation, claim validation, socket flow, and spectator sync.
 
+Bingo-family expansion is implementation-ready when:
+
+- `bingo_setup_v2` payload validation is implemented and tested.
+- Creator can choose Classic, Baby, Word/Phrase, Emoji, Image, or Photo Bingo.
+- Creator can use a template, write deck items manually, generate text/emoji items from a prompt, upload images, or generate AI images where supported.
+- AI-generated text, emoji, and image output is always reviewed and editable before save/start.
+- Image Bingo setup stores only media ids/URLs, labels, and alt text, not image bytes.
+- 4x4 and 5x5 generic Bingo cards generate deterministically in tests and uniquely per player in rooms.
+- Free center behavior is consistent across generation, rendering, and claim validation.
+- Generic prize claims work for line, two lines, corners, postage stamp, and blackout.
+- Generic Bingo can optionally enforce latest-call claim validation, but defaults to non-strict claims.
+- Latest-call and winner/confetti visuals work for word, emoji, and image calls.
+- Results summarize winners and called counts without leaking card layouts, hidden call order, private media paths, or provider payloads.
+
 ## Open Questions
 
 - Should LocalPlay support a "free" or decorative cell in any future Bingo-family display, or should every visible cell always be part of the game board?
@@ -1263,4 +1917,8 @@ Housie v1 is launch-ready when:
 - Should players be allowed multiple tickets in v1?
 - Should host be able to manually approve/reject claims, or should server validation be authoritative?
 - Should the spectator screen reveal the full called board only, or also show near-claims to create drama?
-- Should Baby Bingo use a 5x5 Bingo grid by default or reuse the Housie 3-row ticket shape?
+- Should Image Bingo default to 4x4 on mobile for readability, or should the creator choose 4x4 vs 5x5 every time?
+- What is the default AI image generation count and per-session limit before premium entitlements are required?
+- Should Photo Bingo mean host-supplied photos only, or should it also include live player-submitted scavenger-hunt photos in a separate future game?
+- Should Baby Bingo support both text-only and image-cell templates in its first expansion slice, or should image Baby Bingo wait for the dedicated Image Bingo slice?
+- Should generic Bingo allow the strict "last call made it true" rule as a visible host toggle, or keep it hidden in advanced settings?

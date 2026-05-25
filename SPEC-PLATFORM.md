@@ -423,6 +423,15 @@ Examples:
 - Chinese Whispers: seed phrases or image prompts.
 - Taboo: target words, forbidden words, clue difficulty.
 - Word Association: seed words, category packs, scoring prompts.
+- Bingo/Housie: word, emoji, and event-themed Bingo deck items. Image Bingo may generate image prompts/assets, but only through the shared media pipeline and host review flow described in `SPEC-GAME-BINGO-HOUSIE.md` and `SPEC-IMAGE-GAMES.md`.
+
+Bingo-family AI generation should follow the same save/review model as quiz authoring:
+
+- Prompt output creates editable draft setup content, not a live room directly.
+- Text and emoji decks must be normalized, deduped, length-capped, and validated against the selected board layout.
+- AI-generated images must become media-backed assets before they can be saved in a Bingo setup.
+- Host-app contexts, such as Revelry, must gate AI Bingo generation through explicit capabilities like `party_games` and `ai_bingo_generation`.
+- Result summaries must not include AI provider payloads, private media paths, or hidden call order.
 
 ## Integration With Revelry
 
