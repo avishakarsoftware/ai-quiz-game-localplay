@@ -228,19 +228,19 @@ Players submit a claim with:
 ```json
 {
   "type": "BINGO_CLAIM",
-  "pattern_id": "quick_5",
-  "ticket_id": "ticket_123"
+  "pattern_id": "quick_5"
 }
 ```
 
+The server resolves the player and their ticket from the WebSocket connection. Clients do not supply `ticket_id` in the claim message.
+
 Server validation:
 
-1. Player owns the ticket.
-2. Ticket belongs to the active room.
-3. Pattern is enabled in the room.
-4. Pattern has not already reached `max_winners`.
-5. Claimed cells satisfy the pattern.
-6. Every cell needed for the pattern appears in the room's called history.
+1. Player has a ticket in the active room.
+2. Pattern is enabled in the room.
+3. Pattern has not already reached `max_winners`.
+4. The pattern's required cells are all present on the ticket and have all been called. For row patterns and full house, the required cells are deterministic from the ticket layout. For `quick_5`, the server checks that at least 5 of the player's filled ticket numbers appear in the called history; the player does not choose which 5.
+5. For `four_corners`, the server identifies the outermost filled cells in the top and bottom rows and checks that all four have been called.
 
 Do not trust client-side marked state. Client marks are local convenience. The server validates from ticket contents and called history.
 
@@ -285,6 +285,7 @@ type BingoRoomState = {
   claim_log: BingoClaim[];
   caller_mode: "manual" | "auto";
   auto_interval_seconds: number;
+  auto_pause_on_claim: boolean;
 };
 ```
 
@@ -589,19 +590,52 @@ export type BingoItem =
   | { kind: "emoji"; value: string; display: string }
   | { kind: "image"; asset_id: string; public_url: string; alt_text: string; display: string };
 
-export interface BingoCell {
-  id: string;
+export type BingoCell =
+  | {
+      kind: "number";
+      value: number;
+      display: string;
+      row: number;
+      column: number;
+      marked: boolean;
+    }
+  | {
+      kind: "word" | "emoji";
+      value: string;
+      display: string;
+      row: number;
+      column: number;
+      marked: boolean;
+    }
+  | {
+      kind: "image";
+      asset_id: string;
+      public_url: string;
+      alt_text: string;
+      display: string;
+      row: number;
+      column: number;
+      marked: boolean;
+    };
+
+export interface HousieCell {
+  kind: "number";
+  value: number;
+  display: string;
   row: number;
   column: number;
-  item: BingoItem;
   marked: boolean;
 }
 
 export interface HousieTicket {
   ticket_id: string;
-  rows: 3;
-  columns: 9;
-  cells: Array<Array<BingoCell | null>>;
+  player_id: string;
+  layout: {
+    rows: 3;
+    columns: 9;
+    column_ranges: Array<[number, number]>;
+  };
+  cells: Array<Array<HousieCell | null>>;
 }
 
 export interface BingoPattern {
@@ -644,8 +678,9 @@ def validate_housie_ticket(ticket: dict) -> tuple[bool, list[str]]:
 def ticket_hash(ticket: dict) -> str:
     """Stable hash of filled numeric values and positions."""
 
-def required_cells_for_pattern(ticket: dict, pattern_id: str) -> list[dict]:
-    """Return ticket cells required for a prize claim."""
+def required_cells_for_pattern(ticket: dict, pattern_id: str) -> list[dict] | None:
+    """Return the fixed set of ticket cells required for a prize claim, or None
+    for threshold patterns like quick_5 where any N called cells satisfy the claim."""
 
 def validate_housie_claim(
     ticket: dict,
@@ -763,7 +798,7 @@ Server broadcasts:
 }
 ```
 
-Server infers `player_id` and ticket from the websocket connection. Do not accept a client-supplied `ticket_id` unless it matches the server-owned player ticket.
+Server infers `player_id` and ticket from the websocket connection. Do not accept a client-supplied `ticket_id`; reject malformed claim payloads that include ticket ownership fields.
 
 ### Reconnect Behavior
 
