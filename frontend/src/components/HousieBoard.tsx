@@ -2,14 +2,14 @@ import type { HousieCell, HousiePattern, HousieTicket, HousieWinner } from '../t
 
 export function HousieCalledBoard({ calledValues, latestValue }: { calledValues: Set<string>; latestValue?: string | number | null }) {
     return (
-        <div className="grid grid-cols-10 gap-1">
+        <div className="grid grid-cols-10 gap-1" role="grid" aria-label="Called Housie numbers">
             {Array.from({ length: 90 }, (_, idx) => idx + 1).map((num) => {
                 const called = calledValues.has(String(num));
                 const latest = String(latestValue ?? '') === String(num);
                 return (
                     <div
                         key={num}
-                        role="status"
+                        role="gridcell"
                         aria-label={`${num}${latest ? ', latest call' : called ? ', called' : ', not called'}`}
                         className={[
                             'aspect-square rounded-md grid place-items-center text-sm font-bold border',

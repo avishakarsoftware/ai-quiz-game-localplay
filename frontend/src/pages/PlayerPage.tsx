@@ -755,6 +755,9 @@ export default function PlayerPage() {
                         )}
                         <div className="card mb-4">
                             <h2 className="font-extrabold text-lg mb-3">Claim a prize</h2>
+                            {error && (
+                                <div className="status-pill status-error w-full justify-center animate-shake mb-3">{error}</div>
+                            )}
                             <HousieClaimButtons patterns={housiePatterns} winners={housieWinners} onClaim={submitHousieClaim} />
                         </div>
                         <div className="card">
