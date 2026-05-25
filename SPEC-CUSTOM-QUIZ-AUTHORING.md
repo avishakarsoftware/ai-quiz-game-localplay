@@ -81,11 +81,22 @@ Current gaps:
 Add custom quiz authoring from the organizer flow:
 
 1. Game Select -> Trivia.
-2. Trivia setup shows three creation modes:
-   - **Generate with AI**
-   - **Create Your Own**
-   - **Import**
-3. The default can remain AI generation, but "Create Your Own" should be visually equal, not hidden in advanced settings.
+2. Trivia setup first shows a creation choice screen with two primary, equal-weight actions:
+   - **AI Generated Quiz**: enter a topic, choose difficulty/question count, optionally generate AI images only when image generation is available for the current environment and surface, then review/edit before starting or saving.
+   - **Custom Quiz With Photos**: write questions manually, upload host-provided photos per question, review, then start or save.
+3. **My Quizzes** appears as a secondary library action below the two primary choices.
+4. Import remains available from the custom editor/library surface, not as a competing top-level choice in the first setup screen for V1. If Import is re-promoted later, it should be visually secondary to the two creation paths.
+5. The setup screen should not dump all AI settings and custom/library actions into one form. The host must first choose **AI Generated Quiz** or **Custom Quiz With Photos**.
+6. Returning from the AI form should go back to the creation choice screen without clearing the typed prompt, difficulty, question count, or image toggle state.
+7. Returning from the custom editor should preserve local draft behavior defined in this spec.
+
+Creation choice card requirements:
+
+- **AI Generated Quiz** card copy: "Enter a topic and let AI draft questions. Review and edit before players see it."
+- **Custom Quiz With Photos** card copy: "Write your own questions, add photos, and keep full control."
+- Both cards must be large tap targets, keyboard reachable, and screen-reader named by their visible titles.
+- Both cards should fit on mobile without horizontal scrolling.
+- Do not show disabled image-generation controls or environment diagnostics on the choice screen. Image-generation availability belongs inside the AI form and is hidden entirely when unavailable.
 
 Also add a library entry point:
 
@@ -114,9 +125,19 @@ Prepared game setup decisions:
 
 ### Create Flow
 
+AI-generated happy path:
+
+1. Host selects **AI Generated Quiz**.
+2. App shows the AI form with topic prompt, random topic action, difficulty, question count, and the AI content warning.
+3. If image generation is available and allowed, app also shows **Generate images for questions**, off by default.
+4. Host taps **Generate Quiz**.
+5. App generates text first, optionally generates/attaches images, then opens review.
+6. Host reviews/edit questions in the player-preview review screen.
+7. Host starts the room, saves, or returns to the creation choice screen.
+
 The minimum happy path:
 
-1. Host selects **Create Your Own**.
+1. Host selects **Custom Quiz With Photos**.
 2. Host enters quiz title.
 3. App opens the question builder with one blank question.
 4. Host fills question text, answer options, and marks the correct answer.
@@ -233,10 +254,10 @@ Product behavior:
 - Every generated image must be attached to the question as `image_url` plus `image_alt`; `image_asset_id` should be used when the image enters the durable media asset layer.
 - The host must review the image questions before saving/returning to a host app or creating a room.
 - If some images fail, keep the quiz, show a non-blocking warning, and let the host save/start the text-only questions.
-- If no image provider is configured, hide or disable the option with clear environment-safe copy. Do not show a broken image checkbox in production/gamma when image generation is unavailable.
+- If no image provider is configured, hide the image-generation option from normal standalone and host-app authoring surfaces. Do not show diagnostic copy such as "not configured" to production or gamma users.
 - In Revelry/host-app mode, require an explicit capability such as `premium_ai`, `ai_quiz_images`, or `party_games` before enabling the option. If the capability is absent, manual quiz editing and text-only AI generation still work.
-- Gamma/testing may enable AI image generation with `IMAGE_GENERATION_PROVIDER=gemini` and `GEMINI_IMAGE_MODEL=gemini-2.5-flash-image`.
-- Production must keep AI image generation disabled unless a deliberate production rollout sets an image provider and policy/entitlement gates. The deploy script should set `IMAGE_GENERATION_PROVIDER=none` for production and `IMAGE_GENERATION_PROVIDER=gemini` only for gamma/testing.
+- Gamma/testing may temporarily enable AI image generation with `IMAGE_GENERATION_PROVIDER=gemini` and `GEMINI_IMAGE_MODEL=gemini-2.5-flash-image`, but the default gamma and production posture is disabled.
+- Production and gamma must keep AI image generation disabled unless a deliberate rollout sets an image provider and policy/entitlement gates. The deploy script should set `IMAGE_GENERATION_PROVIDER=none` by default for both production and gamma.
 
 Implementation notes:
 
@@ -956,7 +977,7 @@ Backend:
 
 Frontend:
 
-1. Add **Generate images for questions** to Revelry AI quiz authoring when image generation is available/capable.
+1. Add **Generate images for questions** only when image generation is available and allowed by the current surface. Keep it hidden in Revelry bridge until an explicit host-app capability and product policy enable it.
 2. After AI text generation, materialize the quiz, generate per-question images, merge returned image URLs into the generated quiz, and open the editor/review with images visible.
 3. Improve `ReviewScreen` into a selected-question preview with numeric navigation, Previous/Next controls, and swipe navigation.
 4. Render the selected question preview using `GameImage` and the same answer option treatment as gameplay.
@@ -970,6 +991,31 @@ Acceptance:
 - Review screen lets hosts jump by question number, move Previous/Next, swipe on touch, edit the selected question, delete a question, and create the room.
 - Review preview looks materially like the player-facing question card and uses stable image dimensions.
 - AI-generated quiz authoring warns hosts that generated content can be wrong and may not suit every age group before save/start.
+
+### Phase 5: Clear Quiz Creation Choice
+
+Frontend:
+
+1. Refactor the standalone Trivia setup `PromptScreen` into a two-step flow:
+   - Step 1, creation choice: show **AI Generated Quiz**, **Custom Quiz With Photos**, and secondary **My Quizzes**.
+   - Step 2, AI form: show the existing prompt/difficulty/question-count controls, the AI content warning, optional image toggle when available, **Generate Quiz**, and a back action.
+2. Keep existing handler props and API calls. The choice screen should only route the host to the existing AI form, custom editor, or library.
+3. Preserve AI form state while moving between the choice screen and AI form.
+4. Hide the image toggle completely when `imageGenerationAvailable` is false or the current host-app surface disallows it.
+5. Do not show copy such as "AI image generation is not configured for this environment" in production/gamma creator UX.
+6. Keep host-app/Revelry authoring consistent with the same product distinction: text-only AI generation is available when allowed, while image generation stays hidden until host-app capability and product policy explicitly enable it.
+7. Ensure the card layout works at mobile, tablet, and desktop widths without text overlap.
+
+Acceptance:
+
+- Opening Trivia setup first shows exactly two primary creation actions: **AI Generated Quiz** and **Custom Quiz With Photos**.
+- The topic textarea, difficulty controls, question count controls, and **Generate Quiz** button are not shown until the host selects **AI Generated Quiz**.
+- Selecting **AI Generated Quiz** opens the AI form and does not call generation immediately.
+- Selecting **Custom Quiz With Photos** opens the manual quiz editor.
+- Selecting **My Quizzes** opens the quiz library.
+- Going back from the AI form returns to the choice screen and preserves typed topic/difficulty/question count.
+- In gamma/production with image generation disabled, no image-generation option or provider diagnostic appears.
+- When image generation is enabled in a test/dev environment, **Generate images for questions** appears only inside the AI form and remains off by default.
 
 ## Testing Plan
 
@@ -989,6 +1035,12 @@ Backend tests:
 
 Frontend tests:
 
+- Trivia setup initially shows the two creation cards and secondary library action.
+- Selecting **AI Generated Quiz** reveals the AI form without calling generation.
+- AI form back action returns to the creation cards and preserves selected prompt/difficulty/question count.
+- Selecting **Custom Quiz With Photos** calls the custom authoring handler.
+- Selecting **My Quizzes** calls the library handler.
+- Image generation controls are hidden when unavailable and visible only inside the AI form when available.
 - Create custom quiz from blank.
 - Add/edit/delete/duplicate/reorder questions.
 - Upload/remove/replace a question image.

@@ -347,22 +347,19 @@ export default function PromptScreen({
                         </div>
                     </div>
 
-                    <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-                        <p className="font-medium">Images</p>
-                        <label className={`ai-image-option ${!imageGenerationAvailable ? 'disabled' : ''}`}>
-                            <input
-                                type="checkbox"
-                                checked={generateImages}
-                                onChange={(event) => setGenerateImages?.(event.target.checked)}
-                                disabled={!imageGenerationAvailable || !setGenerateImages}
-                            />
-                            <span>
-                                {imageGenerationAvailable
-                                    ? 'Generate images for questions'
-                                    : 'AI image generation is not configured for this environment'}
-                            </span>
-                        </label>
-                    </div>
+                    {imageGenerationAvailable && setGenerateImages && (
+                        <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+                            <p className="font-medium">Images</p>
+                            <label className="ai-image-option">
+                                <input
+                                    type="checkbox"
+                                    checked={generateImages}
+                                    onChange={(event) => setGenerateImages(event.target.checked)}
+                                />
+                                <span>Generate images for questions</span>
+                            </label>
+                        </div>
+                    )}
 
                 </div>
             </div>
