@@ -76,4 +76,43 @@ test.describe('Custom quiz authoring UX', () => {
     const overflowing = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
     expect(overflowing).toBe(false);
   });
+
+  test('starts a custom quiz with the imported quiz id, not the click event', async ({ page }) => {
+    let roomCreateBody: Record<string, unknown> | null = null;
+
+    await page.route('**/quiz/import', async (route) => {
+      await route.fulfill({
+        json: {
+          quiz_id: 'quiz-from-import',
+          quiz: {
+            quiz_title: 'Custom Quiz',
+            questions: [
+              { id: 1, text: 'Where did we meet?', options: ['Mumbai', 'Seattle', 'Austin', 'London'] },
+            ],
+          },
+        },
+      });
+    });
+    await page.route('**/room/create', async (route) => {
+      roomCreateBody = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({ json: { room_code: 'ABC123', organizer_token: 'organizer-token' } });
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: /AI Quiz/ }).click();
+    await page.getByRole('button', { name: 'Create Your Own' }).click();
+    await page.getByLabel('Question text').fill('Where did we meet?');
+    await page.getByLabel('Answer A').fill('Mumbai');
+    await page.getByLabel('Answer B').fill('Seattle');
+    await page.getByLabel('Answer C').fill('Austin');
+    await page.getByLabel('Answer D').fill('London');
+
+    await page.getByRole('button', { name: 'Review & Start' }).click();
+    await page.getByRole('button', { name: 'Create Room' }).click();
+
+    await expect.poll(() => roomCreateBody).toMatchObject({
+      game_type: 'quiz',
+      quiz_id: 'quiz-from-import',
+    });
+  });
 });

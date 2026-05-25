@@ -68,7 +68,7 @@ export default function DrawingReviewScreen({ game, timeLimit, setTimeLimit, onC
                     ))}
                 </div>
 
-                <button type="button" onClick={onCreateRoom} className="btn btn-primary btn-glow w-full">
+                <button type="button" onClick={() => onCreateRoom()} className="btn btn-primary btn-glow w-full">
                     Create Room
                 </button>
             </div>

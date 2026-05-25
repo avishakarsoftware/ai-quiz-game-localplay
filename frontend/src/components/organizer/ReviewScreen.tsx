@@ -251,7 +251,7 @@ export default function ReviewScreen({
                         <polyline points="15 18 9 12 15 6" />
                     </svg>
                 </button>
-                <button onClick={onCreateRoom} className="btn btn-primary btn-glow" style={{ flex: 1 }}>Create Room</button>
+                <button onClick={() => onCreateRoom()} className="btn btn-primary btn-glow" style={{ flex: 1 }}>Create Room</button>
             </div>
         </div>
     );

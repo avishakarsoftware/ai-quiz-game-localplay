@@ -80,7 +80,7 @@ export default function HousieSetupScreen({
 
             <div className="housie-setup-actions">
                 <button onClick={onBack} className="btn btn-secondary" aria-label="Back">‹</button>
-                <button onClick={onCreateRoom} className="btn btn-primary btn-glow">Create Room</button>
+                <button onClick={() => onCreateRoom()} className="btn btn-primary btn-glow">Create Room</button>
             </div>
         </div>
     );

@@ -158,7 +158,7 @@ export default function MLTReviewScreen({
 
             <div className="mt-auto pb-4 space-y-2">
                 <button
-                    onClick={onCreateRoom}
+                    onClick={() => onCreateRoom()}
                     className="btn btn-primary btn-glow w-full"
                 >
                     Create Room
