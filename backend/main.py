@@ -1063,7 +1063,9 @@ async def generate_quiz_images(request: ImageGenerateRequest, req: Request):
             image = await image_engine.generate_image(prompt)
             if image:
                 asset = _store_quiz_image_asset(request.quiz_id, question, image, wallet_id)
-                assets.append(asset.to_dict())
+                asset_payload = asset.to_dict()
+                asset_payload["question_id"] = question["id"]
+                assets.append(asset_payload)
                 generated_count += 1
         return {"status": "success", "generated_count": generated_count, "assets": assets}
 

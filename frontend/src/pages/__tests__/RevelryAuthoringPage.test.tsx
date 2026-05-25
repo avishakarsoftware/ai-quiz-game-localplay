@@ -23,8 +23,8 @@ describe('RevelryAuthoringPage', () => {
         vi.clearAllMocks();
     });
 
-    it('can generate an AI quiz with question images for review', async () => {
-        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    it('hides image generation in Revelry authoring and still generates text quizzes', async () => {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
             const url = String(input);
             if (url.includes('/integrations/revelry/content/authoring-token/resolve')) {
                 return Response.json({
@@ -62,20 +62,10 @@ describe('RevelryAuthoringPage', () => {
                 });
             }
             if (url.includes('/quiz/import')) {
-                expect(init?.headers).toMatchObject({ Authorization: 'Bearer token-123' });
-                return Response.json({ quiz_id: 'quiz-1', quiz: {} });
+                throw new Error('image import should not run in Revelry authoring');
             }
             if (url.includes('/quiz/generate-images')) {
-                expect(init?.headers).toMatchObject({ Authorization: 'Bearer token-123' });
-                return Response.json({
-                    status: 'success',
-                    question_id: 1,
-                    asset: {
-                        id: 'media-1',
-                        url: '/media/media-1',
-                        alt_text: 'Generated cake image',
-                    },
-                });
+                throw new Error('image generation should not run in Revelry authoring');
             }
             return new Response('not found', { status: 404 });
         });
@@ -84,11 +74,9 @@ describe('RevelryAuthoringPage', () => {
         render(<RevelryAuthoringPage />);
 
         await screen.findByText('Create an AI quiz');
-        fireEvent.click(screen.getByLabelText('Generate question images'));
+        expect(screen.queryByLabelText('Generate question images')).toBeNull();
         fireEvent.click(screen.getByRole('button', { name: 'Generate AI quiz' }));
 
-        await waitFor(() => expect(screen.getByAltText('Generated cake image')).toBeInTheDocument());
-        expect(screen.getByText('What is on the cake?')).toBeInTheDocument();
-        expect(screen.getByAltText('Generated cake image')).toHaveAttribute('src', '/media/media-1');
+        await waitFor(() => expect(screen.getByText('What is on the cake?')).toBeInTheDocument());
     });
 });

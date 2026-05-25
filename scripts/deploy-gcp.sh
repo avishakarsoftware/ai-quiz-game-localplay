@@ -206,7 +206,7 @@ bootstrap_vm_layout() {
             'TRUST_PROXY_HEADERS=true' \
             'GEMINI_MODEL=gemini-2.5-flash-lite' \
             'GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite' \
-            'IMAGE_GENERATION_PROVIDER=gemini' \
+            'IMAGE_GENERATION_PROVIDER=none' \
             'GEMINI_IMAGE_MODEL=gemini-2.5-flash-image' \
             'REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json' \
             'GOOGLE_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID' \

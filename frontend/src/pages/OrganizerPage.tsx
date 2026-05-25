@@ -692,42 +692,42 @@ export default function OrganizerPage() {
     };
 
     const generateImagesForQuiz = async (quizId: string, sourceQuiz: Quiz): Promise<Quiz> => {
-        let failures = 0;
         const questions = [...sourceQuiz.questions];
         setImageProgress(0);
-        for (let i = 0; i < questions.length; i++) {
-            const question = questions[i];
-            try {
-                const res = await fetch(`${API_URL}/quiz/generate-images`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', ...apiHeaders() },
-                    body: JSON.stringify({ quiz_id: quizId, question_id: question.id }),
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    const asset = data.asset;
-                    if (asset?.url) {
-                        questions[i] = {
-                            ...question,
-                            image_asset_id: asset.id,
-                            image_url: asset.url,
-                            image_alt: asset.alt_text || question.text,
-                        };
-                        setQuestionImages(prev => ({
-                            ...prev,
-                            [question.id]: mediaUrl(asset.url),
-                        }));
-                    }
-                } else {
-                    failures++;
-                }
-            } catch {
-                failures++;
+        try {
+            const res = await fetch(`${API_URL}/quiz/generate-images`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...apiHeaders() },
+                body: JSON.stringify({ quiz_id: quizId }),
+            });
+            if (!res.ok) throw new Error('image_generation_failed');
+            const data = await res.json();
+            const assets = Array.isArray(data.assets) ? data.assets : [];
+            const assetsByQuestion = new Map<number, { id: string; url: string; alt_text?: string }>();
+            assets.forEach((asset: { question_id?: number; id: string; url: string; alt_text?: string }) => {
+                if (asset.question_id && asset.url) assetsByQuestion.set(asset.question_id, asset);
+            });
+            questions.forEach((question, index) => {
+                const asset = assetsByQuestion.get(question.id);
+                if (!asset) return;
+                questions[index] = {
+                    ...question,
+                    image_asset_id: asset.id,
+                    image_url: asset.url,
+                    image_alt: asset.alt_text || question.text,
+                };
+                setQuestionImages(prev => ({
+                    ...prev,
+                    [question.id]: mediaUrl(asset.url),
+                }));
+            });
+            setImageProgress(sourceQuiz.questions.length);
+            const failures = sourceQuiz.questions.length - assetsByQuestion.size;
+            if (failures > 0) {
+                setErrorModal({ title: 'Image Generation', message: `${failures} image(s) failed to generate. You can still play without them.` });
             }
-            setImageProgress(i + 1);
-        }
-        if (failures > 0) {
-            setErrorModal({ title: 'Image Generation', message: `${failures} image(s) failed to generate. You can still play without them.` });
+        } catch {
+            setErrorModal({ title: 'Image Generation', message: 'Images could not be generated. You can still play this quiz without them.' });
         }
         return { ...sourceQuiz, questions };
     };
