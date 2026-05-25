@@ -14,11 +14,13 @@ LLM_MAX_RETRIES = 3
 # --- Cloud AI Providers ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
 DEFAULT_PROVIDER = os.getenv("DEFAULT_PROVIDER", "gemini")
 
-# --- Stable Diffusion ---
+# --- Image Generation ---
+IMAGE_GENERATION_PROVIDER = os.getenv("IMAGE_GENERATION_PROVIDER", "stable_diffusion").strip().lower()
 SD_API_URL = os.getenv("SD_API_URL", "http://localhost:8765")
 
 # --- Server ---

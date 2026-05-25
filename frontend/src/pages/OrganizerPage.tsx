@@ -44,6 +44,7 @@ export default function OrganizerPage() {
     const [prompt, setPrompt] = useState('');
     const [difficulty, setDifficulty] = useState('medium');
     const [numQuestions, setNumQuestions] = useState(10);
+    const [generateQuizImages, setGenerateQuizImages] = useState(false);
     const [quiz, setQuiz] = useState<Quiz | null>(null);
     const [quizOrigin, setQuizOrigin] = useState<'ai' | 'custom'>('ai');
     const [editingPackId, setEditingPackId] = useState<string | undefined>(undefined);
@@ -448,11 +449,16 @@ export default function OrganizerPage() {
             const data = await res.json();
             if (data.quiz) {
                 setQuizOrigin('ai');
-                setQuiz(data.quiz);
+                let nextQuiz = data.quiz;
                 setContentId(data.quiz_id);
                 setTotalQuestions(data.quiz.questions.length);
                 track('quiz_generated', { topic: prompt, difficulty, num_questions: numQuestions, provider, mode: getGameModeConfig(gameType).mode || 'classic' });
                 window.dispatchEvent(new CustomEvent('refresh-sparks'));
+                if (generateQuizImages && sdAvailable) {
+                    setLoadingCopy({ title: 'Generating Images' });
+                    nextQuiz = await generateImagesForQuiz(data.quiz_id, data.quiz);
+                }
+                setQuiz(nextQuiz);
                 setState('REVIEW');
             } else {
                 setErrorModal({ title: 'Generation Failed', message: 'Failed to generate quiz. Please try a different topic.' });
@@ -685,26 +691,33 @@ export default function OrganizerPage() {
         }
     };
 
-    const generateImages = async () => {
-        if (!sdAvailable || !contentId) return;
-        setState('GENERATING_IMAGES');
-        setImageProgress(0);
-
+    const generateImagesForQuiz = async (quizId: string, sourceQuiz: Quiz): Promise<Quiz> => {
         let failures = 0;
-        for (let i = 0; i < (quiz?.questions.length || 0); i++) {
-            const question = quiz?.questions[i];
-            if (!question) continue;
+        const questions = [...sourceQuiz.questions];
+        setImageProgress(0);
+        for (let i = 0; i < questions.length; i++) {
+            const question = questions[i];
             try {
                 const res = await fetch(`${API_URL}/quiz/generate-images`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ quiz_id: contentId, question_id: question.id }),
+                    headers: { 'Content-Type': 'application/json', ...apiHeaders() },
+                    body: JSON.stringify({ quiz_id: quizId, question_id: question.id }),
                 });
                 if (res.ok) {
-                    setQuestionImages(prev => ({
-                        ...prev,
-                        [question.id]: `${API_URL}/quiz/${contentId}/image/${question.id}`
-                    }));
+                    const data = await res.json();
+                    const asset = data.asset;
+                    if (asset?.url) {
+                        questions[i] = {
+                            ...question,
+                            image_asset_id: asset.id,
+                            image_url: asset.url,
+                            image_alt: asset.alt_text || question.text,
+                        };
+                        setQuestionImages(prev => ({
+                            ...prev,
+                            [question.id]: mediaUrl(asset.url),
+                        }));
+                    }
                 } else {
                     failures++;
                 }
@@ -715,6 +728,18 @@ export default function OrganizerPage() {
         }
         if (failures > 0) {
             setErrorModal({ title: 'Image Generation', message: `${failures} image(s) failed to generate. You can still play without them.` });
+        }
+        return { ...sourceQuiz, questions };
+    };
+
+    const generateImages = async () => {
+        if (!sdAvailable || !contentId) return;
+        setState('GENERATING_IMAGES');
+        setImageProgress(0);
+
+        if (quiz) {
+            const nextQuiz = await generateImagesForQuiz(contentId, quiz);
+            setQuiz(nextQuiz);
         }
         setState('REVIEW');
     };
@@ -1036,6 +1061,9 @@ export default function OrganizerPage() {
                         provider={provider}
                         setProvider={setProvider}
                         providers={providers}
+                        imageGenerationAvailable={sdAvailable}
+                        generateImages={generateQuizImages}
+                        setGenerateImages={setGenerateQuizImages}
                         onGenerate={generateQuiz}
                         onCreateCustom={() => {
                             setGameType('quiz');

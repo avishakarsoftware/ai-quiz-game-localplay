@@ -20,6 +20,12 @@ class ImageEngine:
         }
 
     async def is_available(self) -> bool:
+        """Check if the configured image generation provider is available."""
+        if config.IMAGE_GENERATION_PROVIDER == "gemini":
+            return bool(config.GEMINI_API_KEY and config.GEMINI_IMAGE_MODEL)
+        if config.IMAGE_GENERATION_PROVIDER in {"", "none", "disabled"}:
+            return False
+
         """Check if local Image Gen server is running"""
         try:
             async with httpx.AsyncClient() as client:
@@ -29,6 +35,64 @@ class ImageEngine:
             return False
 
     async def generate_image(self, prompt: str, style: str = "vibrant") -> Optional[str]:
+        if config.IMAGE_GENERATION_PROVIDER == "gemini":
+            return await self._generate_gemini_image(prompt, style=style)
+        if config.IMAGE_GENERATION_PROVIDER in {"", "none", "disabled"}:
+            return None
+        return await self._generate_stable_diffusion_image(prompt, style=style)
+
+    async def _generate_gemini_image(self, prompt: str, style: str = "vibrant") -> Optional[str]:
+        """Generate an image using Gemini Flash Image. Returns base64 image data."""
+        if not config.GEMINI_API_KEY or not config.GEMINI_IMAGE_MODEL:
+            logger.warning("Gemini image generation requested without GEMINI_API_KEY/GEMINI_IMAGE_MODEL")
+            return None
+
+        style_prompts = {
+            "vibrant": "vibrant, playful, party-game friendly digital illustration",
+            "neon": "neon glow, high contrast, futuristic party-game artwork",
+            "realistic": "clean realistic photo style, sharp focus, family-friendly",
+        }
+        enhanced_prompt = (
+            f"Create a family-friendly quiz question image. {prompt}. "
+            f"Style: {style_prompts.get(style, style_prompts['vibrant'])}. "
+            "No text, labels, logos, watermarks, or UI elements."
+        )
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_IMAGE_MODEL}:generateContent"
+        payload = {
+            "contents": [{"parts": [{"text": enhanced_prompt}]}],
+            "generationConfig": {
+                "responseModalities": ["Image"],
+            },
+        }
+        headers = {"x-goog-api-key": config.GEMINI_API_KEY, "Content-Type": "application/json"}
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=payload, headers=headers, timeout=120)
+                response.raise_for_status()
+            result = response.json()
+            parts = result.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            for part in parts:
+                inline_data = part.get("inlineData") or part.get("inline_data") or {}
+                image_b64 = inline_data.get("data")
+                if not image_b64:
+                    continue
+                try:
+                    raw = base64.b64decode(image_b64, validate=True)
+                except Exception:
+                    logger.warning("Invalid base64 in Gemini image response")
+                    return None
+                if len(raw) > config.MAX_IMAGE_SIZE_BYTES:
+                    logger.warning("Gemini image too large (%d bytes), rejecting", len(raw))
+                    return None
+                return image_b64
+            logger.warning("Gemini image response did not include inline image data")
+            return None
+        except Exception as e:
+            logger.error("Gemini image generation error: %s", e)
+            return None
+
+    async def _generate_stable_diffusion_image(self, prompt: str, style: str = "vibrant") -> Optional[str]:
         """
         Generate an image using the local SD server.
         Returns base64-encoded image or None if generation fails.
@@ -62,15 +126,13 @@ class ImageEngine:
             if result:
                 if "image_base64" in result:
                     image_b64 = result["image_base64"]
-                    # Validate image size to prevent memory abuse
-                    if len(image_b64) > config.MAX_IMAGE_SIZE_BYTES:
-                        logger.warning("Image too large (%d bytes), rejecting", len(image_b64))
-                        return None
-                    # Validate it's actually valid base64
                     try:
-                        base64.b64decode(image_b64, validate=True)
+                        raw = base64.b64decode(image_b64, validate=True)
                     except Exception:
                         logger.warning("Invalid base64 in image response")
+                        return None
+                    if len(raw) > config.MAX_IMAGE_SIZE_BYTES:
+                        logger.warning("Image too large (%d bytes), rejecting", len(raw))
                         return None
                     return image_b64
 

@@ -1092,14 +1092,24 @@ async def get_question_image(quiz_id: str, question_id: int):
 @app.get("/media/status")
 async def media_status():
     """Report shared media platform capabilities."""
-    sd_available = await image_engine.is_available()
+    generation_available = await image_engine.is_available()
     upload_available = bool(config.MEDIA_UPLOAD_URL and config.MEDIA_PUBLIC_BASE_URL and config.MEDIA_UPLOAD_SECRET)
+    providers = [
+        {
+            "id": "gemini_image",
+            "name": f"Gemini Image ({config.GEMINI_IMAGE_MODEL})",
+            "available": generation_available and config.IMAGE_GENERATION_PROVIDER == "gemini",
+        },
+        {
+            "id": "stable_diffusion",
+            "name": "Stable Diffusion",
+            "available": generation_available and config.IMAGE_GENERATION_PROVIDER == "stable_diffusion",
+        },
+    ]
     return {
         "upload_available": upload_available,
-        "generation_available": sd_available,
-        "providers": [
-            {"id": "stable_diffusion", "name": "Stable Diffusion", "available": sd_available},
-        ],
+        "generation_available": generation_available,
+        "providers": providers,
         "max_upload_bytes": config.MAX_IMAGE_SIZE_BYTES,
         "allowed_mime_types": list(config.MEDIA_ALLOWED_MIME_TYPES),
         "storage_backend": "ionos" if upload_available else "memory",
@@ -2863,8 +2873,12 @@ async def launch_session_route(session_id: str, route: str, launch_token: str = 
 
 @app.get("/sd/status")
 async def sd_status():
-    """Check if Stable Diffusion is available"""
-    return {"available": await image_engine.is_available()}
+    """Legacy image-generation availability endpoint."""
+    return {
+        "available": await image_engine.is_available(),
+        "provider": config.IMAGE_GENERATION_PROVIDER,
+        "model": config.GEMINI_IMAGE_MODEL if config.IMAGE_GENERATION_PROVIDER == "gemini" else "stable_diffusion",
+    }
 
 
 @app.post("/room/create")

@@ -235,6 +235,8 @@ Product behavior:
 - If some images fail, keep the quiz, show a non-blocking warning, and let the host save/start the text-only questions.
 - If no image provider is configured, hide or disable the option with clear environment-safe copy. Do not show a broken image checkbox in production/gamma when image generation is unavailable.
 - In Revelry/host-app mode, require an explicit capability such as `premium_ai`, `ai_quiz_images`, or `party_games` before enabling the option. If the capability is absent, manual quiz editing and text-only AI generation still work.
+- Gamma/testing may enable AI image generation with `IMAGE_GENERATION_PROVIDER=gemini` and `GEMINI_IMAGE_MODEL=gemini-2.5-flash-image`.
+- Production must keep AI image generation disabled unless a deliberate production rollout sets an image provider and policy/entitlement gates. The deploy script should set `IMAGE_GENERATION_PROVIDER=none` for production and `IMAGE_GENERATION_PROVIDER=gemini` only for gamma/testing.
 
 Implementation notes:
 
@@ -243,6 +245,7 @@ Implementation notes:
 - For host-app authoring, the frontend may materialize the generated quiz through `/quiz/import`, call `/quiz/generate-images` for each question, then save the enriched quiz pack through `/integrations/revelry/content`.
 - A future backend shortcut may add `generate_images` to `/integrations/revelry/party-games/prompts/generate`, but the first implementation can compose existing endpoints to reduce backend risk.
 - Generated image URLs must go through `mediaUrl(...)` and `GameImage`, not raw CSS backgrounds.
+- `/media/status` and the legacy `/sd/status` endpoint should report the configured provider (`gemini`, `stable_diffusion`, or `none`) so the frontend can show or disable image generation controls honestly.
 
 ### Question Review Experience
 
