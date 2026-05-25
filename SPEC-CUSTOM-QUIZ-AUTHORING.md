@@ -31,6 +31,8 @@ LocalPlay already has most of the quiz runtime pieces:
 - Room creation accepts `quiz_id` and runs the normal quiz flow.
 - The review screen already supports inline question editing after AI generation.
 - The image media layer can display attached question images through `image_url` and `GameImage`.
+- Standalone organizer flow can generate quiz images through `/quiz/generate-images` after a quiz has been created.
+- Revelry AI quiz authoring can generate question text and save the resulting quiz, but needs an explicit image-generation option and a review UI that previews each question as players will see it.
 
 Current gaps:
 
@@ -55,6 +57,7 @@ Current gaps:
 - Custom quizzes should support optional per-question images through host upload in gamma and production.
 - Uploaded question images should be durable enough for saved quiz packs and reliable enough for organizer, player, and spectator display.
 - AI image generation is an optional enhancement and must not block custom quiz images; local Stable Diffusion is only a development/local capability unless a production-safe cloud image provider is configured.
+- AI-generated quizzes should offer an optional **Generate images for questions** choice when image generation is available for the current environment or host-app capability. Generated images must appear in review before the host saves/starts.
 - Existing import/export should remain compatible.
 
 ## Non-Goals For V1
@@ -209,6 +212,70 @@ Useful V1/V2 assists:
 - "Rewrite for clarity".
 
 These helpers should use the same provider/model configuration as normal quiz generation and should charge sparks only when they call an external model. Manual editing should be free.
+
+### AI Quiz Generation With Question Images
+
+AI quiz generation should support a creator-facing image option:
+
+```json
+{
+  "generate_images": true,
+  "image_style": "illustration" | "photo" | "sticker" | "cinematic",
+  "image_scope": "all_questions" | "questions_with_image_prompts"
+}
+```
+
+Product behavior:
+
+- The option is off by default.
+- AI quiz/image generation surfaces must show a short review warning: AI can make mistakes, generated content may be incomplete or inaccurate, and not every generated question/image is suitable for every age group.
+- When enabled, LocalPlay first generates the quiz text/options, then generates or attaches one image per eligible question.
+- Every generated image must be attached to the question as `image_url` plus `image_alt`; `image_asset_id` should be used when the image enters the durable media asset layer.
+- The host must review the image questions before saving/returning to a host app or creating a room.
+- If some images fail, keep the quiz, show a non-blocking warning, and let the host save/start the text-only questions.
+- If no image provider is configured, hide or disable the option with clear environment-safe copy. Do not show a broken image checkbox in production/gamma when image generation is unavailable.
+- In Revelry/host-app mode, require an explicit capability such as `premium_ai`, `ai_quiz_images`, or `party_games` before enabling the option. If the capability is absent, manual quiz editing and text-only AI generation still work.
+
+Implementation notes:
+
+- Reuse the existing `Question.image_prompt`, `Question.image_url`, and `Question.image_alt` fields.
+- Reuse `/quiz/generate-images` when the quiz is already materialized in the existing runtime quiz store.
+- For host-app authoring, the frontend may materialize the generated quiz through `/quiz/import`, call `/quiz/generate-images` for each question, then save the enriched quiz pack through `/integrations/revelry/content`.
+- A future backend shortcut may add `generate_images` to `/integrations/revelry/party-games/prompts/generate`, but the first implementation can compose existing endpoints to reduce backend risk.
+- Generated image URLs must go through `mediaUrl(...)` and `GameImage`, not raw CSS backgrounds.
+
+### Question Review Experience
+
+The quiz review screen should be a player-preview-first review surface, not a long debug list.
+
+Required review UX:
+
+- Show one selected question at a time in a preview card that resembles the live player/TV question: optional image on top, question text, answer options, and the same answer color/label treatment.
+- Provide a numeric question navigator, e.g. buttons `1 2 3 ...`, with active, edited/image, and invalid states. Hosts can click a number to jump directly.
+- Provide Previous/Next controls and support horizontal swipe to move between questions on touch devices.
+- Keep answer reveal as a host-controlled toggle; default remains hidden so screen mirroring is safe.
+- Keep edit/delete actions available for the selected question.
+- Editing should happen inline or in an adjacent panel without losing the selected question index.
+- The review surface should show generated images in the same aspect-ratio wrapper used by gameplay so hosts know what players will see.
+- The bottom action should remain focused on `Create Room` or `Save to Revelry`, depending on context.
+
+Review state shape:
+
+```ts
+type QuizReviewState = {
+  selectedQuestionIndex: number;
+  showAnswers: boolean;
+  editingQuestionId?: number;
+  imageGenerationStatus?: Record<number, "idle" | "generating" | "complete" | "failed">;
+};
+```
+
+Accessibility and mobile:
+
+- Numeric navigator buttons need `aria-label="Question 3"` and `aria-current` for the active question.
+- Previous/Next buttons must be keyboard reachable.
+- Swipe navigation must not block vertical scroll inside edit fields.
+- The preview card must not overflow horizontally on mobile, including long options and image labels.
 
 ## Data Model
 
@@ -874,6 +941,33 @@ Acceptance:
 - Last played and play count.
 - Better mobile bulk editing.
 
+### Phase 4: AI Quiz Images And Better Review
+
+Backend:
+
+1. Reuse existing quiz import/update/image generation endpoints for the first implementation.
+2. Ensure generated quizzes include `image_prompt` values when image generation is requested.
+3. Keep image generation failures per-question and non-fatal.
+4. Save generated `image_url` and `image_alt` fields through quiz-pack persistence and Revelry content save.
+5. Add tests that AI-generated quiz content with image fields can be saved and materialized.
+
+Frontend:
+
+1. Add **Generate images for questions** to Revelry AI quiz authoring when image generation is available/capable.
+2. After AI text generation, materialize the quiz, generate per-question images, merge returned image URLs into the generated quiz, and open the editor/review with images visible.
+3. Improve `ReviewScreen` into a selected-question preview with numeric navigation, Previous/Next controls, and swipe navigation.
+4. Render the selected question preview using `GameImage` and the same answer option treatment as gameplay.
+5. Preserve existing inline edit/delete behavior and quiz update persistence.
+6. Show a concise AI content warning near generation controls and consider linking to Privacy/AI Safety policy copy when that page exists.
+
+Acceptance:
+
+- Revelry AI authoring can generate a quiz with images, show those images in review, save it, return a `localplay_content_id`, and later start the saved quiz with images intact.
+- If image generation is unavailable or fails for some questions, the host gets a usable text quiz and clear warning.
+- Review screen lets hosts jump by question number, move Previous/Next, swipe on touch, edit the selected question, delete a question, and create the room.
+- Review preview looks materially like the player-facing question card and uses stable image dimensions.
+- AI-generated quiz authoring warns hosts that generated content can be wrong and may not suit every age group before save/start.
+
 ## Testing Plan
 
 Backend tests:
@@ -896,6 +990,10 @@ Frontend tests:
 - Add/edit/delete/duplicate/reorder questions.
 - Upload/remove/replace a question image.
 - Question image preview uses `GameImage` loading and error states.
+- AI quiz generation with image option merges generated `image_url` / `image_alt` into review state.
+- Review screen numeric navigation changes the selected question without losing edits.
+- Review screen Previous/Next and swipe navigation move between questions.
+- Review preview renders one selected question using gameplay-style image and answer layout.
 - Inline validation disables start until valid.
 - Manual creation does not call generation endpoints.
 - Local draft survives refresh.
@@ -913,6 +1011,7 @@ Remote smoke:
 - Gamma custom quiz create/start flow.
 - Signed-in save/load flow.
 - Gamma custom quiz upload-image/start flow.
+- Gamma/Revelry AI quiz image generation flow when a production-safe image provider is available or mocked in test.
 - `/media/status` reports upload availability accurately and does not imply Stable Diffusion is available in gamma/prod.
 
 ## Deployment Notes
@@ -948,6 +1047,7 @@ custom_quiz_ai_assist_enabled=false
 - Paste import.
 - AI assist for wrong answers and rewrites.
 - Save AI-generated quiz as custom pack.
+- Add centralized AI content disclosure/privacy-policy copy covering accuracy limits, age suitability, review responsibility, prompt/media handling, and host-app capability gates.
 - Pack duplication.
 - Pack archive/restore.
 - Pack search.

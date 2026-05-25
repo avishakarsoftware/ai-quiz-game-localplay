@@ -27,12 +27,21 @@ const TIME_PRESETS = [
 
 export default function ReviewScreen({
     quiz, timeLimit, setTimeLimit,
+    sdAvailable, questionImages, onGenerateImages,
     onCreateRoom, onUpdateQuiz, onBack,
 }: ReviewScreenProps) {
     const swipeProgress = useSwipeBack(onBack);
+    const [selectedIndex, setSelectedIndex] = useState(0);
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editQuestion, setEditQuestion] = useState<Question | null>(null);
     const [showAnswers, setShowAnswers] = useState(false);
+    const [touchStartX, setTouchStartX] = useState<number | null>(null);
+
+    const boundedIndex = Math.min(selectedIndex, Math.max(quiz.questions.length - 1, 0));
+    const selectedQuestion = quiz.questions[boundedIndex];
+    const selectedImageUrl = selectedQuestion?.image_url
+        ? mediaUrl(selectedQuestion.image_url)
+        : (selectedQuestion ? questionImages[selectedQuestion.id] : '');
 
     const startEdit = (q: Question) => {
         setEditingId(q.id);
@@ -57,11 +66,32 @@ export default function ReviewScreen({
 
     const deleteQuestion = (id: number) => {
         if (quiz.questions.length <= 1) return;
+        const deletedIndex = quiz.questions.findIndex(q => q.id === id);
         const updated: Quiz = {
             ...quiz,
             questions: quiz.questions.filter(q => q.id !== id),
         };
         onUpdateQuiz(updated);
+        setSelectedIndex(Math.max(0, Math.min(deletedIndex, updated.questions.length - 1)));
+        if (editingId === id) cancelEdit();
+    };
+
+    const goToQuestion = (index: number) => {
+        setSelectedIndex(Math.max(0, Math.min(index, quiz.questions.length - 1)));
+        cancelEdit();
+    };
+
+    const goRelative = (delta: -1 | 1) => {
+        goToQuestion(boundedIndex + delta);
+    };
+
+    const handleTouchEnd = (x: number) => {
+        if (touchStartX === null) return;
+        const delta = x - touchStartX;
+        setTouchStartX(null);
+        if (Math.abs(delta) < 48) return;
+        if (delta < 0 && boundedIndex < quiz.questions.length - 1) goRelative(1);
+        if (delta > 0 && boundedIndex > 0) goRelative(-1);
     };
 
     return (
@@ -74,11 +104,10 @@ export default function ReviewScreen({
                     </svg>
                 </div>
             )}
-            {/* Header */}
             <div className="review-header mb-4">
                 <div className="review-header-accent" />
                 <h1 className="hero-title" style={{ textAlign: 'center', marginBottom: 8 }}>{quiz.quiz_title}</h1>
-                <div className="flex items-center justify-center gap-3">
+                <div className="flex items-center justify-center gap-3 flex-wrap">
                     <p className="text-[--text-tertiary] text-base">{quiz.questions.length} questions ready to go</p>
                     <button
                         onClick={() => setShowAnswers(!showAnswers)}
@@ -88,10 +117,18 @@ export default function ReviewScreen({
                     >
                         {showAnswers ? '👁 Hide' : '👁‍🗨 Show'} Answers
                     </button>
+                    {sdAvailable && (
+                        <button
+                            onClick={onGenerateImages}
+                            className="btn btn-secondary"
+                            style={{ padding: '4px 12px', fontSize: 13, minWidth: 0 }}
+                        >
+                            Generate Images
+                        </button>
+                    )}
                 </div>
             </div>
 
-            {/* Time per question */}
             <div className="mb-4">
                 <p className="text-center font-semibold text-base mb-2"><span style={{ fontSize: '1.5rem', verticalAlign: 'middle', marginRight: 6 }}>⏱</span>Time per question</p>
                 <div className="time-preset-selector">
@@ -107,16 +144,39 @@ export default function ReviewScreen({
                 </div>
             </div>
 
-            {/* Question list */}
-            <div className="flex-1 overflow-y-auto no-scrollbar space-y-3 mb-4">
+            <div className="review-question-nav" aria-label="Question list">
                 {quiz.questions.map((q, i) => (
-                    <div key={q.id} className="review-question-card">
+                    <button
+                        key={q.id}
+                        type="button"
+                        onClick={() => goToQuestion(i)}
+                        className={`review-question-nav-btn ${i === boundedIndex ? 'active' : ''} ${q.image_url || questionImages[q.id] ? 'has-image' : ''}`}
+                        aria-label={`Question ${i + 1}`}
+                        aria-current={i === boundedIndex ? 'true' : undefined}
+                    >
+                        {i + 1}
+                    </button>
+                ))}
+            </div>
+
+            {selectedQuestion && (
+                <div className="review-selected-wrap flex-1 overflow-y-auto no-scrollbar mb-4">
+                    <div className="review-selected-controls">
+                        <button onClick={() => goRelative(-1)} disabled={boundedIndex === 0} className="btn btn-secondary">Previous</button>
+                        <span>Question {boundedIndex + 1} of {quiz.questions.length}</span>
+                        <button onClick={() => goRelative(1)} disabled={boundedIndex === quiz.questions.length - 1} className="btn btn-secondary">Next</button>
+                    </div>
+
+                    <div
+                        className="review-question-card review-selected-card"
+                        onTouchStart={(event) => setTouchStartX(event.changedTouches[0]?.clientX ?? null)}
+                        onTouchEnd={(event) => handleTouchEnd(event.changedTouches[0]?.clientX ?? 0)}
+                    >
                         <div className="p-4">
-                            {editingId === q.id && editQuestion ? (
-                                /* Edit mode */
+                            {editingId === selectedQuestion.id && editQuestion ? (
                                 <div className="space-y-3">
                                     <div className="flex items-center justify-between mb-1">
-                                        <span className="review-q-number">{i + 1}</span>
+                                        <span className="review-q-number">{boundedIndex + 1}</span>
                                     </div>
                                     <input
                                         type="text"
@@ -143,7 +203,7 @@ export default function ReviewScreen({
                                             />
                                             <button
                                                 type="button"
-                                                onClick={() => setEditQuestion({ ...editQuestion, image_url: undefined, image_alt: undefined })}
+                                                onClick={() => setEditQuestion({ ...editQuestion, image_url: undefined, image_asset_id: undefined, image_alt: undefined })}
                                                 className="btn btn-secondary"
                                                 style={{ height: 36, fontSize: 13 }}
                                             >
@@ -186,64 +246,46 @@ export default function ReviewScreen({
                                     </div>
                                 </div>
                             ) : (
-                                /* View mode */
                                 <>
                                     <div className="review-card-actions">
-                                        <button
-                                            onClick={() => startEdit(q)}
-                                            className="review-action-btn"
-                                            title="Edit"
-                                        >
-                                            ✎
-                                        </button>
+                                        <button onClick={() => startEdit(selectedQuestion)} className="review-action-btn" title="Edit">✎</button>
                                         {quiz.questions.length > 1 && (
-                                            <button
-                                                onClick={() => deleteQuestion(q.id)}
-                                                className="review-action-btn review-action-delete"
-                                                title="Delete"
-                                            >
-                                                ✕
-                                            </button>
+                                            <button onClick={() => deleteQuestion(selectedQuestion.id)} className="review-action-btn review-action-delete" title="Delete">✕</button>
                                         )}
                                     </div>
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <span className="review-q-number">{i + 1}</span>
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <span className="review-q-number">{boundedIndex + 1}</span>
+                                        <span className="text-xs font-bold text-[--text-tertiary]">Player preview</span>
                                     </div>
-                                    {q.image_url && (
-                                        <div className="mb-3">
+                                    <div className={`question-card review-player-preview ${selectedImageUrl ? 'has-image' : ''}`}>
+                                        {selectedImageUrl && (
                                             <GameImage
-                                                src={mediaUrl(q.image_url)}
-                                                alt={q.image_alt || q.text}
-                                                mode="thumbnail"
+                                                src={selectedImageUrl}
+                                                alt={selectedQuestion.image_alt || selectedQuestion.text}
+                                                mode="question"
                                             />
+                                        )}
+                                        <h2>{selectedQuestion.text}</h2>
+                                        <div className={`grid gap-3 ${selectedQuestion.options.length === 2 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                                            {selectedQuestion.options.map((opt, j) => {
+                                                const isCorrect = showAnswers && j === selectedQuestion.answer_index;
+                                                const style = ANSWER_STYLES[j];
+                                                return (
+                                                    <div key={j} className={`answer-option ${style.className} ${isCorrect ? 'review-option-correct' : ''}`}>
+                                                        <span className="answer-label">{String.fromCharCode(65 + j)}</span>
+                                                        <span>{opt}</span>
+                                                        {isCorrect && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--olive)' }}>✓</span>}
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
-                                    )}
-                                    <p className="text-sm font-medium mb-3">{q.text}</p>
-                                    <div className={`grid gap-2 ${q.options.length === 2 ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                                        {q.options.map((opt, j) => {
-                                            const isCorrect = showAnswers && j === q.answer_index;
-                                            return (
-                                                <div
-                                                    key={j}
-                                                    className={`review-option ${isCorrect ? 'review-option-correct' : ''}`}
-                                                    style={{
-                                                        backgroundColor: isCorrect ? 'rgba(109, 255, 230, 0.16)' : 'rgba(248, 235, 217, 0.06)',
-                                                        border: isCorrect ? '1px solid var(--olive)' : '1px solid var(--rule)',
-                                                    }}
-                                                >
-                                                    <span className="answer-label" style={{ marginRight: 0 }}>{String.fromCharCode(65 + j)}</span>
-                                                    <span className="truncate">{opt}</span>
-                                                    {isCorrect && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--olive)' }}>✓</span>}
-                                                </div>
-                                            );
-                                        })}
                                     </div>
                                 </>
                             )}
                         </div>
                     </div>
-                ))}
-            </div>
+                </div>
+            )}
 
             <div className="pb-4" style={{ display: 'flex', gap: 8 }}>
                 <button onClick={onBack} className="btn btn-secondary" style={{ flexShrink: 0, paddingLeft: 16, paddingRight: 16 }}>

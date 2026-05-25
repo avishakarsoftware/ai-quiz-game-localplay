@@ -754,6 +754,69 @@ def test_revelry_authoring_token_can_generate_ai_quiz(monkeypatch):
     assert quiz["questions"][0]["answer_index"] == 0
 
 
+def test_revelry_authoring_token_can_import_quiz_and_generate_question_image(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-ai-image-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Ava's Birthday",
+            "return_url": "https://app.revelryapp.me/party/1?tab=games",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["author_content"],
+        },
+        "game_type": "quiz",
+        "mode": "create",
+    }
+    link_res = client.post("/integrations/revelry/content/authoring-link", headers=_headers(), json=payload)
+    assert link_res.status_code == 200
+    token = link_res.json()["authoring_url"].split("authoring_token=", 1)[1]
+
+    async def fake_available():
+        return True
+
+    async def fake_generate(prompt, style="vivid"):
+        assert prompt == "party cake with fox topper"
+        return "aGVsbG8="
+
+    monkeypatch.setattr(main.image_engine, "is_available", fake_available)
+    monkeypatch.setattr(main.image_engine, "generate_image", fake_generate)
+
+    quiz = {
+        "quiz_title": "Image Quiz",
+        "questions": [
+            {
+                "id": 1,
+                "text": "What is on the cake?",
+                "options": ["Fox", "Bear", "Cat", "Dog"],
+                "answer_index": 0,
+                "image_prompt": "party cake with fox topper",
+            }
+        ],
+    }
+    import_res = client.post("/quiz/import", headers={"Authorization": f"Bearer {token}"}, json={"quiz": quiz})
+    assert import_res.status_code == 200
+    quiz_id = import_res.json()["quiz_id"]
+
+    image_res = client.post(
+        "/quiz/generate-images",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"quiz_id": quiz_id, "question_id": 1},
+    )
+    assert image_res.status_code == 200
+    body = image_res.json()
+    assert body["asset"]["url"].startswith("/media/img_")
+    assert main.quizzes[quiz_id]["questions"][0]["image_url"] == body["asset"]["url"]
+    assert main.content_owners[quiz_id] == f"revelry:party:{container_id}"
+
+
 def test_revelry_editing_used_content_creates_new_version(monkeypatch):
     monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
     monkeypatch.setattr(config, "REVELRY_CALLBACK_URL", "https://api-gamma.revelryapp.me/api/games/localplay/callback")

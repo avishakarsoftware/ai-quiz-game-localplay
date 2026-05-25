@@ -34,8 +34,12 @@ export default function RevelryAuthoringPage() {
     const [aiPrompt, setAiPrompt] = useState('');
     const [aiDifficulty, setAiDifficulty] = useState('medium');
     const [aiQuestionCount, setAiQuestionCount] = useState(10);
+    const [aiGenerateImages, setAiGenerateImages] = useState(false);
+    const [imageGenerationAvailable, setImageGenerationAvailable] = useState(false);
+    const [imageProgress, setImageProgress] = useState(0);
     const [generating, setGenerating] = useState(false);
     const [generationError, setGenerationError] = useState('');
+    const [generationWarning, setGenerationWarning] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
@@ -64,6 +68,22 @@ export default function RevelryAuthoringPage() {
         void load();
         return () => { cancelled = true; };
     }, [authoringToken]);
+
+    useEffect(() => {
+        let cancelled = false;
+        async function loadImageStatus() {
+            try {
+                const res = await fetch(`${API_URL}/sd/status`);
+                if (!res.ok) throw new Error('status_failed');
+                const data = await res.json();
+                if (!cancelled) setImageGenerationAvailable(Boolean(data?.available));
+            } catch {
+                if (!cancelled) setImageGenerationAvailable(false);
+            }
+        }
+        void loadImageStatus();
+        return () => { cancelled = true; };
+    }, []);
 
     function returnToRevelry(localplayContentId?: string) {
         const returnUrl = resolved?.launch_context.return_url;
@@ -109,6 +129,8 @@ export default function RevelryAuthoringPage() {
         const prompt = aiPrompt.trim() || resolved?.launch_context.external_container_title || 'this party';
         setGenerating(true);
         setGenerationError('');
+        setGenerationWarning('');
+        setImageProgress(0);
         try {
             const partyGamesToken = authoringToken;
             const res = await fetch(`${API_URL}/integrations/revelry/party-games/prompts/generate`, {
@@ -126,12 +148,68 @@ export default function RevelryAuthoringPage() {
             const data = await res.json();
             const quiz = data.content_payload?.quiz as Quiz | undefined;
             if (!quiz?.questions?.length) throw new Error('empty_quiz');
-            setGeneratedQuiz(quiz);
+            let nextQuiz = quiz;
+            if (aiGenerateImages && imageGenerationAvailable) {
+                nextQuiz = await generateImagesForQuiz(quiz);
+            }
             setGeneratedVersion((value) => value + 1);
+            setGeneratedQuiz(nextQuiz);
         } catch {
             setGenerationError('Could not generate an AI quiz. Try a different topic or create one manually.');
         } finally {
             setGenerating(false);
+        }
+    }
+
+    async function generateImagesForQuiz(quiz: Quiz): Promise<Quiz> {
+        try {
+            const importRes = await fetch(`${API_URL}/quiz/import`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${authoringToken}`,
+                },
+                body: JSON.stringify({ quiz }),
+            });
+            if (!importRes.ok) throw new Error('import_failed');
+            const imported = await importRes.json();
+            const quizId = imported.quiz_id as string;
+            let failures = 0;
+            const questions = [...quiz.questions];
+            for (let i = 0; i < questions.length; i += 1) {
+                const question = questions[i];
+                try {
+                    const imageRes = await fetch(`${API_URL}/quiz/generate-images`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${authoringToken}`,
+                        },
+                        body: JSON.stringify({ quiz_id: quizId, question_id: question.id }),
+                    });
+                    if (!imageRes.ok) throw new Error('image_failed');
+                    const imageData = await imageRes.json();
+                    const asset = imageData.asset;
+                    if (!asset?.url) throw new Error('missing_asset');
+                    questions[i] = {
+                        ...question,
+                        image_asset_id: asset.id,
+                        image_url: asset.url,
+                        image_alt: asset.alt_text || question.text,
+                    };
+                } catch {
+                    failures += 1;
+                } finally {
+                    setImageProgress(i + 1);
+                }
+            }
+            if (failures > 0) {
+                setGenerationWarning(`${failures} image${failures === 1 ? '' : 's'} failed to generate. You can still save the quiz without those images.`);
+            }
+            return { ...quiz, questions };
+        } catch {
+            setGenerationWarning('Image generation could not start. The text quiz is ready to edit and save.');
+            return quiz;
         }
     }
 
@@ -159,6 +237,7 @@ export default function RevelryAuthoringPage() {
                         <p>{resolved.launch_context.display?.container_label || resolved.launch_context.external_container_title || 'Revelry Games'}</p>
                         <h1>Create an AI quiz</h1>
                         <span>Generate questions, edit anything, then save it to this party.</span>
+                        <p className="revelry-ai-authoring-note">AI can make mistakes, and generated questions or images may not fit every age group. Please review before saving.</p>
                     </div>
                     <div className="revelry-ai-authoring-grid">
                         <label>
@@ -188,11 +267,24 @@ export default function RevelryAuthoringPage() {
                                 onChange={(event) => setAiQuestionCount(Math.max(3, Math.min(20, Number(event.target.value) || 10)))}
                             />
                         </label>
+                        <label className="revelry-ai-image-toggle">
+                            <span>Images</span>
+                            <label className="revelry-ai-checkbox">
+                                <input
+                                    type="checkbox"
+                                    checked={aiGenerateImages}
+                                    onChange={(event) => setAiGenerateImages(event.target.checked)}
+                                    disabled={!imageGenerationAvailable || generating}
+                                />
+                                <span>{imageGenerationAvailable ? 'Generate question images' : 'Image AI unavailable'}</span>
+                            </label>
+                        </label>
                         <button className="btn btn-primary btn-glow" type="button" onClick={generateAiQuiz} disabled={generating}>
-                            {generating ? 'Generating...' : generatedQuiz ? 'Regenerate quiz' : 'Generate AI quiz'}
+                            {generating ? (aiGenerateImages && imageGenerationAvailable ? `Generating ${imageProgress ? `${imageProgress}/${aiQuestionCount}` : '...'}` : 'Generating...') : generatedQuiz ? 'Regenerate quiz' : 'Generate AI quiz'}
                         </button>
                     </div>
                     {generationError && <p className="revelry-ai-authoring-error">{generationError}</p>}
+                    {generationWarning && <p className="revelry-ai-authoring-warning">{generationWarning}</p>}
                 </section>
             )}
             <CustomQuizEditor

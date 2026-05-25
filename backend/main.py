@@ -751,6 +751,26 @@ class ImageGenerateRequest(BaseModel):
     question_id: Optional[int] = None  # If None, generate for all questions
 
 
+def _quiz_authoring_wallet_id(req: Request) -> str:
+    has_authoring_credential = bool(
+        (req.headers.get("authorization") or "").strip().lower().startswith("bearer ")
+        or (req.query_params.get("authoring_token") or "").strip()
+    )
+    claims = _authoring_claims_from_request(req) if has_authoring_credential else None
+    if not claims:
+        return tokens.get_wallet_id(req)
+    if claims.get("game_type") != "quiz":
+        raise HTTPException(status_code=422, detail="game_type does not match authoring token")
+    launch_context = claims["launch_context"]
+    actor = _actor_from_launch_context(launch_context)
+    if not _author_can_author(actor):
+        raise HTTPException(status_code=403, detail="Missing capability to author content")
+    context = _external_context_from_launch_context(launch_context)
+    if context.host_app != "revelry":
+        raise HTTPException(status_code=422, detail="Unsupported host_app")
+    return _revelry_party_wallet_id(context.external_container_id)
+
+
 def _store_quiz_image_asset(quiz_id: str, question: dict, image_b64: str, wallet_id: str):
     """Store a generated quiz image in the shared media layer and legacy map."""
     qid = int(question["id"])
@@ -1008,7 +1028,7 @@ async def delete_question(quiz_id: str, question_id: int, req: Request):
 @app.post("/quiz/generate-images")
 async def generate_quiz_images(request: ImageGenerateRequest, req: Request):
     """Generate images for quiz questions using the shared media layer."""
-    wallet_id = tokens.get_wallet_id(req)
+    wallet_id = _quiz_authoring_wallet_id(req)
     if not wallet_id:
         raise HTTPException(status_code=401, detail="Authentication required")
     client_ip = _get_client_ip(req)
@@ -2915,7 +2935,7 @@ class QuizImportRequest(BaseModel):
 @app.post("/quiz/import")
 async def import_quiz(request: QuizImportRequest, req: Request):
     """Import a previously exported quiz."""
-    wallet_id = tokens.get_wallet_id(req)
+    wallet_id = _quiz_authoring_wallet_id(req)
     if not wallet_id:
         raise HTTPException(status_code=401, detail="Authentication required")
     _evict_old_content()
