@@ -961,7 +961,7 @@ As of 2026-05-19, the LocalPlay Supabase schema has been applied to the shared V
 - Gamma runtime was switched and smoke-tested against Supabase on 2026-05-19.
 - Production SQLite was exported into `games_*` and production was switched to Supabase on 2026-05-19 PDT.
 - Production cutover source counts matched Supabase target counts: `2` users, `7` wallets, `17` token transactions, `158` total sparks.
-- Production smoke after cutover verified `/health`, `/providers`, `/config.json`, live quiz generation, Supabase wallet/request-log writes, and retry idempotency with one `spend_generate` transaction.
+- Production smoke after cutover verified `/health`, `/providers`, `/config.json`, live quiz generation, Supabase wallet/request-log writes, and retry idempotency. Current runtime behavior preflight-checks generation balance and records `spend_generate` only when generated content is accepted into a playable room or reset.
 
 The Supabase project is shared with VibePix, so LocalPlay tables and RPCs must always use explicit prefixes:
 

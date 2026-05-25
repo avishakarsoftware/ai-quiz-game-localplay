@@ -20,6 +20,7 @@ def clear_state():
     main.drawing_games.clear()
     main.drawing_timestamps.clear()
     main.content_owners.clear()
+    main.pending_generation_charges.clear()
     main.socket_manager.rooms.clear()
     media_store.clear()
     yield
@@ -27,6 +28,7 @@ def clear_state():
     main.drawing_games.clear()
     main.drawing_timestamps.clear()
     main.content_owners.clear()
+    main.pending_generation_charges.clear()
     main.socket_manager.rooms.clear()
     media_store.clear()
 
@@ -221,6 +223,39 @@ class TestQuizModes:
         assert res.status_code == 200
         assert captured["mode"] == "rebus"
         assert "answer_index" not in res.json()["quiz"]["questions"][0]
+
+    def test_generate_charge_is_deferred_until_room_create(self, monkeypatch):
+        charges = {"generate": 0}
+
+        async def fake_generate(prompt, difficulty, num_questions, provider, model_override=None, mode="classic"):
+            return {
+                "quiz_title": "Deferred Charge",
+                "questions": [
+                    {"id": 1, "text": "Q?", "options": ["A", "B", "C", "D"], "answer_index": 0},
+                ],
+            }
+
+        def fake_spend_generate(wallet_id):
+            charges["generate"] += 1
+            return True, 998
+
+        monkeypatch.setattr(main.quiz_engine, "generate_quiz", fake_generate)
+        monkeypatch.setattr(main.tokens, "spend_generate", fake_spend_generate)
+
+        generated = client.post(
+            "/quiz/generate",
+            json={"prompt": "party", "difficulty": "easy", "num_questions": 3, "provider": "gemini"},
+            headers=AUTH_HEADERS,
+        )
+
+        assert generated.status_code == 200
+        assert charges["generate"] == 0
+
+        quiz_id = generated.json()["quiz_id"]
+        room = client.post("/room/create", json={"quiz_id": quiz_id}, headers=AUTH_HEADERS)
+
+        assert room.status_code == 200
+        assert charges["generate"] == 1
 
     def test_generate_rejects_invalid_quiz_variant_mode(self):
         res = client.post(

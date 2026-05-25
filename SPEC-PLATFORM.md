@@ -613,13 +613,13 @@ External apps should be able to render the summary without reading `details`.
 
 The spark economy applies uniformly to all games:
 
-- **Generate content**: `COST_GENERATE` (1 spark) — charged after successful LLM generation.
+- **Generate content**: `COST_GENERATE` (1 spark) — balance is checked before generation, but the debit is deferred until the generated content is successfully accepted into a room or room reset.
 - **Start a game**: `COST_ROOM` (10 sparks) — charged on `START_GAME` and `RESET_ROOM` WebSocket messages.
 - **Room creation**: free.
 
 Default rule: new games should use the shared cost model. That keeps pricing simple and predictable while the catalog is growing.
 
-If a game has no AI generation step, such as a player-authored game, only the game-start cost applies. Future exceptions are possible for premium games, sponsored/free games, unusually expensive generation modes, or games that use additional paid media services, but exceptions should be deliberate product decisions rather than per-game drift.
+If generated content is abandoned before room creation, no generation spark is taken. If a game has no AI generation step, such as a player-authored game, only the game-start cost applies. Future exceptions are possible for premium games, sponsored/free games, unusually expensive generation modes, or games that use additional paid media services, but exceptions should be deliberate product decisions rather than per-game drift.
 
 ## Game Backlog
 

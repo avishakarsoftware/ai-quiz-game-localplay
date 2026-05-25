@@ -745,7 +745,7 @@ class SocketManager:
                         return
 
                     # Check content ownership
-                    from main import content_owners
+                    from main import content_owners, pending_generation_charges
                     owner = content_owners.get(new_content_id)
                     if owner and room.wallet_id and owner != room.wallet_id:
                         logger.warning("RESET_ROOM rejected: content %s owned by %s, room wallet %s",
@@ -760,6 +760,25 @@ class SocketManager:
                             "message": "Internal error: wallet not configured.",
                         })
                         return
+                    if (
+                        room.billing_mode != "host_app_managed"
+                        and pending_generation_charges.get(new_content_id) == room.wallet_id
+                    ):
+                        required = config.COST_GENERATE + config.COST_ROOM
+                        if token_module.db.get_wallet_balance(room.wallet_id) < required:
+                            await self._send_to_client(room, client_id, {
+                                "type": "INSUFFICIENT_SPARKS",
+                                "message": f"You need {required} sparks to use generated content and start a new game.",
+                            })
+                            return
+                        generated_spent, _ = token_module.spend_generate(room.wallet_id)
+                        if not generated_spent:
+                            await self._send_to_client(room, client_id, {
+                                "type": "INSUFFICIENT_SPARKS",
+                                "message": f"You need {config.COST_GENERATE} sparks to use generated content.",
+                            })
+                            return
+                        pending_generation_charges.pop(new_content_id, None)
                     if room.billing_mode == "host_app_managed":
                         spent = True
                     else:

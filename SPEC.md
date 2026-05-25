@@ -391,7 +391,7 @@ Validation requires:
 
 - `POST /quiz/generate`
   - Requires `X-Device-Id`.
-  - Charges `COST_GENERATE` after successful generation.
+  - Requires enough balance for `COST_GENERATE`; the debit is deferred until the generated quiz is successfully accepted into a room or room reset.
   - Supports idempotency through `X-Idempotency-Key` or `Idempotency-Key`.
   - Body:
     - `prompt`
@@ -458,7 +458,7 @@ Validation requires:
 
 - `POST /mlt/generate`
   - Requires `X-Device-Id`.
-  - Charges `COST_GENERATE` after successful generation.
+  - Requires enough balance for `COST_GENERATE`; the debit is deferred until the generated setup is successfully accepted into a room or room reset.
   - Supports idempotency through `X-Idempotency-Key` or `Idempotency-Key`.
   - Body:
     - `prompt`
@@ -492,7 +492,7 @@ Validation requires:
 
 - `POST /drawing/generate`
   - Requires `X-Device-Id`.
-  - Charges `COST_GENERATE` after successful generation.
+  - Requires enough balance for `COST_GENERATE`; the debit is deferred until the generated setup is successfully accepted into a room or room reset.
   - Supports idempotency through `X-Idempotency-Key` or `Idempotency-Key`.
   - Body:
     - `prompt`
@@ -1098,8 +1098,8 @@ Billing:
 
 Important behavior:
 
-- Generation is charged only after successful LLM generation.
-- Room creation is free.
+- Generation endpoints preflight-check balance, but generated content is charged only when it first becomes playable through `/room/create` or a room reset. If room creation/reset fails, no generation spark is taken.
+- Room creation is otherwise free.
 - Game start and room reset charge room-start sparks.
 - iOS native clients are blocked from Stripe checkout by `/checkout/create`; native iOS purchases are expected to use in-app purchase paths when implemented.
 

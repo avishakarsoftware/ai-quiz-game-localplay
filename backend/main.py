@@ -224,6 +224,7 @@ housie_timestamps: Dict[str, float] = {}  # housie_id -> creation time
 
 # Content ownership: content_id -> wallet_id of creator
 content_owners: Dict[str, str] = {}
+pending_generation_charges: Dict[str, str] = {}  # content_id -> wallet_id to charge when first room is created
 
 
 def _check_content_owner(content_id: str, wallet_id: str):
@@ -248,6 +249,7 @@ def _evict_old_content():
         quiz_images.pop(qid, None)
         quiz_image_assets.pop(qid, None)
         content_owners.pop(qid, None)
+        pending_generation_charges.pop(qid, None)
     # Evict oldest non-active quizzes until under limit
     if len(quizzes) >= config.MAX_QUIZZES:
         for qid in sorted(quiz_timestamps, key=quiz_timestamps.get):
@@ -259,6 +261,7 @@ def _evict_old_content():
                 quiz_images.pop(qid, None)
                 quiz_image_assets.pop(qid, None)
                 content_owners.pop(qid, None)
+                pending_generation_charges.pop(qid, None)
 
     # Evict MLT scenarios
     expired_mlt = [sid for sid, ts in mlt_timestamps.items()
@@ -267,6 +270,7 @@ def _evict_old_content():
         mlt_scenarios.pop(sid, None)
         mlt_timestamps.pop(sid, None)
         content_owners.pop(sid, None)
+        pending_generation_charges.pop(sid, None)
     if len(mlt_scenarios) >= config.MAX_QUIZZES:
         for sid in sorted(mlt_timestamps, key=mlt_timestamps.get):
             if len(mlt_scenarios) < config.MAX_QUIZZES:
@@ -275,6 +279,7 @@ def _evict_old_content():
                 mlt_scenarios.pop(sid, None)
                 mlt_timestamps.pop(sid, None)
                 content_owners.pop(sid, None)
+                pending_generation_charges.pop(sid, None)
 
     # Evict DrawingGame prompt sets
     expired_drawing = [did for did, ts in drawing_timestamps.items()
@@ -283,6 +288,7 @@ def _evict_old_content():
         drawing_games.pop(did, None)
         drawing_timestamps.pop(did, None)
         content_owners.pop(did, None)
+        pending_generation_charges.pop(did, None)
     if len(drawing_games) >= config.MAX_QUIZZES:
         for did in sorted(drawing_timestamps, key=drawing_timestamps.get):
             if len(drawing_games) < config.MAX_QUIZZES:
@@ -291,6 +297,7 @@ def _evict_old_content():
                 drawing_games.pop(did, None)
                 drawing_timestamps.pop(did, None)
                 content_owners.pop(did, None)
+                pending_generation_charges.pop(did, None)
 
     # Evict Housie games
     expired_housie = [hid for hid, ts in housie_timestamps.items()
@@ -299,6 +306,7 @@ def _evict_old_content():
         housie_games.pop(hid, None)
         housie_timestamps.pop(hid, None)
         content_owners.pop(hid, None)
+        pending_generation_charges.pop(hid, None)
     if len(housie_games) >= config.MAX_QUIZZES:
         for hid in sorted(housie_timestamps, key=housie_timestamps.get):
             if len(housie_games) < config.MAX_QUIZZES:
@@ -307,6 +315,7 @@ def _evict_old_content():
                 housie_games.pop(hid, None)
                 housie_timestamps.pop(hid, None)
                 content_owners.pop(hid, None)
+                pending_generation_charges.pop(hid, None)
 
 def generate_room_code() -> str:
     """Generate a unique 6-character room code, checking for collisions."""
@@ -713,6 +722,21 @@ def _create_runtime_room(
     return room_code, organizer_token
 
 
+def _settle_pending_generation_charge(content_id: str, wallet_id: str, room_code: str = ""):
+    """Charge generated AI content only after it becomes playable."""
+    pending_wallet_id = pending_generation_charges.get(content_id)
+    if not pending_wallet_id:
+        return
+    if pending_wallet_id != wallet_id:
+        raise HTTPException(status_code=403, detail="You don't have permission to use this generated content")
+    spent, _ = tokens.spend_generate(wallet_id)
+    if not spent:
+        if room_code:
+            socket_manager.rooms.pop(room_code, None)
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to use generated content. Buy tokens or watch an ad!")
+    pending_generation_charges.pop(content_id, None)
+
+
 class ImageGenerateRequest(BaseModel):
     quiz_id: str
     question_id: Optional[int] = None  # If None, generate for all questions
@@ -795,16 +819,12 @@ async def generate_quiz(request: QuizRequest, req: Request):
     if not quiz_data:
         raise HTTPException(status_code=500, detail="Failed to generate quiz")
 
-    # Charge only after successful generation
-    spent, _ = tokens.spend_generate(wallet_id)
-    if not spent:
-        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
-
     _evict_old_content()
     quiz_id = str(uuid.uuid4())
     quizzes[quiz_id] = quiz_data
     quiz_timestamps[quiz_id] = time.time()
     content_owners[quiz_id] = wallet_id
+    pending_generation_charges[quiz_id] = wallet_id
     if idem_key:
         db.record_idempotency(idem_key, device_id, quiz_id)
     logger.info("Quiz created: %s ('%s') owner=%s", quiz_id, quiz_data.get("quiz_title", "Untitled"), wallet_id[:8])
@@ -2809,7 +2829,10 @@ async def create_room(request: RoomCreateRequest, req: Request):
         raise HTTPException(status_code=400, detail="Device ID required")
     tokens.ensure_wallet(wallet_id)
     _check_content_owner(content_id, wallet_id)
+    if pending_generation_charges.get(content_id) == wallet_id and not tokens.can_generate(wallet_id):
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to use generated content. Buy tokens or watch an ad!")
     room_code, organizer_token = _create_runtime_room(request.game_type, content_id, game_data, wallet_id, time_limit)
+    _settle_pending_generation_charge(content_id, wallet_id, room_code)
     return {"room_code": room_code, "organizer_token": organizer_token}
 
 
@@ -2972,16 +2995,12 @@ async def generate_mlt(request: MLTRequest, req: Request):
     if not mlt_data:
         raise HTTPException(status_code=500, detail="Failed to generate statements")
 
-    # Charge only after successful generation
-    spent, _ = tokens.spend_generate(wallet_id)
-    if not spent:
-        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
-
     _evict_old_content()
     scenario_id = str(uuid.uuid4())
     mlt_scenarios[scenario_id] = mlt_data
     mlt_timestamps[scenario_id] = time.time()
     content_owners[scenario_id] = wallet_id
+    pending_generation_charges[scenario_id] = wallet_id
     if idem_key:
         db.record_idempotency(idem_key, device_id, scenario_id)
     logger.info("MLT created: %s ('%s') owner=%s", scenario_id, mlt_data.get("game_title", "Untitled"), wallet_id[:8])
@@ -3187,15 +3206,12 @@ async def generate_drawing(request: DrawingRequest, req: Request):
     if not drawing_data:
         raise HTTPException(status_code=500, detail="Failed to generate drawing prompts")
 
-    spent, _ = tokens.spend_generate(wallet_id)
-    if not spent:
-        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
-
     _evict_old_content()
     drawing_id = str(uuid.uuid4())
     drawing_games[drawing_id] = drawing_data
     drawing_timestamps[drawing_id] = time.time()
     content_owners[drawing_id] = wallet_id
+    pending_generation_charges[drawing_id] = wallet_id
     if idem_key:
         db.record_idempotency(idem_key, device_id, drawing_id)
     logger.info("DrawingGame created: %s ('%s') owner=%s", drawing_id, drawing_data.get("game_title", "Untitled"), wallet_id[:8])
