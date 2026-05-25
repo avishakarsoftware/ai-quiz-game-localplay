@@ -1414,6 +1414,7 @@ Implementation-ready host-app lobby behavior:
   - Copy/share the same Revelry-owned join link and instruct the TV/laptop user to choose **Watch**.
   - Show the short `/tv/{room_code}` fallback for typed TV browser entry when appropriate.
   - Provide platform guidance such as iOS/macOS Control Center Screen Mirroring, Chrome's browser menu cast action, or Windows display casting, without depending on an unavailable web API.
+- If the host uses browser Cast/Screen Mirroring from the organizer tab, the TV will mirror organizer controls. LocalPlay must direct the host to open the spectator/watch view first and cast that tab/window instead.
 - Browser APIs such as `navigator.share()` are only for sharing the link; they are not a reliable TV/cast picker. Native Chromecast, Google Cast SDK, AirPlay/Apple TV, and richer receiver flows remain backlog enhancements on top of the same spectator/watch surface.
 - Tests should cover both modes: standalone still shows/copies the LocalPlay room URL, host-app with `guest_join_url` shows/copies the Revelry URL, and host-app without `guest_join_url` does not show a raw LocalPlay share fallback.
 - Completed host-app games must not expose the standalone LocalPlay game picker/library loop. Final results should keep the action boundary explicit:
