@@ -863,6 +863,10 @@ When a Housie room completes, write a `game_history` entry with:
 
 If the current history schema cannot store game-specific metadata, v1 may store a safe summary in existing fields and add richer metadata in a later persistence migration. Document any compromise in `SPEC.md` before implementation.
 
+### Play Again
+
+Standalone Housie `Play Again` should reuse the current Housie setup/content id and issue `RESET_ROOM`, not reopen the setup form or create a new setup first. The room code and connected players remain, Housie call/ticket/winner state is cleared, and the host returns to the lobby. New tickets are generated when the host starts the next round.
+
 ### Catalog And API Guardrails
 
 Do not expose Housie in host-app catalog until the host-app contract is done. Standalone catalog can show Housie only when playable.

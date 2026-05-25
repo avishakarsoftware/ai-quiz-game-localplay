@@ -288,6 +288,15 @@ export default function OrganizerPage() {
             setPlayerCount(msg.player_count as number);
             setPlayers(msg.players as PlayerInfo[] || []);
             setRoomLocked(false);
+            setCurrentQuestion(0);
+            setLeaderboard([]);
+            setTeamLeaderboard([]);
+            setHousieCalled([]);
+            setHousieLatest(null);
+            setHousieWinners([]);
+            setAnsweredCount(0);
+            setLiveQuestion(null);
+            setCurrentStatement('');
             setState('ROOM');
         }
         else if (msg.type === 'INSUFFICIENT_SPARKS') {
@@ -918,6 +927,13 @@ export default function OrganizerPage() {
         setAnsweredCount(0);
         setPrompt('');
         setCurrentStatement('');
+        setHousieCalled([]);
+        setHousieLatest(null);
+        setHousieWinners([]);
+        if (contentId && roomCode && wsRef.current?.readyState === WebSocket.OPEN) {
+            createRoom(contentId);
+            return;
+        }
         setState('SELECT_GAME');
     };
 

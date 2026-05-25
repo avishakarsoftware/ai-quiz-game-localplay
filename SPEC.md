@@ -1021,8 +1021,9 @@ Round progression:
 
 Play again:
 
-- Host returns to game select.
-- If reusing an existing room, `RESET_ROOM` can replace room content after podium.
+- The primary standalone `Play Again` action reuses the current content id, sends `RESET_ROOM`, keeps connected players in the same room, and returns the host to the lobby.
+- Hosts should only go back to game select when they explicitly choose to pick a different game or when no reusable content id/socket is available.
+- `RESET_ROOM` validates the content id, charges the room-start cost, clears round-specific state, and broadcasts `ROOM_RESET` so players return to lobby with the same room code.
 
 ## Frontend Player State Machine
 
