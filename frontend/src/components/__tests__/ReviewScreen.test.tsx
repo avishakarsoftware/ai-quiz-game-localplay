@@ -86,4 +86,14 @@ describe('ReviewScreen', () => {
 
         expect(onGenerateImages).toHaveBeenCalled();
     });
+
+    it('makes the correct answer visible when answers are shown', () => {
+        renderReview();
+
+        expect(screen.queryByText('Correct')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /Show Answers/i }));
+
+        expect(screen.getByText('Correct')).toBeInTheDocument();
+        expect(screen.getByText('Correct').closest('.answer-option')).toHaveClass('review-option-correct');
+    });
 });

@@ -3110,8 +3110,31 @@ body {
 }
 
 .review-option-correct {
-    color: var(--ink);
-    box-shadow: var(--glow-mint);
+    color: var(--ink) !important;
+    border: 2px solid var(--olive) !important;
+    background: linear-gradient(180deg, rgba(109, 255, 230, 0.30), rgba(109, 255, 230, 0.12)), var(--paper) !important;
+    box-shadow: 0 0 0 3px rgba(109, 255, 230, 0.12), var(--glow-mint);
+}
+
+.review-option-correct .answer-label {
+    background: var(--olive);
+    color: var(--bg-primary);
+    border-color: transparent;
+}
+
+.review-option-muted {
+    opacity: 0.48;
+}
+
+.review-correct-badge {
+    margin-left: auto;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: var(--olive);
+    color: var(--bg-primary);
+    font-size: 0.72rem;
+    font-weight: 1000;
+    text-transform: uppercase;
 }
 
 @media (max-width: 640px) {

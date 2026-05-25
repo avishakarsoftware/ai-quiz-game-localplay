@@ -271,10 +271,13 @@ export default function ReviewScreen({
                                                 const isCorrect = showAnswers && j === selectedQuestion.answer_index;
                                                 const style = ANSWER_STYLES[j];
                                                 return (
-                                                    <div key={j} className={`answer-option ${style.className} ${isCorrect ? 'review-option-correct' : ''}`}>
+                                                    <div
+                                                        key={j}
+                                                        className={`answer-option ${style.className} ${isCorrect ? 'review-option-correct' : ''} ${showAnswers && !isCorrect ? 'review-option-muted' : ''}`}
+                                                    >
                                                         <span className="answer-label">{String.fromCharCode(65 + j)}</span>
                                                         <span>{opt}</span>
-                                                        {isCorrect && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--olive)' }}>✓</span>}
+                                                        {isCorrect && <span className="review-correct-badge">Correct</span>}
                                                     </div>
                                                 );
                                             })}
