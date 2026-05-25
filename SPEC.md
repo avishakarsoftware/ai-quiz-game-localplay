@@ -1001,6 +1001,8 @@ Room creation:
 
 - Calls `/room/create`.
 - Sends `quiz_id`, `mlt_id`, or `drawing_id` based on `gameType`.
+- Standalone review/setup components must invoke the room creation callback with no browser event argument, for example `onClick={() => onCreateRoom()}`. Passing `onClick={onCreateRoom}` is unsafe because React forwards the click event into the optional content override slot used by reset/play-again flows, which can prevent `/room/create` from being sent.
+- Explicit content-id overrides are reserved for code-owned reset/play-again/materialized-content paths, never raw DOM events.
 - Opens organizer WebSocket with `organizer=true`.
 - Sends first-frame `AUTH`.
 
