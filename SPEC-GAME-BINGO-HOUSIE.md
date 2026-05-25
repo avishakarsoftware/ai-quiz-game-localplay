@@ -517,12 +517,379 @@ Housie should start in standalone LocalPlay. Later, when enabled for Revelry:
 - Results callback posts safe winner/prize summaries.
 - Party type can influence templates later, such as holiday Housie or baby shower Bingo.
 
+## Implementation Details
+
+This section is the build checklist. If it conflicts with higher-level product notes above, prefer this section for v1 implementation.
+
+### Backend Files
+
+Add or update:
+
+- `backend/bingo_engine.py`
+  - Pure, deterministic Bingo-family helpers.
+  - No FastAPI, WebSocket, token, or database imports.
+- `backend/housie_engine.py`
+  - Housie-specific ticket generation, default pattern definitions, and claim validation.
+  - May import shared types/helpers from `bingo_engine.py`.
+- `backend/socket_manager.py`
+  - Add `housie` runtime branch to `Room`.
+  - Add Housie state reset, sync, call, claim, completion, and history behavior.
+- `backend/main.py`
+  - Accept `game_type = "housie"` in room creation validation.
+  - Add optional `housie_id` or generic `content_id` handling for saved/default Housie setup.
+  - Add catalog metadata for standalone Housie as disabled/planned until runtime is implemented.
+  - Add `/housie/default` or equivalent only if the frontend needs a setup preview endpoint; otherwise create content directly at room creation.
+- `backend/config.py`
+  - Add `MIN_HOUSIE_PLAYERS = 2`.
+  - Reuse `MAX_PLAYERS_PER_ROOM`.
+- `backend/tests/test_housie_engine.py`
+  - Pure engine tests.
+- `backend/tests/test_housie_ws.py` or existing WebSocket flow tests
+  - Runtime/caller/claim/spectator tests.
+
+Do not add Supabase schema in v1 unless durable saved Housie setups require a new typed table. Prefer the existing generated content model for initial saved setup payloads if it is sufficient.
+
+### Frontend Files
+
+Add or update:
+
+- `frontend/src/types.ts`
+  - Add `housie` to `GameType`.
+  - Add shared Bingo/Housie types if used across surfaces.
+- `frontend/src/gameModes.ts`
+  - Add a Housie catalog config with `runtimeType: "housie"` after `runtimeType` supports it.
+- `frontend/src/pages/OrganizerPage.tsx`
+  - Add Housie setup entry point.
+  - Add caller runtime branch once room is created.
+- `frontend/src/pages/PlayerPage.tsx`
+  - Add player ticket runtime branch.
+- `frontend/src/pages/SpectatorPage.tsx`
+  - Add Housie spectator/called-board branch.
+- `frontend/src/components/organizer/HousieSetupScreen.tsx`
+  - Standalone setup: title, caller mode, interval, prize toggles.
+- `frontend/src/components/organizer/HousieCallerScreen.tsx`
+  - Organizer/caller runtime controls.
+- `frontend/src/components/player/HousieTicket.tsx`
+  - Player ticket grid and claim buttons.
+- `frontend/src/components/spectator/HousieSpectatorScreen.tsx`
+  - TV/spectator latest call, called board, and winners.
+- `frontend/src/components/housie/`
+  - Optional shared visual pieces: ticket grid, called board, prize badge, latest call card.
+
+Keep Housie UI components shared between standalone and future host-app mode. Host-app behavior should be props/context policy, not a forked UI.
+
+### TypeScript Runtime Types
+
+Add these types or close equivalents:
+
+```ts
+export type BingoItem =
+  | { kind: "number"; value: number; display: string }
+  | { kind: "word"; value: string; display: string }
+  | { kind: "emoji"; value: string; display: string }
+  | { kind: "image"; asset_id: string; public_url: string; alt_text: string; display: string };
+
+export interface BingoCell {
+  id: string;
+  row: number;
+  column: number;
+  item: BingoItem;
+  marked: boolean;
+}
+
+export interface HousieTicket {
+  ticket_id: string;
+  rows: 3;
+  columns: 9;
+  cells: Array<Array<BingoCell | null>>;
+}
+
+export interface BingoPattern {
+  id: "quick_5" | "four_corners" | "top_row" | "middle_row" | "bottom_row" | "full_house" | string;
+  label: string;
+  max_winners: number;
+  terminal?: boolean;
+}
+
+export interface BingoWinner {
+  pattern_id: string;
+  pattern_label: string;
+  player_id: string;
+  player_name: string;
+  call_index: number;
+}
+```
+
+### Engine Function Contracts
+
+`housie_engine.py` should expose pure functions shaped like:
+
+```python
+def default_housie_patterns() -> list[dict]:
+    ...
+
+def build_housie_deck(rng: random.Random | None = None) -> list[dict]:
+    """Return shuffled number items 1..90 without replacement."""
+
+def generate_housie_ticket(
+    player_id: str,
+    rng: random.Random | None = None,
+    existing_hashes: set[str] | None = None,
+) -> dict:
+    """Return one valid 3x9/15-cell ticket."""
+
+def validate_housie_ticket(ticket: dict) -> tuple[bool, list[str]]:
+    """Return validity plus machine-readable error codes."""
+
+def ticket_hash(ticket: dict) -> str:
+    """Stable hash of filled numeric values and positions."""
+
+def required_cells_for_pattern(ticket: dict, pattern_id: str) -> list[dict]:
+    """Return ticket cells required for a prize claim."""
+
+def validate_housie_claim(
+    ticket: dict,
+    pattern_id: str,
+    called_numbers: set[int],
+    awarded_patterns: dict[str, list[dict]],
+) -> tuple[bool, str]:
+    """Return (accepted, reason). Reasons include accepted, unknown_pattern, already_awarded, not_complete, uncalled_number."""
+```
+
+`bingo_engine.py` should contain generic helpers that future word/emoji/image Bingo can reuse:
+
+```python
+def normalize_bingo_item(raw: dict) -> dict: ...
+def called_value_set(called_items: list[dict]) -> set[str | int]: ...
+def count_markable_items(ticket: dict, called_values: set[str | int]) -> int: ...
+```
+
+### Ticket Generation Algorithm Details
+
+Use a bounded retry algorithm so generation cannot loop forever:
+
+```python
+MAX_TICKET_GENERATION_ATTEMPTS = 200
+```
+
+Recommended position allocation:
+
+1. Generate all row masks with exactly 5 filled cells across 9 columns.
+2. Pick one mask for each of 3 rows.
+3. Reject if any column has more than 3 cells.
+4. Prefer masks where at least 7 of 9 columns are used; this keeps tickets visually balanced while still allowing empty columns.
+5. Sample column numbers and sort top-to-bottom.
+6. Validate and hash.
+7. Retry on duplicate hash or invalid ticket.
+
+Do not mutate global randomness in tests. Accept an injected `random.Random`.
+
+### Socket Manager Integration
+
+Extend `Room` with Housie fields. Keep names separate from quiz/WMLT/drawing fields so reset behavior is readable:
+
+```python
+self.bingo_deck: list[dict] = []
+self.bingo_called_items: list[dict] = []
+self.bingo_latest_item: Optional[dict] = None
+self.bingo_tickets: dict[str, dict] = {}  # player_id -> ticket
+self.bingo_patterns: list[dict] = []
+self.bingo_winners: list[dict] = []
+self.bingo_claim_log: list[dict] = []
+self.bingo_caller_mode: str = "manual"
+self.bingo_auto_interval_seconds: int = 8
+self.bingo_auto_task: Optional[asyncio.Task] = None
+self.bingo_pending_claims: set[str] = set()
+```
+
+Reset these fields in `reset_for_new_game()`.
+
+`Room.total_rounds()` for Housie should return `len(self.bingo_deck)` or `90`, but organizer/player UX should not depend on quiz-style round indexes.
+
+Room states:
+
+- Use existing `LOBBY` before game start.
+- Add Housie-specific states using the existing `state` string:
+  - `BINGO_CALLING`
+  - `BINGO_PAUSED`
+  - `PODIUM` or `COMPLETE` depending on current completion conventions.
+
+Avoid overloading `QUESTION` for Housie. It makes spectator/player branching confusing.
+
+### WebSocket Payloads
+
+#### Organizer Starts Housie
+
+```json
+{
+  "type": "BINGO_START",
+  "caller_mode": "manual",
+  "auto_interval_seconds": 8,
+  "patterns": ["quick_5", "four_corners", "top_row", "middle_row", "bottom_row", "full_house"]
+}
+```
+
+Server behavior:
+
+- Reject if fewer than `MIN_HOUSIE_PLAYERS`.
+- Generate one ticket for every connected player who does not already have one.
+- Initialize shuffled deck if needed.
+- Broadcast `BINGO_SYNC`.
+
+#### Organizer Calls Next
+
+```json
+{ "type": "BINGO_CALL_NEXT" }
+```
+
+Server broadcasts:
+
+```json
+{
+  "type": "BINGO_CALL",
+  "item": { "kind": "number", "value": 42, "display": "42" },
+  "call_index": 12,
+  "called_count": 12,
+  "remaining_count": 78
+}
+```
+
+#### Player Claim
+
+```json
+{
+  "type": "BINGO_CLAIM",
+  "pattern_id": "top_row"
+}
+```
+
+Server infers `player_id` and ticket from the websocket connection. Do not accept a client-supplied `ticket_id` unless it matches the server-owned player ticket.
+
+### Reconnect Behavior
+
+Player reconnect should restore:
+
+- same nickname/session token behavior as existing games.
+- existing ticket.
+- local marked state if server chooses to sync marks.
+- called history.
+- claim/winner state.
+
+If server does not persist marks, client can recompute markable cells from called history and its local selections. Server claim validation remains authoritative either way.
+
+### History And Results
+
+When a Housie room completes, write a `game_history` entry with:
+
+- `game_type = "housie"`.
+- `game_title`.
+- `player_count`.
+- `completed_at`.
+- `total_questions = 0` or a future renamed/optional round count; do not pretend there were quiz questions.
+- `leaderboard = []` unless later scoring is added.
+- `metadata` or game-specific result payload with:
+  - `called_count`.
+  - `winners`.
+  - `patterns`.
+  - `duration_seconds`.
+
+If the current history schema cannot store game-specific metadata, v1 may store a safe summary in existing fields and add richer metadata in a later persistence migration. Document any compromise in `SPEC.md` before implementation.
+
+### Catalog And API Guardrails
+
+Do not expose Housie in host-app catalog until the host-app contract is done. Standalone catalog can show Housie only when playable.
+
+Required backend validation:
+
+- `RoomCreateRequest.validate_game_type` accepts `housie` only after runtime is implemented.
+- Unknown Bingo pattern ids are rejected.
+- Auto interval is clamped, recommended 3-30 seconds.
+- Enabled pattern list must not be empty.
+- Housie room creation never accepts arbitrary player tickets from clients.
+
+### Styling And UX
+
+Housie should feel like a real game, not a debug panel:
+
+- Use large tactile number tiles.
+- Called numbers should animate into history.
+- Player ticket should be thumb-friendly on mobile.
+- Claims should be prominent but not easy to mis-tap; use confirmation for claim buttons if multiple patterns are available.
+- Spectator latest call should be huge and high contrast.
+- Use existing Velvet tokens and avoid nested cards.
+
+### Accessibility
+
+- Ticket cells need text labels such as `Column 4, row 2, number 37, marked`.
+- Called-board cells need called/not-called labels.
+- Do not rely only on color to show marked/called/winning states.
+- Auto-caller controls must be keyboard reachable.
+- Claim rejection should be announced in an ARIA live region.
+
+### Test Matrix
+
+Backend engine tests:
+
+- `generate_housie_ticket` returns 3 rows and 9 columns.
+- Every generated ticket has exactly 15 filled cells.
+- Every row has exactly 5 filled cells.
+- No column has more than 3 filled cells.
+- Numbers are unique within a ticket.
+- Numbers fall within their configured column range.
+- Numbers sort ascending top-to-bottom in each column.
+- Repeated seeded generation is deterministic.
+- Duplicate ticket hashes cause retry.
+- `quick_5` accepts any 5 called ticket numbers and rejects 4.
+- `four_corners` uses outermost filled top/bottom cells, not literal empty corner grid cells.
+- `top_row`, `middle_row`, `bottom_row`, and `full_house` validate correctly.
+- Claims reject unknown patterns, already-awarded patterns, uncalled numbers, and wrong-player tickets.
+
+Backend WebSocket tests:
+
+- Organizer cannot start Housie calling with fewer than 2 players.
+- Organizer can start once 2 players have joined.
+- Players receive server-generated tickets.
+- Spectator receives `SPECTATOR_SYNC` with Housie state after joining mid-game.
+- `BINGO_CALL_NEXT` advances without repeating numbers.
+- `BINGO_UNDO_LAST_CALL` works before dependent claims and is rejected after dependent claims.
+- Accepted claim broadcasts to organizer, player, and spectator.
+- Rejected claim only notifies the claiming player plus optional organizer log.
+- Full House terminal claim completes the game and writes safe history.
+- Auto-caller can pause/resume and stops on terminal completion.
+
+Frontend unit tests:
+
+- Housie ticket component renders empty and filled cells with accessible labels.
+- Marking a called cell toggles marked state.
+- Claim buttons show available patterns and disabled/awarded states.
+- Organizer caller screen disables undo when server says undo is blocked.
+- Spectator screen renders latest call, called board, and winner announcements.
+
+Playwright tests:
+
+- Standalone host creates a Housie room.
+- Two players join, receive different tickets, and see the lobby.
+- Host starts calling and both players see latest call updates.
+- Player claim flow shows accepted/rejected feedback.
+- Spectator/TV view can connect before and after calls begin.
+- Mobile viewport ticket remains usable without horizontal overflow.
+
+### Recommended PR Order
+
+1. Pure engine only: `bingo_engine.py`, `housie_engine.py`, and backend engine tests.
+2. Backend room runtime: add `housie` type, WebSocket events, state sync, claim validation, and history summary.
+3. Frontend standalone setup and organizer caller surface.
+4. Frontend player ticket and spectator called-board surfaces.
+5. E2E polish: auto-caller, reconnect, accessibility, mobile layout, and Playwright coverage.
+6. Catalog enablement for standalone.
+7. Host-app/Revelry enablement in a later slice after standalone gamma testing.
+
 ## Implementation Plan
 
 ### Phase 0: Spec And Engine Shape
 
-- Add this spec.
-- Add `housie`/`bingo` to planned catalog metadata but keep hidden or disabled if not implemented.
+- Add this spec. Done.
+- Add `housie`/`bingo` to planned catalog metadata but keep hidden or disabled until runtime is implemented.
 - Write pure engine tests for Housie ticket generation and claim validation.
 
 ### Phase 1: Standalone Housie Runtime
