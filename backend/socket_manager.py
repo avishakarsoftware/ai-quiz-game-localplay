@@ -15,6 +15,12 @@ import httpx
 
 import config
 import tokens as token_module
+from housie_engine import (
+    PATTERN_ORDER,
+    create_call_deck,
+    generate_ticket,
+    validate_claim,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +32,7 @@ class Room:
         self.room_code = room_code
         self.quiz = game_data  # generic game content (quiz or WMLT)
         self.content_id = content_id
-        self.game_type = game_type  # "quiz", "wmlt", or "drawing"
+        self.game_type = game_type  # "quiz", "wmlt", "drawing", or "housie"
         self.time_limit = time_limit
         self.organizer_token = organizer_token  # secret token for organizer auth
         self.players: Dict[str, dict] = {}  # socket_id -> {nickname, score, prev_rank, streak, ...}
@@ -71,6 +77,14 @@ class Room:
         self.drawing_ops: List[dict] = []
         self.guess_log: List[dict] = []
         self.draw_op_timestamps: Dict[str, list] = {}
+        # Housie state
+        self.housie_deck: List[dict] = []
+        self.housie_called: List[dict] = []
+        self.housie_tickets: Dict[str, dict] = {}  # nickname -> ticket
+        self.housie_winners: List[dict] = []
+        self.housie_claimed_patterns: set = set()
+        self.housie_claim_log: List[dict] = []
+        self.housie_auto_task: Optional[asyncio.Task] = None
 
     def reset_for_new_game(self, new_game_data: dict, new_time_limit: int,
                            game_type: Optional[str] = None,
@@ -120,6 +134,15 @@ class Room:
         self.drawing_ops = []
         self.guess_log = []
         self.draw_op_timestamps.clear()
+        self.housie_deck = []
+        self.housie_called = []
+        self.housie_tickets = {}
+        self.housie_winners = []
+        self.housie_claimed_patterns = set()
+        self.housie_claim_log = []
+        if self.housie_auto_task:
+            self.housie_auto_task.cancel()
+            self.housie_auto_task = None
 
         for nickname in self.power_ups:
             self.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
@@ -139,6 +162,8 @@ class Room:
             return len(self.quiz.get("statements", []))
         if self.game_type == "drawing":
             return len(self.quiz.get("prompts", []))
+        if self.game_type == "housie":
+            return 90
         return len(self.quiz.get("questions", []))
 
     def current_round_data(self) -> Optional[dict]:
@@ -150,6 +175,10 @@ class Room:
             return self.quiz["statements"][idx]
         if self.game_type == "drawing":
             return self.quiz["prompts"][idx]
+        if self.game_type == "housie":
+            if 0 <= idx < len(self.housie_called):
+                return self.housie_called[idx]
+            return None
         return self.quiz["questions"][idx]
 
     def game_title(self) -> str:
@@ -200,6 +229,9 @@ class Room:
 
     async def close_all_connections(self):
         """Close all player, organizer, and spectator websockets."""
+        if self.housie_auto_task:
+            self.housie_auto_task.cancel()
+            self.housie_auto_task = None
         for ws in list(self.connections.values()):
             try:
                 await ws.close()
@@ -386,6 +418,8 @@ class SocketManager:
                     elapsed = time.time() - room.question_start_time
                     sync["time_remaining"] = max(0, room.time_limit - int(elapsed))
                     sync["is_bonus"] = room.current_question_index in room.bonus_questions
+                if room.game_type == "housie":
+                    sync["bingo"] = self._housie_public_state(room)
                 await websocket.send_json(sync)
                 while True:
                     try:
@@ -547,6 +581,9 @@ class SocketManager:
             elapsed = time.time() - room.question_start_time
             sync["time_remaining"] = max(0, room.time_limit - int(elapsed))
 
+        if room.game_type == "housie":
+            sync["bingo"] = self._housie_public_state(room)
+
         if room.organizer:
             await room.organizer.send_json(sync)
         logger.info("Organizer reconnected to room %s (state: %s)", room.room_code, room.state)
@@ -587,6 +624,14 @@ class SocketManager:
                                 "message": f"Drawing Game needs at least {config.MIN_DRAWING_PLAYERS} players to start",
                             })
                             return
+                    elif room.game_type == "housie":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_HOUSIE_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Housie needs at least {config.MIN_HOUSIE_PLAYERS} players to start",
+                            })
+                            return
                     if room.billing_mode == "host_app_managed":
                         spent = True
                     else:
@@ -600,15 +645,30 @@ class SocketManager:
                     room.locked = True
                     if room.game_type == "quiz":
                         self._select_bonus_questions(room)
-                    room.state = "INTRO"
                     self._mark_game_session_started(room)
-                    await room.broadcast({"type": "GAME_STARTING"})
+                    if room.game_type == "housie":
+                        room.locked = True
+                        room.state = "BINGO_CALLING"
+                        self._start_housie_round(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": "housie"})
+                        await self._broadcast_housie_sync(room)
+                    else:
+                        room.state = "INTRO"
+                        await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
+                if room.game_type == "housie":
+                    return
                 if room.state == "QUESTION":
                     await self.end_question(room)
                 elif room.state in ("INTRO", "LEADERBOARD"):
                     await self.start_question(room)
+
+            elif msg_type == "BINGO_CALL_NEXT" and room.game_type == "housie":
+                await self._housie_call_next(room)
+
+            elif msg_type == "BINGO_UNDO_LAST_CALL" and room.game_type == "housie":
+                await self._housie_undo_last_call(room)
 
             elif msg_type == "SET_TIME_LIMIT":
                 if room.state in ("LOBBY", "LEADERBOARD", "PODIUM"):
@@ -623,6 +683,9 @@ class SocketManager:
                         room.show_votes = val
 
             elif msg_type == "END_QUIZ":
+                if room.game_type == "housie" and room.state == "BINGO_CALLING":
+                    await self._complete_housie(room)
+                    return
                 if room.state in ("QUESTION", "LEADERBOARD"):
                     if room.timer_task:
                         room.timer_task.cancel()
@@ -654,7 +717,7 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing") else room.game_type
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie") else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
 
                     # Validate time_limit
@@ -665,11 +728,13 @@ class SocketManager:
                     new_time_limit = max(5, min(60, new_time_limit))
 
                     # Validate content BEFORE charging
-                    from main import quizzes, mlt_scenarios, drawing_games
+                    from main import quizzes, mlt_scenarios, drawing_games, housie_games
                     if new_game_type == "wmlt":
                         new_game_data = mlt_scenarios.get(new_content_id)
                     elif new_game_type == "drawing":
                         new_game_data = drawing_games.get(new_content_id)
+                    elif new_game_type == "housie":
+                        new_game_data = housie_games.get(new_content_id)
                     else:
                         new_game_data = quizzes.get(new_content_id)
 
@@ -794,7 +859,9 @@ class SocketManager:
                             "total_questions": room.total_rounds(),
                             "avatar": saved.get("avatar", avatar),
                         }
-                        if room.state == "QUESTION":
+                        if room.game_type == "housie":
+                            state_info["bingo"] = self._housie_player_state(room, nickname)
+                        elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
                                 state_info["statement"] = round_data
@@ -874,7 +941,9 @@ class SocketManager:
                             "total_questions": room.total_rounds(),
                             "avatar": player_data.get("avatar", ""),
                         }
-                        if room.state == "QUESTION":
+                        if room.game_type == "housie":
+                            state_info["bingo"] = self._housie_player_state(room, player_data["nickname"])
+                        elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
                                 state_info["statement"] = round_data
@@ -996,9 +1065,12 @@ class SocketManager:
             elif msg_type == "GUESS" and room.game_type == "drawing":
                 await self._handle_drawing_guess(room, client_id, message)
 
+            elif msg_type == "BINGO_CLAIM" and room.game_type == "housie":
+                await self._handle_housie_claim(room, client_id, message)
+
             elif msg_type == "ANSWER":
-                if room.game_type in ("wmlt", "drawing"):
-                    return  # WMLT uses VOTE; DrawingGame uses GUESS
+                if room.game_type in ("wmlt", "drawing", "housie"):
+                    return  # Other games use their own input messages
                 if client_id not in room.players:
                     return
                 answer_index = message.get("answer_index")
@@ -1124,6 +1196,164 @@ class SocketManager:
                             "power_up": "fifty_fifty",
                             "remove_indices": remove,
                         })
+
+    def _start_housie_round(self, room: Room):
+        room.housie_deck = create_call_deck()
+        room.housie_called = []
+        room.housie_winners = []
+        room.housie_claimed_patterns = set()
+        room.housie_claim_log = []
+        room.housie_tickets = {}
+        for idx, (client_id, player) in enumerate(room.players.items()):
+            nickname = player["nickname"]
+            ticket_id = f"{room.room_code}-{idx + 1}"
+            room.housie_tickets[nickname] = generate_ticket(ticket_id, client_id, nickname)
+
+    def _housie_patterns(self, room: Room) -> list[dict]:
+        patterns = room.quiz.get("patterns") if isinstance(room.quiz.get("patterns"), list) else []
+        known = {pattern["id"]: pattern for pattern in patterns if isinstance(pattern, dict) and pattern.get("id")}
+        return [known[pid] for pid in PATTERN_ORDER if pid in known]
+
+    def _housie_public_state(self, room: Room) -> dict:
+        return {
+            "game_title": room.game_title(),
+            "state": room.state,
+            "called_items": room.housie_called,
+            "latest_item": room.housie_called[-1] if room.housie_called else None,
+            "remaining_count": len(room.housie_deck),
+            "patterns": self._housie_patterns(room),
+            "winners": room.housie_winners,
+            "claim_log": room.housie_claim_log[-10:],
+        }
+
+    def _housie_player_state(self, room: Room, nickname: str) -> dict:
+        return {
+            **self._housie_public_state(room),
+            "ticket": room.housie_tickets.get(nickname),
+        }
+
+    async def _broadcast_housie_sync(self, room: Room):
+        base = {
+            "type": "BINGO_SYNC",
+            "game_type": "housie",
+            "bingo": self._housie_public_state(room),
+            "player_count": len(room.players),
+            "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
+        }
+        for client_id, ws in list(room.connections.items()):
+            if client_id in room.players:
+                nickname = room.players[client_id]["nickname"]
+                payload = dict(base)
+                payload["bingo"] = self._housie_player_state(room, nickname)
+                try:
+                    await ws.send_json(payload)
+                except Exception:
+                    room._remove_connection(client_id)
+        await room.send_to_organizer(base)
+        for ws in list(room.spectators.values()):
+            try:
+                await ws.send_json(base)
+            except Exception:
+                pass
+
+    async def _housie_call_next(self, room: Room):
+        async with room.lock:
+            if room.state != "BINGO_CALLING" or not room.housie_deck:
+                return
+            item = room.housie_deck.pop(0)
+            room.housie_called.append(item)
+            room.current_question_index = len(room.housie_called) - 1
+            room.answer_log.append({"kind": "call", "item": item, "index": len(room.housie_called)})
+        await room.broadcast({
+            "type": "BINGO_CALL",
+            "game_type": "housie",
+            "item": item,
+            "called_items": room.housie_called,
+            "remaining_count": len(room.housie_deck),
+        })
+        if not room.housie_deck:
+            await self._complete_housie(room)
+
+    async def _housie_undo_last_call(self, room: Room):
+        async with room.lock:
+            if room.state != "BINGO_CALLING" or not room.housie_called:
+                return
+            item = room.housie_called.pop()
+            room.housie_deck.insert(0, item)
+            room.current_question_index = len(room.housie_called) - 1
+        await self._broadcast_housie_sync(room)
+
+    async def _handle_housie_claim(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players or room.state != "BINGO_CALLING":
+            return
+        pattern_id = str(message.get("pattern_id") or "").strip()
+        if pattern_id not in {pattern["id"] for pattern in self._housie_patterns(room)}:
+            await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "message": "Unknown prize"})
+            return
+        if pattern_id in room.housie_claimed_patterns:
+            await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "message": "That prize has already been awarded"})
+            return
+        nickname = room.players[client_id]["nickname"]
+        ticket = room.housie_tickets.get(nickname)
+        valid, reason = validate_claim(ticket or {}, room.housie_called, pattern_id)
+        if not valid:
+            await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "message": reason})
+            return
+        pattern = next((p for p in self._housie_patterns(room) if p["id"] == pattern_id), {"label": pattern_id})
+        winner = {
+            "pattern_id": pattern_id,
+            "label": pattern.get("label", pattern_id),
+            "nickname": nickname,
+            "called_count": len(room.housie_called),
+        }
+        async with room.lock:
+            if pattern_id in room.housie_claimed_patterns:
+                return
+            room.housie_claimed_patterns.add(pattern_id)
+            room.housie_winners.append(winner)
+            room.housie_claim_log.append(winner)
+            if pattern_id == "full_house":
+                room.players[client_id]["score"] += 1000
+            else:
+                room.players[client_id]["score"] += 250
+            room.answer_log.append({"kind": "claim", **winner})
+        await room.broadcast({
+            "type": "BINGO_CLAIM_ACCEPTED",
+            "game_type": "housie",
+            "winner": winner,
+            "winners": room.housie_winners,
+            "leaderboard": self.get_leaderboard(room),
+        })
+        if pattern_id == "full_house":
+            await self._complete_housie(room)
+
+    async def _complete_housie(self, room: Room):
+        if room.state == "PODIUM":
+            return
+        room.state = "PODIUM"
+        leaderboard = self.get_leaderboard(room)
+        await room.broadcast({
+            "type": "BINGO_COMPLETE",
+            "game_type": "housie",
+            "winners": room.housie_winners,
+            "leaderboard": leaderboard,
+            "team_leaderboard": self.get_team_leaderboard(room),
+        })
+        await room.broadcast({
+            "type": "PODIUM",
+            "leaderboard": leaderboard,
+            "team_leaderboard": self.get_team_leaderboard(room),
+            "housie_winners": room.housie_winners,
+        })
+        try:
+            from main import game_history
+            summary = self.get_game_summary(room)
+            game_history.append(summary)
+            if len(game_history) > config.MAX_GAME_HISTORY:
+                del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+            self._mark_game_session_complete(room, summary)
+        except Exception:
+            logger.warning("Could not save Housie history for room %s", room.room_code)
 
     def _drawing_player_state(self, room: Room, nickname: str, prompt: Optional[dict]) -> dict:
         is_drawer = nickname == room.current_drawer
@@ -1311,7 +1541,7 @@ class SocketManager:
     def get_game_summary(self, room: Room) -> dict:
         """Build a game summary for history storage."""
         all_player_count = len(room.players) + len(room.disconnected_players)
-        return {
+        summary = {
             "room_code": room.room_code,
             "game_type": room.game_type,
             "game_title": room.game_title(),
@@ -1323,6 +1553,19 @@ class SocketManager:
             "completed_at": time.time(),
             "wallet_id": room.wallet_id or "",
         }
+        if room.game_type == "housie":
+            summary["total_questions"] = len(room.housie_called)
+            summary["total_rounds"] = len(room.housie_called)
+            summary["winners"] = room.housie_winners
+            summary["top_results"] = [
+                {
+                    "nickname": winner.get("nickname"),
+                    "score": next((p.get("score", 0) for p in self._all_players_for_leaderboard(room) if p.get("nickname") == winner.get("nickname")), 0),
+                    "prize": winner.get("label"),
+                }
+                for winner in room.housie_winners[:5]
+            ]
+        return summary
 
     def _callback_event_type(self, event_type: str) -> str:
         return {

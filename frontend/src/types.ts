@@ -67,7 +67,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -89,6 +89,43 @@ export interface DrawingPrompt {
 export interface DrawingGame {
     game_title: string;
     prompts: DrawingPrompt[];
+}
+
+export interface HousiePattern {
+    id: string;
+    label: string;
+    description?: string;
+}
+
+export interface HousieGame {
+    game_title: string;
+    patterns: HousiePattern[];
+    caller_mode?: 'manual' | 'auto';
+    auto_interval_seconds?: number;
+}
+
+export interface HousieCell {
+    kind: 'number' | 'text' | 'emoji' | 'image';
+    value: number | string;
+    display: string;
+    sort_value?: number;
+    row?: number;
+    col?: number;
+}
+
+export interface HousieTicket {
+    id: string;
+    player_id: string;
+    player_name: string;
+    layout: string;
+    rows: Array<Array<HousieCell | null>>;
+}
+
+export interface HousieWinner {
+    pattern_id: string;
+    label: string;
+    nickname: string;
+    called_count: number;
 }
 
 export interface DrawOperation {

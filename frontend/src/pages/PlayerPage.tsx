@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { WS_URL } from '../config';
-import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -13,11 +13,12 @@ import PlayerChip from '../components/PlayerChip';
 import Avatar from '../components/Avatar';
 import DrawingCanvas from '../components/DrawingCanvas';
 import GameImage from '../components/media/GameImage';
+import { HousieClaimButtons, HousieTicketGrid, HousieWinners } from '../components/HousieBoard';
 import { mediaUrl } from '../utils/media';
 import { apiUrl } from '../utils/api';
 import { returnToHostApp } from '../utils/hostAppReturn';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
 interface PlayerQuestion {
     id: number;
@@ -118,6 +119,12 @@ export default function PlayerPage() {
     const [correctGuessers, setCorrectGuessers] = useState<string[]>([]);
     const [guessLog, setGuessLog] = useState<{ nickname: string; guess: string; correct?: boolean }[]>([]);
     const [drawingRoundPrompt, setDrawingRoundPrompt] = useState('');
+    const [housieTicket, setHousieTicket] = useState<HousieTicket | null>(null);
+    const [housieCalled, setHousieCalled] = useState<Array<{ value: number | string; display: string }>>([]);
+    const [housieLatest, setHousieLatest] = useState<{ value: number | string; display: string } | null>(null);
+    const [housiePatterns, setHousiePatterns] = useState<HousiePattern[]>([]);
+    const [housieWinners, setHousieWinners] = useState<HousieWinner[]>([]);
+    const [markedNumbers, setMarkedNumbers] = useState<Set<string>>(new Set());
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const submittedRef = useRef(false);
@@ -130,6 +137,22 @@ export default function PlayerPage() {
         wsRef.current?.close();
         wsRef.current = null;
     }, []);
+
+    const applyBingoState = (bingo?: {
+        ticket?: HousieTicket;
+        called_items?: Array<{ value: number | string; display: string }>;
+        latest_item?: { value: number | string; display: string } | null;
+        patterns?: HousiePattern[];
+        winners?: HousieWinner[];
+    }) => {
+        setGameType('housie');
+        setHousieTicket(bingo?.ticket || null);
+        setHousieCalled(bingo?.called_items || []);
+        setHousieLatest(bingo?.latest_item || null);
+        setHousiePatterns(bingo?.patterns || []);
+        setHousieWinners(bingo?.winners || []);
+        setState('BINGO');
+    };
 
     useEffect(() => {
         if (state !== 'INTRO') return;
@@ -211,6 +234,8 @@ export default function PlayerPage() {
                 if (msg.power_ups) setPowerUps(msg.power_ups as PowerUps);
                 if (msg.state === 'LOBBY') {
                     setState('LOBBY');
+                } else if (msg.game_type === 'housie' || msg.state === 'BINGO_CALLING') {
+                    applyBingoState(msg.bingo as Parameters<typeof applyBingoState>[0]);
                 } else if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
                         setGameType('drawing');
@@ -255,7 +280,32 @@ export default function PlayerPage() {
             if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED' || msg.type === 'PLAYER_RECONNECTED') {
                 if (msg.players) setLobbyPlayers(msg.players);
             }
-            if (msg.type === 'GAME_STARTING') setState('INTRO');
+            if (msg.type === 'GAME_STARTING') {
+                if (msg.game_type === 'housie') setState('BINGO');
+                else setState('INTRO');
+            }
+            if (msg.type === 'BINGO_SYNC') {
+                applyBingoState(msg.bingo as Parameters<typeof applyBingoState>[0]);
+            }
+            if (msg.type === 'BINGO_CALL') {
+                setGameType('housie');
+                setHousieCalled(msg.called_items as Array<{ value: number | string; display: string }> || []);
+                setHousieLatest(msg.item as { value: number | string; display: string });
+                setState('BINGO');
+                soundManager.play('timerTick');
+            }
+            if (msg.type === 'BINGO_CLAIM_ACCEPTED') {
+                setHousieWinners(msg.winners as HousieWinner[] || []);
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+                soundManager.play('fanfare');
+            }
+            if (msg.type === 'BINGO_CLAIM_REJECTED') {
+                setError((msg.message as string) || 'Claim rejected');
+            }
+            if (msg.type === 'BINGO_COMPLETE') {
+                setHousieWinners(msg.winners as HousieWinner[] || []);
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+            }
             if (msg.type === 'QUESTION') {
                 if (msg.game_type === 'drawing') {
                     setGameType('drawing');
@@ -471,6 +521,22 @@ export default function PlayerPage() {
         setGuess('');
     };
 
+    const toggleHousieMark = (value: number | string) => {
+        const key = String(value);
+        setMarkedNumbers((current) => {
+            const next = new Set(current);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    };
+
+    const submitHousieClaim = (patternId: string) => {
+        setError('');
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'BINGO_CLAIM', pattern_id: patternId }));
+    };
+
     const activatePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'USE_POWER_UP', power_up: powerUp }));
@@ -667,6 +733,34 @@ export default function PlayerPage() {
                         <div className="intro-kicker">Room {roomCode}</div>
                         <h1 className="intro-title">Get Ready</h1>
                         <div className="intro-count" aria-live="polite">{introCount}</div>
+                    </div>
+                )}
+
+                {state === 'BINGO' && (
+                    <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
+                        <div className="text-center mb-5">
+                            <p className="text-[--text-tertiary] text-sm">Housie</p>
+                            <h1 className="hero-title">{housieLatest ? housieLatest.display : 'Waiting for first call'}</h1>
+                            <p className="text-[--text-secondary]">{housieCalled.length} numbers called</p>
+                        </div>
+                        {housieTicket && (
+                            <div className="mb-5">
+                                <HousieTicketGrid
+                                    ticket={housieTicket}
+                                    calledValues={new Set(housieCalled.map((item) => String(item.value)))}
+                                    marked={markedNumbers}
+                                    onToggle={(cell) => toggleHousieMark(cell.value)}
+                                />
+                            </div>
+                        )}
+                        <div className="card mb-4">
+                            <h2 className="font-extrabold text-lg mb-3">Claim a prize</h2>
+                            <HousieClaimButtons patterns={housiePatterns} winners={housieWinners} onClaim={submitHousieClaim} />
+                        </div>
+                        <div className="card">
+                            <h2 className="font-extrabold text-lg mb-3">Winners</h2>
+                            <HousieWinners winners={housieWinners} />
+                        </div>
                     </div>
                 )}
 

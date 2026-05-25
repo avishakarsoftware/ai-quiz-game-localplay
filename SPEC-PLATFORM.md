@@ -1035,7 +1035,7 @@ The event-specific value comes from themed AI prompts, not new game mechanics. T
 
 ### Bingo / Housie Runtime
 
-Classic bingo, housie/tambola, and baby bingo are adjacent to quiz authoring but need a different room model. The implementation-ready spec is `SPEC-GAME-BINGO-HOUSIE.md`, with Housie as the first ruleset on a reusable Bingo-family engine:
+Classic bingo, housie/tambola, and baby bingo are adjacent to quiz authoring but need a different room model. The implementation-ready spec is `SPEC-GAME-BINGO-HOUSIE.md`, with standalone Housie implemented as the first ruleset on a reusable Bingo-family engine:
 
 - Host creates or selects a board template: numbers, words, images, or event-specific phrases.
 - Server generates unique player boards when players join.
@@ -1044,7 +1044,7 @@ Classic bingo, housie/tambola, and baby bingo are adjacent to quiz authoring but
 - Winning patterns should be configurable: one line, two lines, four corners, early five, full house, baby-gift row, etc.
 - Spectator view should show the latest call, call history, current claims, and winners.
 
-Complexity: medium. This is a good event-game candidate after custom quiz packs because it reuses host-authored content, saved templates, image/word banks, and spectator-first party flow, but it requires new board/claim state rather than quiz answer scoring.
+Complexity: medium. Standalone Housie now covers the new board/claim state: server-generated tickets, manual caller, claim validation, winners, and spectator sync. The next platform slice is polish and durable templates, then host-app/Revelry enablement once party-scoped setup and safe result callbacks are ready.
 
 ### Image-Based Game Modes
 

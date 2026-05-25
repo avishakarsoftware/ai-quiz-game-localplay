@@ -16,12 +16,30 @@ Backend engine: bingo_engine.py / housie_engine.py
 Frontend display name: Housie
 ```
 
+## Current Implementation Status
+
+Standalone Housie is implemented as the first Bingo-family runtime:
+
+- `backend/bingo_engine.py` provides reusable deck/item helpers for future numeric, word, emoji, and image Bingo variants.
+- `backend/housie_engine.py` generates classic 3x9 / 15-number Housie tickets, creates the 1-90 call deck, and validates Quick 5, Four Corners, Top/Middle/Bottom Row, and Full House claims.
+- `backend/socket_manager.py` has a dedicated `BINGO_CALLING` runtime path. Housie does not overload quiz `QUESTION` rounds.
+- Standalone catalog shows Housie. `GET /catalog?host_app=revelry` does not expose Housie yet because the host-app setup/result contract is not enabled.
+- Organizer can create a Housie setup, create a room, start with at least two players, call/undo numbers, view the called board, and end the game.
+- Players receive server-generated tickets, mark cells locally, submit prize claims, and see accepted claims.
+- Spectator/TV receives current called numbers, latest number, and winners through `SPECTATOR_SYNC` / `BINGO_*` messages.
+
+Known v1 limitations:
+
+- Auto-caller mode is present in setup data but not yet wired to a pause/resume UI.
+- Housie setup is in-memory like generated quiz/drawing content; durable saved Bingo templates are future work.
+- Host-app/Revelry mode remains disabled until party-scoped setup, callbacks, result summaries, and e2e tests are added.
+
 ## Goals
 
 - Add a generic Bingo-family runtime that can support numbers, words, emojis, and images.
 - Ship Housie as the first implementation using classic 1-90 tickets.
 - Generate valid Housie tickets with 15 filled cells and configurable number-column layout.
-- Support manual calling and auto-caller mode.
+- Support manual calling in v1; add auto-caller pause/resume in the polish slice.
 - Stream the latest call and call history to organizer, player, and spectator screens.
 - Let players mark cells on their own ticket.
 - Let players claim configured prizes.
@@ -924,22 +942,22 @@ Playwright tests:
 ### Phase 0: Spec And Engine Shape
 
 - Add this spec. Done.
-- Add `housie`/`bingo` to planned catalog metadata but keep hidden or disabled until runtime is implemented.
-- Write pure engine tests for Housie ticket generation and claim validation.
+- Add `housie` to standalone catalog metadata while keeping it hidden from host-app catalog until runtime contracts are complete. Done.
+- Write pure engine tests for Housie ticket generation and claim validation. Done.
 
 ### Phase 1: Standalone Housie Runtime
 
 - Add backend engine functions:
   - generate Housie deck.
   - generate ticket.
-  - validate ticket.
-  - call next item.
+  - validate ticket shape through tests.
+  - call next item through room runtime.
   - validate claims.
-- Add runtime state to socket manager.
-- Add organizer caller screen.
-- Add player ticket screen.
-- Add spectator called-board screen.
-- Add game history summary.
+- Add runtime state to socket manager. Done.
+- Add organizer caller screen. Done.
+- Add player ticket screen. Done.
+- Add spectator called-board screen. Done.
+- Add game history summary. Done.
 
 ### Phase 2: Polish
 
@@ -948,6 +966,8 @@ Playwright tests:
 - Better TV called-board layout.
 - Player reconnect restores ticket.
 - Accessibility pass for marked cells and color contrast.
+- Durable standalone saved Housie templates.
+- Voice/audio number calls and better caller announcements.
 
 ### Phase 3: Bingo Family Expansion
 

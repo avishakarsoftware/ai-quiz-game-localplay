@@ -31,6 +31,7 @@ config.setup_logging()
 from quiz_engine import quiz_engine, _sanitize_quiz, _validate_quiz, VALID_QUIZ_MODES, DailyLimitExceeded, AIQuotaExceeded
 from mlt_engine import mlt_engine, _sanitize_mlt, _validate_mlt
 from drawing_engine import drawing_engine, _sanitize_drawing_game, _validate_drawing_game
+from housie_engine import DEFAULT_HOUSIE_PATTERNS, default_housie_game, sanitize_patterns
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -50,6 +51,7 @@ API_PREFIXES = (
     "/entitlements",
     "/health",
     "/history",
+    "/housie",
     "/integrations",
     "/media",
     "/mlt",
@@ -216,6 +218,10 @@ mlt_timestamps: Dict[str, float] = {}  # scenario_id -> creation time
 drawing_games: Dict[str, dict] = {}  # drawing_id -> {game_title, prompts}
 drawing_timestamps: Dict[str, float] = {}  # drawing_id -> creation time
 
+# Housie storage
+housie_games: Dict[str, dict] = {}  # housie_id -> {game_title, patterns, caller settings}
+housie_timestamps: Dict[str, float] = {}  # housie_id -> creation time
+
 # Content ownership: content_id -> wallet_id of creator
 content_owners: Dict[str, str] = {}
 
@@ -285,6 +291,22 @@ def _evict_old_content():
                 drawing_games.pop(did, None)
                 drawing_timestamps.pop(did, None)
                 content_owners.pop(did, None)
+
+    # Evict Housie games
+    expired_housie = [hid for hid, ts in housie_timestamps.items()
+                      if now - ts > config.QUIZ_TTL_SECONDS and hid not in active_content_ids]
+    for hid in expired_housie:
+        housie_games.pop(hid, None)
+        housie_timestamps.pop(hid, None)
+        content_owners.pop(hid, None)
+    if len(housie_games) >= config.MAX_QUIZZES:
+        for hid in sorted(housie_timestamps, key=housie_timestamps.get):
+            if len(housie_games) < config.MAX_QUIZZES:
+                break
+            if hid not in active_content_ids:
+                housie_games.pop(hid, None)
+                housie_timestamps.pop(hid, None)
+                content_owners.pop(hid, None)
 
 def generate_room_code() -> str:
     """Generate a unique 6-character room code, checking for collisions."""
@@ -357,6 +379,7 @@ class RoomCreateRequest(BaseModel):
     quiz_id: str = ""      # For quiz game
     mlt_id: str = ""       # For MLT game
     drawing_id: str = ""   # For DrawingGame
+    housie_id: str = ""    # For Housie
     game_type: str = "quiz"
     time_limit: Optional[int] = None
 
@@ -372,8 +395,8 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing"):
-            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
+        if v not in ("quiz", "wmlt", "drawing", "housie"):
+            raise ValueError('game_type must be "quiz", "wmlt", "drawing", or "housie"')
         return v
 
 
@@ -452,11 +475,60 @@ GAME_CATALOG = [
             "time_limit": {"min": 5, "max": 60, "default": 30},
         },
     },
+    {
+        "id": "housie",
+        "game_type": "housie",
+        "runtime_type": "housie",
+        "title": "Housie",
+        "description": "Classic 90-ball number calling with tickets and prize claims.",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": True,
+        "supports_images": False,
+        "can_create_content": True,
+        "can_edit_content": True,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["manual", "template"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "housie_setup",
+            "ticket_layout": "housie_3x9_15",
+            "number_range": {"min": 1, "max": 90},
+            "patterns": [pattern["id"] for pattern in DEFAULT_HOUSIE_PATTERNS],
+            "supported_media": [],
+        },
+    },
 ]
 
 
 def _default_time_limit_for_game(game_type: str) -> int:
     return 30 if game_type == "drawing" else config.DEFAULT_TIME_LIMIT
+
+
+def _sanitize_housie_game(game: dict) -> dict:
+    title = str(game.get("game_title") or game.get("title") or "Housie").strip()[:120] or "Housie"
+    pattern_ids = sanitize_patterns(game.get("pattern_ids") or [p.get("id") for p in game.get("patterns", []) if isinstance(p, dict)])
+    pattern_map = {p["id"]: p for p in DEFAULT_HOUSIE_PATTERNS}
+    patterns = [dict(pattern_map[pid]) for pid in pattern_ids if pid in pattern_map]
+    caller_mode = str(game.get("caller_mode") or "manual").strip().lower()
+    if caller_mode not in ("manual", "auto"):
+        caller_mode = "manual"
+    try:
+        auto_interval = int(game.get("auto_interval_seconds") or 8)
+    except (TypeError, ValueError):
+        auto_interval = 8
+    return {
+        "game_title": title,
+        "layout": "housie_3x9_15",
+        "deck": game.get("deck") if isinstance(game.get("deck"), list) else default_housie_game(title)["deck"],
+        "patterns": patterns,
+        "caller_mode": caller_mode,
+        "auto_interval_seconds": max(3, min(30, auto_interval)),
+        "auto_pause_on_claim": bool(game.get("auto_pause_on_claim", True)),
+    }
 
 
 def _now_ts() -> int:
@@ -479,6 +551,8 @@ def _public_base_url(req: Request) -> str:
 
 
 def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
+    if game_type == "housie":
+        return str(uuid.uuid4()), default_housie_game(title or "Housie")
     if game_type == "wmlt":
         return str(uuid.uuid4()), {
             "game_title": title or "Most Likely To",
@@ -520,6 +594,12 @@ def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = 
                 raise HTTPException(status_code=404, detail="Drawing game not found")
             return content_id, drawing_games[content_id]
         return _default_game_content(game_type, title)
+    if game_type == "housie":
+        if content_id:
+            if content_id not in housie_games:
+                raise HTTPException(status_code=404, detail="Housie game not found")
+            return content_id, housie_games[content_id]
+        return _default_game_content(game_type, title)
     if content_id:
         if content_id not in quizzes:
             raise HTTPException(status_code=404, detail="Quiz not found")
@@ -545,11 +625,13 @@ def _resolve_revelry_runtime_content(
         quiz_timestamps[content_id] = time.time()
         content_owners[content_id] = wallet_id
         return content_id, quiz_data
-    if game_type in ("wmlt", "drawing") and content_id:
+    if game_type in ("wmlt", "drawing", "housie") and content_id:
         if game_type == "wmlt" and content_id in mlt_scenarios:
             return content_id, mlt_scenarios[content_id]
         if game_type == "drawing" and content_id in drawing_games:
             return content_id, drawing_games[content_id]
+        if game_type == "housie" and content_id in housie_games:
+            return content_id, housie_games[content_id]
         content = db.get_game_content(wallet_id, content_id)
         if not content or content.get("game_type") != game_type:
             raise HTTPException(status_code=404, detail="Game content not found for this party")
@@ -563,7 +645,7 @@ def _resolve_revelry_runtime_content(
                 raise HTTPException(status_code=422, detail="Invalid Most Likely To content")
             mlt_scenarios[content_id] = game_data
             mlt_timestamps[content_id] = time.time()
-        else:
+        elif game_type == "drawing":
             game_data = _sanitize_drawing_game(game_data)
             if not _validate_drawing_game(game_data, attempt=0):
                 raise HTTPException(status_code=422, detail="Invalid drawing game content")
@@ -571,6 +653,10 @@ def _resolve_revelry_runtime_content(
                 game_data["time_limit"] = int(payload["time_limit"])
             drawing_games[content_id] = game_data
             drawing_timestamps[content_id] = time.time()
+        else:
+            game_data = _sanitize_housie_game(game_data)
+            housie_games[content_id] = game_data
+            housie_timestamps[content_id] = time.time()
         content_owners[content_id] = wallet_id
         return content_id, game_data
     return _resolve_runtime_content(game_type, content_id, title)
@@ -588,6 +674,8 @@ def _create_runtime_room(
         raise HTTPException(status_code=422, detail="Game has no statements")
     if game_type == "drawing" and not game_data.get("prompts"):
         raise HTTPException(status_code=422, detail="Drawing game has no prompts")
+    if game_type == "housie" and not game_data.get("patterns"):
+        raise HTTPException(status_code=422, detail="Housie game has no prize patterns")
     if game_type == "quiz" and not game_data.get("questions"):
         raise HTTPException(status_code=422, detail="Quiz has no questions")
     if len(socket_manager.rooms) >= config.MAX_ROOMS:
@@ -1068,9 +1156,15 @@ async def get_media_asset(asset_id: str):
 @app.get("/catalog")
 async def get_catalog(host_app: str = ""):
     """Return launchable LocalPlay catalog metadata for first-party and host apps."""
+    games = GAME_CATALOG
+    if host_app:
+        games = [
+            game for game in GAME_CATALOG
+            if game.get("host_app_supported") and host_app in game.get("supported_host_apps", [])
+        ]
     return {
         "host_app": host_app or None,
-        "games": GAME_CATALOG,
+        "games": games,
     }
 
 
@@ -1383,6 +1477,10 @@ def _revelry_launch_context(
     return_url: str = "",
     display: Optional[dict[str, Any]] = None,
 ) -> dict:
+    allowed_games = [
+        game["id"] for game in GAME_CATALOG
+        if game.get("launchable") and game.get("host_app_supported") and context.host_app in game.get("supported_host_apps", [])
+    ]
     return {
         "mode": "host_app",
         "host_app": context.host_app,
@@ -1400,7 +1498,7 @@ def _revelry_launch_context(
         "return_url": return_url or context.return_url,
         "guest_join_url": context.guest_join_url,
         "billing_mode": "host_app_managed",
-        "allowed_game_ids": [game["id"] for game in GAME_CATALOG if game.get("launchable")],
+        "allowed_game_ids": allowed_games,
         "surface": surface,
         "display": _revelry_display(context, display),
     }
@@ -1794,7 +1892,10 @@ def _workspace_payload(context: RevelryExternalContext) -> dict:
             "external_container_id": context.external_container_id,
             "external_container_title": context.external_container_title,
         },
-        "catalog": GAME_CATALOG,
+        "catalog": [
+            game for game in GAME_CATALOG
+            if game.get("host_app_supported") and context.host_app in game.get("supported_host_apps", [])
+        ],
         "prepared_content": prepared,
         "active_session": _format_session(active) if active else None,
         "recent_results": [],
@@ -2695,7 +2796,12 @@ async def sd_status():
 
 @app.post("/room/create")
 async def create_room(request: RoomCreateRequest, req: Request):
-    content_id = request.quiz_id if request.game_type == "quiz" else request.mlt_id if request.game_type == "wmlt" else request.drawing_id
+    content_id = (
+        request.quiz_id if request.game_type == "quiz"
+        else request.mlt_id if request.game_type == "wmlt"
+        else request.drawing_id if request.game_type == "drawing"
+        else request.housie_id
+    )
     content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
     time_limit = request.time_limit if request.time_limit is not None else _default_time_limit_for_game(request.game_type)
     wallet_id = tokens.get_wallet_id(req)
@@ -3153,6 +3259,85 @@ async def delete_drawing_prompt(drawing_id: str, prompt_id: int, req: Request):
         raise HTTPException(status_code=400, detail="Cannot delete the last prompt")
     game["prompts"] = remaining
     return {"drawing_id": drawing_id, "game": game}
+
+
+# --- Housie Endpoints ---
+
+
+class HousieCreateRequest(BaseModel):
+    game_title: str = "Housie"
+    pattern_ids: List[str] = Field(default_factory=lambda: [pattern["id"] for pattern in DEFAULT_HOUSIE_PATTERNS])
+    caller_mode: str = "manual"
+    auto_interval_seconds: int = 8
+
+    @field_validator("game_title")
+    @classmethod
+    def validate_game_title(cls, value: str) -> str:
+        value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", value or "").strip()
+        if not value or len(value) > 120:
+            raise ValueError("Game title must be 1-120 characters")
+        return value
+
+    @field_validator("caller_mode")
+    @classmethod
+    def validate_caller_mode(cls, value: str) -> str:
+        value = (value or "manual").lower().strip()
+        if value not in ("manual", "auto"):
+            raise ValueError('caller_mode must be "manual" or "auto"')
+        return value
+
+    @field_validator("auto_interval_seconds")
+    @classmethod
+    def validate_auto_interval(cls, value: int) -> int:
+        if value < 3 or value > 30:
+            raise ValueError("auto_interval_seconds must be 3-30")
+        return value
+
+
+@app.post("/housie/create")
+async def create_housie(request: HousieCreateRequest, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    tokens.ensure_wallet(wallet_id)
+    _evict_old_content()
+    game_data = _sanitize_housie_game({
+        "game_title": request.game_title,
+        "pattern_ids": request.pattern_ids,
+        "caller_mode": request.caller_mode,
+        "auto_interval_seconds": request.auto_interval_seconds,
+    })
+    housie_id = str(uuid.uuid4())
+    housie_games[housie_id] = game_data
+    housie_timestamps[housie_id] = time.time()
+    content_owners[housie_id] = wallet_id
+    logger.info("Housie created: %s ('%s') owner=%s", housie_id, game_data["game_title"], wallet_id[:8])
+    return {"housie_id": housie_id, "game": game_data}
+
+
+@app.get("/housie/{housie_id}")
+async def get_housie(housie_id: str):
+    if housie_id not in housie_games:
+        raise HTTPException(status_code=404, detail="Housie game not found")
+    return housie_games[housie_id]
+
+
+@app.put("/housie/{housie_id}")
+async def update_housie(housie_id: str, request: HousieCreateRequest, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if housie_id not in housie_games:
+        raise HTTPException(status_code=404, detail="Housie game not found")
+    _check_content_owner(housie_id, wallet_id)
+    game_data = _sanitize_housie_game({
+        "game_title": request.game_title,
+        "pattern_ids": request.pattern_ids,
+        "caller_mode": request.caller_mode,
+        "auto_interval_seconds": request.auto_interval_seconds,
+    })
+    housie_games[housie_id] = game_data
+    return {"housie_id": housie_id, "game": game_data}
 
 
 # --- Game History ---
@@ -3627,6 +3812,7 @@ async def admin_stats(req: Request):
     total_quizzes = len(quizzes)
     total_mlt = len(mlt_scenarios)
     total_drawing = len(drawing_games)
+    total_housie = len(housie_games)
 
     # Database stats
     db_stats = db.get_admin_stats()
@@ -3649,6 +3835,7 @@ async def admin_stats(req: Request):
             "quizzes_in_memory": total_quizzes,
             "mlt_in_memory": total_mlt,
             "drawing_in_memory": total_drawing,
+            "housie_in_memory": total_housie,
         },
         "economy": {
             "total_wallets": db_stats["wallet_count"],

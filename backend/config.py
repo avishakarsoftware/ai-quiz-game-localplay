@@ -86,6 +86,7 @@ VALID_DIFFICULTIES = ("easy", "medium", "hard")
 MAX_PLAYERS_PER_ROOM = 100
 MIN_WMLT_PLAYERS = 2  # WMLT minimum players
 MIN_DRAWING_PLAYERS = 2  # DrawingGame minimum players
+MIN_HOUSIE_PLAYERS = 2  # Housie minimum players
 MAX_GAME_HISTORY = 1000
 
 # --- Streak bonus ---

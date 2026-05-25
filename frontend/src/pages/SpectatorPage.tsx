@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
@@ -13,6 +13,7 @@ import PlayerChip from '../components/PlayerChip';
 import Avatar from '../components/Avatar';
 import DrawingCanvas from '../components/DrawingCanvas';
 import GameImage from '../components/media/GameImage';
+import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
 import { mediaUrl } from '../utils/media';
 import { apiUrl } from '../utils/api';
 import { returnToHostApp } from '../utils/hostAppReturn';
@@ -98,6 +99,9 @@ export default function SpectatorPage() {
     const [correctGuessers, setCorrectGuessers] = useState<string[]>([]);
     const [guessLog, setGuessLog] = useState<{ nickname: string; guess: string; correct?: boolean }[]>([]);
     const [drawingRoundPrompt, setDrawingRoundPrompt] = useState('');
+    const [housieCalled, setHousieCalled] = useState<Array<{ value: number | string; display: string }>>([]);
+    const [housieLatest, setHousieLatest] = useState<{ value: number | string; display: string } | null>(null);
+    const [housieWinners, setHousieWinners] = useState<HousieWinner[]>([]);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -212,6 +216,13 @@ export default function SpectatorPage() {
                 setTotalQuestions(msg.total_questions);
                 setLeaderboard(msg.leaderboard || []);
                 if (msg.game_type) setGameType(msg.game_type);
+                if (msg.game_type === 'housie' && msg.bingo) {
+                    setHousieCalled(msg.bingo.called_items || []);
+                    setHousieLatest(msg.bingo.latest_item || null);
+                    setHousieWinners(msg.bingo.winners || []);
+                    setGameState(String(msg.state || 'BINGO_CALLING'));
+                    return;
+                }
                 // Handle mid-question sync
                 if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
@@ -243,7 +254,33 @@ export default function SpectatorPage() {
                 setPlayerCount(msg.player_count);
                 setPlayers(msg.players || []);
             }
-            else if (msg.type === 'GAME_STARTING') { setGameState('INTRO'); }
+            else if (msg.type === 'GAME_STARTING') {
+                if (msg.game_type === 'housie') setGameState('BINGO_CALLING');
+                else setGameState('INTRO');
+            }
+            else if (msg.type === 'BINGO_SYNC') {
+                setGameType('housie');
+                setHousieCalled(msg.bingo?.called_items || []);
+                setHousieLatest(msg.bingo?.latest_item || null);
+                setHousieWinners(msg.bingo?.winners || []);
+                setGameState('BINGO_CALLING');
+            }
+            else if (msg.type === 'BINGO_CALL') {
+                setGameType('housie');
+                setHousieCalled(msg.called_items || []);
+                setHousieLatest(msg.item || null);
+                setGameState('BINGO_CALLING');
+                soundManager.play('timerTick');
+            }
+            else if (msg.type === 'BINGO_CLAIM_ACCEPTED') {
+                setHousieWinners(msg.winners || []);
+                setLeaderboard(msg.leaderboard || []);
+                soundManager.play('fanfare');
+            }
+            else if (msg.type === 'BINGO_COMPLETE') {
+                setHousieWinners(msg.winners || []);
+                setLeaderboard(msg.leaderboard || []);
+            }
             else if (msg.type === 'QUESTION') {
                 if (msg.game_type) setGameType(msg.game_type);
                 setQuestionNumber(msg.question_number);
@@ -334,6 +371,9 @@ export default function SpectatorPage() {
                 setCorrectGuessers([]);
                 setGuessLog([]);
                 setDrawingRoundPrompt('');
+                setHousieCalled([]);
+                setHousieLatest(null);
+                setHousieWinners([]);
                 if (msg.game_type) setGameType(msg.game_type);
                 setGameState('LOBBY');
             }
@@ -582,6 +622,26 @@ export default function SpectatorPage() {
                             <div className="intro-kicker">Room {roomCode}</div>
                             <h1 className="intro-title">{gameType === 'drawing' ? 'Draw Incoming' : gameType === 'wmlt' ? 'Round Incoming' : 'Quiz Incoming'}</h1>
                             <div className="intro-count" aria-label="Starting soon">3</div>
+                        </div>
+                    )}
+
+                    {gameState === 'BINGO_CALLING' && (
+                        <div className="flex-1 flex flex-col justify-center animate-in">
+                            <div className="text-center mb-8">
+                                <p className="text-[--text-tertiary] text-xl">Housie</p>
+                                <h1 className="hero-title" style={{ fontSize: '5rem' }}>{housieLatest ? housieLatest.display : 'Waiting for first call'}</h1>
+                                <p className="text-[--text-secondary] text-2xl">{housieCalled.length} numbers called</p>
+                            </div>
+                            <div className="card mb-6">
+                                <HousieCalledBoard
+                                    calledValues={new Set(housieCalled.map((item) => String(item.value)))}
+                                    latestValue={housieLatest?.value}
+                                />
+                            </div>
+                            <div className="card">
+                                <h2 className="font-extrabold text-2xl mb-4">Winners</h2>
+                                <HousieWinners winners={housieWinners} />
+                            </div>
                         </div>
                     )}
 
