@@ -31,6 +31,12 @@ Frontend display name: Housie
 - Make the engine extensible enough for Baby Bingo and other event Bingo variants without rewriting the room lifecycle.
 - Support standalone LocalPlay first; expose to Revelry only after standalone UX and safe result summaries are polished.
 
+## Constraints
+
+- Minimum players: 2. Housie is a group game; a single player can technically mark and claim but the experience is meaningless.
+- Enforce the minimum when the host starts calling, not when the room is created or when a player joins. This keeps setup and TV testing possible while still preventing a one-person live game.
+- Maximum players: same as `MAX_PLAYERS_PER_ROOM` (100 by default at the time of this spec). Each player receives one ticket in v1; multi-ticket support is a future option.
+
 ## Non-Goals
 
 - No gambling, real-money prizes, betting, or cash-out mechanics.
@@ -115,9 +121,9 @@ Each ticket must satisfy:
 - 3 rows.
 - 9 numeric columns.
 - 15 filled cells total.
-- 5 filled cells per row.
-- At least 1 filled cell in each row.
+- Exactly 5 filled cells per row.
 - No more than 3 filled cells in any column.
+- A column may have 0 filled cells.
 - No duplicate numbers.
 - Filled numbers belong to their column range.
 - Filled numbers in a column are sorted ascending from top to bottom.
@@ -148,7 +154,7 @@ The host sees:
 
 - Current/latest called item.
 - Next number button.
-- Undo last call, only before any accepted claim depends on it.
+- Undo last call. Disabled when any accepted claim was validated against the last called number. The server checks whether removing the last call would invalidate any accepted claim; if so, undo is blocked and the organizer sees a disabled state with a tooltip or label explaining why.
 - Full called board/history.
 - Claim queue.
 - Prize status.
@@ -160,6 +166,8 @@ Auto-caller mode should:
 
 - Call the next item every configured interval, default 8 seconds.
 - Let host pause/resume.
+- When `auto_pause_on_claim` is true, pause auto-caller while a claim is pending validation. Resume automatically after the claim is accepted or rejected, unless the accepted claim closes a terminal prize.
+- When `auto_pause_on_claim` is false, auto-caller continues calling while claims are processed.
 - Stop automatically when all numbers are called or a configured terminal prize is awarded.
 - Announce upcoming call visually with a short countdown on organizer/spectator.
 - Never skip claim validation; players can still claim while auto-caller is running.
@@ -181,7 +189,7 @@ Housie v1 should support these prize patterns:
 | Pattern | Meaning |
 |---|---|
 | `quick_5` | First player to mark any 5 called numbers on their ticket |
-| `four_corners` | All four ticket corner cells are marked |
+| `four_corners` | First and last filled cells in the top row, and first and last filled cells in the bottom row, are all marked. These are the outermost filled cells, not literal grid positions, since Housie rows have only 5 of 9 columns filled. |
 | `top_row` | All filled cells in row 0 are marked |
 | `middle_row` | All filled cells in row 1 are marked |
 | `bottom_row` | All filled cells in row 2 are marked |
@@ -201,6 +209,10 @@ Prize configuration should be room-level:
   ]
 }
 ```
+
+A `terminal` prize ends the game when its `max_winners` count is reached. If `max_winners` is 1, the game ends on the first Full House claim. If `max_winners` is greater than 1, claims are accepted until the count is reached, then the game ends.
+
+If all 90 numbers are called before any terminal prize is awarded, the game should auto-complete. The result summary records the state at that point with any prizes awarded so far.
 
 If simultaneous claims occur for the same pattern after the same call, the room should support tie behavior:
 
