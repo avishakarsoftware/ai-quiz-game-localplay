@@ -2155,7 +2155,7 @@ body {
 }
 
 .housie-ticket-cell.empty {
-    background: rgba(0, 0, 0, 0.28);
+    background: rgba(246, 236, 216, 0.98);
 }
 
 .housie-ticket-cell.filled {
