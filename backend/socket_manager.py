@@ -522,7 +522,7 @@ class SocketManager:
                     await room.broadcast({"type": "ORGANIZER_DISCONNECTED"})
                     # Start grace period — delete room if organizer doesn't reconnect
                     room._organizer_cleanup_task = asyncio.create_task(
-                        self._delayed_room_cleanup(room_code, delay=5)
+                        self._delayed_room_cleanup(room_code, delay=config.ORGANIZER_RECONNECT_GRACE_SECONDS)
                     )
             if room._player_event:
                 event_type, nickname = room._player_event

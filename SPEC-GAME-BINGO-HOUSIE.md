@@ -830,6 +830,21 @@ Player reconnect should restore:
 
 If server does not persist marks, client can recompute markable cells from called history and its local selections. Server claim validation remains authoritative either way.
 
+Organizer reconnect should tolerate normal mobile sleep/background behavior. A host phone lock must not close the room immediately. The backend uses `ORGANIZER_RECONNECT_GRACE_SECONDS` before deleting a room after organizer disconnect; the default should remain around 10 minutes for party play. Players should see a host-disconnected waiting state during this grace period, and the organizer should receive a full Housie sync on reconnect.
+
+The player client should also attempt a wake reconnect on `pageshow`, `visibilitychange`, `focus`, or `online` when it has a saved room/session token. If the socket is still open, the client may send a lightweight ping message to refresh activity; if it is closed, it should rejoin using the saved session token.
+
+### Ticket Visual Model
+
+Housie tickets should look like traditional paper tickets:
+
+- Render as an actual 3x9 table structure, not a loose list or flex layout.
+- Use a warm cream ticket background.
+- Show visible gridlines between all cells.
+- Empty cells stay the same paper family as filled cells, but remain blank and non-interactive.
+- Filled cells use dark ink.
+- Called/marked cells use high-contrast accent styling without hiding the ticket grid.
+
 ### History And Results
 
 When a Housie room completes, write a `game_history` entry with:

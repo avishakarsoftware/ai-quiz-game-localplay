@@ -494,6 +494,39 @@ export default function PlayerPage() {
         };
     };
 
+    useEffect(() => {
+        const reconnectAfterWake = () => {
+            if (document.visibilityState === 'hidden') return;
+            if (!getSavedSession() || kickedRef.current || state === 'PODIUM') return;
+            const ws = wsRef.current;
+            if (ws?.readyState === WebSocket.OPEN) {
+                try {
+                    ws.send(JSON.stringify({ type: 'PING' }));
+                } catch {
+                    // The close handler will schedule the real reconnect.
+                }
+                return;
+            }
+            if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.CLOSING)) {
+                return;
+            }
+            wsRef.current = null;
+            joinRoom();
+        };
+
+        window.addEventListener('pageshow', reconnectAfterWake);
+        window.addEventListener('focus', reconnectAfterWake);
+        window.addEventListener('online', reconnectAfterWake);
+        document.addEventListener('visibilitychange', reconnectAfterWake);
+        return () => {
+            window.removeEventListener('pageshow', reconnectAfterWake);
+            window.removeEventListener('focus', reconnectAfterWake);
+            window.removeEventListener('online', reconnectAfterWake);
+            document.removeEventListener('visibilitychange', reconnectAfterWake);
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [state]);
+
     const submitAnswer = (index: number) => {
         if (selectedAnswer !== null || submittedRef.current) return;
         submittedRef.current = true;

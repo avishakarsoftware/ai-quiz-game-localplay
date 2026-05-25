@@ -160,6 +160,7 @@ Important settings:
   - `MAX_PLAYERS_PER_ROOM`.
   - `MIN_WMLT_PLAYERS`.
   - `ROOM_TTL_SECONDS`.
+  - `ORGANIZER_RECONNECT_GRACE_SECONDS`, default 600 seconds. This protects live rooms from being closed immediately when the host phone locks, backgrounds the browser, or briefly loses connectivity.
   - `QUIZ_TTL_SECONDS`.
 - Economy:
   - `COST_GENERATE`.

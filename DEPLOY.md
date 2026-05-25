@@ -683,6 +683,7 @@ SUPABASE_SERVICE_KEY=<service-role-key>
 
 # Game
 ROOM_TTL_SECONDS=1800
+ORGANIZER_RECONNECT_GRACE_SECONDS=600
 LOG_LEVEL=INFO
 ```
 
@@ -706,9 +707,13 @@ TRUST_PROXY_HEADERS=true
 GEMINI_MODEL=gemini-2.5-flash-lite
 GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite
 REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json
+ROOM_TTL_SECONDS=1800
+ORGANIZER_RECONNECT_GRACE_SECONDS=600
 ```
 
 AI model gotcha: `backend/config.py` defaults to `gemini-2.5-flash-lite`, but deployed env vars and remote `config.json` override code defaults. If generation fails with Gemini `404 Not Found`, check `GEMINI_MODEL`, `GEMINI_PREMIUM_MODEL`, `REMOTE_CONFIG_URL`, and `ai_models` in `frontend/public/config.json`. Free and premium generation should both use `gemini-2.5-flash-lite`.
+
+Mobile room lifecycle gotcha: keep `ORGANIZER_RECONNECT_GRACE_SECONDS` comfortably longer than a normal phone lock/background interruption. The default is 600 seconds. Do not lower this to a few seconds; otherwise the organizer's phone sleeping can close the whole room before the host or players can reconnect.
 
 Ollama and Stable Diffusion are NOT available on the production VM (no GPU).
 

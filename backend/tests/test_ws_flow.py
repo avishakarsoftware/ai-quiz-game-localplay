@@ -9,6 +9,7 @@ import os
 import uuid
 import json
 from contextlib import contextmanager
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -595,6 +596,20 @@ class TestOrganizerReconnection:
             msg = org_ws2.receive_json()
             assert msg["type"] in ("ROOM_CREATED", "ORGANIZER_RECONNECTED")
             assert room_code in socket_manager.rooms
+
+    def test_organizer_disconnect_uses_configured_mobile_grace(self, monkeypatch):
+        """Organizer phone sleep should use a long configurable grace period, not a tiny hardcoded delay."""
+        monkeypatch.setattr(config, "ORGANIZER_RECONNECT_GRACE_SECONDS", 123)
+        quiz_id = seed_quiz()
+        room_code, token = create_room(quiz_id)
+
+        with patch.object(socket_manager, "_delayed_room_cleanup", new_callable=AsyncMock) as cleanup:
+            with org_connect(room_code, token) as org_ws:
+                org_ws.receive_json()
+
+            assert cleanup.call_args is not None
+            assert cleanup.call_args.args == (room_code,)
+            assert cleanup.call_args.kwargs["delay"] == 123
 
 
 # ===========================================================================
