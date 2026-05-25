@@ -737,14 +737,14 @@ export default function PlayerPage() {
                 )}
 
                 {state === 'BINGO' && (
-                    <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
-                        <div className="text-center mb-5">
-                            <p className="text-[--text-tertiary] text-sm">Housie</p>
+                    <div className="housie-player-screen container-responsive safe-top safe-bottom animate-in">
+                        <div className="housie-runtime-header">
+                            <p>Housie</p>
                             <h1 className="hero-title">{housieLatest ? housieLatest.display : 'Waiting for first call'}</h1>
-                            <p className="text-[--text-secondary]">{housieCalled.length} numbers called</p>
+                            <span>{housieCalled.length} numbers called</span>
                         </div>
                         {housieTicket && (
-                            <div className="mb-5">
+                            <div className="housie-ticket-wrap">
                                 <HousieTicketGrid
                                     ticket={housieTicket}
                                     calledValues={new Set(housieCalled.map((item) => String(item.value)))}
@@ -753,15 +753,15 @@ export default function PlayerPage() {
                                 />
                             </div>
                         )}
-                        <div className="card mb-4">
-                            <h2 className="font-extrabold text-lg mb-3">Claim a prize</h2>
+                        <div className="housie-runtime-panel">
+                            <h2>Claim a prize</h2>
                             {error && (
-                                <div className="status-pill status-error w-full justify-center animate-shake mb-3">{error}</div>
+                                <div className="status-pill status-error animate-shake">{error}</div>
                             )}
                             <HousieClaimButtons patterns={housiePatterns} winners={housieWinners} onClaim={submitHousieClaim} />
                         </div>
-                        <div className="card">
-                            <h2 className="font-extrabold text-lg mb-3">Winners</h2>
+                        <div className="housie-runtime-panel">
+                            <h2>Winners</h2>
                             <HousieWinners winners={housieWinners} />
                         </div>
                     </div>

@@ -2023,6 +2023,202 @@ body {
     padding-top: 18px;
 }
 
+/* Housie runtime */
+.housie-called-board {
+    display: grid;
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    gap: 4px;
+    width: 100%;
+}
+
+.housie-called-cell {
+    display: grid;
+    place-items: center;
+    aspect-ratio: 1 / 1;
+    min-width: 0;
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.055);
+    color: var(--text-tertiary);
+    font-size: clamp(0.64rem, 1.7vw, 0.86rem);
+    font-weight: 900;
+    line-height: 1;
+}
+
+.housie-called-cell.called {
+    border-color: rgba(var(--accent-primary-rgb), 0.5);
+    background: rgba(var(--accent-primary-rgb), 0.15);
+    color: var(--text-primary);
+}
+
+.housie-called-cell.latest {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-ink);
+    box-shadow: var(--glow-accent);
+}
+
+.housie-player-screen {
+    display: flex;
+    flex-direction: column;
+    width: min(100%, 760px);
+    min-height: 100dvh;
+    margin: 0 auto;
+    padding-top: 28px;
+    padding-bottom: 32px;
+}
+
+.housie-runtime-header {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    margin-bottom: 22px;
+    text-align: center;
+}
+
+.housie-runtime-header p,
+.housie-runtime-header span {
+    margin: 0;
+    color: var(--text-secondary);
+    font-weight: 800;
+}
+
+.housie-ticket-wrap {
+    margin-bottom: 18px;
+}
+
+.housie-runtime-panel {
+    display: grid;
+    gap: 14px;
+    width: 100%;
+    margin-bottom: 16px;
+    padding: 18px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: var(--glass-bg);
+    box-shadow: var(--shadow-soft);
+}
+
+.housie-runtime-panel h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 950;
+}
+
+.housie-ticket-table {
+    table-layout: fixed;
+    width: 100%;
+    overflow: hidden;
+    border-collapse: collapse;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.055);
+    box-shadow: var(--shadow-soft);
+}
+
+.housie-ticket-cell {
+    width: 11.111%;
+    height: clamp(48px, 10vw, 74px);
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    font-size: clamp(0.9rem, 3vw, 1.25rem);
+    font-weight: 950;
+    line-height: 1;
+    text-align: center;
+    vertical-align: middle;
+}
+
+.housie-ticket-cell.empty {
+    background: rgba(0, 0, 0, 0.28);
+}
+
+.housie-ticket-cell.filled {
+    background: rgba(246, 236, 216, 0.98);
+    color: var(--accent-ink);
+}
+
+.housie-ticket-cell.filled.called {
+    color: var(--accent);
+}
+
+.housie-ticket-cell.filled.marked {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-ink);
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.32);
+}
+
+.housie-ticket-cell button {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.housie-ticket-cell button:disabled {
+    cursor: default;
+}
+
+.housie-claim-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.housie-claim-button {
+    min-height: 58px;
+    padding: 12px 14px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.055);
+    color: var(--text-primary);
+    font-size: clamp(0.95rem, 2.4vw, 1.1rem);
+    font-weight: 900;
+    line-height: 1.1;
+}
+
+.housie-claim-button:disabled {
+    opacity: 0.48;
+    cursor: not-allowed;
+}
+
+.housie-winner-list {
+    display: grid;
+    gap: 8px;
+}
+
+.housie-winner-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.055);
+}
+
+.housie-winner-row p {
+    margin: 0;
+}
+
+.housie-empty-copy {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: 0.95rem;
+}
+
+.housie-muted-copy {
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+}
+
 @media (max-width: 640px) {
     .housie-setup {
         padding: 18px 16px 24px;
@@ -2033,6 +2229,14 @@ body {
     }
 
     .housie-prize-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .housie-called-board {
+        grid-template-columns: repeat(9, minmax(0, 1fr));
+    }
+
+    .housie-claim-grid {
         grid-template-columns: 1fr;
     }
 }

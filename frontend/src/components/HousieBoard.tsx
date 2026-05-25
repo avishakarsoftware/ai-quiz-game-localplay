@@ -2,7 +2,7 @@ import type { HousieCell, HousiePattern, HousieTicket, HousieWinner } from '../t
 
 export function HousieCalledBoard({ calledValues, latestValue }: { calledValues: Set<string>; latestValue?: string | number | null }) {
     return (
-        <div className="grid grid-cols-10 gap-1" role="grid" aria-label="Called Housie numbers">
+        <div className="housie-called-board" role="grid" aria-label="Called Housie numbers">
             {Array.from({ length: 90 }, (_, idx) => idx + 1).map((num) => {
                 const called = calledValues.has(String(num));
                 const latest = String(latestValue ?? '') === String(num);
@@ -11,10 +11,7 @@ export function HousieCalledBoard({ calledValues, latestValue }: { calledValues:
                         key={num}
                         role="gridcell"
                         aria-label={`${num}${latest ? ', latest call' : called ? ', called' : ', not called'}`}
-                        className={[
-                            'aspect-square rounded-md grid place-items-center text-sm font-bold border',
-                            latest ? 'bg-[--accent-pink] text-black border-[--accent-pink]' : called ? 'bg-[--accent-cyan]/20 text-[--accent-cyan] border-[--accent-cyan]/60' : 'bg-white/5 text-[--text-tertiary] border-white/10',
-                        ].join(' ')}
+                        className={`housie-called-cell ${called ? 'called' : ''} ${latest ? 'latest' : ''}`}
                     >
                         {num}
                     </div>
@@ -36,53 +33,51 @@ export function HousieTicketGrid({
     onToggle?: (cell: HousieCell) => void;
 }) {
     return (
-        <div className="rounded-xl border border-white/15 overflow-hidden bg-white/5">
+        <table className="housie-ticket-table" aria-label="Your Housie ticket">
+            <tbody>
             {ticket.rows.map((row, rowIndex) => (
-                <div key={rowIndex} className="grid grid-cols-9">
+                <tr key={rowIndex}>
                     {row.map((cell, colIndex) => {
                         if (!cell) {
-                            return <div key={`${rowIndex}-${colIndex}`} className="aspect-square border border-white/10 bg-black/25" />;
+                            return <td key={`${rowIndex}-${colIndex}`} className="housie-ticket-cell empty" aria-label={`Column ${colIndex + 1}, row ${rowIndex + 1}, empty`} />;
                         }
                         const value = String(cell.value);
                         const called = calledValues.has(value);
                         const isMarked = marked.has(value);
                         const label = `Column ${colIndex + 1}, row ${rowIndex + 1}, number ${cell.display}${isMarked ? ', marked' : called ? ', called' : ''}`;
                         return (
-                            <button
-                                key={`${rowIndex}-${colIndex}`}
-                                type="button"
-                                onClick={() => onToggle?.(cell)}
-                                aria-label={label}
-                                className={[
-                                    'aspect-square border border-white/10 text-lg font-black transition',
-                                    called ? 'text-[--accent-cyan]' : 'text-[--text-primary]',
-                                    isMarked ? 'bg-[--accent-pink] text-black' : 'bg-[--surface-card]',
-                                    onToggle ? 'active:scale-95' : '',
-                                ].join(' ')}
-                            >
-                                {cell.display}
-                            </button>
+                            <td key={`${rowIndex}-${colIndex}`} className={`housie-ticket-cell filled ${called ? 'called' : ''} ${isMarked ? 'marked' : ''}`}>
+                                <button
+                                    type="button"
+                                    onClick={() => onToggle?.(cell)}
+                                    aria-label={label}
+                                    disabled={!onToggle}
+                                >
+                                    {cell.display}
+                                </button>
+                            </td>
                         );
                     })}
-                </div>
+                </tr>
             ))}
-        </div>
+            </tbody>
+        </table>
     );
 }
 
 export function HousieWinners({ winners }: { winners: HousieWinner[] }) {
     if (!winners.length) {
-        return <p className="text-[--text-tertiary] text-sm">No prizes claimed yet.</p>;
+        return <p className="housie-empty-copy">No prizes claimed yet.</p>;
     }
     return (
-        <div className="space-y-2">
+        <div className="housie-winner-list">
             {winners.map((winner, index) => (
-                <div key={`${winner.pattern_id}-${index}`} className="rounded-lg bg-white/8 border border-white/10 px-3 py-2 flex items-center justify-between">
+                <div key={`${winner.pattern_id}-${index}`} className="housie-winner-row">
                     <div>
-                        <p className="font-bold">{winner.label}</p>
-                        <p className="text-sm text-[--text-secondary]">{winner.nickname}</p>
+                        <p><strong>{winner.label}</strong></p>
+                        <p className="housie-muted-copy">{winner.nickname}</p>
                     </div>
-                    <span className="text-xs text-[--text-tertiary]">{winner.called_count} calls</span>
+                    <span className="housie-muted-copy">{winner.called_count} calls</span>
                 </div>
             ))}
         </div>
@@ -100,14 +95,14 @@ export function HousieClaimButtons({
 }) {
     const claimed = new Set(winners.map((winner) => winner.pattern_id));
     return (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="housie-claim-grid">
             {patterns.map((pattern) => (
                 <button
                     key={pattern.id}
                     type="button"
                     disabled={claimed.has(pattern.id)}
                     onClick={() => onClaim(pattern.id)}
-                    className="btn btn-secondary disabled:opacity-40"
+                    className="housie-claim-button"
                     title={pattern.description}
                 >
                     {claimed.has(pattern.id) ? 'Claimed' : pattern.label}
