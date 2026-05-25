@@ -1183,7 +1183,8 @@ curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sess
 - Post-migration consistency check scoped to LocalPlay tables/RPCs (`games_` vs `games_gamma_`) returned no diffs across tables, columns/defaults, constraints, indexes, RLS, policies, and RPC signatures. The shared Supabase project also contains unrelated `pp_*` tables; those are not LocalPlay/Revelry bridge migrations and should not be modified by LocalPlay deploy work.
 - Production smoke passed on 2026-05-25 for `/health`, `GET /catalog?host_app=revelry`, authenticated party-games link minting, unauthenticated bridge rejection, `/media/status`, and authenticated Revelry authoring `POST /media/upload-url`.
 - `/media/status` should report `upload_available=true`, `generation_available=false`, and `storage_backend=ionos` in production. This is the intended state for custom quiz photo uploads with AI image generation disabled.
-- Remaining production enablement now lives on the Revelry side: add the same shared secret to `revelry-prod-localplay-integration-secret`, mount it as `LOCALPLAY_INTEGRATION_SECRET`, redeploy Revelry prod, then smoke a real prod party Games tab and callback handling.
+- Added the same shared secret to GCP Secret Manager secret `revelry-prod-localplay-integration-secret` on 2026-05-25; version `1` is enabled. Do not print or copy this value into docs.
+- Remaining production enablement now lives on the Revelry side: mount `revelry-prod-localplay-integration-secret:latest` as `LOCALPLAY_INTEGRATION_SECRET`, redeploy Revelry prod, then smoke a real prod party Games tab and callback handling.
 
 ---
 
