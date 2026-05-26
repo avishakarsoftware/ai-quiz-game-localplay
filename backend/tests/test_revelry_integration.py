@@ -249,6 +249,35 @@ def test_revelry_return_url_validation_parses_origins(monkeypatch):
         assert res.status_code == 422
 
 
+def test_revelry_party_games_link_honors_extended_ttl_outside_production(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    monkeypatch.setattr(config, "ENVIRONMENT", "gamma")
+    db.init_db()
+    payload = _create_payload(f"party-long-ttl-{uuid.uuid4().hex}")
+    payload["ttl_seconds"] = 30 * 24 * 60 * 60
+
+    res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+
+    assert res.status_code == 200
+    data = res.json()
+    token = parse_qs(urlparse(data["party_games_url"]).query)["party_games_token"][0]
+    claims = main.jwt.decode(token, "test-revelry-secret", algorithms=["HS256"])
+    assert claims["exp"] - claims["iat"] == 30 * 24 * 60 * 60
+
+
+def test_revelry_party_games_link_rejects_custom_ttl_in_production(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    monkeypatch.setattr(config, "ENVIRONMENT", "production")
+    db.init_db()
+    payload = _create_payload(f"party-prod-ttl-{uuid.uuid4().hex}")
+    payload["ttl_seconds"] = 3600
+
+    res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+
+    assert res.status_code == 422
+    assert "not available in production" in res.json()["detail"]
+
+
 def test_revelry_callbacks_use_game_events_top_level_context_and_integration_secret(monkeypatch):
     monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
     monkeypatch.setattr(config, "REVELRY_CALLBACK_SECRET", "different-callback-secret")

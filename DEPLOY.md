@@ -1176,6 +1176,7 @@ curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sess
 - On 2026-05-25, gamma media upload testing found `403 bad_signature` from the IONOS LocalPlay upload handler because `games-backend-gamma` had a `MEDIA_UPLOAD_SECRET` that did not match `~/revelryapp/media/apps/localplay/.upload_secret`. Updated `/home/revelry-games/app/.env.gamma` to match the IONOS secret, redeployed gamma with `./scripts/deploy-gcp.sh --gamma --with-frontend`, and verified a signed PNG upload returned `200`.
 - On 2026-05-25, deployed the Revelry authoring editor remount fix to gamma so saving a new party-scoped quiz no longer clears the custom quiz editor after `currentContentId` is assigned.
 - Post-fix gamma Playwright passed on 2026-05-25: `npm run test:e2e:gamma` returned `2 passed`; `REVELRY_GAMMA_PARTY_GAMES_URL_FILE=... npm run test:e2e:gamma:revelry` returned `2 passed`, covering Drawing save/start/re-entry plus custom Quiz image upload/save/payload verification.
+- Deployed gamma-only extended party-games token TTL support on 2026-05-25 with `./scripts/deploy-gcp.sh --gamma --with-frontend`. The Revelry gamma mint script can now write a 30-day disposable-party URL to `gamma_party_games_url.txt`; production rejects custom party-games token TTLs. Verified the minted token expiry was 30 days, then reran Playwright: `REVELRY_GAMMA_PARTY_GAMES_URL_FILE=... npm run test:e2e:gamma:revelry` returned `2 passed`, and `npm run test:e2e:gamma` returned `2 passed`.
 - Basic Revelry gamma end-to-end testing has worked for catalog, session creation, organizer/player launch, Drawing setup/start/re-entry, and custom Quiz image upload/save. Before production promotion, repeat from Revelry gamma: return/deep-link behavior into the outer Revelry list, completion, result polling/feed handling, callback delivery, app/universal-link return flows, and host-app chrome cleanup.
 - Full spec: `SPEC-REVELRY-INTEGRATION.md`
 
@@ -1192,6 +1193,72 @@ curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sess
 - `/media/status` should report `upload_available=true`, `generation_available=false`, and `storage_backend=ionos` in production. This is the intended state for custom quiz photo uploads with AI image generation disabled.
 - Added the same shared secret to GCP Secret Manager secret `revelry-prod-localplay-integration-secret` on 2026-05-25; version `1` is enabled. Do not print or copy this value into docs.
 - Remaining production enablement now lives on the Revelry side: mount `revelry-prod-localplay-integration-secret:latest` as `LOCALPLAY_INTEGRATION_SECRET`, redeploy Revelry prod, then smoke a real prod party Games tab and callback handling.
+
+### Enabling Revelry games
+
+Revelry game availability is controlled by LocalPlay's host-app catalog policy. Revelry should render the catalog returned by LocalPlay instead of hardcoding enabled games.
+
+Important distinction:
+
+- A game that does not exist in LocalPlay yet still needs one LocalPlay implementation release: static catalog metadata, runtime/setup/content contracts, host-app-safe routes, callbacks/results, and tests.
+- A game that is already implemented and bridge-ready should be exposed, hidden, allowlisted, or killed through host-app catalog policy, without a Revelry release and ideally without another LocalPlay deploy.
+- Remote policy cannot turn on capabilities that the static LocalPlay catalog does not support. The static catalog is the safety ceiling; policy is the rollout/control layer.
+
+Policy rows live in the prefixed Supabase table `{TABLE_PREFIX}host_app_catalog_flags`, for example `games_gamma_host_app_catalog_flags` in gamma and `games_host_app_catalog_flags` in production. Production fails closed when policy is missing, so seed production rows before expecting games to appear in `GET /catalog?host_app=revelry`.
+
+Use the admin API when `ADMIN_API_KEY` is configured. Do not paste real keys into docs, shell history, or git:
+
+```bash
+# List current gamma Revelry flags.
+curl -sS -H "Authorization: Bearer ${ADMIN_API_KEY}" \
+  "https://gamesapi-gamma.revelryapp.me/admin/host-app-catalog-flags?environment=gamma&host_app=revelry"
+
+# Enable an already bridge-ready game for gamma.
+curl -sS -X POST \
+  -H "Authorization: Bearer ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  https://gamesapi-gamma.revelryapp.me/admin/host-app-catalog-flags \
+  -d '{
+    "environment": "gamma",
+    "host_app": "revelry",
+    "game_id": "drawing",
+    "enabled": true,
+    "status": "gamma",
+    "capability_overrides": {
+      "can_create_content": true,
+      "can_edit_content": true,
+      "can_quick_start": false,
+      "supports_ai_generation": true,
+      "supports_images": false,
+      "payments_enabled": false,
+      "embedded_authoring_supported": true
+    },
+    "notes": "Gamma rollout",
+    "updated_by": "deploy-operator"
+  }'
+
+# Kill-switch a game after the 30-60 second policy cache expires.
+curl -sS -X POST \
+  -H "Authorization: Bearer ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  https://gamesapi-gamma.revelryapp.me/admin/host-app-catalog-flags \
+  -d '{
+    "environment": "gamma",
+    "host_app": "revelry",
+    "game_id": "drawing",
+    "enabled": false,
+    "status": "disabled",
+    "notes": "Disabled by operator",
+    "updated_by": "deploy-operator"
+  }'
+```
+
+After changing policy:
+
+1. Verify `GET /catalog?host_app=revelry` shows or hides the expected game after the policy cache expires.
+2. Run `npm run test:e2e:gamma` for deployed gamma frontend health.
+3. For a game exposed to Revelry gamma, run the repeatable `Revelry gamma embedded E2E` below with a fresh party games URL.
+4. Promote to production only after the game is implemented, bridge-ready, gamma-tested, and seeded in the production policy table with `status = "live"`.
 
 ---
 
@@ -1429,11 +1496,21 @@ This points Playwright at `https://gamesapi-gamma.revelryapp.me`, verifies the s
 
 This is the repeatable gamma-only test for the LocalPlay/Revelry embedded party hub. It is intentionally desktop-only and stateful because it mutates one disposable gamma party.
 
-1. Mint or request a fresh short-lived gamma `party_games_url` for a disposable Revelry gamma party. The token must have host capabilities: `manage_games`, `author_content`, and `operate_game`.
-2. Save the full URL to an ignored file, never paste it into git:
+1. Mint a fresh gamma `party_games_url` for the disposable Revelry gamma party. The token must have host capabilities: `manage_games`, `author_content`, and `operate_game`. The current repeatable path uses the Revelry repo script and the gamma LocalPlay/Revelry integration secret:
 
 ```bash
-printf '%s' '<full party_games_url>' > gamma_party_games_url.txt
+export LOCALPLAY_GAMMA_INTEGRATION_SECRET="$(gcloud secrets versions access latest --project revelryapp --secret revelry-gamma-localplay-integration-secret)"
+.venv/bin/python /Users/Avi/Desktop/dev/antigravity/revelryapp/scripts/mint-localplay-gamma-url.py \
+  --ttl-days 30 \
+  --output ./gamma_party_games_url.txt >/dev/null
+```
+
+The script is gamma-only and writes the full URL to `gamma_party_games_url.txt`, which must stay ignored. Do not print the URL or token in chat, logs, or committed files. LocalPlay honors the script's `ttl_seconds` request outside production only, capped at 30 days; production rejects custom party-games token TTLs.
+
+2. Verify only the shape/expiry, not the token:
+
+```bash
+.venv/bin/python -c "import base64,json,datetime,urllib.parse,pathlib,time; url=pathlib.Path('gamma_party_games_url.txt').read_text().strip(); print('has_gamma_url=', url.startswith('https://gamesapi-gamma.revelryapp.me/integrations/revelry/games?party_games_token=')); tok=urllib.parse.parse_qs(urllib.parse.urlparse(url).query).get('party_games_token',[''])[0]; payload=tok.split('.')[1]; payload += '='*((4-len(payload)%4)%4); data=json.loads(base64.urlsafe_b64decode(payload)); exp=data.get('exp'); print('exp=', datetime.datetime.fromtimestamp(exp, datetime.timezone.utc).isoformat() if exp else data.get('expires_at')); print('valid_now=', bool(exp and exp > time.time()))"
 ```
 
 3. Run:

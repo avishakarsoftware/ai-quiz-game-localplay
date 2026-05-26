@@ -1303,6 +1303,7 @@ class RevelryPartyGamesLinkRequest(BaseModel):
     content_id: str = ""
     game_type: str = "quiz"
     time_limit: Optional[int] = None
+    ttl_seconds: Optional[int] = None
     display: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("intent")
@@ -1317,6 +1318,13 @@ class RevelryPartyGamesLinkRequest(BaseModel):
     def validate_game_type(cls, value: str) -> str:
         if value != "quiz":
             raise ValueError('Only "quiz" uses the dedicated authoring route')
+        return value
+
+    @field_validator("ttl_seconds")
+    @classmethod
+    def validate_ttl_seconds(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and value <= 0:
+            raise ValueError("ttl_seconds must be greater than 0")
         return value
 
 
@@ -1633,6 +1641,15 @@ def _create_party_games_token(
     }
     token = jwt.encode(payload, config.REVELRY_INTEGRATION_SECRET, algorithm="HS256")
     return token, int(exp.timestamp()), launch_context
+
+
+def _party_games_token_ttl_seconds(requested_ttl_seconds: Optional[int]) -> Optional[int]:
+    if requested_ttl_seconds is None:
+        return None
+    if config.ENVIRONMENT == "production":
+        raise HTTPException(status_code=422, detail="Custom party games token TTL is not available in production")
+    max_ttl_seconds = 30 * 24 * 60 * 60
+    return min(requested_ttl_seconds, max_ttl_seconds)
 
 
 def _resolve_party_games_token(token: str) -> dict:
@@ -2203,6 +2220,7 @@ async def create_revelry_party_games_link(request: RevelryPartyGamesLinkRequest,
         request.actor,
         _validate_revelry_return_url(request.return_url or context.return_url),
         display,
+        ttl_seconds=_party_games_token_ttl_seconds(request.ttl_seconds),
     )
     base_url = _public_base_url(req)
     party_games_url = f"{base_url}/integrations/revelry/games?{urlencode({'party_games_token': token})}"
