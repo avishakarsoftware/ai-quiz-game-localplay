@@ -173,6 +173,20 @@ test.describe('Revelry Games party hub', () => {
         },
       });
     });
+    await page.route('**/integrations/revelry/party-games/launch-token', async (route) => {
+      expect(route.request().postDataJSON()).toMatchObject({
+        party_games_token: 'guest-token',
+        session_id: 'lp-active',
+        scope: 'spectator',
+        route: 'spectate',
+        embed: true,
+      });
+      await route.fulfill({
+        json: {
+          launch_url: '/spectator?session_id=lp-active&launch_token=spectator-token&embed=1',
+        },
+      });
+    });
 
     await page.goto('/revelry/games?party_games_token=guest-token');
 
@@ -182,7 +196,7 @@ test.describe('Revelry Games party hub', () => {
     await expect(page.getByRole('heading', { name: 'Create a game' })).not.toBeVisible();
     await expect(page.getByRole('heading', { name: 'Saved games' })).not.toBeVisible();
     await page.getByRole('button', { name: 'Join to watch' }).click();
-    await expect(page).toHaveURL(/\/sessions\/lp-active\/spectate/);
+    await expect(page).toHaveURL(/\/spectator\?session_id=lp-active&launch_token=spectator-token&embed=1/);
   });
 
   test('shows replacement confirmation and retries start with confirmation', async ({ page }) => {

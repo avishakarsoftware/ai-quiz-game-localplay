@@ -228,6 +228,7 @@ export default function PartyHubPage() {
     const [aiPromptCount, setAiPromptCount] = useState(10);
     const [aiDifficulty, setAiDifficulty] = useState('medium');
     const [error, setError] = useState('');
+    const [openingSessionScope, setOpeningSessionScope] = useState('');
     const [replacementPrompt, setReplacementPrompt] = useState<ReplacementPrompt | null>(null);
     const autoStartRef = useRef('');
     const setupSectionRef = useRef<HTMLElement | null>(null);
@@ -291,19 +292,31 @@ export default function PartyHubPage() {
         });
     }, [savedGamesScrollNonce]);
 
-    function sessionRoute(scope: 'organizer' | 'player' | 'spectator'): string {
-        if (!activeSession) return '';
-        const routeKey = scope === 'player' ? 'player' : scope === 'spectator' ? 'spectator' : 'organizer';
-        const route = activeSession.launch_routes?.[routeKey];
-        if (route?.url) return route.url;
-        if (route?.path) return route.path.startsWith('/') ? route.path : `/${route.path}`;
-        const path = scope === 'organizer' ? 'organizer' : scope === 'player' ? 'join' : 'spectate';
-        return `/sessions/${activeSession.session_id}/${path}`;
-    }
-
-    function openActiveSession(scope: 'organizer' | 'player' | 'spectator') {
-        const route = sessionRoute(scope);
-        if (route) window.location.href = route;
+    async function openActiveSession(scope: 'organizer' | 'player' | 'spectator') {
+        if (!activeSession) return;
+        const route = scope === 'organizer' ? 'organizer' : scope === 'player' ? 'join' : 'spectate';
+        setOpeningSessionScope(scope);
+        setError('');
+        try {
+            const res = await fetch(`${API_URL}/integrations/revelry/party-games/launch-token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    party_games_token: partyGamesToken,
+                    session_id: activeSession.session_id,
+                    scope,
+                    route,
+                    embed: true,
+                }),
+            });
+            if (!res.ok) throw new Error('launch_failed');
+            const data = await res.json();
+            window.location.href = data.launch_url;
+        } catch {
+            setError('Could not open that game. Please try again.');
+        } finally {
+            setOpeningSessionScope('');
+        }
     }
 
     const startGame = useCallback(async (game: StartableGame, replacement?: { confirmed: boolean; sessionId?: string }) => {
@@ -607,13 +620,17 @@ export default function PartyHubPage() {
                         </div>
                         <div className="party-hub__actions">
                             {canStart && activeSession.joinable && (
-                                <button onClick={() => openActiveSession('organizer')}>Host game</button>
+                                <button onClick={() => openActiveSession('organizer')} disabled={openingSessionScope === 'organizer'}>
+                                    {openingSessionScope === 'organizer' ? 'Opening...' : 'Host game'}
+                                </button>
                             )}
                             {activeSession.joinable && (
-                                <button onClick={() => openActiveSession('player')}>Join to play</button>
+                                <button onClick={() => openActiveSession('player')} disabled={openingSessionScope === 'player'}>
+                                    {openingSessionScope === 'player' ? 'Opening...' : 'Join to play'}
+                                </button>
                             )}
-                            <button className="party-hub__secondary" onClick={() => openActiveSession('spectator')}>
-                                Join to watch
+                            <button className="party-hub__secondary" onClick={() => openActiveSession('spectator')} disabled={openingSessionScope === 'spectator'}>
+                                {openingSessionScope === 'spectator' ? 'Opening...' : 'Join to watch'}
                             </button>
                         </div>
                     </article>

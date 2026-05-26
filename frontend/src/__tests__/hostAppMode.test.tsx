@@ -221,6 +221,69 @@ describe('host-app mode filtering', () => {
         expect(screen.queryByRole('button', { name: /host game/i })).not.toBeInTheDocument();
     });
 
+    it('mints a fresh launch token before opening an active host-app game', async () => {
+        window.history.pushState({}, '', '/revelry/games?party_games_token=party-token');
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    launch_context: {
+                        capabilities: ['manage_games', 'operate_game'],
+                        external_container_title: 'Ava Birthday',
+                    },
+                    workspace: {
+                        active_session: {
+                            session_id: 'lp-active',
+                            room_code: 'TVJVNA',
+                            status: 'lobby',
+                            joinable: true,
+                            launch_routes: {
+                                organizer: { path: '/sessions/lp-active/organizer' },
+                            },
+                            feed_card: { title: 'Christmas Quiz' },
+                        },
+                        prepared_content: [],
+                        catalog: [],
+                    },
+                }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    launch_url: '/organizer?session_id=lp-active&launch_token=fresh-token&embed=1',
+                }),
+            });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const originalLocation = window.location;
+        const locationMock = { ...window.location, href: 'http://localhost/revelry/games?party_games_token=party-token' };
+        Object.defineProperty(window, 'location', {
+            configurable: true,
+            value: locationMock,
+        });
+
+        render(<PartyHubPage />);
+
+        fireEvent.click(await screen.findByRole('button', { name: /host game/i }));
+
+        await waitFor(() => {
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+        });
+        expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+            party_games_token: 'party-token',
+            session_id: 'lp-active',
+            scope: 'organizer',
+            route: 'organizer',
+            embed: true,
+        });
+        expect(window.location.href).toBe('/organizer?session_id=lp-active&launch_token=fresh-token&embed=1');
+
+        Object.defineProperty(window, 'location', {
+            configurable: true,
+            value: originalLocation,
+        });
+    });
+
     it('renders a clear guest waiting state when no game is active', async () => {
         window.history.pushState({}, '', '/revelry/games?party_games_token=guest-token');
         const fetchMock = vi.fn().mockResolvedValue({

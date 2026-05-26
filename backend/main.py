@@ -1461,6 +1461,21 @@ class RevelryPartyGameStartRequest(BaseModel):
         return value
 
 
+class RevelryPartyGameLaunchRequest(BaseModel):
+    party_games_token: str
+    session_id: str
+    scope: str = "player"
+    route: str = "join"
+    embed: bool = True
+
+    @field_validator("scope")
+    @classmethod
+    def validate_scope(cls, value: str) -> str:
+        if value not in ("organizer", "player", "spectator"):
+            raise ValueError("scope must be organizer, player, or spectator")
+        return value
+
+
 def _require_revelry_auth(req: Request, handoff_token: str = "") -> dict:
     secret = config.REVELRY_INTEGRATION_SECRET
     if not secret:
@@ -2341,8 +2356,10 @@ def _content_game_from_payload(game_type: str, title: str, payload: dict[str, An
 
 
 def _content_response(context: RevelryExternalContext, content: dict) -> dict:
+    summary = _prepared_content_summary(content)
     return {
-        "content": _prepared_content_summary(content),
+        **summary,
+        "content": summary,
         "localplay_content_id": content["id"],
         "workspace": _workspace_payload(context),
     }
@@ -2584,14 +2601,19 @@ async def get_revelry_party_workspace(
     external_container_id: str,
     external_container_type: str = "party",
     external_container_title: str = "",
+    host_user_id: str = "",
+    external_user_id: str = "",
+    role: str = "host",
 ):
     _require_revelry_auth(req)
     context = RevelryExternalContext(
         external_container_id=external_container_id,
         external_container_type=external_container_type,
         external_container_title=external_container_title,
+        host_user_id=host_user_id,
     )
-    return _workspace_payload(context)
+    actor = RevelryActor(external_user_id=external_user_id, role=role) if external_user_id else None
+    return _workspace_payload(context, actor)
 
 
 @app.post("/integrations/revelry/party-games/start")
@@ -2649,6 +2671,44 @@ async def start_revelry_party_game(request: RevelryPartyGameStartRequest, req: R
     return {
         "session": _format_session(session),
         "launch_url": f"{base_url}/organizer?session_id={session['id']}&launch_token={token}&embed=1",
+        "launch_token_expires_at": _iso(expires),
+    }
+
+
+@app.post("/integrations/revelry/party-games/launch-token")
+async def create_revelry_party_game_launch_token(request: RevelryPartyGameLaunchRequest, req: Request):
+    launch_context = _resolve_party_games_token(request.party_games_token)
+    route_by_scope = {"organizer": "organizer", "player": "join", "spectator": "spectate"}
+    if request.route != route_by_scope[request.scope]:
+        raise HTTPException(status_code=422, detail="route must match scope")
+    capabilities = set(launch_context.get("capabilities") or [])
+    if request.scope == "organizer" and "operate_game" not in capabilities and "manage_games" not in capabilities:
+        raise HTTPException(status_code=403, detail="Missing capability to host games")
+
+    context = _external_context_from_launch_context(launch_context)
+    session = db.get_game_session(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.get("host_app") != context.host_app or session.get("external_container_id") != context.external_container_id:
+        raise HTTPException(status_code=403, detail="Session does not belong to this Revelry party")
+    formatted = _format_session(session)
+    if not formatted["joinable"] and request.scope != "spectator":
+        raise HTTPException(status_code=409, detail="Session is not joinable")
+
+    token, expires = _create_launch_token(
+        session["id"],
+        request.scope,
+        request.route,
+        launch_context.get("return_url", ""),
+        launch_context,
+    )
+    base_url = _public_base_url(req)
+    query = f"session_id={session['id']}&launch_token={token}"
+    if request.embed:
+        query += "&embed=1"
+    path = "organizer" if request.scope == "organizer" else "join" if request.scope == "player" else "spectator"
+    return {
+        "launch_url": f"{base_url}/{path}?{query}",
         "launch_token_expires_at": _iso(expires),
     }
 

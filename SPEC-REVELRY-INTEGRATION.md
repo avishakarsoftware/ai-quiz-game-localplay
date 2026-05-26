@@ -385,6 +385,31 @@ Rules:
 - `launch_token_expires_at` is LocalPlay's canonical response field; host-app wrapper APIs may rename it, but adapters must map it explicitly.
 - The launch token should be short-lived and preferably one-time use.
 
+Party-hub re-entry uses the same launch-token semantics without exposing the service secret to the browser:
+
+```text
+POST /integrations/revelry/party-games/launch-token
+```
+
+Request:
+
+```json
+{
+  "party_games_token": "short_lived_party_hub_token",
+  "session_id": "lp_session_uuid",
+  "scope": "organizer",
+  "route": "organizer",
+  "embed": true
+}
+```
+
+Rules:
+
+- LocalPlay validates the `party_games_token`, confirms the active session belongs to the same `host_app` and `external_container_id`, and then mints a fresh launch URL.
+- Organizer re-entry requires `operate_game` or `manage_games` in the party hub token capabilities.
+- The LocalPlay party hub must use this endpoint for **Host game**, **Join to play**, and **Join to watch** buttons. It must not navigate to bare `/sessions/{session_id}/organizer` because organizer routes require a fresh launch token.
+- Player and spectator re-entry may still support tokenless routes as a fallback, but host-app hub UI should prefer the fresh launch-token exchange so return/display context stays intact.
+
 ### Session Status
 
 ```text
@@ -834,6 +859,11 @@ Response:
 ```json
 {
   "localplay_content_id": "lp_content_uuid",
+  "game_type": "quiz",
+  "title": "Ava's Birthday Quiz",
+  "status": "ready",
+  "question_count": 10,
+  "thumbnail_url": "https://media.revelryapp.me/apps/localplay/gamma/...",
   "content": {
     "localplay_content_id": "lp_content_uuid",
     "game_type": "quiz",
@@ -863,7 +893,7 @@ Rules:
 - LocalPlay stores host-app content ownership metadata so session creation can enforce same-container or allowed-author access.
 - Revelry must use LocalPlay APIs for authoring and media; it must not write LocalPlay quiz, content, or media tables directly.
 - Content create/update requests should eventually include an idempotency key or stable `draft_id` so browser refreshes, mobile webview reloads, and upload retries can recover without duplicating partial games. Current implementation relies on `content_id` for edit idempotency and the editor's local draft for unsaved create recovery.
-- `GET /integrations/revelry/content/{content_id}` returns safe metadata by default. The LocalPlay authoring UI may request `include_payload=true` using an authoring token to load the full quiz for editing; Revelry should not persist that full payload.
+- `GET /integrations/revelry/content/{content_id}` returns safe metadata by default. The response includes the safe prepared-card metadata both nested under `content` and duplicated as top-level compatibility fields such as `game_type`, `title`, `status`, `question_count`, `item_count`, `time_limit`, and `thumbnail_url`. Revelry may read either shape but should treat both as safe summary metadata only. The LocalPlay authoring UI may request `include_payload=true` using an authoring token to load the full quiz for editing; Revelry should not persist that full payload.
 - `DELETE /integrations/revelry/content/{content_id}` soft-deletes host-app-scoped content when called with service auth plus `external_container_id`, or with an authoring token scoped to the content.
 - `DELETE /integrations/revelry/party-games/content/{content_id}` soft-deletes party-scoped content from the LocalPlay Revelry Games hub using `party_games_token`; the actor must have `manage_games`.
 - Host-app content deletion sends a signed `content.deleted` callback with `status = deleted_by_host`, `content_id`, and top-level host-app/container context.
@@ -1142,7 +1172,7 @@ Expected hub behavior:
 Workspace sync endpoint for Revelry:
 
 ```text
-GET /integrations/revelry/party-workspace?external_container_type=party&external_container_id=party_uuid
+GET /integrations/revelry/party-workspace?external_container_type=party&external_container_id=party_uuid&external_user_id=revelry_user_uuid
 ```
 
 This service-authorized endpoint returns safe metadata only:
@@ -1183,7 +1213,7 @@ Sync and callback rules:
 
 - Revelry may call this endpoint when the Games tab opens, after returning from LocalPlay, after app resume, and after a LocalPlay hub start/edit action.
 - Revelry stores or updates pointer metadata only. It must not store questions, answers, options, raw prompts, media paths, or full LocalPlay payloads.
-- `party-workspace` is a service-level party snapshot, not an actor-personalized authorization response. It may include `action_requirements`, but Revelry must derive actor-specific `can_start`, `can_edit`, and `can_delete` from current party membership, role, and capabilities before rendering controls.
+- `party-workspace` is primarily a service-level party snapshot, not the final UI authorization response. It accepts optional `external_user_id`, `host_user_id`, and `role` so LocalPlay can apply host-app catalog allowlists to the returned catalog when needed. It may include `action_requirements`, but Revelry must still derive actor-specific `can_start`, `can_edit`, and `can_delete` from current party membership, role, and capabilities before rendering controls.
 - LocalPlay should send signed callbacks for important changes so Revelry can update feed cards, prepared game cards, active-session state, and result summaries without waiting for user refresh. The callback envelope and content callback payload contract are canonical in **Revelry Callback Delivery** below. Polling/refresh remains the consistency fallback.
 - Conflicts are resolved by LocalPlay content/session timestamps. Revelry should treat its prepared setup records as a mirror of LocalPlay party content, not as the authority for game internals.
 

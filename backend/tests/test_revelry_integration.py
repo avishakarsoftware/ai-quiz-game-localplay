@@ -951,6 +951,9 @@ def test_revelry_party_hub_can_save_and_start_catalog_game_content(monkeypatch):
     )
 
     assert save_res.status_code == 200
+    assert save_res.json()["status"] == "ready"
+    assert save_res.json()["game_type"] == "drawing"
+    assert save_res.json()["localplay_content_id"] == save_res.json()["content"]["localplay_content_id"]
     saved = save_res.json()["content"]
     assert saved["game_type"] == "drawing"
     assert saved["question_count"] == 2
@@ -968,6 +971,24 @@ def test_revelry_party_hub_can_save_and_start_catalog_game_content(monkeypatch):
     room = socket_manager.rooms[body["session"]["room_code"]]
     assert room.game_type == "drawing"
     assert room.time_limit == 25
+
+    reentry_res = client.post(
+        "/integrations/revelry/party-games/launch-token",
+        json={
+            "party_games_token": party_token,
+            "session_id": body["session"]["session_id"],
+            "scope": "organizer",
+            "route": "organizer",
+            "embed": True,
+        },
+    )
+    assert reentry_res.status_code == 200
+    assert "/organizer?session_id=" in reentry_res.json()["launch_url"]
+    assert "launch_token=" in reentry_res.json()["launch_url"]
+    launch_token = reentry_res.json()["launch_url"].split("launch_token=", 1)[1].split("&", 1)[0]
+    resolve_res = client.get(f"/integrations/revelry/launch-token/resolve?scope=organizer&launch_token={launch_token}")
+    assert resolve_res.status_code == 200
+    assert resolve_res.json()["organizer_token"]
 
 
 def test_revelry_party_hub_can_generate_drawing_setup_prompts(monkeypatch):
