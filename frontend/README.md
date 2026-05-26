@@ -10,12 +10,14 @@ npm run dev
 npm test
 npm run test:e2e
 npm run test:e2e:gamma
+npm run test:e2e:gamma:revelry
 npm run build
 ```
 
 - `npm test` runs Vitest unit/component tests.
 - `npm run test:e2e` runs Playwright browser UX smoke tests from `e2e/`.
 - `npm run test:e2e:gamma` runs a desktop/mobile Playwright smoke against `https://gamesapi-gamma.revelryapp.me`.
+- `npm run test:e2e:gamma:revelry` runs a gamma-only Revelry embedded party regression; set `REVELRY_GAMMA_PARTY_GAMES_URL` to a short-lived gamma party games URL first.
 - `npm run build` type-checks and builds the production bundle.
 
 ## Media Components
@@ -34,6 +36,12 @@ The gamma smoke skips the local dev server and points Playwright at the deployed
 
 ```bash
 npm run test:e2e:gamma
+```
+
+The Revelry gamma flow is stateful and desktop-only because it mutates one disposable gamma party:
+
+```bash
+REVELRY_GAMMA_PARTY_GAMES_URL_FILE=/path/to/gamma_party_games_url.txt npm run test:e2e:gamma:revelry
 ```
 
 When a deliberate visual change alters a snapshot, refresh baselines with:

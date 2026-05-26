@@ -122,6 +122,13 @@ cd frontend
 npm run test:e2e:gamma
 ```
 
+For the gamma-only Revelry embedded flow regression, use a short-lived gamma party games URL minted by Revelry:
+
+```bash
+cd frontend
+REVELRY_GAMMA_PARTY_GAMES_URL_FILE=/path/to/gamma_party_games_url.txt npm run test:e2e:gamma:revelry
+```
+
 ### All Tests
 
 ```bash

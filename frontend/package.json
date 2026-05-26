@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:gamma": "PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me playwright test e2e/gamma-smoke.spec.ts"
+    "test:e2e:gamma": "PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me playwright test e2e/gamma-smoke.spec.ts",
+    "test:e2e:gamma:revelry": "PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me playwright test e2e/revelry-gamma-flow.spec.ts --project chromium-desktop"
   },
   "dependencies": {
     "@capacitor/android": "^8.1.0",

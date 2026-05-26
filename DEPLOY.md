@@ -1403,6 +1403,15 @@ npm run test:e2e:gamma
 
 This points Playwright at `https://gamesapi-gamma.revelryapp.me`, verifies the standalone catalog renders on desktop and mobile, checks `/media/status`, and fails on browser console/page errors.
 
+To run the gamma-only Revelry embedded flow regression, ask Revelry gamma to mint a short-lived host-capability party games URL for a disposable gamma party, then run:
+
+```bash
+cd frontend
+REVELRY_GAMMA_PARTY_GAMES_URL_FILE=/path/to/gamma_party_games_url.txt npm run test:e2e:gamma:revelry
+```
+
+Keep `gamma_party_games_url.txt` out of git. The test is intentionally gamma-only and desktop-only because it mutates one disposable party. It verifies the LocalPlay embedded party hub can save Drawing content, see that saved content through the live workspace API, start or replace the active room, mint fresh organizer/player/spectator launch tokens, re-enter the hub, and open **Host game** without the stale-token failure.
+
 Manual curl spot checks:
 
 ```bash

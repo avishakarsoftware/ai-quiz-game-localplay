@@ -15,6 +15,7 @@ logs/
 # Environment
 .env
 db_token_localplay
+gamma_party_games_url.txt
 
 # IDE
 .vscode/
