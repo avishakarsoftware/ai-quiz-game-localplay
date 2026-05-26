@@ -1355,9 +1355,52 @@ curl -sS -i https://gamesapi.revelryapp.me/health
 curl -sS -i https://gamesapi-gamma.revelryapp.me/health
 ```
 
-### Remote smoke tests
+### Test runbook
 
-Run these after prod/gamma deploys and after auth/provider/DNS changes:
+Use this section as the repeatable deploy/regression checklist. Pick the narrowest test that matches the change, then run the broader smoke before promoting or after touching deploy/env/media/auth paths.
+
+#### Local backend tests
+
+Run focused backend tests while developing integration or storage changes:
+
+```bash
+.venv/bin/python -m pytest backend/tests/test_revelry_integration.py
+.venv/bin/python -m pytest backend/tests/test_host_app_catalog_policy.py backend/tests/test_revelry_integration.py
+```
+
+Run the broader backend suite when touching shared API/session/storage behavior:
+
+```bash
+make test
+```
+
+#### Local frontend tests
+
+Run unit/component tests while developing frontend behavior:
+
+```bash
+cd frontend
+npm test -- --run src/__tests__/hostAppMode.test.tsx
+npm run build
+```
+
+Run local Playwright against the Vite dev server before deploying frontend-heavy changes, especially game-screen, theme, authoring, or layout changes:
+
+```bash
+make test-frontend-e2e
+```
+
+This runs Playwright against local Vite. The current coverage includes the DrawingGame organizer prompt screen and quiz-variant prompt screens on desktop and mobile, verifies segmented controls stay aligned, checks there is no horizontal page overflow, catches overlap with fixed menu/spark controls, and verifies variant generation sends the expected `mode`.
+
+If an intentional visual change updates snapshots, refresh them from `frontend/`:
+
+```bash
+npm run test:e2e -- --update-snapshots
+```
+
+#### Remote backend smoke
+
+Run these after prod/gamma deploys and after auth/provider/DNS/backend env changes:
 
 ```bash
 # Production: health, provider/config, SPA root, auth guards, iOS checkout guard,
@@ -1371,6 +1414,53 @@ make test-remote-gamma
 .venv/bin/python scripts/smoke-remote.py --base-url https://gamesapi.revelryapp.me --skip-generate
 ```
 
+#### Gamma Playwright smoke
+
+Run this after deploying gamma frontend/backend changes:
+
+```bash
+cd frontend
+npm run test:e2e:gamma
+```
+
+This points Playwright at `https://gamesapi-gamma.revelryapp.me`, verifies the standalone catalog renders on desktop and mobile, checks `/media/status`, and fails on browser console/page errors.
+
+#### Revelry gamma embedded E2E
+
+This is the repeatable gamma-only test for the LocalPlay/Revelry embedded party hub. It is intentionally desktop-only and stateful because it mutates one disposable gamma party.
+
+1. Mint or request a fresh short-lived gamma `party_games_url` for a disposable Revelry gamma party. The token must have host capabilities: `manage_games`, `author_content`, and `operate_game`.
+2. Save the full URL to an ignored file, never paste it into git:
+
+```bash
+printf '%s' '<full party_games_url>' > gamma_party_games_url.txt
+```
+
+3. Run:
+
+```bash
+cd frontend
+REVELRY_GAMMA_PARTY_GAMES_URL_FILE=../gamma_party_games_url.txt npm run test:e2e:gamma:revelry
+```
+
+The test verifies:
+
+- LocalPlay embedded party hub resolves the Revelry party token.
+- Drawing setup saves through the live workspace API.
+- Drawing start/replacement creates or replaces the active room.
+- Organizer/player/spectator launch-token minting works.
+- Re-entering the hub shows the active game.
+- **Host game** opens with a fresh organizer token, avoiding stale-token failures.
+- Custom Quiz authoring opens from the hub.
+- Custom Quiz question image upload works through signed IONOS media upload.
+- Saved quiz payload contains the media-backed image URL and alt text.
+
+If the test shows `Invalid or expired party games token`, mint a fresh gamma URL and rerun. If image upload fails with `403 bad_signature`, verify `games-backend-gamma` `MEDIA_UPLOAD_SECRET` matches `~/revelryapp/media/apps/localplay/.upload_secret` on IONOS, then redeploy gamma.
+
+Do not run this against production. For production, create a separate explicitly approved smoke plan using a disposable prod party.
+
+#### Manual auth/payment checks
+
 Manual provider sign-in smoke is still required for the browser popup flows:
 
 - Google: open the SPA, sign in, verify the menu shows **Signed in**, account/email prefix, and **Sign Out**.
@@ -1382,38 +1472,6 @@ Stripe smoke should stay manual/test-mode unless explicitly doing a paid product
 
 - Gamma checkout must use Stripe test keys.
 - Production checkout should only be tested with an intentional real purchase/refund workflow.
-
-### Frontend UX smoke tests
-
-Run the local browser UX suite before deploying frontend-heavy changes, especially game-screen or theme changes:
-
-```bash
-make test-frontend-e2e
-```
-
-This runs Playwright against the local Vite dev server. The current coverage includes the DrawingGame organizer prompt screen and quiz-variant prompt screens on desktop and mobile, verifies segmented controls stay aligned, checks there is no horizontal page overflow, catches overlap with the fixed hamburger/spark controls, and verifies variant generation sends the expected `mode`. If an intentional visual change updates the page shape, refresh the snapshots from `frontend/`:
-
-```bash
-npm run test:e2e -- --update-snapshots
-```
-
-To smoke the deployed gamma frontend with Playwright instead of the local Vite server:
-
-```bash
-cd frontend
-npm run test:e2e:gamma
-```
-
-This points Playwright at `https://gamesapi-gamma.revelryapp.me`, verifies the standalone catalog renders on desktop and mobile, checks `/media/status`, and fails on browser console/page errors.
-
-To run the gamma-only Revelry embedded flow regression, ask Revelry gamma to mint a short-lived host-capability party games URL for a disposable gamma party, then run:
-
-```bash
-cd frontend
-REVELRY_GAMMA_PARTY_GAMES_URL_FILE=/path/to/gamma_party_games_url.txt npm run test:e2e:gamma:revelry
-```
-
-Keep `gamma_party_games_url.txt` out of git. The test is intentionally gamma-only and desktop-only because it mutates one disposable party. It verifies the LocalPlay embedded party hub can save Drawing content, see that saved content through the live workspace API, start or replace the active room, mint fresh organizer/player/spectator launch tokens, re-enter the hub, open **Host game** without the stale-token failure, create a custom quiz, upload a question image through IONOS media storage, save the quiz, and verify the saved quiz payload contains the media-backed image URL.
 
 Manual curl spot checks:
 
