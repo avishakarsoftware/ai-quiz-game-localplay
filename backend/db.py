@@ -1694,6 +1694,8 @@ if config.DB_BACKEND == "supabase":
         "get_active_game_session",
         "game_content_has_sessions",
         "update_game_session",
+        "list_host_app_catalog_flags",
+        "upsert_host_app_catalog_flag",
     ]
     for _name in _SUPABASE_EXPORTS:
         globals()[_name] = getattr(_supabase_db, _name)
