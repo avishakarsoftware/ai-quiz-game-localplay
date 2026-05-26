@@ -32,6 +32,8 @@ async function expectOrganizerLaunch(page: Page) {
 }
 
 test.describe('Revelry gamma embedded flow', () => {
+  test.describe.configure({ mode: 'serial' });
+
   test('saves Drawing content, starts it, and re-enters the active room', async ({ page, request }, testInfo) => {
     test.skip(testInfo.project.name !== 'chromium-desktop', 'Stateful gamma party flow uses one disposable party and runs desktop-only.');
 
@@ -124,6 +126,67 @@ test.describe('Revelry gamma embedded flow', () => {
     await page.getByRole('button', { name: 'Host game' }).click();
     await expectOrganizerLaunch(page);
     await expect(page.getByText('Organizer launch token required')).not.toBeVisible();
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test('creates a custom Quiz with an uploaded question image', async ({ page, request }, testInfo) => {
+    test.skip(testInfo.project.name !== 'chromium-desktop', 'Stateful gamma party flow uses one disposable party and runs desktop-only.');
+
+    const hubUrl = getGammaPartyGamesUrl();
+    const token = hubUrl.searchParams.get('party_games_token') || '';
+    const quizTitle = `Gamma E2E Photo Quiz ${Date.now()}`;
+    const consoleErrors: string[] = [];
+    const pageErrors: string[] = [];
+
+    page.on('console', (message) => {
+      if (message.type() !== 'error') return;
+      const text = message.text();
+      if (text.includes('409 (Conflict)')) return;
+      consoleErrors.push(text);
+    });
+    page.on('pageerror', (error) => {
+      pageErrors.push(error.message);
+    });
+
+    await page.goto(hubUrl.toString());
+    await expect(page.getByRole('button', { name: 'Create quiz' })).toBeVisible();
+    await page.getByRole('button', { name: 'Create quiz' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Create Your Own' })).toBeVisible({ timeout: 15000 });
+    await page.getByLabel('Quiz title').fill(quizTitle);
+    await page.getByLabel('Question text').fill('Which icon did the gamma upload test attach?');
+    await page.getByLabel('Answer A').fill('LocalPlay icon');
+    await page.getByLabel('Answer B').fill('Random mountain');
+    await page.getByLabel('Answer C').fill('Empty placeholder');
+    await page.getByLabel('Answer D').fill('No image');
+    await page.locator('input[type="file"]').setInputFiles('public/icons/favicon-32x32.png');
+
+    await expect(page.getByText('Image uploaded')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByLabel('Quiz title')).toHaveValue(quizTitle);
+    await expect(page.getByLabel('Question text')).toHaveValue('Which icon did the gamma upload test attach?');
+    await expect(page.getByLabel('Question image alt text')).toBeVisible();
+    await page.getByLabel('Question image alt text').fill('Uploaded LocalPlay icon');
+    await page.getByRole('button', { name: 'Save', exact: true }).last().click();
+    await expect(page.getByText('Saved')).toBeVisible({ timeout: 15000 });
+
+    const resolved = await resolveWorkspace(request, token);
+    const savedContent = resolved.workspace.prepared_content.find(
+      (item: { title?: string }) => item.title === quizTitle,
+    );
+    expect(savedContent).toBeTruthy();
+    expect(savedContent.game_type).toBe('quiz');
+    expect(savedContent.status).toBe('ready');
+
+    const content = await request.get(
+      `/integrations/revelry/party-games/content/${encodeURIComponent(savedContent.localplay_content_id)}?party_games_token=${encodeURIComponent(token)}&include_payload=true`,
+    );
+    await expect(content).toBeOK();
+    const contentBody = await content.json();
+    const question = contentBody.quiz?.questions?.[0];
+    expect(question?.image_url).toContain('media.revelryapp.me/apps/localplay/gamma/');
+    expect(question?.image_alt).toBe('Uploaded LocalPlay icon');
 
     expect(pageErrors).toEqual([]);
     expect(consoleErrors).toEqual([]);

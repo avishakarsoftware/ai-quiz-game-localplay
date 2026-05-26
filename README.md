@@ -129,6 +129,8 @@ cd frontend
 REVELRY_GAMMA_PARTY_GAMES_URL_FILE=/path/to/gamma_party_games_url.txt npm run test:e2e:gamma:revelry
 ```
 
+This stateful gamma check covers Drawing setup/start/re-entry and custom Quiz image upload/save through the live LocalPlay gamma + IONOS media path.
+
 ### All Tests
 
 ```bash

@@ -225,7 +225,8 @@ export default function RevelryAuthoringPage() {
         resolved.launch_context.external_container_type || 'container',
         resolved.launch_context.external_container_id || 'unknown',
     ].join(':');
-    const contentScope = currentContentId || resolved.localplay_content_id || `new:${authoringToken.slice(0, 16)}`;
+    const editorScope = resolved.localplay_content_id || `new:${authoringToken.slice(0, 16)}`;
+    const draftScope = currentContentId || resolved.localplay_content_id || editorScope;
     const initialQuiz = generatedQuiz || resolved.content?.quiz || null;
     const hostAppImageGenerationAllowed = Boolean(
         resolved.launch_context.host_app !== 'revelry'
@@ -294,11 +295,11 @@ export default function RevelryAuthoringPage() {
                 </section>
             )}
             <CustomQuizEditor
-                key={`${contentScope}:${generatedVersion}`}
+                key={`${editorScope}:${generatedVersion}`}
                 initialQuiz={initialQuiz}
                 packId={currentContentId || resolved.localplay_content_id || undefined}
                 authToken={authoringToken}
-                draftStorageKey={`localplay_revelry_quiz_draft_v2:${containerScope}:${contentScope}:${generatedVersion}`}
+                draftStorageKey={`localplay_revelry_quiz_draft_v2:${containerScope}:${draftScope}:${generatedVersion}`}
                 contextLabel={resolved.launch_context.display?.container_label || resolved.launch_context.external_container_title || 'Revelry Games'}
                 onBack={() => returnToRevelry()}
                 onSave={saveQuiz}

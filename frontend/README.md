@@ -17,7 +17,7 @@ npm run build
 - `npm test` runs Vitest unit/component tests.
 - `npm run test:e2e` runs Playwright browser UX smoke tests from `e2e/`.
 - `npm run test:e2e:gamma` runs a desktop/mobile Playwright smoke against `https://gamesapi-gamma.revelryapp.me`.
-- `npm run test:e2e:gamma:revelry` runs a gamma-only Revelry embedded party regression; set `REVELRY_GAMMA_PARTY_GAMES_URL` to a short-lived gamma party games URL first.
+- `npm run test:e2e:gamma:revelry` runs a gamma-only Revelry embedded party regression for Drawing re-entry and custom Quiz image upload; set `REVELRY_GAMMA_PARTY_GAMES_URL_FILE` to a short-lived gamma party games URL file first.
 - `npm run build` type-checks and builds the production bundle.
 
 ## Media Components
