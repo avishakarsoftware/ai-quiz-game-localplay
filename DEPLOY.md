@@ -1501,11 +1501,11 @@ This is the repeatable gamma-only test for the LocalPlay/Revelry embedded party 
 ```bash
 export LOCALPLAY_GAMMA_INTEGRATION_SECRET="$(gcloud secrets versions access latest --project revelryapp --secret revelry-gamma-localplay-integration-secret)"
 .venv/bin/python /Users/Avi/Desktop/dev/antigravity/revelryapp/scripts/mint-localplay-gamma-url.py \
-  --ttl-days 30 \
+  --ttl-days 0.05 \
   --output ./gamma_party_games_url.txt >/dev/null
 ```
 
-The script is gamma-only and writes the full URL to `gamma_party_games_url.txt`, which must stay ignored. Do not print the URL or token in chat, logs, or committed files. LocalPlay honors the script's `ttl_seconds` request outside production only, capped at 30 days; production rejects custom party-games token TTLs.
+The script is gamma-only and writes the full URL to `gamma_party_games_url.txt`, which must stay ignored. Do not print the URL or token in chat, logs, or committed files. Mint fresh before each run; a short TTL such as `0.05` days, about 72 minutes, is enough for normal E2E. LocalPlay honors the script's `ttl_seconds` request outside production only, capped at 30 days; production rejects custom party-games token TTLs. Use a longer gamma-only TTL, up to 30 days, only while actively debugging across sessions.
 
 2. Verify only the shape/expiry, not the token:
 
