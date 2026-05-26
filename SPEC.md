@@ -296,6 +296,8 @@ Implementation-ready availability model:
 - `GET /catalog?host_app=...` must be the only source used by host-app surfaces. Frontend hub code should not have separate hardcoded allow/deny lists except for defensive rendering of unknown capabilities.
 - Tests should cover static capability gating, remote disable, gamma/prod differences, allowlisted exposure, rollout hashing, feature-flag intersection, malformed policy, unsupported game ids being ignored, and kill-switch behavior.
 
+Revelry content callbacks must treat safe `payload.content` metadata as a first-class prepared-game mirror source. `content.created` and `content.updated` callbacks include top-level host-app/container/content ids plus a safe summary object with `localplay_content_id`, `game_type`, `title`, `status`, item/question count, optional thumbnail, and time limit. They must never include raw prompts, questions, answers, options, full media paths, provider prompts, launch tokens, or participant secrets. After signature and envelope validation, Revelry may fetch LocalPlay metadata to confirm or enrich, but a fetch failure must not skip the prepared-game mirror update when safe `payload.content` is present. Versioned updates move the visible prepared setup pointer to the new `content_id` rather than creating a duplicate visible card.
+
 Bingo-family games are a separate runtime family rather than quiz variants. `SPEC-GAME-BINGO-HOUSIE.md` defines the reusable Bingo/Housie engine. Housie is now implemented for standalone LocalPlay with server-generated tickets, manual number calling, server-side claim validation, and spectator called-board sync. Baby Bingo / word / emoji / image Bingo remain later rulesets on the same engine.
 
 ## LLM Generation Pattern
@@ -1212,6 +1214,7 @@ Launch-readiness checks should include:
 - Desktop and mobile screenshots of the standalone game catalog, menu, each setup/review flow, lobby, player join, and TV/spectator entry.
 - Saved quiz library flow: list, start, prepare copy, review, Home return, edit, delete.
 - Host-app flow: party hub, create game, save setup, start saved game, replacement confirmation, lobby, player join, completion, return.
+- Host-app callback mirror flow: save or update party-scoped quiz, WMLT, and Drawing content; verify `content.created` / `content.updated` safe `payload.content` can update the prepared-games mirror even if follow-up metadata fetch fails.
 - Service worker/API check: `/quiz-packs`, `/media`, `/catalog`, `/integrations`, and game API routes return API responses, not cached HTML.
 
 ## Native / Capacitor

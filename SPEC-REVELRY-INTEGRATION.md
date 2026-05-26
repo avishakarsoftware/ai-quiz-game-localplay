@@ -1184,7 +1184,7 @@ Sync and callback rules:
 - Revelry may call this endpoint when the Games tab opens, after returning from LocalPlay, after app resume, and after a LocalPlay hub start/edit action.
 - Revelry stores or updates pointer metadata only. It must not store questions, answers, options, raw prompts, media paths, or full LocalPlay payloads.
 - `party-workspace` is a service-level party snapshot, not an actor-personalized authorization response. It may include `action_requirements`, but Revelry must derive actor-specific `can_start`, `can_edit`, and `can_delete` from current party membership, role, and capabilities before rendering controls.
-- LocalPlay should send signed callbacks for important changes so Revelry can update feed cards, prepared game cards, active-session state, and result summaries without waiting for user refresh. Polling/refresh remains the consistency fallback.
+- LocalPlay should send signed callbacks for important changes so Revelry can update feed cards, prepared game cards, active-session state, and result summaries without waiting for user refresh. The callback envelope and content callback payload contract are canonical in **Revelry Callback Delivery** below. Polling/refresh remains the consistency fallback.
 - Conflicts are resolved by LocalPlay content/session timestamps. Revelry should treat its prepared setup records as a mirror of LocalPlay party content, not as the authority for game internals.
 
 ### Revelry Callback Delivery
@@ -1219,6 +1219,81 @@ Event envelope:
 }
 ```
 
+Content-created / content-updated callback payload:
+
+```json
+{
+  "event_id": "lp_evt_uuid",
+  "event_type": "content.created",
+  "occurred_at": "2026-05-25T20:30:00Z",
+  "host_app": "revelry",
+  "external_container_type": "party",
+  "external_container_id": "party_uuid",
+  "content_id": "lp_content_uuid",
+  "idempotency_key": "content.created:lp_content_uuid:v1",
+  "payload": {
+    "status": "ready",
+    "content": {
+      "localplay_content_id": "lp_content_uuid",
+      "game_type": "drawing",
+      "title": "Drawing Dash",
+      "status": "ready",
+      "thumbnail_url": "https://media.revelryapp.me/apps/localplay/prod/uploads/...",
+      "question_count": 10,
+      "item_count": 10,
+      "time_limit": 45,
+      "created_by": "",
+      "updated_at": "2026-05-25T20:30:00Z",
+      "last_used_at": null,
+      "action_requirements": {
+        "start": ["operate_game"],
+        "edit": ["author_content"],
+        "delete": ["manage_games"]
+      }
+    }
+  }
+}
+```
+
+For `content.updated` where LocalPlay creates a new editable version after played content was locked, use the new `content_id` as the top-level `content_id` and include the old id in `previous_content_id` and `payload.previous_content_id`:
+
+```json
+{
+  "event_id": "lp_evt_uuid",
+  "event_type": "content.updated",
+  "occurred_at": "2026-05-25T20:45:00Z",
+  "host_app": "revelry",
+  "external_container_type": "party",
+  "external_container_id": "party_uuid",
+  "content_id": "lp_content_uuid_v2",
+  "previous_content_id": "lp_content_uuid_v1",
+  "idempotency_key": "content.updated:lp_content_uuid_v2:v1",
+  "payload": {
+    "status": "ready",
+    "previous_content_id": "lp_content_uuid_v1",
+    "content": {
+      "localplay_content_id": "lp_content_uuid_v2",
+      "game_type": "drawing",
+      "title": "Drawing Dash",
+      "status": "ready",
+      "item_count": 12,
+      "time_limit": 45,
+      "updated_at": "2026-05-25T20:45:00Z"
+    }
+  }
+}
+```
+
+Content callback metadata rules:
+
+- `payload.content` is safe summary metadata for a prepared game card. It must not include raw quiz questions, answers, options, drawing prompts, WMLT statements, private media paths, full game payloads, organizer credentials, launch tokens, participant secrets, or provider prompts.
+- `payload.content.localplay_content_id` should match top-level `content_id`. If both are present and disagree, Revelry must reject or quarantine the callback rather than creating a mismatched pointer.
+- `payload.content.game_type` must be one of the bridge-supported game types such as `quiz`, `wmlt`, or `drawing`, and must be valid for the saved content id.
+- Revelry should validate the callback envelope first: signature, timestamp freshness, event id/idempotency, `host_app`, `external_container_type`, `external_container_id`, top-level `content_id`, and supported `game_type`.
+- After envelope validation, `payload.content` is authoritative for the callback event's fresh prepared-card metadata. Revelry may call `GET /integrations/revelry/content/{content_id}` or `party-workspace` to confirm/enrich, but a metadata fetch failure must not cause Revelry to skip the mirror update when safe `payload.content` is present.
+- If both fetched metadata and `payload.content` are present, use `payload.content` for callback freshness after validating it belongs to the same host app/container/content id/game type. Polling `party-workspace` remains the later reconciliation source if anything drifts.
+- For versioned edits, update the visible prepared setup row to point at the new `content_id`; do not create a duplicate visible card. Keeping the old content id as historical, locked, superseded, or version provenance metadata is optional and should not create an additional visible prepared-game card.
+
 Recommended event types:
 
 - `content.created`
@@ -1238,6 +1313,7 @@ Rules:
 - Current LocalPlay callbacks include safe actor metadata on `game.session_created` and `game.started` when available so Revelry can map ownership for games started from the LocalPlay hub: `payload.actor.external_user_id`, `external_guest_id`, `display_name`, and `role`. Do not include auth tokens, launch tokens, organizer tokens, participant secrets, private profile fields, raw answers, prompt payloads, or media internals.
 - Callbacks are signed with `REVELRY_INTEGRATION_SECRET`, the canonical shared Revelry integration secret. `REVELRY_CALLBACK_SECRET` may exist only as a temporary rotation alias or compatibility fallback and must not silently diverge from `REVELRY_INTEGRATION_SECRET` in normal gamma/prod configuration.
 - LocalPlay signs `HMAC_SHA256("${timestamp}.${raw_body}")` and sends `X-LocalPlay-Event-Id`, `X-LocalPlay-Timestamp`, and `X-LocalPlay-Signature: sha256=...`; Revelry should reject replays and dedupe by event id.
+- `event_id` is required. `idempotency_key` is strongly recommended and stable by event type plus canonical resource id; if absent, Revelry should use `event_id` as the dedupe key. New LocalPlay callback code should send both.
 - Callback payloads must contain safe metadata only. Do not include full quiz contents, answers, raw prompts, private media paths, organizer credentials, launch tokens, or participant secrets.
 - Revelry owns whether to post feed/memory entries automatically, as drafts, or only after host approval.
 - LocalPlay does best-effort delivery in the current implementation. It retries transient delivery failures, including Revelry HTTP `429` rate-limit responses and `5xx` errors, with short bounded backoff while preserving the same `event_id`, `idempotency_key`, and raw body for the retry attempt. Durable queued retry with long backoff remains backlog hardening; Revelry should poll `party-workspace` or session results on page open/app resume to recover missed callbacks.
@@ -1654,6 +1730,8 @@ Implemented LocalPlay tests cover:
 - launch-token minting and resolution
 - stable `/sessions/{session_id}/organizer` redirect with token validation
 - status polling returns joinability and launch metadata
+- content callbacks carry safe `payload.content` metadata for `content.created` / `content.updated`
+- Revelry can mirror prepared content from `payload.content` when metadata fetch is unavailable
 
 Remaining focused tests to add:
 
@@ -1664,6 +1742,7 @@ Remaining focused tests to add:
 - Revelry origin is allowed for REST/WebSocket/frame embedding
 - embedded launch hides standalone chrome
 - result summary omits raw per-answer logs
+- versioned `content.updated` moves the visible prepared setup pointer to the new `content_id` without creating a duplicate visible card
 
 Playwright smoke:
 
@@ -1671,12 +1750,17 @@ Playwright smoke:
 - WebSocket connects from desktop/trusted embedded context
 - open-in-new-tab fallback works on mobile viewport
 - session complete can be reflected through result endpoint
+- production smoke should cover the real `app.revelryapp.me` Games tab loading embedded `gamesapi.revelryapp.me`, LocalPlay rendering in host-app mode, no standalone sparks/wallet/paywall chrome, no browser console errors, and a saved Drawing/WMLT setup appearing both inside LocalPlay saved games and in Revelry's outer prepared games list
 
-## Gamma Rollout
+Run focused automated tests before merge/deploy. Live gamma/prod browser smokes are opt-in and must be explicitly requested because they touch deployed environments and real integration data.
 
-Roll out the integration on gamma first.
+## Rollout Status
 
-Current LocalPlay status: gamma has passed direct smoke for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, party workspace, party hub link/resolve, host-app-managed billing wallet behavior, LocalPlay-hosted quiz authoring, start from saved `localplay_content_id`, WebSocket organizer/player play-through, completion, result polling, host-app join-link QR/copy behavior, completed-game return to Revelry Games, spectator alias SPA routing, terminal organizer/player/spectator host-app error egress, and lowercase typed TV URL normalization to uppercase websocket room codes. Basic Revelry gamma end-to-end launch testing has worked for catalog, create session, organizer/player launch, and gameplay. Before each rollout or manual test pass, verify the deployed gamma container against the current repo HEAD because this spec intentionally does not act as the sole source of truth for deployed commit tracking. Deeper branded UX polish and production-scale callback durability remain required before production promotion.
+Roll out integration changes on gamma first, then promote to production after the changed path is playable end to end.
+
+Current LocalPlay gamma status: gamma has passed direct smoke for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, party workspace, party hub link/resolve, host-app-managed billing wallet behavior, LocalPlay-hosted quiz authoring, start from saved `localplay_content_id`, WebSocket organizer/player play-through, completion, result polling, host-app join-link QR/copy behavior, completed-game return to Revelry Games, spectator alias SPA routing, terminal organizer/player/spectator host-app error egress, and lowercase typed TV URL normalization to uppercase websocket room codes. Basic Revelry gamma end-to-end launch testing has worked for catalog, create session, organizer/player launch, and gameplay. Before each rollout or manual test pass, verify the deployed gamma container against the current repo HEAD because this spec intentionally does not act as the sole source of truth for deployed commit tracking.
+
+Current LocalPlay production status as of 2026-05-25: production LocalPlay is deployed at `https://gamesapi.revelryapp.me` with the Revelry bridge code, `REVELRY_INTEGRATION_SECRET`, production callback URL, custom media uploads, and AI image generation disabled. Direct production smoke passed for health, host-app catalog, media status, party-games link generation, host chrome suppression, upload URL generation, remote smoke with generation skipped, and Supabase schema parity for LocalPlay `games_*` tables. Revelry production is expected to use `GAMES_ENGINE_URL=https://gamesapi.revelryapp.me` and the matching `LOCALPLAY_INTEGRATION_SECRET`. Full production gameplay/callback E2E should still be run for any newly promoted path, including prepared setup mirror updates for non-quiz games such as Drawing.
 
 Gamma acceptance checklist:
 
@@ -1695,7 +1779,7 @@ Gamma acceptance checklist:
 - LocalPlay hub can create/edit/start party-scoped saved quizzes without exposing the Revelry service secret.
 - If configured, signed callbacks reach Revelry for content/session events; LocalPlay signs `${timestamp}.${raw_body}` with `REVELRY_INTEGRATION_SECRET`, uses ISO UTC `occurred_at`, emits `content.deleted`, and retries `429` / transient `5xx` responses with short bounded backoff. If callbacks are unavailable, polling recovers state.
 
-Do not promote to production until the gamma flow is playable end to end.
+Do not promote new integration changes to production until the changed gamma flow is playable end to end.
 
 ## Implementation Order
 
