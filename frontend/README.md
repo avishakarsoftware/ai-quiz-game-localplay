@@ -9,11 +9,13 @@ npm install
 npm run dev
 npm test
 npm run test:e2e
+npm run test:e2e:gamma
 npm run build
 ```
 
 - `npm test` runs Vitest unit/component tests.
 - `npm run test:e2e` runs Playwright browser UX smoke tests from `e2e/`.
+- `npm run test:e2e:gamma` runs a desktop/mobile Playwright smoke against `https://gamesapi-gamma.revelryapp.me`.
 - `npm run build` type-checks and builds the production bundle.
 
 ## Media Components
@@ -27,6 +29,12 @@ frontend.
 ## Playwright UX Tests
 
 The Playwright suite starts the local Vite dev server automatically. Current coverage includes the DrawingGame organizer prompt screen and quiz-variant prompt screens on desktop and mobile, with assertions for aligned controls, no horizontal page overflow, no overlap with fixed menu/spark controls, variant generation `mode` payloads, and visual snapshots for DrawingGame.
+
+The gamma smoke skips the local dev server and points Playwright at the deployed backend-served SPA:
+
+```bash
+npm run test:e2e:gamma
+```
 
 When a deliberate visual change alters a snapshot, refresh baselines with:
 

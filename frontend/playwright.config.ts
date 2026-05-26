@@ -1,15 +1,18 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5173';
+const useRemoteBaseURL = Boolean(process.env.PLAYWRIGHT_BASE_URL);
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL,
     trace: 'on-first-retry',
     serviceWorkers: 'block',
   },
-  webServer: {
+  webServer: useRemoteBaseURL ? undefined : {
     command: 'npm run dev -- --host 127.0.0.1',
     url: 'http://127.0.0.1:5173',
     reuseExistingServer: !process.env.CI,

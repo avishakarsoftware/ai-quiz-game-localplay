@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:gamma": "PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me playwright test e2e/gamma-smoke.spec.ts"
   },
   "dependencies": {
     "@capacitor/android": "^8.1.0",

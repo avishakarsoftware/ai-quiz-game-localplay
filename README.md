@@ -115,6 +115,13 @@ make test-frontend-e2e
 
 Runs Playwright browser checks from `frontend/e2e/`. The current suite covers the DrawingGame organizer prompt screen on desktop and mobile, including layout alignment, no horizontal overflow, no overlap with fixed menu/spark controls, and visual snapshots.
 
+For a deployed gamma frontend smoke:
+
+```bash
+cd frontend
+npm run test:e2e:gamma
+```
+
 ### All Tests
 
 ```bash

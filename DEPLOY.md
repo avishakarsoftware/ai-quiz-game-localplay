@@ -1394,6 +1394,15 @@ This runs Playwright against the local Vite dev server. The current coverage inc
 npm run test:e2e -- --update-snapshots
 ```
 
+To smoke the deployed gamma frontend with Playwright instead of the local Vite server:
+
+```bash
+cd frontend
+npm run test:e2e:gamma
+```
+
+This points Playwright at `https://gamesapi-gamma.revelryapp.me`, verifies the standalone catalog renders on desktop and mobile, checks `/media/status`, and fails on browser console/page errors.
+
 Manual curl spot checks:
 
 ```bash
