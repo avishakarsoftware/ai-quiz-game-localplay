@@ -39,6 +39,7 @@ import tokens
 import db
 import auth
 import remote_config
+from host_app_catalog_policy import clear_policy_cache, effective_catalog, is_game_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -1215,14 +1216,20 @@ async def get_media_asset(asset_id: str):
 
 
 @app.get("/catalog")
-async def get_catalog(host_app: str = ""):
+async def get_catalog(
+    host_app: str = "",
+    external_container_id: str = "",
+    external_user_id: str = "",
+    include_planned: bool = False,
+):
     """Return launchable LocalPlay catalog metadata for first-party and host apps."""
-    games = GAME_CATALOG
-    if host_app:
-        games = [
-            game for game in GAME_CATALOG
-            if game.get("host_app_supported") and host_app in game.get("supported_host_apps", [])
-        ]
+    games = effective_catalog(
+        GAME_CATALOG,
+        host_app=host_app,
+        external_container_id=external_container_id,
+        external_user_id=external_user_id,
+        include_planned=include_planned,
+    )
     return {
         "host_app": host_app or None,
         "games": games,
@@ -1538,10 +1545,7 @@ def _revelry_launch_context(
     return_url: str = "",
     display: Optional[dict[str, Any]] = None,
 ) -> dict:
-    allowed_games = [
-        game["id"] for game in GAME_CATALOG
-        if game.get("launchable") and game.get("host_app_supported") and context.host_app in game.get("supported_host_apps", [])
-    ]
+    allowed_games = [game["id"] for game in _host_app_catalog(context, actor) if game.get("launchable")]
     return {
         "mode": "host_app",
         "host_app": context.host_app,
@@ -1563,6 +1567,35 @@ def _revelry_launch_context(
         "surface": surface,
         "display": _revelry_display(context, display),
     }
+
+
+def _host_app_catalog(context: RevelryExternalContext, actor: Optional[RevelryActor] = None, include_planned: bool = False) -> list[dict]:
+    return effective_catalog(
+        GAME_CATALOG,
+        host_app=context.host_app,
+        external_container_id=context.external_container_id,
+        external_user_id=(actor.external_user_id if actor else context.host_user_id),
+        include_planned=include_planned,
+    )
+
+
+def _require_host_app_game_allowed(
+    context: RevelryExternalContext,
+    game_type: str,
+    actor: Optional[RevelryActor] = None,
+    required_capability: str = "",
+) -> None:
+    if context.host_app != "revelry":
+        raise HTTPException(status_code=422, detail="Unsupported host_app")
+    if not is_game_allowed(
+        GAME_CATALOG,
+        game_type,
+        host_app=context.host_app,
+        external_container_id=context.external_container_id,
+        external_user_id=(actor.external_user_id if actor else context.host_user_id),
+        required_capability=required_capability,
+    ):
+        raise HTTPException(status_code=422, detail="Game is not enabled for this Revelry party")
 
 
 def _create_party_games_token(
@@ -1939,7 +1972,7 @@ def _prepared_content_summary(content: dict) -> dict:
     return _game_content_summary(content)
 
 
-def _workspace_payload(context: RevelryExternalContext) -> dict:
+def _workspace_payload(context: RevelryExternalContext, actor: Optional[RevelryActor] = None) -> dict:
     wallet_id = _revelry_party_wallet_id(context.external_container_id)
     packs = db.list_quiz_packs(wallet_id)
     saved_games = db.list_game_content(wallet_id, ["wmlt", "drawing"])
@@ -1953,10 +1986,7 @@ def _workspace_payload(context: RevelryExternalContext) -> dict:
             "external_container_id": context.external_container_id,
             "external_container_title": context.external_container_title,
         },
-        "catalog": [
-            game for game in GAME_CATALOG
-            if game.get("host_app_supported") and context.host_app in game.get("supported_host_apps", [])
-        ],
+        "catalog": _host_app_catalog(context, actor),
         "prepared_content": prepared,
         "active_session": _format_session(active) if active else None,
         "recent_results": [],
@@ -2073,6 +2103,7 @@ def _create_revelry_session_from_context(
 ) -> dict:
     if context.host_app != "revelry":
         raise HTTPException(status_code=422, detail="Unsupported host_app")
+    _require_host_app_game_allowed(context, game_type, actor)
 
     active = db.get_active_game_session(context.host_app, context.external_container_id)
     if active and not replacement_confirmed:
@@ -2164,6 +2195,7 @@ async def create_revelry_party_games_link(request: RevelryPartyGamesLinkRequest,
     if request.intent == "start" or request.content_id:
         if not request.content_id:
             raise HTTPException(status_code=422, detail="content_id is required for start intent")
+        _require_host_app_game_allowed(context, request.game_type, request.actor)
         start_params: dict[str, Any] = {
             "party_games_token": token,
             "start_content_id": request.content_id,
@@ -2188,6 +2220,8 @@ async def create_revelry_content_authoring_link(request: RevelryContentAuthoring
         raise HTTPException(status_code=422, detail="Unsupported host_app")
     if not _author_can_author(request.actor):
         raise HTTPException(status_code=403, detail="Missing capability to author content")
+    required_capability = "can_edit_content" if request.mode in ("edit", "duplicate") else "can_create_content"
+    _require_host_app_game_allowed(request.external_context, request.game_type, request.actor, required_capability)
     if request.mode in ("edit", "duplicate") and not request.content_id:
         raise HTTPException(status_code=422, detail="content_id is required for edit or duplicate")
     if request.content_id:
@@ -2219,6 +2253,8 @@ async def create_revelry_party_games_authoring_link(request: RevelryPartyGamesAu
     if not _author_can_author(actor):
         raise HTTPException(status_code=403, detail="Missing capability to author content")
     context = _external_context_from_launch_context(launch_context)
+    required_capability = "can_edit_content" if request.mode in ("edit", "duplicate") else "can_create_content"
+    _require_host_app_game_allowed(context, request.game_type, actor, required_capability)
     if request.mode in ("edit", "duplicate") and not request.content_id:
         raise HTTPException(status_code=422, detail="content_id is required for edit or duplicate")
     if request.content_id:
@@ -2409,6 +2445,7 @@ async def create_revelry_content(request: RevelryContentSaveRequest, req: Reques
         actor = request.actor
     if not _author_can_author(actor):
         raise HTTPException(status_code=403, detail="Missing capability to author content")
+    _require_host_app_game_allowed(context, request.game_type, actor, "can_create_content")
     content, event_type, previous_content_id = _save_revelry_content(context, request)
     await _send_revelry_callback(event_type, {
         "host_app": context.host_app,
@@ -2513,9 +2550,10 @@ async def resolve_revelry_party_games(party_games_token: str):
         brand_key=launch_context.get("brand_key", "revelry"),
         return_url=launch_context.get("return_url", ""),
     )
+    actor = _actor_from_launch_context(launch_context)
     return {
         "launch_context": launch_context,
-        "workspace": _workspace_payload(context),
+        "workspace": _workspace_payload(context, actor),
     }
 
 
@@ -2622,6 +2660,7 @@ async def save_revelry_party_game_content(request: RevelryPartyGamesContentSaveR
     if not _author_can_author(actor):
         raise HTTPException(status_code=403, detail="Missing capability to author content")
     context = _external_context_from_launch_context(launch_context)
+    _require_host_app_game_allowed(context, request.game_type, actor, "can_create_content")
     save_request = RevelryContentSaveRequest(
         external_context=context,
         actor=actor,
@@ -2664,9 +2703,8 @@ async def generate_revelry_party_game_prompts(request: RevelryPartyGamesPromptGe
     actor = _actor_from_launch_context(launch_context)
     if not _author_can_author(actor):
         raise HTTPException(status_code=403, detail="Missing capability to author content")
-    if request.game_type not in {game["game_type"] for game in GAME_CATALOG if game.get("supports_ai_generation")}:
-        raise HTTPException(status_code=422, detail="AI prompt generation is not available for this game")
     context = _external_context_from_launch_context(launch_context)
+    _require_host_app_game_allowed(context, request.game_type, actor, "supports_ai_generation")
     payload = await _generate_party_prompt_content(context, request)
     return {
         "game_type": request.game_type,
@@ -3950,6 +3988,62 @@ async def admin_stats(req: Request):
             "tracked_ips": active_ips,
         },
     }
+
+
+class HostAppCatalogFlagRequest(BaseModel):
+    environment: str = Field(default_factory=lambda: config.ENVIRONMENT)
+    host_app: str = "revelry"
+    game_id: str
+    enabled: bool = False
+    status: str = "disabled"
+    allowlist_party_ids: list[str] = Field(default_factory=list)
+    allowlist_external_user_ids: list[str] = Field(default_factory=list)
+    rollout_percentage: Optional[int] = None
+    capability_overrides: dict[str, bool] = Field(default_factory=dict)
+    notes: str = ""
+    updated_by: str = ""
+
+    @field_validator("environment", "host_app", "game_id", "status")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        value = (value or "").strip()
+        if not value:
+            raise ValueError("value is required")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def _valid_status(cls, value: str) -> str:
+        if value not in {"live", "gamma", "planned", "disabled"}:
+            raise ValueError("invalid status")
+        return value
+
+    @field_validator("rollout_percentage")
+    @classmethod
+    def _valid_rollout(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and not 0 <= value <= 100:
+            raise ValueError("rollout_percentage must be between 0 and 100")
+        return value
+
+
+@app.get("/admin/host-app-catalog-flags")
+async def admin_list_host_app_catalog_flags(req: Request, environment: str = "", host_app: str = "revelry"):
+    _check_admin(req)
+    env = (environment or config.ENVIRONMENT).strip()
+    return {"flags": db.list_host_app_catalog_flags(env, host_app)}
+
+
+@app.post("/admin/host-app-catalog-flags")
+async def admin_upsert_host_app_catalog_flag(req: Request, request: HostAppCatalogFlagRequest):
+    _check_admin(req)
+    flag = db.upsert_host_app_catalog_flag(
+        request.environment,
+        request.host_app,
+        request.game_id,
+        request.model_dump(exclude={"environment", "host_app", "game_id"}),
+    )
+    clear_policy_cache()
+    return {"flag": flag}
 
 
 @app.get("/")

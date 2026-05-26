@@ -239,6 +239,28 @@ CREATE INDEX IF NOT EXISTS idx___PREFIX__game_sessions_external_active
 CREATE INDEX IF NOT EXISTS idx___PREFIX__game_sessions_room
   ON __PREFIX__game_sessions(room_code);
 
+CREATE TABLE IF NOT EXISTS __PREFIX__host_app_catalog_flags (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  environment TEXT NOT NULL,
+  host_app TEXT NOT NULL,
+  game_id TEXT NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  status TEXT NOT NULL DEFAULT 'disabled'
+    CHECK (status IN ('live', 'gamma', 'planned', 'disabled')),
+  allowlist_party_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  allowlist_external_user_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  rollout_percentage INTEGER
+    CHECK (rollout_percentage IS NULL OR (rollout_percentage >= 0 AND rollout_percentage <= 100)),
+  capability_overrides JSONB NOT NULL DEFAULT '{}'::jsonb,
+  notes TEXT NOT NULL DEFAULT '',
+  updated_by TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (environment, host_app, game_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx___PREFIX__host_app_catalog_flags_lookup
+  ON __PREFIX__host_app_catalog_flags(environment, host_app, game_id);
+
 CREATE TABLE IF NOT EXISTS __PREFIX__game_history (
   id BIGSERIAL PRIMARY KEY,
   room_code TEXT NOT NULL,
@@ -290,6 +312,7 @@ ALTER TABLE __PREFIX__quiz_packs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__quiz_questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__media_assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__game_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE __PREFIX__host_app_catalog_flags ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__game_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__rejections ENABLE ROW LEVEL SECURITY;
 
@@ -331,6 +354,9 @@ CREATE POLICY service_role_all___PREFIX__media_assets ON __PREFIX__media_assets
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS service_role_all___PREFIX__game_sessions ON __PREFIX__game_sessions;
 CREATE POLICY service_role_all___PREFIX__game_sessions ON __PREFIX__game_sessions
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS service_role_all___PREFIX__host_app_catalog_flags ON __PREFIX__host_app_catalog_flags;
+CREATE POLICY service_role_all___PREFIX__host_app_catalog_flags ON __PREFIX__host_app_catalog_flags
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS service_role_all___PREFIX__game_history ON __PREFIX__game_history;
 CREATE POLICY service_role_all___PREFIX__game_history ON __PREFIX__game_history

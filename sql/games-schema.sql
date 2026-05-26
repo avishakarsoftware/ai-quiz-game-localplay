@@ -239,6 +239,28 @@ CREATE INDEX IF NOT EXISTS idx_games_game_sessions_external_active
 CREATE INDEX IF NOT EXISTS idx_games_game_sessions_room
   ON games_game_sessions(room_code);
 
+CREATE TABLE IF NOT EXISTS games_host_app_catalog_flags (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  environment TEXT NOT NULL,
+  host_app TEXT NOT NULL,
+  game_id TEXT NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  status TEXT NOT NULL DEFAULT 'disabled'
+    CHECK (status IN ('live', 'gamma', 'planned', 'disabled')),
+  allowlist_party_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  allowlist_external_user_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  rollout_percentage INTEGER
+    CHECK (rollout_percentage IS NULL OR (rollout_percentage >= 0 AND rollout_percentage <= 100)),
+  capability_overrides JSONB NOT NULL DEFAULT '{}'::jsonb,
+  notes TEXT NOT NULL DEFAULT '',
+  updated_by TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (environment, host_app, game_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_games_host_app_catalog_flags_lookup
+  ON games_host_app_catalog_flags(environment, host_app, game_id);
+
 CREATE TABLE IF NOT EXISTS games_game_history (
   id BIGSERIAL PRIMARY KEY,
   room_code TEXT NOT NULL,
@@ -290,6 +312,7 @@ ALTER TABLE games_quiz_packs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_quiz_questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_media_assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_game_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE games_host_app_catalog_flags ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_game_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_rejections ENABLE ROW LEVEL SECURITY;
 
@@ -331,6 +354,9 @@ CREATE POLICY service_role_all_games_media_assets ON games_media_assets
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS service_role_all_games_game_sessions ON games_game_sessions;
 CREATE POLICY service_role_all_games_game_sessions ON games_game_sessions
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS service_role_all_games_host_app_catalog_flags ON games_host_app_catalog_flags;
+CREATE POLICY service_role_all_games_host_app_catalog_flags ON games_host_app_catalog_flags
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS service_role_all_games_game_history ON games_game_history;
 CREATE POLICY service_role_all_games_game_history ON games_game_history

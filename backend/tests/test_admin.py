@@ -166,6 +166,54 @@ class TestAdminGrant:
         assert resp.status_code == 400
 
 
+class TestAdminHostAppCatalogFlags:
+    def test_upsert_and_list_host_app_catalog_flag(self, client):
+        resp = client.post(
+            "/admin/host-app-catalog-flags",
+            headers=admin_headers(),
+            json={
+                "environment": "gamma",
+                "host_app": "revelry",
+                "game_id": "drawing",
+                "enabled": True,
+                "status": "live",
+                "allowlist_party_ids": ["party-1"],
+                "capability_overrides": {"supports_ai_generation": False},
+                "updated_by": "test",
+            },
+        )
+
+        assert resp.status_code == 200
+        flag = resp.json()["flag"]
+        assert flag["environment"] == "gamma"
+        assert flag["host_app"] == "revelry"
+        assert flag["game_id"] == "drawing"
+        assert flag["enabled"] is True
+        assert flag["capability_overrides"]["supports_ai_generation"] is False
+
+        listed = client.get(
+            "/admin/host-app-catalog-flags",
+            headers=admin_headers(),
+            params={"environment": "gamma", "host_app": "revelry"},
+        )
+        assert listed.status_code == 200
+        assert listed.json()["flags"][0]["game_id"] == "drawing"
+
+    def test_invalid_host_app_catalog_flag_status_returns_422(self, client):
+        resp = client.post(
+            "/admin/host-app-catalog-flags",
+            headers=admin_headers(),
+            json={
+                "environment": "gamma",
+                "host_app": "revelry",
+                "game_id": "drawing",
+                "status": "oops",
+            },
+        )
+
+        assert resp.status_code == 422
+
+
 # ============================================================================
 # Round 2 bug fixes (still relevant)
 # ============================================================================

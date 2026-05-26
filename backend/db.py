@@ -209,6 +209,27 @@ def init_db():
             ON game_sessions(host_app, external_container_id, status, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_game_sessions_room
             ON game_sessions(room_code);
+
+        CREATE TABLE IF NOT EXISTS host_app_catalog_flags (
+            id TEXT PRIMARY KEY,
+            environment TEXT NOT NULL,
+            host_app TEXT NOT NULL,
+            game_id TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'disabled'
+                CHECK (status IN ('live', 'gamma', 'planned', 'disabled')),
+            allowlist_party_ids TEXT NOT NULL DEFAULT '[]',
+            allowlist_external_user_ids TEXT NOT NULL DEFAULT '[]',
+            rollout_percentage INTEGER
+                CHECK (rollout_percentage IS NULL OR (rollout_percentage >= 0 AND rollout_percentage <= 100)),
+            capability_overrides TEXT NOT NULL DEFAULT '{}',
+            notes TEXT NOT NULL DEFAULT '',
+            updated_by TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL,
+            UNIQUE(environment, host_app, game_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_host_app_catalog_flags_lookup
+            ON host_app_catalog_flags(environment, host_app, game_id);
     """)
     conn.commit()
     # Add metadata column if missing (migration for existing databases)
@@ -1384,6 +1405,66 @@ def delete_game_content(owner_wallet_id: str, content_id: str) -> bool:
     )
     conn.commit()
     return cursor.rowcount > 0
+
+
+def _row_to_host_app_catalog_flag(row) -> dict:
+    item = dict(row)
+    for key in ("allowlist_party_ids", "allowlist_external_user_ids"):
+        if isinstance(item.get(key), str):
+            item[key] = json.loads(item[key] or "[]")
+    if isinstance(item.get("capability_overrides"), str):
+        item["capability_overrides"] = json.loads(item["capability_overrides"] or "{}")
+    item["enabled"] = bool(item.get("enabled"))
+    return item
+
+
+def list_host_app_catalog_flags(environment: str, host_app: str) -> list[dict]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM host_app_catalog_flags WHERE environment = ? AND host_app = ?",
+        (environment, host_app),
+    ).fetchall()
+    return [_row_to_host_app_catalog_flag(row) for row in rows]
+
+
+def upsert_host_app_catalog_flag(environment: str, host_app: str, game_id: str, flag: dict) -> dict:
+    conn = _get_conn()
+    now = int(time.time())
+    row_id = flag.get("id") or os.urandom(16).hex()
+    conn.execute(
+        "INSERT INTO host_app_catalog_flags "
+        "(id, environment, host_app, game_id, enabled, status, allowlist_party_ids, "
+        "allowlist_external_user_ids, rollout_percentage, capability_overrides, notes, updated_by, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(environment, host_app, game_id) DO UPDATE SET "
+        "enabled = excluded.enabled, status = excluded.status, "
+        "allowlist_party_ids = excluded.allowlist_party_ids, "
+        "allowlist_external_user_ids = excluded.allowlist_external_user_ids, "
+        "rollout_percentage = excluded.rollout_percentage, "
+        "capability_overrides = excluded.capability_overrides, notes = excluded.notes, "
+        "updated_by = excluded.updated_by, updated_at = excluded.updated_at",
+        (
+            row_id,
+            environment,
+            host_app,
+            game_id,
+            1 if flag.get("enabled") else 0,
+            flag.get("status") or "disabled",
+            json.dumps(flag.get("allowlist_party_ids") or []),
+            json.dumps(flag.get("allowlist_external_user_ids") or []),
+            flag.get("rollout_percentage"),
+            json.dumps(flag.get("capability_overrides") or {}),
+            flag.get("notes") or "",
+            flag.get("updated_by") or "",
+            now,
+        ),
+    )
+    conn.commit()
+    rows = conn.execute(
+        "SELECT * FROM host_app_catalog_flags WHERE environment = ? AND host_app = ? AND game_id = ?",
+        (environment, host_app, game_id),
+    ).fetchall()
+    return _row_to_host_app_catalog_flag(rows[0])
 
 
 def create_media_asset(asset_id: str, owner_wallet_id: str, storage_path: str, public_url: str, mime_type: str, bytes_size: int = 0, status: str = "pending", alt_text: str = "") -> dict:

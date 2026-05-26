@@ -714,6 +714,49 @@ def delete_game_content(owner_wallet_id: str, content_id: str) -> bool:
     return bool(rows)
 
 
+def _host_app_catalog_flag_from_row(row: dict) -> dict:
+    item = dict(row)
+    item["enabled"] = bool(item.get("enabled"))
+    item["allowlist_party_ids"] = item.get("allowlist_party_ids") or []
+    item["allowlist_external_user_ids"] = item.get("allowlist_external_user_ids") or []
+    item["capability_overrides"] = item.get("capability_overrides") or {}
+    return item
+
+
+def list_host_app_catalog_flags(environment: str, host_app: str) -> list[dict]:
+    try:
+        rows = _sb().select(
+            "host_app_catalog_flags",
+            filters={"environment": f"eq.{environment}", "host_app": f"eq.{host_app}"},
+        )
+    except SupabaseDBError as exc:
+        if "404" in str(exc) or "host_app_catalog_flags" in str(exc):
+            return []
+        raise
+    return [_host_app_catalog_flag_from_row(row) for row in rows]
+
+
+def upsert_host_app_catalog_flag(environment: str, host_app: str, game_id: str, flag: dict) -> dict:
+    now = _now()
+    row = {
+        "id": flag.get("id") or uuid.uuid4().hex,
+        "environment": environment,
+        "host_app": host_app,
+        "game_id": game_id,
+        "enabled": bool(flag.get("enabled")),
+        "status": flag.get("status") or "disabled",
+        "allowlist_party_ids": flag.get("allowlist_party_ids") or [],
+        "allowlist_external_user_ids": flag.get("allowlist_external_user_ids") or [],
+        "rollout_percentage": flag.get("rollout_percentage"),
+        "capability_overrides": flag.get("capability_overrides") or {},
+        "notes": flag.get("notes") or "",
+        "updated_by": flag.get("updated_by") or "",
+        "updated_at": now,
+    }
+    rows = _sb().upsert("host_app_catalog_flags", row, on_conflict="environment,host_app,game_id")
+    return _host_app_catalog_flag_from_row(rows[0] if rows else row)
+
+
 def create_media_asset(asset_id: str, owner_wallet_id: str, storage_path: str, public_url: str, mime_type: str, bytes_size: int = 0, status: str = "pending", alt_text: str = "") -> dict:
     now = _now()
     rows = _sb().insert("media_assets", {

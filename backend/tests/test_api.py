@@ -131,7 +131,7 @@ class TestMediaEndpoints:
         body = res.json()
         assert body["generation_available"] is True
         assert body["storage_backend"] == "memory"
-        assert body["providers"][0]["id"] == "stable_diffusion"
+        assert {provider["id"] for provider in body["providers"]} == {"gemini_image", "stable_diffusion"}
 
     def test_quiz_image_generation_creates_media_asset(self, monkeypatch):
         import base64

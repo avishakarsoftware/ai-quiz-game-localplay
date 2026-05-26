@@ -34,6 +34,14 @@ FRONTEND_DIST_DIR = os.getenv("FRONTEND_DIST_DIR", "/app/static")
 # environment explicitly opts in with DB_BACKEND=supabase.
 DB_BACKEND = os.getenv("DB_BACKEND", "sqlite").strip().lower()
 TABLE_PREFIX = os.getenv("TABLE_PREFIX", "games_").strip()
+ENVIRONMENT = os.getenv("LOCALPLAY_ENV", os.getenv("APP_ENV", "")).strip().lower()
+if not ENVIRONMENT:
+    if DB_BACKEND == "supabase" and TABLE_PREFIX == "games_gamma_":
+        ENVIRONMENT = "gamma"
+    elif DB_BACKEND == "supabase" and TABLE_PREFIX == "games_":
+        ENVIRONMENT = "production"
+    else:
+        ENVIRONMENT = "local"
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
