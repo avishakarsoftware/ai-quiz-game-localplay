@@ -230,6 +230,10 @@ export default function PartyHubPage() {
     const [error, setError] = useState('');
     const [replacementPrompt, setReplacementPrompt] = useState<ReplacementPrompt | null>(null);
     const autoStartRef = useRef('');
+    const setupSectionRef = useRef<HTMLElement | null>(null);
+    const savedGamesSectionRef = useRef<HTMLElement | null>(null);
+    const [setupScrollNonce, setSetupScrollNonce] = useState(0);
+    const [savedGamesScrollNonce, setSavedGamesScrollNonce] = useState(0);
 
     useEffect(() => {
         let cancelled = false;
@@ -270,6 +274,22 @@ export default function PartyHubPage() {
         () => (workspace?.catalog || []).filter((game) => game.launchable !== false),
         [workspace],
     );
+
+    useEffect(() => {
+        if (setupScrollNonce === 0) return;
+        const raf = window.requestAnimationFrame || ((callback: FrameRequestCallback) => window.setTimeout(callback, 0));
+        raf(() => {
+            setupSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    }, [setupScrollNonce]);
+
+    useEffect(() => {
+        if (savedGamesScrollNonce === 0) return;
+        const raf = window.requestAnimationFrame || ((callback: FrameRequestCallback) => window.setTimeout(callback, 0));
+        raf(() => {
+            savedGamesSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    }, [savedGamesScrollNonce]);
 
     function sessionRoute(scope: 'organizer' | 'player' | 'spectator'): string {
         if (!activeSession) return '';
@@ -388,6 +408,7 @@ export default function PartyHubPage() {
         setAiPrompt(fallbackPrompt);
         setAiPromptCount(gameType === 'wmlt' ? 8 : 10);
         setAiDifficulty(gameType === 'wmlt' ? 'party' : 'medium');
+        setSetupScrollNonce((value) => value + 1);
     }
 
     function createFromCatalog(game: CatalogGame) {
@@ -470,6 +491,8 @@ export default function PartyHubPage() {
                     title: saved.title || setupDraft.title,
                     time_limit: saved.time_limit || setupDraft.timeLimit,
                 });
+            } else {
+                setSavedGamesScrollNonce((value) => value + 1);
             }
         } catch {
             setError('Could not save that game. Please try again.');
@@ -504,6 +527,7 @@ export default function PartyHubPage() {
                 title: (data.content_payload?.game?.game_title as string | undefined) || setupDraft.title,
                 promptsText: lines.join('\n'),
             });
+            setSetupScrollNonce((value) => value + 1);
         } catch {
             setError('Could not generate prompts. Try a different theme or edit the prompts manually.');
         } finally {
@@ -674,7 +698,7 @@ export default function PartyHubPage() {
             )}
 
             {setupDraft && (
-                <section className="party-hub__section party-hub__setup">
+                <section ref={setupSectionRef} className="party-hub__section party-hub__setup">
                     <div className="party-hub__section-head">
                         <div>
                             <h2>{setupCopyForGame(setupDraft.game.game_type || setupDraft.game.id).heading}</h2>
@@ -774,7 +798,7 @@ export default function PartyHubPage() {
             )}
 
             {canManageGames && (
-                <section className="party-hub__section">
+                <section ref={savedGamesSectionRef} className="party-hub__section">
                 <div className="party-hub__section-head">
                     <h2>Saved games</h2>
                 </div>

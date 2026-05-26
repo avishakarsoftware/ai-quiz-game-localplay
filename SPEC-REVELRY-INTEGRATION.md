@@ -578,6 +578,8 @@ Catalog capability fields:
 Rules:
 
 - Revelry should use the catalog to render available LocalPlay games.
+- Game availability for Revelry must be remotely controllable. Adding bridge support for a game still requires code and tests, but enabling, disabling, gamma-only testing, party/account allowlisting, and capability toggles must not require a release once the game is bridge-ready.
+- The code catalog is the ceiling; remote policy is the switchboard. Static code metadata must declare that a game supports host-app mode and which capabilities are safe. Remote policy can only reduce, expose, or temporarily allowlist those capabilities; it cannot invent support for an unsupported game, runtime, authoring path, media feature, payment mode, or result contract.
 - Catalog entries may define different defaults by game. Drawing Game uses `config_schema.time_limit.default = 30` and LocalPlay selects black as the initial drawing brush color. Revelry should pass an explicit `time_limit` only when the host changes it; otherwise LocalPlay applies the game-specific default.
 - LocalPlay still validates every launch request server-side; catalog metadata is not authorization.
 - Gamma and production catalogs may differ.
@@ -589,6 +591,93 @@ Rules:
 - If a quiz variant such as Rebus, Timeline, or Odd One Out should appear in Revelry, it must first be represented in the bridge contract with catalog metadata, accepted `game_type` or mode validation, content/session creation semantics, launch-token handling, status, and result summary support.
 - Games not represented in the bridge contract must be hidden in Revelry-launched host-app mode even if they are available in standalone LocalPlay.
 - Backlog games such as Bingo, Baby Bingo, and Housie may appear as `planned` if Revelry wants to show coming-soon cards.
+
+Implementation-ready remote catalog policy:
+
+```json
+{
+  "host_apps": {
+    "revelry": {
+      "games": {
+        "quiz": {
+          "enabled": true,
+          "status": "live",
+          "can_create_content": true,
+          "can_edit_content": true,
+          "can_quick_start": false,
+          "supports_ai_generation": true,
+          "supports_images": true,
+          "payments_enabled": false
+        },
+        "drawing": {
+          "enabled": true,
+          "status": "live",
+          "can_create_content": true,
+          "can_edit_content": true,
+          "can_quick_start": false,
+          "supports_ai_generation": true,
+          "allowlist_party_ids": []
+        },
+        "housie": {
+          "enabled": false,
+          "status": "planned"
+        }
+      }
+    }
+  }
+}
+```
+
+Required policy behavior:
+
+- Apply policy server-side before returning `GET /catalog?host_app=revelry`; do not rely on Revelry frontend filtering as the source of truth.
+- Implement policy loading in a focused backend module, tentatively `backend/host_app_catalog_policy.py`, so catalog filtering is shared by `/catalog`, the party hub resolve path, start-intent validation, and any future host-app catalog endpoint.
+- Persist policy either through the existing remote config service or, preferably for operator edits, a small Supabase table named with the current table prefix: `{TABLE_PREFIX}host_app_catalog_flags`.
+- If using the table, migration shape:
+
+```sql
+create table if not exists {prefix}host_app_catalog_flags (
+  id uuid primary key default gen_random_uuid(),
+  environment text not null,
+  host_app text not null,
+  game_id text not null,
+  enabled boolean not null default false,
+  status text not null default 'disabled'
+    check (status in ('live', 'gamma', 'planned', 'disabled')),
+  allowlist_party_ids jsonb not null default '[]'::jsonb,
+  allowlist_external_user_ids jsonb not null default '[]'::jsonb,
+  rollout_percentage integer
+    check (rollout_percentage is null or (rollout_percentage >= 0 and rollout_percentage <= 100)),
+  capability_overrides jsonb not null default '{}'::jsonb,
+  notes text not null default '',
+  updated_by text not null default '',
+  updated_at timestamptz not null default now(),
+  unique (environment, host_app, game_id)
+);
+
+create index if not exists {prefix}host_app_catalog_flags_lookup_idx
+  on {prefix}host_app_catalog_flags (environment, host_app, game_id);
+```
+
+- Allowed `capability_overrides` keys are: `can_create_content`, `can_edit_content`, `can_quick_start`, `supports_ai_generation`, `supports_images`, `payments_enabled`, and `embedded_authoring_supported`. Unknown override keys must be ignored and logged.
+- Merge algorithm for every static catalog entry:
+  1. Drop entries where `host_app_supported` is false or `supported_host_apps` does not contain `revelry`.
+  2. Load policy for `(environment, "revelry", game_id)`.
+  3. In production, drop the entry if policy is missing or `enabled` is false. In gamma/dev, missing policy may fall back to static host-app metadata only for entries explicitly marked host-app-supported.
+  4. If `status = "planned"`, include only when planned catalog cards are explicitly requested; set `launchable = false`.
+  5. If party or user allowlists are non-empty, expose the entry only when `external_container_id` or actor `external_user_id` matches.
+  6. If `rollout_percentage` is set, hash a stable key such as `revelry:{party_id || external_user_id}:{game_id}` into 0-99 and expose only when the bucket is below the percentage.
+  7. Intersect all boolean capabilities with static metadata: `effective_flag = Boolean(static_flag) && Boolean(policy_flag)`. Remote policy cannot turn on unsupported static capabilities.
+  8. Set `status` from policy and set `launchable = enabled && status in ("live", "gamma") && static entry has the required host-app runtime contract`.
+  9. Return only effective capabilities, never raw policy internals such as operator notes or updated_by.
+- `GET /catalog?host_app=revelry` should accept optional context parameters or infer them from a tokenized hub resolve path when available: `external_container_id` and `external_user_id`. Public anonymous catalog requests without party/user context must not receive allowlist-only games.
+- The party hub resolve endpoint must use the same effective catalog function as `/catalog`, not a separate filter. If a saved game exists for a now-disabled game, show the saved card only when useful for cleanup or recovery, but hide create/start actions unless policy still permits them.
+- Start/session APIs must re-check effective policy at action time. Hiding a game in catalog is not sufficient; a stale frontend or saved `start_url` must not start a newly disabled Revelry game.
+- Cache policy briefly, with a target of 30-60 seconds. Production must fail closed when policy cannot be parsed or loaded; gamma may log and fall back only when explicitly configured for development.
+- Support a kill switch by setting `enabled = false` for `(production, revelry, game_id)`. After cache expiry, the game disappears from the Revelry catalog and start/session APIs reject new starts for that game.
+- Operator update path must not require a LocalPlay deploy. Acceptable first implementation: a documented SQL/psql/Supabase script plus smoke commands. Later implementation: an admin-only endpoint or dashboard.
+- Seed initial production policy explicitly for bridge-ready games. Example initial state: `quiz`, `drawing`, and `wmlt` can be enabled independently; Housie/Bingo-family games remain `planned` or `disabled` until their Revelry bridge contract and tests are complete.
+- Add tests for: default fail-closed production behavior, gamma-only exposure, remote disable of a statically supported game, allowlisted party exposure, allowlisted user exposure, rollout hashing, feature-flag intersection, malformed policy, unsupported game ids being ignored, disabled saved-game start rejection, and party hub using the same filtered catalog as `/catalog`.
 
 ### LocalPlay-Hosted Authoring And Play
 
@@ -1632,6 +1721,7 @@ Recommended LocalPlay order:
 18. Backlog: revisit whether configurable party games must always persist a saved setup before start. Saving first is acceptable for the current WMLT/Drawing MVP because it gives Revelry a stable mirror pointer and supports pre-party setup, but some future games may be better as ephemeral setup-and-start flows or true quick-start rooms when the host does not intend to save/reuse them. Keep the catalog expressive enough to distinguish `requires_saved_content`, `can_save_setup`, and `can_start_ephemeral` if this becomes important.
 19. Backlog: add server-side draft/autosave recovery for generic WMLT/Drawing setup forms. Quiz authoring has browser-local draft isolation; generic setup forms should gain equivalent party-scoped draft ids before long editing flows become common.
 20. Backlog: move WMLT/Drawing default prompts and party-type recommendations into catalog/server config. Current MVP defaults are safe built-ins, but future party types should receive context-aware prompt suggestions without adding hub-side conditionals.
+21. Backlog: add a remote host-app catalog policy layer so Revelry game availability and per-game capabilities can be enabled, disabled, allowlisted, or gamma-only without a LocalPlay deploy. Static code catalog capability remains the ceiling; remote policy can only reduce or selectively expose bridge-ready games. Implementation should add `backend/host_app_catalog_policy.py`, a `{TABLE_PREFIX}host_app_catalog_flags` table or equivalent remote-config store, shared filtering for `/catalog` and party hub resolve, action-time policy checks for start/session APIs, 30-60 second cache expiry, production fail-closed behavior, and regression tests for disabled/allowlisted/gamma-only/malformed policy cases.
 
 ## Open Questions
 
@@ -1651,6 +1741,7 @@ Recommended LocalPlay order:
 - Decision: MVP should deliver a narrow Revelry-to-LocalPlay bridge on top of the generic durable session model: catalog, create session, enforce one active game, launch organizer/player/spectator, support embedded/open-external play, poll status/results, and return safe result summaries. Webhooks, full Cloud Run room persistence, richer feed automation, and deep analytics are deferred until the bridge is playable on gamma.
 - Decision: Roll out on gamma first and do not promote to production until Revelry gamma can create, launch, play, supersede, expire, poll, and summarize a LocalPlay session end to end.
 - Decision: Expose `GET /catalog` as part of the MVP. Revelry should use it to render available LocalPlay games, filtered by host app/environment where needed. LocalPlay still validates launch requests server-side. The catalog may include `live`, `gamma`, `planned`, or `disabled` status values, but Revelry should only enable launch for games LocalPlay marks `launchable`.
+- Decision: Enabling more games for Revelry should be controlled by remote host-app catalog policy after the game is bridge-ready, not by shipping a release for every rollout decision. The static LocalPlay catalog declares the maximum safe support; remote policy controls environment rollout, kill switches, allowlists, and feature flags such as create/edit/quick-start/AI/images/payments.
 - Decision: Custom quiz authoring remains owned by LocalPlay. The MVP authoring path is LocalPlay-hosted prepared content: Revelry opens the authoring link, LocalPlay returns canonical `localplay_content_id`, Revelry stores a prepared setup pointer, and session creation passes `settings.content_id`. Do not add or revive a separate generic quiz/`quiz_pack_id` bypass for Revelry-launched custom quizzes. Once a content id has been used to start a session, future edits create a new LocalPlay content id/version and Revelry should update the prepared setup pointer after save.
 - Decision: Reuse existing custom quiz tables for Revelry quiz content now. Existing quiz-pack tables already serve the non-Revelry custom quiz use case and can also support Revelry by scoping ownership to `revelry:party:<party_id>`, so the quiz authoring implementation should not be blocked on a new generic content-table migration. For current WMLT/Drawing party setups, reuse `generated_content` with party-scoped ownership and a stable `localplay_content_id`; add a richer generic host-app content table later only when future games need stronger versioning, media, collaboration, or library/search semantics.
 - Decision: A generic Games/LocalPlay entry from Revelry opens a party-scoped LocalPlay "Revelry Games" hub, not standalone LocalPlay. The hub shows the same party prepared games, drafts, active session, recent results, and launchable catalog that Revelry mirrors in its Games tab. LocalPlay hub/start-intent surfaces are the canonical place for Start, replacement confirmation, runtime recovery, and "start another game"; Revelry may expose shortcuts, but they are ingress into LocalPlay rather than a separate control plane.

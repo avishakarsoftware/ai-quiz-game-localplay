@@ -5,9 +5,28 @@ import { filterGameModesForCatalog } from '../gameModes';
 import LobbyScreen from '../components/organizer/LobbyScreen';
 import PartyHubPage from '../pages/PartyHubPage';
 
+const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+function mockScrollIntoView() {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: scrollIntoView,
+    });
+    return scrollIntoView;
+}
+
 describe('host-app mode filtering', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
+        if (originalScrollIntoView) {
+            Object.defineProperty(Element.prototype, 'scrollIntoView', {
+                configurable: true,
+                value: originalScrollIntoView,
+            });
+        } else {
+            delete (Element.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView;
+        }
     });
 
     it('hides standalone chrome for Revelry-launched surfaces', () => {
@@ -275,6 +294,7 @@ describe('host-app mode filtering', () => {
     });
 
     it('sets up and saves catalog games before starting them', async () => {
+        const scrollIntoView = mockScrollIntoView();
         window.history.pushState({}, '', '/revelry/games?party_games_token=party-token');
         const fetchMock = vi.fn()
             .mockResolvedValueOnce({
@@ -319,6 +339,9 @@ describe('host-app mode filtering', () => {
 
         fireEvent.click(await screen.findByRole('button', { name: /set up drawing/i }));
         expect(await screen.findByRole('heading', { name: /set up drawing game/i })).toBeInTheDocument();
+        await waitFor(() => {
+            expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+        });
         fireEvent.click(screen.getByRole('button', { name: /save and start/i }));
 
         await waitFor(() => {
@@ -340,6 +363,7 @@ describe('host-app mode filtering', () => {
     });
 
     it('generates AI prompts for party hub Drawing setup before saving', async () => {
+        const scrollIntoView = mockScrollIntoView();
         window.history.pushState({}, '', '/revelry/games?party_games_token=party-token');
         const fetchMock = vi.fn()
             .mockResolvedValueOnce({
@@ -388,6 +412,10 @@ describe('host-app mode filtering', () => {
         fireEvent.click(await screen.findByRole('button', { name: /set up drawing/i }));
         expect(await screen.findByRole('heading', { name: /set up drawing game/i })).toBeInTheDocument();
         expect(screen.getByText(/generate prompts with ai/i)).toBeInTheDocument();
+        await waitFor(() => {
+            expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+        });
+        scrollIntoView.mockClear();
         fireEvent.click(screen.getByRole('button', { name: /generate prompts/i }));
 
         await waitFor(() => {
@@ -404,6 +432,9 @@ describe('host-app mode filtering', () => {
         await waitFor(() => {
             expect(promptsBox.value).toContain('Santa hat');
             expect(promptsBox.value).toContain('Snow globe');
+        });
+        await waitFor(() => {
+            expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
         });
     });
 });

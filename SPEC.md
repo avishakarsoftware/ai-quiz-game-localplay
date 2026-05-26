@@ -271,6 +271,31 @@ Unsupported game types are rejected by `RoomCreateRequest.validate_game_type`.
 
 Host-app mode applies an additional catalog gate. A game must be returned as launchable by `GET /catalog?host_app=...` before it appears in the host-app hub or menus. Standalone-only variants can remain visible in standalone LocalPlay while hidden from Revelry until their bridge contract is complete.
 
+Host-app game availability must be remotely controllable so enabling or disabling a game for Revelry does not require a new LocalPlay release. The code-backed catalog remains the maximum capability set: it declares which games can safely support host-app mode, which creation/start/edit surfaces exist, and which runtime/result contracts are implemented. Remote config or a small durable catalog-flags table is the operational switchboard: it can hide a game, expose it on gamma only, enable it for a party/account allowlist, or toggle features such as content creation, quick start, AI prompt generation, custom photos, and payments. Remote configuration must never enable a game that the code catalog does not declare host-app-compatible.
+
+Implementation-ready availability model:
+
+- Add a backend module, tentatively `backend/host_app_catalog_policy.py`, that loads host-app game policy, merges it with the static `GAME_CATALOG`, and returns effective catalog entries for host-app requests.
+- Store policy in Supabase/PostgREST as `{TABLE_PREFIX}host_app_catalog_flags` or in the existing remote config service. Prefer the table if operators need per-game edits without replacing a whole JSON blob.
+- If using a table, create columns: `id`, `environment`, `host_app`, `game_id`, `enabled`, `status`, `allowlist_party_ids` JSON array, `allowlist_external_user_ids` JSON array, `rollout_percentage`, `capability_overrides` JSON object, `notes`, `updated_by`, `updated_at`. Add a unique constraint on `(environment, host_app, game_id)`.
+- `capability_overrides` may contain only known boolean capability keys: `can_create_content`, `can_edit_content`, `can_quick_start`, `supports_ai_generation`, `supports_images`, `payments_enabled`, `embedded_authoring_supported`, and future reviewed host-app capabilities.
+- Policy lookup inputs are `environment`, `host_app`, `game_id`, and optional context for allowlists: `external_container_id` / party id and `external_user_id`.
+- Merge algorithm:
+  1. Start with the static code catalog entry.
+  2. Drop the entry if `host_app_supported` is false or `supported_host_apps` does not contain the requested host app.
+  3. Load matching policy for `(environment, host_app, game_id)`.
+  4. In production, drop the entry if no matching policy exists or `enabled` is not true. In gamma/dev, missing policy may fall back to static metadata only when the static entry is explicitly marked host-app-supported.
+  5. If `enabled` is false, return no launchable entry; optionally return a `planned`/`disabled` entry only when the caller requested planned catalog cards.
+  6. If allowlists are present, expose the game only when the party id or actor id is listed.
+  7. If `rollout_percentage` is set, hash a stable key such as `{host_app}:{external_container_id || external_user_id}:{game_id}` into 0-99 and expose only below the threshold.
+  8. Compute every effective capability as static capability AND policy capability. Remote policy can turn supported capabilities off or selectively on only when the static catalog already supports them.
+  9. Set `launchable = enabled && status in ("live", "gamma") && required effective capabilities are present`.
+- Cache policy briefly, around 30-60 seconds, and fail closed on malformed policy in production. Log enough detail for operators without leaking secrets or party/user private data.
+- Add an operator path to update policy without deploy: either an admin-only API, a small CLI/script that writes the table, or documented SQL snippets. Changes should become visible after cache expiry.
+- Include a kill switch path that sets `enabled = false` for one `(environment, host_app, game_id)` and removes it from host-app catalogs immediately after cache expiry while leaving standalone LocalPlay unaffected.
+- `GET /catalog?host_app=...` must be the only source used by host-app surfaces. Frontend hub code should not have separate hardcoded allow/deny lists except for defensive rendering of unknown capabilities.
+- Tests should cover static capability gating, remote disable, gamma/prod differences, allowlisted exposure, rollout hashing, feature-flag intersection, malformed policy, unsupported game ids being ignored, and kill-switch behavior.
+
 Bingo-family games are a separate runtime family rather than quiz variants. `SPEC-GAME-BINGO-HOUSIE.md` defines the reusable Bingo/Housie engine. Housie is now implemented for standalone LocalPlay with server-generated tickets, manual number calling, server-side claim validation, and spectator called-board sync. Baby Bingo / word / emoji / image Bingo remain later rulesets on the same engine.
 
 ## LLM Generation Pattern
