@@ -1246,10 +1246,28 @@ Event envelope:
   "idempotency_key": "game.completed:lp_session_uuid:v1",
   "payload": {
     "status": "complete",
-    "result_summary": {}
+    "result_summary": {
+      "title": "Birthday Quiz",
+      "game_type": "quiz",
+      "total_rounds": 5,
+      "player_count": 3,
+      "top_results": [
+        {"nickname": "Ava", "avatar": "🎉", "score": 420}
+      ],
+      "players": [
+        {"nickname": "Ava", "avatar": "🎉", "score": 420}
+      ],
+      "leaderboard": [
+        {"nickname": "Ava", "avatar": "🎉", "score": 420}
+      ],
+      "winner": {"nickname": "Ava", "avatar": "🎉", "score": 420},
+      "completed_at": "2026-05-23T21:30:00Z"
+    }
   }
 }
 ```
+
+`payload.result_summary` must be safe scoreboard metadata only. `top_results` is LocalPlay's canonical top-five scoreboard field; `players` and `leaderboard` are bridge compatibility aliases with the same safe entries so Revelry can render completed sessions from callbacks or from the explicit results endpoint without fetching raw game internals. Do not include raw answer logs, quiz answers, drawing prompts, participant secrets, launch tokens, or provider prompts.
 
 Content-created / content-updated callback payload:
 

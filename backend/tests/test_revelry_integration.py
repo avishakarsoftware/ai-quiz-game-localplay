@@ -413,6 +413,8 @@ def test_revelry_results_endpoint_returns_safe_summary(monkeypatch):
     body = res.json()
     assert body["result_summary"]["title"] == "Secret Answer Quiz"
     assert body["result_summary"]["top_results"] == [{"nickname": "Ava", "avatar": "🎉", "score": 100}]
+    assert body["result_summary"]["players"] == [{"nickname": "Ava", "avatar": "🎉", "score": 100}]
+    assert body["result_summary"]["leaderboard"] == [{"nickname": "Ava", "avatar": "🎉", "score": 100}]
     assert "answer_log" not in json.dumps(body)
 
 
@@ -451,6 +453,8 @@ def test_runtime_callback_uses_safe_result_summary_and_game_event(monkeypatch):
     assert body["session_id"] == "lp_runtime"
     assert re.match(r"^\d{4}-\d{2}-\d{2}T.*Z$", body["occurred_at"])
     assert body["payload"]["result_summary"]["top_results"] == [{"nickname": "Ava", "avatar": "🎉", "score": 100}]
+    assert body["payload"]["result_summary"]["players"] == [{"nickname": "Ava", "avatar": "🎉", "score": 100}]
+    assert body["payload"]["result_summary"]["leaderboard"] == [{"nickname": "Ava", "avatar": "🎉", "score": 100}]
     assert "answer_log" not in json.dumps(body)
 
 

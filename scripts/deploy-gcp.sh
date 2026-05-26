@@ -187,6 +187,7 @@ bootstrap_vm_layout() {
             'IMAGE_GENERATION_PROVIDER=none' \
             'GEMINI_IMAGE_MODEL=gemini-2.5-flash-image' \
             'REMOTE_CONFIG_URL=https://games.revelryapp.me/quiz/config.json' \
+            'REVELRY_CALLBACK_URL=https://api.revelryapp.me/api/games/localplay/callback' \
             'GOOGLE_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID' \
             'APPLE_CLIENT_ID=$APPLE_WEB_CLIENT_ID' \
             'APPLE_CLIENT_IDS=$APPLE_WEB_CLIENT_ID,$APPLE_NATIVE_CLIENT_ID' \
@@ -209,6 +210,7 @@ bootstrap_vm_layout() {
             'IMAGE_GENERATION_PROVIDER=none' \
             'GEMINI_IMAGE_MODEL=gemini-2.5-flash-image' \
             'REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json' \
+            'REVELRY_CALLBACK_URL=https://api-gamma.revelryapp.me/api/games/localplay/callback' \
             'GOOGLE_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID' \
             'APPLE_CLIENT_ID=$APPLE_WEB_CLIENT_ID' \
             'APPLE_CLIENT_IDS=$APPLE_WEB_CLIENT_ID,$APPLE_NATIVE_CLIENT_ID' \

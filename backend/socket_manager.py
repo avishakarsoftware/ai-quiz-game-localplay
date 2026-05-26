@@ -1757,6 +1757,8 @@ class SocketManager:
                 "total_rounds": summary.get("total_rounds") or summary.get("total_questions"),
                 "player_count": summary.get("player_count"),
                 "top_results": top_results,
+                "players": top_results,
+                "leaderboard": top_results,
                 "winner": summary.get("winner") if isinstance(summary.get("winner"), dict) else (top_results[0] if top_results else None),
                 "completed_at": summary.get("completed_at"),
             }
@@ -1776,6 +1778,8 @@ class SocketManager:
             "total_rounds": summary.get("total_questions") or summary.get("total_rounds"),
             "player_count": summary.get("player_count"),
             "top_results": top_results,
+            "players": top_results,
+            "leaderboard": top_results,
             "winner": top_results[0] if top_results else None,
             "completed_at": summary.get("completed_at"),
         }

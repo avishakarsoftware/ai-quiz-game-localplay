@@ -161,7 +161,7 @@ REVELRY_AUTHORING_TOKEN_TTL_SECONDS=3600
 REVELRY_PARTY_HUB_RETURN_TOKEN_TTL_SECONDS=14400
 REVELRY_SESSION_LOBBY_TTL_SECONDS=14400
 REVELRY_SESSION_IDLE_TTL_SECONDS=7200
-REVELRY_CALLBACK_URL=<optional Revelry gamma callback endpoint>
+REVELRY_CALLBACK_URL=https://api-gamma.revelryapp.me/api/games/localplay/callback
 # Keep unset unless doing a deliberate callback-secret rotation/compatibility window.
 REVELRY_CALLBACK_SECRET=
 ```
@@ -188,7 +188,7 @@ REVELRY_AUTHORING_TOKEN_TTL_SECONDS=3600
 REVELRY_PARTY_HUB_RETURN_TOKEN_TTL_SECONDS=14400
 REVELRY_SESSION_LOBBY_TTL_SECONDS=14400
 REVELRY_SESSION_IDLE_TTL_SECONDS=7200
-REVELRY_CALLBACK_URL=<optional Revelry prod callback endpoint>
+REVELRY_CALLBACK_URL=https://api.revelryapp.me/api/games/localplay/callback
 # Keep unset unless doing a deliberate callback-secret rotation/compatibility window.
 REVELRY_CALLBACK_SECRET=
 ```
@@ -1066,7 +1066,7 @@ Both LocalPlay and Revelry need a shared secret:
 | LocalPlay backend | `PUBLIC_BASE_URL` | `https://gamesapi-gamma.revelryapp.me` (gamma) or `https://gamesapi.revelryapp.me` (prod) |
 | LocalPlay backend | `REVELRY_AUTHORING_TOKEN_TTL_SECONDS` | authoring token lifetime; default `3600` |
 | LocalPlay backend | `REVELRY_PARTY_HUB_RETURN_TOKEN_TTL_SECONDS` | party hub return-token lifetime after a LocalPlay-owned start; default `14400` |
-| LocalPlay backend | `REVELRY_CALLBACK_URL` | optional Revelry callback endpoint for content/session/result sync |
+| LocalPlay backend | `REVELRY_CALLBACK_URL` | Revelry callback endpoint for content/session/result sync: `https://api-gamma.revelryapp.me/api/games/localplay/callback` in gamma, `https://api.revelryapp.me/api/games/localplay/callback` in prod |
 | LocalPlay backend | `REVELRY_CALLBACK_SECRET` | temporary rotation-only alias; normal callback signing uses `REVELRY_INTEGRATION_SECRET` |
 | Revelry backend | `LOCALPLAY_INTEGRATION_SECRET` | same value as `REVELRY_INTEGRATION_SECRET` |
 
@@ -1158,7 +1158,7 @@ curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sess
 
 - Deployed the bridge, party hub, custom quiz authoring, host-app chrome cleanup, and callback retry slice to gamma from commit `cbc218f` on 2026-05-23 with `./scripts/deploy-gcp.sh --gamma --with-frontend`.
 - Supabase gamma schema includes `games_gamma_game_sessions`, `games_gamma_quiz_packs`, `games_gamma_quiz_questions`, and `games_gamma_media_assets`.
-- Gamma env includes `REVELRY_INTEGRATION_SECRET` and `PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me`; `REVELRY_CALLBACK_SECRET` should stay unset unless doing a deliberate rotation/compatibility window.
+- Gamma env includes `REVELRY_INTEGRATION_SECRET`, `PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me`, and `REVELRY_CALLBACK_URL=https://api-gamma.revelryapp.me/api/games/localplay/callback`; `REVELRY_CALLBACK_SECRET` should stay unset unless doing a deliberate rotation/compatibility window.
 - Smoke-tested after deploy: `/health`, `/config.json`, `/catalog?host_app=revelry`, session creation, launch token generation, status polling, tokenless player launch redirect, party hub link/resolve, party workspace, LocalPlay-hosted authoring, saved quiz start, organizer/player WebSocket play-through, completion, results polling, and no signup-bonus sparks for the Revelry integration wallet.
 - Deployed host-app lobby QR rendering from Revelry-provided `guest_join_url`, including the nested `external_context.guest_join_url` / `display.guest_join_url` launch-token shape used by Revelry.
 - Callback behavior in gamma build: HMAC over `${timestamp}.${raw_body}` with `REVELRY_INTEGRATION_SECRET`, ISO UTC `occurred_at`, `content.deleted` support, and short bounded retry for Revelry `429` / transient `5xx`. Polling remains the recovery path if callbacks are disabled or miss delivery.
@@ -1177,7 +1177,9 @@ curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sess
 - On 2026-05-25, deployed the Revelry authoring editor remount fix to gamma so saving a new party-scoped quiz no longer clears the custom quiz editor after `currentContentId` is assigned.
 - Post-fix gamma Playwright passed on 2026-05-25: `npm run test:e2e:gamma` returned `2 passed`; `REVELRY_GAMMA_PARTY_GAMES_URL_FILE=... npm run test:e2e:gamma:revelry` returned `2 passed`, covering Drawing save/start/re-entry plus custom Quiz image upload/save/payload verification.
 - Deployed gamma-only extended party-games token TTL support on 2026-05-25 with `./scripts/deploy-gcp.sh --gamma --with-frontend`. The Revelry gamma mint script can now write a 30-day disposable-party URL to `gamma_party_games_url.txt`; production rejects custom party-games token TTLs. Verified the minted token expiry was 30 days, then reran Playwright: `REVELRY_GAMMA_PARTY_GAMES_URL_FILE=... npm run test:e2e:gamma:revelry` returned `2 passed`, and `npm run test:e2e:gamma` returned `2 passed`.
-- Basic Revelry gamma end-to-end testing has worked for catalog, session creation, organizer/player launch, Drawing setup/start/re-entry, and custom Quiz image upload/save. Before production promotion, repeat from Revelry gamma: return/deep-link behavior into the outer Revelry list, completion, result polling/feed handling, callback delivery, app/universal-link return flows, and host-app chrome cleanup.
+- On 2026-05-26, added gamma callback URL management to the deploy bootstrap, set `/home/revelry-games/app/.env.gamma` to call `https://api-gamma.revelryapp.me/api/games/localplay/callback`, and redeployed gamma with `./scripts/deploy-gcp.sh --gamma --with-frontend`.
+- On 2026-05-26, `REVELRY_GAMMA_PARTY_GAMES_URL_FILE=... npm run test:e2e:gamma:revelry` returned `3 passed`, now covering Drawing save/start/re-entry, a complete Revelry-started Quiz through LocalPlay WebSockets to podium, Revelry callback/session mirror, Revelry session-results polling with final player score, workspace cleanup after completion, and custom Quiz image upload/save/payload verification. `npm run test:e2e:gamma` returned `2 passed`.
+- Basic Revelry gamma end-to-end testing has worked for catalog, session creation, organizer/player/spectator launch, Drawing setup/start/re-entry, custom Quiz image upload/save, completion, result polling, callback delivery, and workspace active-session cleanup. Before production promotion, still repeat from Revelry gamma for native app/universal-link return flows and any production-only host-app chrome checks.
 - Full spec: `SPEC-REVELRY-INTEGRATION.md`
 
 ### Production readiness status
@@ -1531,8 +1533,10 @@ The test verifies:
 - Custom Quiz authoring opens from the hub.
 - Custom Quiz question image upload works through signed IONOS media upload.
 - Saved quiz payload contains the media-backed image URL and alt text.
+- A small quiz can be started from the Revelry party workspace, driven through LocalPlay WebSockets to podium, and mirrored back to Revelry as a completed session.
+- Revelry's sessions and session-results endpoints return the final player score/feed-card summary, and the workspace no longer reports the completed LocalPlay room as active.
 
-If the test shows `Invalid or expired party games token`, mint a fresh gamma URL and rerun. If image upload fails with `403 bad_signature`, verify `games-backend-gamma` `MEDIA_UPLOAD_SECRET` matches `~/revelryapp/media/apps/localplay/.upload_secret` on IONOS, then redeploy gamma.
+If the test shows `Invalid or expired party games token`, mint a fresh gamma URL and rerun. If image upload fails with `403 bad_signature`, verify `games-backend-gamma` `MEDIA_UPLOAD_SECRET` matches `~/revelryapp/media/apps/localplay/.upload_secret` on IONOS, then redeploy gamma. If completion succeeds in LocalPlay but Revelry never shows a completed session, verify gamma has `REVELRY_CALLBACK_URL=https://api-gamma.revelryapp.me/api/games/localplay/callback` and redeploy gamma.
 
 Do not run this against production. For production, create a separate explicitly approved smoke plan using a disposable prod party.
 
