@@ -85,6 +85,8 @@ test.describe('Bingo authoring', () => {
 
     await page.goto('/');
     await page.getByRole('button', { name: /Bingo/ }).click();
+    await expect(page.getByRole('heading', { name: 'Create Bingo' })).toBeVisible();
+    await page.getByRole('button', { name: 'Custom Deck' }).click();
 
     await expect(page.getByRole('heading', { name: 'Set Up Bingo' })).toBeVisible();
     await expect(page.getByText('Deck (25/24 ready)')).toBeVisible();
@@ -149,6 +151,83 @@ test.describe('Bingo authoring', () => {
     await expect.poll(() => roomCreateBody).toMatchObject({
       game_type: 'bingo',
       bingo_id: 'bingo-e2e',
+    });
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.message()).toContain('Going home will leave this active room');
+      await dialog.accept();
+    });
+    await page.getByTitle('Menu').click();
+    await page.getByText('Home').click();
+    await expect(page.getByRole('heading', { name: 'Choose a Game' })).toBeVisible();
+  });
+
+  test('generates a themed Bingo deck and lets the organizer edit before room creation', async ({ page }) => {
+    let generateBody: Record<string, unknown> | null = null;
+    let updateBody: Record<string, unknown> | null = null;
+    let roomCreateBody: Record<string, unknown> | null = null;
+    const generatedDeck = Array.from({ length: 30 }, (_, index) => ({
+      id: `gen_${index + 1}`,
+      kind: 'text',
+      value: `generated ${index + 1}`,
+      display: `Generated ${index + 1}`,
+    }));
+
+    await page.route('**/bingo/generate', async (route) => {
+      generateBody = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        json: {
+          bingo_id: 'generated-bingo-e2e',
+          game: {
+            game_title: 'Baby Shower Bingo',
+            deck: generatedDeck,
+            free_center: true,
+            claim_requires_latest_call: false,
+          },
+        },
+      });
+    });
+
+    await page.route('**/bingo/generated-bingo-e2e', async (route) => {
+      updateBody = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        json: {
+          bingo_id: 'generated-bingo-e2e',
+          game: { ...updateBody, deck: updateBody.deck },
+        },
+      });
+    });
+
+    await page.route('**/room/create', async (route) => {
+      roomCreateBody = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({ json: { room_code: 'GENBGO', organizer_token: 'organizer-token' } });
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: /Bingo/ }).click();
+    await page.getByTitle('Menu').click();
+    await page.getByText('Home').click();
+    await expect(page.getByRole('heading', { name: 'Choose a Game' })).toBeVisible();
+
+    await page.getByRole('button', { name: /Bingo/ }).click();
+    await page.getByPlaceholder('Baby shower, office holiday party, wedding reception...').fill('baby shower');
+    await page.getByRole('button', { name: 'Generate Bingo' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Set Up Bingo' })).toBeVisible();
+    await expect(page.getByLabel('Game title')).toHaveValue('Baby Shower Bingo');
+    await expect(page.getByText('Deck (30/24 ready)')).toBeVisible();
+    await page.locator('.bingo-deck-row').nth(0).locator('input.input-field').fill('Tiny shoes');
+    await page.getByRole('button', { name: 'Create Room' }).click();
+
+    await expect.poll(() => generateBody).toMatchObject({
+      prompt: 'baby shower',
+      difficulty: 'medium',
+      num_items: 30,
+    });
+    expect((updateBody?.deck as Array<Record<string, unknown>>)[0]).toMatchObject({ display: 'Tiny shoes' });
+    await expect.poll(() => roomCreateBody).toMatchObject({
+      game_type: 'bingo',
+      bingo_id: 'generated-bingo-e2e',
     });
   });
 });

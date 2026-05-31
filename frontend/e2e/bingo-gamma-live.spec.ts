@@ -15,6 +15,7 @@ test.describe('Bingo gamma live flow', () => {
 
     await page.goto('/');
     await page.getByRole('button', { name: /Bingo/ }).click();
+    await page.getByRole('button', { name: 'Custom Deck' }).click();
     await expect(page.getByRole('heading', { name: 'Set Up Bingo' })).toBeVisible();
 
     const firstDeckRow = page.locator('.bingo-deck-row').nth(0);

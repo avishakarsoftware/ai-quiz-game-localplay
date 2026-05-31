@@ -32,7 +32,7 @@ from quiz_engine import quiz_engine, _sanitize_quiz, _validate_quiz, VALID_QUIZ_
 from mlt_engine import mlt_engine, _sanitize_mlt, _validate_mlt
 from drawing_engine import drawing_engine, _sanitize_drawing_game, _validate_drawing_game
 from housie_engine import DEFAULT_HOUSIE_PATTERNS, default_housie_game, sanitize_patterns
-from bingo_engine import DEFAULT_BINGO_PATTERNS, default_bingo_game, sanitize_bingo_deck, sanitize_bingo_patterns
+from bingo_engine import DEFAULT_BINGO_PATTERNS, bingo_engine, default_bingo_game, sanitize_bingo_deck, sanitize_bingo_patterns
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -3699,6 +3699,107 @@ class BingoCreateRequest(BaseModel):
         if value not in ("manual", "auto"):
             raise ValueError('caller_mode must be "manual" or "auto"')
         return value
+
+
+class BingoGenerateRequest(BaseModel):
+    prompt: str
+    difficulty: str = "medium"
+    num_items: int = 30
+    provider: str = ""
+
+    @field_validator("prompt")
+    @classmethod
+    def validate_prompt(cls, value: str) -> str:
+        value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", value or "")
+        value = re.sub(r"<[^>]+>", "", value).strip()
+        if not value or len(value) > config.MAX_PROMPT_LENGTH:
+            raise ValueError(f"Prompt must be 1-{config.MAX_PROMPT_LENGTH} characters")
+        lower_value = value.lower()
+        injection_patterns = [
+            r"ignore\s+(all\s+)?previous\s+instructions",
+            r"ignore\s+(all\s+)?above",
+            r"disregard\s+(all\s+)?previous",
+            r"you\s+are\s+now\s+(?:a|an|in)",
+            r"new\s+instructions?\s*:",
+            r"system\s*:\s*",
+            r"<\s*/?script",
+            r"javascript\s*:",
+        ]
+        for pattern in injection_patterns:
+            if re.search(pattern, lower_value):
+                raise ValueError("Prompt contains disallowed content")
+        return value
+
+    @field_validator("difficulty")
+    @classmethod
+    def validate_difficulty(cls, value: str) -> str:
+        value = value.lower().strip()
+        if value not in config.VALID_DIFFICULTIES:
+            raise ValueError(f"Difficulty must be one of: {', '.join(config.VALID_DIFFICULTIES)}")
+        return value
+
+    @field_validator("num_items")
+    @classmethod
+    def validate_num_items(cls, value: int) -> int:
+        if value < 24 or value > 60:
+            raise ValueError("Number of Bingo items must be 24-60")
+        return value
+
+
+@app.post("/bingo/generate")
+async def generate_bingo(request: BingoGenerateRequest, req: Request):
+    if not config.BINGO_ENABLED:
+        raise HTTPException(status_code=404, detail="Bingo is not available")
+    client_ip = _get_client_ip(req)
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating.")
+    device_id = tokens.get_device_id(req)
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    idem_key = tokens.get_idempotency_key(req)
+    if idem_key:
+        cached_id = db.check_idempotency(idem_key, device_id)
+        if cached_id:
+            if cached_id in bingo_games:
+                return {"bingo_id": cached_id, "game": bingo_games[cached_id]}
+            raise HTTPException(status_code=409, detail="Request was already processed, but the generated Bingo game is no longer available. Please start a new request.")
+
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    tokens.ensure_wallet(wallet_id)
+    if not tokens.can_generate(wallet_id):
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
+    if not _check_llm_budget():
+        raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
+
+    await remote_config.get_config()
+    provider = request.provider or remote_config.get_provider()
+    model_override = remote_config.get_paid_model() if tokens.use_premium_model(wallet_id) else remote_config.get_free_model()
+    try:
+        game_data = await bingo_engine.generate_game(
+            request.prompt,
+            request.difficulty,
+            request.num_items,
+            provider,
+            model_override=model_override,
+        )
+    except DailyLimitExceeded:
+        raise HTTPException(status_code=429, detail="Daily generation limit reached. Please try again tomorrow!")
+    except AIQuotaExceeded:
+        raise HTTPException(status_code=503, detail="Free tier limit reached. Upgrade for unlimited games.")
+    if not game_data:
+        raise HTTPException(status_code=500, detail="Failed to generate Bingo")
+
+    _evict_old_content()
+    bingo_id = str(uuid.uuid4())
+    bingo_games[bingo_id] = game_data
+    bingo_timestamps[bingo_id] = time.time()
+    content_owners[bingo_id] = wallet_id
+    pending_generation_charges[bingo_id] = wallet_id
+    if idem_key:
+        db.record_idempotency(idem_key, device_id, bingo_id)
+    return {"bingo_id": bingo_id, "game": game_data}
 
 
 @app.post("/bingo/create")

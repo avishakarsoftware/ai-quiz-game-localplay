@@ -17,6 +17,7 @@ import ReviewScreen from '../components/organizer/ReviewScreen';
 import MLTReviewScreen from '../components/organizer/MLTReviewScreen';
 import DrawingReviewScreen from '../components/organizer/DrawingReviewScreen';
 import HousieSetupScreen from '../components/organizer/HousieSetupScreen';
+import BingoPromptScreen from '../components/organizer/BingoPromptScreen';
 import BingoSetupScreen from '../components/organizer/BingoSetupScreen';
 import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
 import { BingoCalledList } from '../components/BingoBoard';
@@ -32,7 +33,7 @@ import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'HOUSIE_SETUP' | 'BINGO_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'LEADERBOARD' | 'PODIUM';
 
 function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'housie' || type === 'bingo') return 15;
@@ -115,6 +116,7 @@ export default function OrganizerPage() {
     const [housieAnnouncement, setHousieAnnouncement] = useState<{ text: string; key: number } | null>(null);
     const [bingoTitle, setBingoTitle] = useState('Bingo');
     const [bingoDeck, setBingoDeck] = useState<BingoDeckItem[]>(starterBingoDeck);
+    const [generatedBingoId, setGeneratedBingoId] = useState('');
     const [bingoFreeCenter, setBingoFreeCenter] = useState(true);
     const [bingoClaimRequiresLatest, setBingoClaimRequiresLatest] = useState(false);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
@@ -153,13 +155,35 @@ export default function OrganizerPage() {
                 'MLT_PROMPT',
                 'DRAWING_PROMPT',
                 'HOUSIE_SETUP',
+                'BINGO_PROMPT',
+                'BINGO_SETUP',
                 'LOADING',
                 'REVIEW',
                 'MLT_REVIEW',
                 'DRAWING_REVIEW',
+                'GENERATING_IMAGES',
             ];
+            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING'];
             if (homeSafeStates.includes(stateRef.current)) {
                 flowEpochRef.current += 1;
+                setQuiz(null);
+                setMltGame(null);
+                setDrawingGame(null);
+                setHousieCalled([]);
+                setHousieWinners([]);
+                setEditingPackId(undefined);
+                setContentId('');
+                setQuestionImages({});
+                setState('SELECT_GAME');
+            } else if (homeActiveStates.includes(stateRef.current)) {
+                const confirmed = window.confirm('Going home will leave this active room. Players may be interrupted if the game is in progress. Continue?');
+                if (!confirmed) return;
+                flowEpochRef.current += 1;
+                wsRef.current?.close();
+                wsRef.current = null;
+                setRoomCode('');
+                setPlayerCount(0);
+                setPlayers([]);
                 setQuiz(null);
                 setMltGame(null);
                 setDrawingGame(null);
@@ -433,7 +457,13 @@ export default function OrganizerPage() {
         else if (type === 'bingo') {
             setBingoTitle('Bingo');
             setBingoDeck(starterBingoDeck());
-            setState('BINGO_SETUP');
+            setGeneratedBingoId('');
+            setBingoFreeCenter(true);
+            setBingoClaimRequiresLatest(false);
+            setNumQuestions(30);
+            setPrompt('');
+            setDifficulty('medium');
+            setState('BINGO_PROMPT');
         }
         else if (type === 'quiz') setState('PROMPT');
         else setState('QUIZ_VARIANT_PROMPT');
@@ -979,10 +1009,53 @@ export default function OrganizerPage() {
         }
     };
 
+    const generateBingo = async () => {
+        if (remoteConfig.operations.kill_generate) {
+            setErrorModal({ title: 'Temporarily Unavailable', message: 'Game generation is temporarily disabled. Please try again later.' });
+            return;
+        }
+        setLoadingCopy({ title: 'Generating Bingo' });
+        setState('LOADING');
+        try {
+            const res = await fetch(apiUrl('/bingo/generate'), {
+                method: 'POST',
+                headers: apiHeaders({ 'X-Idempotency-Key': generateIdempotencyKey() }),
+                body: JSON.stringify({
+                    prompt,
+                    difficulty,
+                    num_items: Math.max(24, Math.min(60, numQuestions)),
+                    provider,
+                }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Failed to generate Bingo' }));
+                if (res.status === 402) {
+                    setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: !hostAppMode });
+                } else {
+                    setErrorModal({ title: 'Generation Failed', message: err.detail || 'Failed to generate Bingo. Please try a different theme.' });
+                }
+                setState('BINGO_PROMPT');
+                return;
+            }
+            const data = await res.json();
+            setGeneratedBingoId(data.bingo_id || '');
+            setBingoTitle(data.game?.game_title || 'Bingo');
+            setBingoDeck(data.game?.deck || starterBingoDeck());
+            setBingoFreeCenter(data.game?.free_center ?? true);
+            setBingoClaimRequiresLatest(data.game?.claim_requires_latest_call ?? false);
+            setGameType('bingo');
+            setState('BINGO_SETUP');
+            track('bingo_generated', { topic: prompt, difficulty, num_items: numQuestions, provider });
+        } catch {
+            setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
+            setState('BINGO_PROMPT');
+        }
+    };
+
     const createBingoAndRoom = async () => {
         try {
-            const res = await fetch(apiUrl('/bingo/create'), {
-                method: 'POST',
+            const res = await fetch(apiUrl(generatedBingoId ? `/bingo/${generatedBingoId}` : '/bingo/create'), {
+                method: generatedBingoId ? 'PUT' : 'POST',
                 headers: apiHeaders(),
                 body: JSON.stringify({
                     game_title: bingoTitle.trim() || 'Bingo',
@@ -1000,7 +1073,7 @@ export default function OrganizerPage() {
                 return;
             }
             const data = await res.json();
-            const newContentId = data.bingo_id as string;
+            const newContentId = (data.bingo_id || generatedBingoId) as string;
             setContentId(newContentId);
             setGameType('bingo');
             setTotalQuestions((data.game?.deck?.length as number) || bingoDeck.length);
@@ -1285,6 +1358,30 @@ export default function OrganizerPage() {
                     />
                 )}
 
+                {state === 'BINGO_PROMPT' && (
+                    <BingoPromptScreen
+                        prompt={prompt}
+                        setPrompt={setPrompt}
+                        difficulty={difficulty}
+                        setDifficulty={setDifficulty}
+                        numItems={numQuestions}
+                        setNumItems={setNumQuestions}
+                        provider={provider}
+                        setProvider={setProvider}
+                        providers={providers}
+                        onGenerate={generateBingo}
+                        onCreateCustom={() => {
+                            setGeneratedBingoId('');
+                            setBingoTitle('Bingo');
+                            setBingoDeck(starterBingoDeck());
+                            setBingoFreeCenter(true);
+                            setBingoClaimRequiresLatest(false);
+                            setState('BINGO_SETUP');
+                        }}
+                        onBack={() => setState('SELECT_GAME')}
+                    />
+                )}
+
                 {state === 'BINGO_SETUP' && (
                     <BingoSetupScreen
                         title={bingoTitle}
@@ -1296,7 +1393,7 @@ export default function OrganizerPage() {
                         claimRequiresLatest={bingoClaimRequiresLatest}
                         setClaimRequiresLatest={setBingoClaimRequiresLatest}
                         onCreateRoom={createBingoAndRoom}
-                        onBack={() => setState('SELECT_GAME')}
+                        onBack={() => setState(generatedBingoId ? 'BINGO_PROMPT' : 'SELECT_GAME')}
                     />
                 )}
 

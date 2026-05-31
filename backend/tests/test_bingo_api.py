@@ -16,6 +16,7 @@ def setup_function():
     main.bingo_games.clear()
     main.bingo_timestamps.clear()
     main.content_owners.clear()
+    main.pending_generation_charges.clear()
     main.socket_manager.rooms.clear()
 
 
@@ -43,6 +44,32 @@ def test_create_bingo_rejects_too_small_deck():
         json={"game_title": "Tiny Bingo", "deck": _deck(10), "free_center": True},
     )
     assert res.status_code == 422
+
+
+def test_generate_bingo_stores_generated_content(monkeypatch):
+    async def fake_generate(prompt, difficulty, num_items, provider, model_override=None):
+        return {
+            "game_title": "Baby Bingo",
+            "deck": _deck(30),
+            "patterns": [],
+            "free_center": True,
+            "free_center_label": "FREE",
+            "caller_mode": "manual",
+            "claim_requires_latest_call": False,
+        }
+
+    monkeypatch.setattr(main.bingo_engine, "generate_game", fake_generate)
+    res = client.post(
+        "/bingo/generate",
+        headers=AUTH_HEADERS,
+        json={"prompt": "baby shower", "difficulty": "medium", "num_items": 30, "provider": "gemini"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["bingo_id"] in main.bingo_games
+    assert body["bingo_id"] in main.pending_generation_charges
+    assert body["game"]["game_title"] == "Baby Bingo"
+    assert len(body["game"]["deck"]) == 30
 
 
 def test_room_create_accepts_bingo_id():
