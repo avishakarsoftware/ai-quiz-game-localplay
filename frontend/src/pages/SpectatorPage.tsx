@@ -14,6 +14,7 @@ import Avatar from '../components/Avatar';
 import DrawingCanvas from '../components/DrawingCanvas';
 import GameImage from '../components/media/GameImage';
 import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
+import { BingoCalledList } from '../components/BingoBoard';
 import { mediaUrl } from '../utils/media';
 import { apiUrl } from '../utils/api';
 import { returnToHostApp } from '../utils/hostAppReturn';
@@ -218,7 +219,7 @@ export default function SpectatorPage() {
                 setTotalQuestions(msg.total_questions);
                 setLeaderboard(msg.leaderboard || []);
                 if (msg.game_type) setGameType(msg.game_type);
-                if (msg.game_type === 'housie' && msg.bingo) {
+                if ((msg.game_type === 'housie' || msg.game_type === 'bingo') && msg.bingo) {
                     setHousieCalled(msg.bingo.called_items || []);
                     setHousieLatest(msg.bingo.latest_item || null);
                     setHousieWinners(msg.bingo.winners || []);
@@ -257,18 +258,21 @@ export default function SpectatorPage() {
                 setPlayers(msg.players || []);
             }
             else if (msg.type === 'GAME_STARTING') {
-                if (msg.game_type === 'housie') setGameState('BINGO_CALLING');
+                if (msg.game_type === 'housie' || msg.game_type === 'bingo') {
+                    setGameType(msg.game_type);
+                    setGameState('BINGO_CALLING');
+                }
                 else setGameState('INTRO');
             }
             else if (msg.type === 'BINGO_SYNC') {
-                setGameType('housie');
+                setGameType(msg.game_type || 'housie');
                 setHousieCalled(msg.bingo?.called_items || []);
                 setHousieLatest(msg.bingo?.latest_item || null);
                 setHousieWinners(msg.bingo?.winners || []);
                 setGameState('BINGO_CALLING');
             }
             else if (msg.type === 'BINGO_CALL') {
-                setGameType('housie');
+                setGameType(msg.game_type || 'housie');
                 setHousieCalled(msg.called_items || []);
                 setHousieLatest(msg.item || null);
                 setHousieCallFlash({ display: String(msg.item?.display || ''), key: Date.now() });
@@ -640,15 +644,19 @@ export default function SpectatorPage() {
                                 </div>
                             )}
                             <div className="text-center mb-8">
-                                <p className="text-[--text-tertiary] text-xl">Housie</p>
+                                <p className="text-[--text-tertiary] text-xl">{gameType === 'bingo' ? 'Bingo' : 'Housie'}</p>
                                 <h1 className="hero-title" style={{ fontSize: '5rem' }}>{housieLatest ? housieLatest.display : 'Waiting for first call'}</h1>
-                                <p className="text-[--text-secondary] text-2xl">{housieCalled.length} numbers called</p>
+                                <p className="text-[--text-secondary] text-2xl">{housieCalled.length} {gameType === 'bingo' ? 'items' : 'numbers'} called</p>
                             </div>
                             <div className="card mb-6">
-                                <HousieCalledBoard
-                                    calledValues={new Set(housieCalled.map((item) => String(item.value)))}
-                                    latestValue={housieLatest?.value}
-                                />
+                                {gameType === 'bingo' ? (
+                                    <BingoCalledList items={housieCalled} />
+                                ) : (
+                                    <HousieCalledBoard
+                                        calledValues={new Set(housieCalled.map((item) => String(item.value)))}
+                                        latestValue={housieLatest?.value}
+                                    />
+                                )}
                             </div>
                             <div className="card">
                                 <h2 className="font-extrabold text-2xl mb-4">Winners</h2>

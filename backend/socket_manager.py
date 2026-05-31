@@ -15,6 +15,12 @@ import httpx
 
 import config
 import tokens as token_module
+from bingo_engine import (
+    BINGO_PATTERN_ORDER,
+    create_bingo_call_deck,
+    generate_bingo_card,
+    validate_bingo_claim,
+)
 from housie_engine import (
     PATTERN_ORDER,
     create_call_deck,
@@ -32,7 +38,7 @@ class Room:
         self.room_code = room_code
         self.quiz = game_data  # generic game content (quiz or WMLT)
         self.content_id = content_id
-        self.game_type = game_type  # "quiz", "wmlt", "drawing", or "housie"
+        self.game_type = game_type  # "quiz", "wmlt", "drawing", "housie", or "bingo"
         self.time_limit = time_limit
         self.organizer_token = organizer_token  # secret token for organizer auth
         self.players: Dict[str, dict] = {}  # socket_id -> {nickname, score, prev_rank, streak, ...}
@@ -174,8 +180,8 @@ class Room:
             return len(self.quiz.get("statements", []))
         if self.game_type == "drawing":
             return len(self.quiz.get("prompts", []))
-        if self.game_type == "housie":
-            return 90
+        if self.game_type in ("housie", "bingo"):
+            return len(self.quiz.get("deck", [])) or 90
         return len(self.quiz.get("questions", []))
 
     def current_round_data(self) -> Optional[dict]:
@@ -187,7 +193,7 @@ class Room:
             return self.quiz["statements"][idx]
         if self.game_type == "drawing":
             return self.quiz["prompts"][idx]
-        if self.game_type == "housie":
+        if self.game_type in ("housie", "bingo"):
             if 0 <= idx < len(self.housie_called):
                 return self.housie_called[idx]
             return None
@@ -432,7 +438,7 @@ class SocketManager:
                     elapsed = time.time() - room.question_start_time
                     sync["time_remaining"] = max(0, room.time_limit - int(elapsed))
                     sync["is_bonus"] = room.current_question_index in room.bonus_questions
-                if room.game_type == "housie":
+                if room.game_type in ("housie", "bingo"):
                     sync["bingo"] = self._housie_public_state(room)
                 await websocket.send_json(sync)
                 while True:
@@ -533,7 +539,7 @@ class SocketManager:
                 room._organizer_just_disconnected = False
                 # Re-check: organizer may have already reconnected via a new socket
                 if room.organizer is None:
-                    if room.game_type == "housie" and room.housie_auto_status == "running":
+                    if room.game_type in ("housie", "bingo") and room.housie_auto_status == "running":
                         await self._set_housie_auto_status(room, "paused")
                     await room.broadcast({"type": "ORGANIZER_DISCONNECTED"})
                     # Start grace period — delete room if organizer doesn't reconnect
@@ -597,7 +603,7 @@ class SocketManager:
             elapsed = time.time() - room.question_start_time
             sync["time_remaining"] = max(0, room.time_limit - int(elapsed))
 
-        if room.game_type == "housie":
+        if room.game_type in ("housie", "bingo"):
             sync["bingo"] = self._housie_public_state(room)
 
         if room.organizer:
@@ -648,6 +654,14 @@ class SocketManager:
                                 "message": f"Housie needs at least {config.MIN_HOUSIE_PLAYERS} players to start",
                             })
                             return
+                    elif room.game_type == "bingo":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_BINGO_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Bingo needs at least {config.MIN_BINGO_PLAYERS} players to start",
+                            })
+                            return
                     if room.billing_mode == "host_app_managed":
                         spent = True
                     else:
@@ -662,11 +676,11 @@ class SocketManager:
                     if room.game_type == "quiz":
                         self._select_bonus_questions(room)
                     self._mark_game_session_started(room)
-                    if room.game_type == "housie":
+                    if room.game_type in ("housie", "bingo"):
                         room.locked = True
                         room.state = "BINGO_CALLING"
                         self._start_housie_round(room)
-                        await room.broadcast({"type": "GAME_STARTING", "game_type": "housie"})
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": room.game_type})
                         await self._broadcast_housie_sync(room)
                         if room.housie_caller_mode == "auto":
                             await self._set_housie_auto_status(room, "running")
@@ -675,20 +689,20 @@ class SocketManager:
                         await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
-                if room.game_type == "housie":
+                if room.game_type in ("housie", "bingo"):
                     return
                 if room.state == "QUESTION":
                     await self.end_question(room)
                 elif room.state in ("INTRO", "LEADERBOARD"):
                     await self.start_question(room)
 
-            elif msg_type == "BINGO_CALL_NEXT" and room.game_type == "housie":
+            elif msg_type == "BINGO_CALL_NEXT" and room.game_type in ("housie", "bingo"):
                 await self._housie_call_next(room)
 
-            elif msg_type == "BINGO_UNDO_LAST_CALL" and room.game_type == "housie":
+            elif msg_type == "BINGO_UNDO_LAST_CALL" and room.game_type in ("housie", "bingo"):
                 await self._housie_undo_last_call(room)
 
-            elif msg_type == "BINGO_SET_CALLER_MODE" and room.game_type == "housie":
+            elif msg_type == "BINGO_SET_CALLER_MODE" and room.game_type in ("housie", "bingo"):
                 mode = str(message.get("caller_mode") or "").strip().lower()
                 if mode not in ("manual", "auto"):
                     await self._send_to_client(room, client_id, {"type": "ERROR", "message": "Invalid caller mode"})
@@ -705,10 +719,10 @@ class SocketManager:
                 else:
                     await self._set_housie_auto_status(room, "stopped")
 
-            elif msg_type == "BINGO_PAUSE" and room.game_type == "housie":
+            elif msg_type == "BINGO_PAUSE" and room.game_type in ("housie", "bingo"):
                 await self._set_housie_auto_status(room, "paused")
 
-            elif msg_type == "BINGO_RESUME" and room.game_type == "housie":
+            elif msg_type == "BINGO_RESUME" and room.game_type in ("housie", "bingo"):
                 room.housie_caller_mode = "auto"
                 await self._set_housie_auto_status(room, "running")
 
@@ -725,7 +739,7 @@ class SocketManager:
                         room.show_votes = val
 
             elif msg_type == "END_QUIZ":
-                if room.game_type == "housie" and room.state == "BINGO_CALLING":
+                if room.game_type in ("housie", "bingo") and room.state == "BINGO_CALLING":
                     await self._complete_housie(room)
                     return
                 if room.state in ("QUESTION", "LEADERBOARD"):
@@ -759,7 +773,7 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie") else room.game_type
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo") else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
 
                     # Validate time_limit
@@ -770,13 +784,15 @@ class SocketManager:
                     new_time_limit = max(5, min(60, new_time_limit))
 
                     # Validate content BEFORE charging
-                    from main import quizzes, mlt_scenarios, drawing_games, housie_games
+                    from main import quizzes, mlt_scenarios, drawing_games, housie_games, bingo_games
                     if new_game_type == "wmlt":
                         new_game_data = mlt_scenarios.get(new_content_id)
                     elif new_game_type == "drawing":
                         new_game_data = drawing_games.get(new_content_id)
                     elif new_game_type == "housie":
                         new_game_data = housie_games.get(new_content_id)
+                    elif new_game_type == "bingo":
+                        new_game_data = bingo_games.get(new_content_id)
                     else:
                         new_game_data = quizzes.get(new_content_id)
 
@@ -920,7 +936,7 @@ class SocketManager:
                             "total_questions": room.total_rounds(),
                             "avatar": saved.get("avatar", avatar),
                         }
-                        if room.game_type == "housie":
+                        if room.game_type in ("housie", "bingo"):
                             state_info["bingo"] = self._housie_player_state(room, nickname)
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
@@ -1002,7 +1018,7 @@ class SocketManager:
                             "total_questions": room.total_rounds(),
                             "avatar": player_data.get("avatar", ""),
                         }
-                        if room.game_type == "housie":
+                        if room.game_type in ("housie", "bingo"):
                             state_info["bingo"] = self._housie_player_state(room, player_data["nickname"])
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
@@ -1126,11 +1142,11 @@ class SocketManager:
             elif msg_type == "GUESS" and room.game_type == "drawing":
                 await self._handle_drawing_guess(room, client_id, message)
 
-            elif msg_type == "BINGO_CLAIM" and room.game_type == "housie":
+            elif msg_type == "BINGO_CLAIM" and room.game_type in ("housie", "bingo"):
                 await self._handle_housie_claim(room, client_id, message)
 
             elif msg_type == "ANSWER":
-                if room.game_type in ("wmlt", "drawing", "housie"):
+                if room.game_type in ("wmlt", "drawing", "housie", "bingo"):
                     return  # Other games use their own input messages
                 if client_id not in room.players:
                     return
@@ -1259,7 +1275,7 @@ class SocketManager:
                         })
 
     def _start_housie_round(self, room: Room):
-        room.housie_deck = create_call_deck()
+        room.housie_deck = create_bingo_call_deck(room.quiz.get("deck", [])) if room.game_type == "bingo" else create_call_deck()
         room.housie_called = []
         room.housie_winners = []
         room.housie_claimed_patterns = set()
@@ -1281,12 +1297,24 @@ class SocketManager:
         for idx, (client_id, player) in enumerate(room.players.items()):
             nickname = player["nickname"]
             ticket_id = f"{room.room_code}-{idx + 1}"
-            room.housie_tickets[nickname] = generate_ticket(ticket_id, client_id, nickname)
+            if room.game_type == "bingo":
+                room.housie_tickets[nickname] = generate_bingo_card(
+                    ticket_id,
+                    client_id,
+                    nickname,
+                    room.quiz.get("deck", []),
+                    free_center=bool(room.quiz.get("free_center", True)),
+                    free_center_label=str(room.quiz.get("free_center_label") or "FREE"),
+                    seed=secrets.randbits(32),
+                )
+            else:
+                room.housie_tickets[nickname] = generate_ticket(ticket_id, client_id, nickname)
 
     def _housie_patterns(self, room: Room) -> list[dict]:
         patterns = room.quiz.get("patterns") if isinstance(room.quiz.get("patterns"), list) else []
         known = {pattern["id"]: pattern for pattern in patterns if isinstance(pattern, dict) and pattern.get("id")}
-        return [known[pid] for pid in PATTERN_ORDER if pid in known]
+        order = BINGO_PATTERN_ORDER if room.game_type == "bingo" else PATTERN_ORDER
+        return [known[pid] for pid in order if pid in known]
 
     def _housie_public_state(self, room: Room) -> dict:
         return {
@@ -1304,7 +1332,9 @@ class SocketManager:
             "auto_interval_seconds": room.housie_auto_interval_seconds,
             "auto_pause_on_claim": room.housie_auto_pause_on_claim,
             "next_auto_call_at": room.housie_next_auto_call_at,
-            "claim_requires_latest_call": True,
+            "claim_requires_latest_call": bool(room.quiz.get("claim_requires_latest_call", room.game_type == "housie")),
+            "layout": room.quiz.get("layout", "housie_3x9_15" if room.game_type == "housie" else "bingo_5x5_free"),
+            "free_center": bool(room.quiz.get("free_center", False)),
         }
 
     def _housie_player_state(self, room: Room, nickname: str) -> dict:
@@ -1316,7 +1346,7 @@ class SocketManager:
     async def _broadcast_housie_sync(self, room: Room):
         base = {
             "type": "BINGO_SYNC",
-            "game_type": "housie",
+            "game_type": room.game_type,
             "bingo": self._housie_public_state(room),
             "player_count": len(room.players),
             "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
@@ -1340,7 +1370,7 @@ class SocketManager:
     async def _broadcast_housie_auto_status(self, room: Room):
         await room.broadcast({
             "type": "BINGO_AUTO_STATUS",
-            "game_type": "housie",
+            "game_type": room.game_type,
             "caller_mode": room.housie_caller_mode,
             "auto_status": room.housie_auto_status,
             "auto_interval_seconds": room.housie_auto_interval_seconds,
@@ -1387,7 +1417,7 @@ class SocketManager:
             room.answer_log.append({"kind": "call", "item": item, "index": len(room.housie_called)})
         await room.broadcast({
             "type": "BINGO_CALL",
-            "game_type": "housie",
+            "game_type": room.game_type,
             "item": item,
             "called_items": room.housie_called,
             "remaining_count": len(room.housie_deck),
@@ -1431,7 +1461,16 @@ class SocketManager:
             await self._set_housie_auto_status(room, "paused")
         nickname = room.players[client_id]["nickname"]
         ticket = room.housie_tickets.get(nickname)
-        valid, reason = validate_claim(ticket or {}, room.housie_called, pattern_id, require_latest=True)
+        if room.game_type == "bingo":
+            valid, reason, winning_values = validate_bingo_claim(
+                ticket or {},
+                room.housie_called,
+                pattern_id,
+                require_latest=bool(room.quiz.get("claim_requires_latest_call", False)),
+            )
+        else:
+            valid, reason = validate_claim(ticket or {}, room.housie_called, pattern_id, require_latest=True)
+            winning_values = []
         if not valid:
             await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "pattern_id": pattern_id, "reason": reason, "message": reason})
             if auto_paused_for_claim:
@@ -1445,6 +1484,7 @@ class SocketManager:
             "nickname": nickname,
             "called_count": len(room.housie_called),
             "winning_number": latest_item.get("value"),
+            "winning_values": winning_values,
         }
         async with room.lock:
             if pattern_id in room.housie_claimed_patterns:
@@ -1466,7 +1506,7 @@ class SocketManager:
             return
         await room.broadcast({
             "type": "BINGO_CLAIM_ACCEPTED",
-            "game_type": "housie",
+            "game_type": room.game_type,
             "winner": winner,
             "winners": room.housie_winners,
             "leaderboard": self.get_leaderboard(room),
@@ -1491,7 +1531,7 @@ class SocketManager:
         leaderboard = self.get_leaderboard(room)
         await room.broadcast({
             "type": "BINGO_COMPLETE",
-            "game_type": "housie",
+            "game_type": room.game_type,
             "winners": room.housie_winners,
             "leaderboard": leaderboard,
             "team_leaderboard": self.get_team_leaderboard(room),
@@ -1710,7 +1750,7 @@ class SocketManager:
             "completed_at": time.time(),
             "wallet_id": room.wallet_id or "",
         }
-        if room.game_type == "housie":
+        if room.game_type in ("housie", "bingo"):
             summary["total_questions"] = len(room.housie_called)
             summary["total_rounds"] = len(room.housie_called)
             summary["winners"] = room.housie_winners

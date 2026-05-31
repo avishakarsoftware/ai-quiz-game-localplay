@@ -156,7 +156,7 @@ def effective_catalog(
     loader: Optional[Callable[[str, str], list[dict[str, Any]]]] = None,
 ) -> list[dict[str, Any]]:
     if not host_app:
-        return [copy.deepcopy(game) for game in static_catalog]
+        return [copy.deepcopy(game) for game in static_catalog if game.get("enabled", True)]
 
     import db
 

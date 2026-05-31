@@ -211,6 +211,7 @@ bootstrap_vm_layout() {
             'GEMINI_IMAGE_MODEL=gemini-2.5-flash-image' \
             'REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json' \
             'REVELRY_CALLBACK_URL=https://api-gamma.revelryapp.me/api/games/localplay/callback' \
+            'ENABLE_BINGO=true' \
             'GOOGLE_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID' \
             'APPLE_CLIENT_ID=$APPLE_WEB_CLIENT_ID' \
             'APPLE_CLIENT_IDS=$APPLE_WEB_CLIENT_ID,$APPLE_NATIVE_CLIENT_ID' \
@@ -275,6 +276,7 @@ if [[ "$SKIP_BUILD" != "true" ]]; then
             cd "$FRONTEND_DIR"
             VITE_BASE_PATH=/ \
                 VITE_API_URL= \
+                VITE_ENABLE_BINGO=$([[ "$ENVIRONMENT" == "gamma" ]] && echo true || echo false) \
                 VITE_CAST_APP_ID="${VITE_CAST_APP_ID:-1BC9ACD8}" \
                 VITE_GOOGLE_CLIENT_ID="${VITE_GOOGLE_CLIENT_ID:-$GOOGLE_WEB_CLIENT_ID}" \
                 VITE_APPLE_CLIENT_ID="${VITE_APPLE_CLIENT_ID:-$APPLE_WEB_CLIENT_ID}" \

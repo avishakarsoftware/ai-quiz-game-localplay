@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner } from '../types';
+import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending } from '../utils/storage';
@@ -17,7 +17,9 @@ import ReviewScreen from '../components/organizer/ReviewScreen';
 import MLTReviewScreen from '../components/organizer/MLTReviewScreen';
 import DrawingReviewScreen from '../components/organizer/DrawingReviewScreen';
 import HousieSetupScreen from '../components/organizer/HousieSetupScreen';
+import BingoSetupScreen from '../components/organizer/BingoSetupScreen';
 import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
+import { BingoCalledList } from '../components/BingoBoard';
 import ImageGenerationScreen from '../components/organizer/ImageGenerationScreen';
 import LobbyScreen from '../components/organizer/LobbyScreen';
 import GameQuestionScreen from '../components/organizer/GameQuestionScreen';
@@ -30,11 +32,28 @@ import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'HOUSIE_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'HOUSIE_SETUP' | 'BINGO_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'LEADERBOARD' | 'PODIUM';
 
 function defaultTimeLimitForGame(type: GameType): number {
-    if (type === 'housie') return 15;
+    if (type === 'housie' || type === 'bingo') return 15;
     return type === 'drawing' ? 30 : 15;
+}
+
+const STARTER_BINGO_ITEMS = [
+    'Dance floor', 'Group photo', 'Someone laughs', 'Snack table', 'Party playlist',
+    'Inside joke', 'A toast', 'Late arrival', 'New friend', 'Dessert',
+    'Someone sings', 'Sparkly outfit', 'Favorite song', 'Big hug', 'Phone photo',
+    'Someone cheers', 'Cake', 'Gift bag', 'Funny story', 'Matching colors',
+    'Table games', 'A surprise', 'Best dressed', 'Last call', 'Confetti',
+];
+
+function starterBingoDeck(): BingoDeckItem[] {
+    return STARTER_BINGO_ITEMS.map((display, index) => ({
+        id: `starter_${index + 1}`,
+        kind: 'text',
+        value: display.toLowerCase(),
+        display,
+    }));
 }
 
 export default function OrganizerPage() {
@@ -94,6 +113,10 @@ export default function OrganizerPage() {
     const [housieWinners, setHousieWinners] = useState<HousieWinner[]>([]);
     const [housieCallFlash, setHousieCallFlash] = useState<{ display: string; key: number } | null>(null);
     const [housieAnnouncement, setHousieAnnouncement] = useState<{ text: string; key: number } | null>(null);
+    const [bingoTitle, setBingoTitle] = useState('Bingo');
+    const [bingoDeck, setBingoDeck] = useState<BingoDeckItem[]>(starterBingoDeck);
+    const [bingoFreeCenter, setBingoFreeCenter] = useState(true);
+    const [bingoClaimRequiresLatest, setBingoClaimRequiresLatest] = useState(false);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean; returnToHostApp?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -260,8 +283,9 @@ export default function OrganizerPage() {
             soundManager.play('fanfare');
         }
         else if (msg.type === 'BINGO_SYNC') {
-            const bingo = msg.bingo as { called_items?: Array<{ value: number | string; display: string }>; latest_item?: { value: number | string; display: string } | null; patterns?: HousiePattern[]; winners?: HousieWinner[]; play_mode?: 'beginner' | 'pro'; caller_mode?: 'manual' | 'auto'; auto_status?: 'running' | 'paused' | 'stopped'; auto_interval_seconds?: number; auto_pause_on_claim?: boolean } | undefined;
-            setGameType('housie');
+            const bingo = msg.bingo as { called_items?: Array<{ value: number | string; display: string; kind?: string; image_url?: string; alt_text?: string }>; latest_item?: { value: number | string; display: string; kind?: string; image_url?: string; alt_text?: string } | null; patterns?: HousiePattern[]; winners?: HousieWinner[]; play_mode?: 'beginner' | 'pro'; caller_mode?: 'manual' | 'auto'; auto_status?: 'running' | 'paused' | 'stopped'; auto_interval_seconds?: number; auto_pause_on_claim?: boolean } | undefined;
+            if (msg.game_type === 'bingo') setGameType('bingo');
+            else setGameType('housie');
             setHousieCalled(bingo?.called_items || []);
             setHousieLatest(bingo?.latest_item || null);
             setHousieWinners(bingo?.winners || []);
@@ -273,7 +297,8 @@ export default function OrganizerPage() {
             setState('BINGO_CALLING');
         }
         else if (msg.type === 'BINGO_CALL') {
-            setGameType('housie');
+            if (msg.game_type === 'bingo') setGameType('bingo');
+            else setGameType('housie');
             setHousieCalled(msg.called_items as Array<{ value: number | string; display: string }> || []);
             setHousieLatest(msg.item as { value: number | string; display: string });
             setHousieCallFlash({ display: String((msg.item as { display?: string })?.display || ''), key: Date.now() });
@@ -404,6 +429,11 @@ export default function OrganizerPage() {
         else if (type === 'housie') {
             setHousieTitle('Housie');
             setState('HOUSIE_SETUP');
+        }
+        else if (type === 'bingo') {
+            setBingoTitle('Bingo');
+            setBingoDeck(starterBingoDeck());
+            setState('BINGO_SETUP');
         }
         else if (type === 'quiz') setState('PROMPT');
         else setState('QUIZ_VARIANT_PROMPT');
@@ -892,6 +922,8 @@ export default function OrganizerPage() {
                 body.drawing_id = selectedContentId;
             } else if (gameType === 'housie') {
                 body.housie_id = selectedContentId;
+            } else if (gameType === 'bingo') {
+                body.bingo_id = selectedContentId;
             } else if (isQuizRuntimeGame(gameType)) {
                 body.quiz_id = selectedContentId;
             }
@@ -947,6 +979,37 @@ export default function OrganizerPage() {
         }
     };
 
+    const createBingoAndRoom = async () => {
+        try {
+            const res = await fetch(apiUrl('/bingo/create'), {
+                method: 'POST',
+                headers: apiHeaders(),
+                body: JSON.stringify({
+                    game_title: bingoTitle.trim() || 'Bingo',
+                    deck: bingoDeck,
+                    pattern_ids: ['first_line', 'four_corners', 'blackout'],
+                    free_center: bingoFreeCenter,
+                    free_center_label: 'FREE',
+                    caller_mode: 'manual',
+                    claim_requires_latest_call: bingoClaimRequiresLatest,
+                }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Failed to create Bingo setup' }));
+                setErrorModal({ title: 'Bingo Error', message: err.detail || 'Failed to create Bingo setup.' });
+                return;
+            }
+            const data = await res.json();
+            const newContentId = data.bingo_id as string;
+            setContentId(newContentId);
+            setGameType('bingo');
+            setTotalQuestions((data.game?.deck?.length as number) || bingoDeck.length);
+            await createRoom(newContentId);
+        } catch {
+            setErrorModal({ title: 'Connection Error', message: 'Could not create the Bingo setup.' });
+        }
+    };
+
     const startGame = () => {
         soundManager.play('gameStart');
         track('game_started', { room_code: roomCode, game_type: gameType, player_count: playerCount, num_questions: totalQuestions });
@@ -954,7 +1017,7 @@ export default function OrganizerPage() {
             wsRef.current?.send(JSON.stringify({ type: 'SET_SHOW_VOTES', show_votes: showVotes }));
         }
         wsRef.current?.send(JSON.stringify({ type: 'START_GAME' }));
-        if (gameType !== 'housie') {
+        if (gameType !== 'housie' && gameType !== 'bingo') {
             wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
         }
     };
@@ -1222,6 +1285,21 @@ export default function OrganizerPage() {
                     />
                 )}
 
+                {state === 'BINGO_SETUP' && (
+                    <BingoSetupScreen
+                        title={bingoTitle}
+                        setTitle={setBingoTitle}
+                        deck={bingoDeck}
+                        setDeck={setBingoDeck}
+                        freeCenter={bingoFreeCenter}
+                        setFreeCenter={setBingoFreeCenter}
+                        claimRequiresLatest={bingoClaimRequiresLatest}
+                        setClaimRequiresLatest={setBingoClaimRequiresLatest}
+                        onCreateRoom={createBingoAndRoom}
+                        onBack={() => setState('SELECT_GAME')}
+                    />
+                )}
+
                 {state === 'LOADING' && <LoadingScreen title={loadingCopy.title} messages={loadingCopy.messages} />}
 
                 {state === 'REVIEW' && quiz && (
@@ -1339,9 +1417,13 @@ export default function OrganizerPage() {
                             </div>
                         )}
                         <div className="housie-runtime-header">
-                            <p>Housie caller</p>
+                            <p>{gameType === 'bingo' ? 'Bingo caller' : 'Housie caller'}</p>
                             <h1 className="hero-title">{housieLatest ? housieLatest.display : 'Ready to call'}</h1>
-                            <span>{housieCalled.length} of 90 numbers called · {housiePlayMode === 'pro' ? 'Pro' : 'Beginner'} · {housieCallerMode === 'auto' ? `Auto ${housieAutoStatus}` : 'Manual'}</span>
+                            <span>
+                                {gameType === 'bingo'
+                                    ? `${housieCalled.length} items called · Custom board · Manual`
+                                    : `${housieCalled.length} of 90 numbers called · ${housiePlayMode === 'pro' ? 'Pro' : 'Beginner'} · ${housieCallerMode === 'auto' ? `Auto ${housieAutoStatus}` : 'Manual'}`}
+                            </span>
                         </div>
                         <div className="housie-runtime-panel housie-call-controls">
                             <div>
@@ -1365,10 +1447,14 @@ export default function OrganizerPage() {
                             </div>
                         </div>
                         <div className="housie-runtime-panel">
-                            <HousieCalledBoard
-                                calledValues={new Set(housieCalled.map((item) => String(item.value)))}
-                                latestValue={housieLatest?.value}
-                            />
+                            {gameType === 'bingo' ? (
+                                <BingoCalledList items={housieCalled} />
+                            ) : (
+                                <HousieCalledBoard
+                                    calledValues={new Set(housieCalled.map((item) => String(item.value)))}
+                                    latestValue={housieLatest?.value}
+                                />
+                            )}
                         </div>
                         <div className="housie-runtime-panel">
                             <h2>Prizes</h2>

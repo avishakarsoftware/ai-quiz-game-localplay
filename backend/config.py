@@ -98,7 +98,9 @@ MAX_PLAYERS_PER_ROOM = 100
 MIN_WMLT_PLAYERS = 2  # WMLT minimum players
 MIN_DRAWING_PLAYERS = 2  # DrawingGame minimum players
 MIN_HOUSIE_PLAYERS = 2  # Housie minimum players
+MIN_BINGO_PLAYERS = 2  # Custom Bingo minimum players
 MAX_GAME_HISTORY = 1000
+BINGO_ENABLED = os.getenv("ENABLE_BINGO", "true" if ENVIRONMENT in ("local", "gamma") else "false").lower() == "true"
 
 # --- Streak bonus ---
 STREAK_THRESHOLDS = {3: 1.5, 5: 2.0}  # streak_count -> multiplier

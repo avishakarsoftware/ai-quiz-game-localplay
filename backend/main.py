@@ -32,6 +32,7 @@ from quiz_engine import quiz_engine, _sanitize_quiz, _validate_quiz, VALID_QUIZ_
 from mlt_engine import mlt_engine, _sanitize_mlt, _validate_mlt
 from drawing_engine import drawing_engine, _sanitize_drawing_game, _validate_drawing_game
 from housie_engine import DEFAULT_HOUSIE_PATTERNS, default_housie_game, sanitize_patterns
+from bingo_engine import DEFAULT_BINGO_PATTERNS, default_bingo_game, sanitize_bingo_deck, sanitize_bingo_patterns
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -47,6 +48,7 @@ FRONTEND_DIST_DIR = Path(config.FRONTEND_DIST_DIR)
 API_PREFIXES = (
     "/admin",
     "/auth",
+    "/bingo",
     "/checkout",
     "/drawing",
     "/entitlements",
@@ -223,6 +225,10 @@ drawing_timestamps: Dict[str, float] = {}  # drawing_id -> creation time
 housie_games: Dict[str, dict] = {}  # housie_id -> {game_title, patterns, caller settings}
 housie_timestamps: Dict[str, float] = {}  # housie_id -> creation time
 
+# Custom Bingo storage
+bingo_games: Dict[str, dict] = {}  # bingo_id -> {game_title, deck, patterns, settings}
+bingo_timestamps: Dict[str, float] = {}  # bingo_id -> creation time
+
 # Content ownership: content_id -> wallet_id of creator
 content_owners: Dict[str, str] = {}
 pending_generation_charges: Dict[str, str] = {}  # content_id -> wallet_id to charge when first room is created
@@ -318,6 +324,24 @@ def _evict_old_content():
                 content_owners.pop(hid, None)
                 pending_generation_charges.pop(hid, None)
 
+    # Evict custom Bingo games
+    expired_bingo = [bid for bid, ts in bingo_timestamps.items()
+                     if now - ts > config.QUIZ_TTL_SECONDS and bid not in active_content_ids]
+    for bid in expired_bingo:
+        bingo_games.pop(bid, None)
+        bingo_timestamps.pop(bid, None)
+        content_owners.pop(bid, None)
+        pending_generation_charges.pop(bid, None)
+    if len(bingo_games) >= config.MAX_QUIZZES:
+        for bid in sorted(bingo_timestamps, key=bingo_timestamps.get):
+            if len(bingo_games) < config.MAX_QUIZZES:
+                break
+            if bid not in active_content_ids:
+                bingo_games.pop(bid, None)
+                bingo_timestamps.pop(bid, None)
+                content_owners.pop(bid, None)
+                pending_generation_charges.pop(bid, None)
+
 def generate_room_code() -> str:
     """Generate a unique 6-character room code, checking for collisions."""
     for _ in range(config.MAX_ROOM_CODE_ATTEMPTS):
@@ -390,6 +414,7 @@ class RoomCreateRequest(BaseModel):
     mlt_id: str = ""       # For MLT game
     drawing_id: str = ""   # For DrawingGame
     housie_id: str = ""    # For Housie
+    bingo_id: str = ""     # For custom Bingo
     game_type: str = "quiz"
     time_limit: Optional[int] = None
 
@@ -405,8 +430,8 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing", "housie"):
-            raise ValueError('game_type must be "quiz", "wmlt", "drawing", or "housie"')
+        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo"):
+            raise ValueError('game_type must be "quiz", "wmlt", "drawing", "housie", or "bingo"')
         return v
 
 
@@ -515,6 +540,34 @@ GAME_CATALOG = [
             "supported_media": [],
         },
     },
+    {
+        "id": "bingo",
+        "game_type": "bingo",
+        "runtime_type": "bingo",
+        "title": "Bingo",
+        "description": "Create a custom Bingo board with your own words, phrases, or images.",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": True,
+        "supports_images": True,
+        "can_create_content": True,
+        "can_edit_content": True,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["manual", "template"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "bingo_setup",
+            "layouts": ["bingo_5x5_free", "bingo_5x5"],
+            "item_kinds": ["text", "emoji", "image"],
+            "deck_count": {"min": 24, "max": 120},
+            "patterns": [pattern["id"] for pattern in DEFAULT_BINGO_PATTERNS],
+            "supported_media": ["image"],
+        },
+        "enabled": config.BINGO_ENABLED,
+    },
 ]
 
 
@@ -550,6 +603,35 @@ def _sanitize_housie_game(game: dict) -> dict:
     }
 
 
+def _sanitize_bingo_game(game: dict) -> dict:
+    title = str(game.get("game_title") or game.get("title") or "Bingo").strip()[:120] or "Bingo"
+    free_center = bool(game.get("free_center", True))
+    free_center_label = str(game.get("free_center_label") or "FREE").strip()[:16] or "FREE"
+    deck = sanitize_bingo_deck(game.get("deck") or [], free_center=free_center)
+    pattern_ids = game.get("pattern_ids") or [p.get("id") for p in game.get("patterns", []) if isinstance(p, dict)]
+    patterns = sanitize_bingo_patterns(pattern_ids)
+    caller_mode = str(game.get("caller_mode") or "manual").strip().lower()
+    if caller_mode not in ("manual", "auto"):
+        caller_mode = "manual"
+    try:
+        auto_interval = int(game.get("auto_interval_seconds") or 8)
+    except (TypeError, ValueError):
+        auto_interval = 8
+    return {
+        "game_title": title,
+        "ruleset": str(game.get("ruleset") or "custom").strip()[:60] or "custom",
+        "layout": "bingo_5x5_free" if free_center else "bingo_5x5",
+        "free_center": free_center,
+        "free_center_label": free_center_label,
+        "deck": deck,
+        "patterns": patterns,
+        "caller_mode": caller_mode,
+        "auto_interval_seconds": max(3, min(30, auto_interval)),
+        "auto_pause_on_claim": bool(game.get("auto_pause_on_claim", True)),
+        "claim_requires_latest_call": bool(game.get("claim_requires_latest_call", False)),
+    }
+
+
 def _now_ts() -> int:
     return int(time.time())
 
@@ -570,6 +652,8 @@ def _public_base_url(req: Request) -> str:
 
 
 def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
+    if game_type == "bingo":
+        return str(uuid.uuid4()), default_bingo_game(title or "Bingo")
     if game_type == "housie":
         return str(uuid.uuid4()), default_housie_game(title or "Housie")
     if game_type == "wmlt":
@@ -601,6 +685,14 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
 
 
 def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = "") -> tuple[str, dict]:
+    if game_type == "bingo":
+        if not config.BINGO_ENABLED:
+            raise HTTPException(status_code=404, detail="Bingo is not available")
+        if content_id:
+            if content_id not in bingo_games:
+                raise HTTPException(status_code=404, detail="Bingo game not found")
+            return content_id, bingo_games[content_id]
+        return _default_game_content(game_type, title)
     if game_type == "wmlt":
         if content_id:
             if content_id not in mlt_scenarios:
@@ -644,13 +736,15 @@ def _resolve_revelry_runtime_content(
         quiz_timestamps[content_id] = time.time()
         content_owners[content_id] = wallet_id
         return content_id, quiz_data
-    if game_type in ("wmlt", "drawing", "housie") and content_id:
+    if game_type in ("wmlt", "drawing", "housie", "bingo") and content_id:
         if game_type == "wmlt" and content_id in mlt_scenarios:
             return content_id, mlt_scenarios[content_id]
         if game_type == "drawing" and content_id in drawing_games:
             return content_id, drawing_games[content_id]
         if game_type == "housie" and content_id in housie_games:
             return content_id, housie_games[content_id]
+        if game_type == "bingo" and content_id in bingo_games:
+            return content_id, bingo_games[content_id]
         content = db.get_game_content(wallet_id, content_id)
         if not content or content.get("game_type") != game_type:
             raise HTTPException(status_code=404, detail="Game content not found for this party")
@@ -672,10 +766,14 @@ def _resolve_revelry_runtime_content(
                 game_data["time_limit"] = int(payload["time_limit"])
             drawing_games[content_id] = game_data
             drawing_timestamps[content_id] = time.time()
-        else:
+        elif game_type == "housie":
             game_data = _sanitize_housie_game(game_data)
             housie_games[content_id] = game_data
             housie_timestamps[content_id] = time.time()
+        else:
+            game_data = _sanitize_bingo_game(game_data)
+            bingo_games[content_id] = game_data
+            bingo_timestamps[content_id] = time.time()
         content_owners[content_id] = wallet_id
         return content_id, game_data
     return _resolve_runtime_content(game_type, content_id, title)
@@ -695,6 +793,13 @@ def _create_runtime_room(
         raise HTTPException(status_code=422, detail="Drawing game has no prompts")
     if game_type == "housie" and not game_data.get("patterns"):
         raise HTTPException(status_code=422, detail="Housie game has no prize patterns")
+    if game_type == "bingo":
+        if not config.BINGO_ENABLED:
+            raise HTTPException(status_code=404, detail="Bingo is not available")
+        if not game_data.get("deck"):
+            raise HTTPException(status_code=422, detail="Bingo game has no deck items")
+        if not game_data.get("patterns"):
+            raise HTTPException(status_code=422, detail="Bingo game has no prize patterns")
     if game_type == "quiz" and not game_data.get("questions"):
         raise HTTPException(status_code=422, detail="Quiz has no questions")
     if len(socket_manager.rooms) >= config.MAX_ROOMS:
@@ -3009,7 +3114,8 @@ async def create_room(request: RoomCreateRequest, req: Request):
         request.quiz_id if request.game_type == "quiz"
         else request.mlt_id if request.game_type == "wmlt"
         else request.drawing_id if request.game_type == "drawing"
-        else request.housie_id
+        else request.housie_id if request.game_type == "housie"
+        else request.bingo_id
     )
     content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
     time_limit = request.time_limit if request.time_limit is not None else _default_time_limit_for_game(request.game_type)
@@ -3557,6 +3663,106 @@ async def update_housie(housie_id: str, request: HousieCreateRequest, req: Reque
     })
     housie_games[housie_id] = game_data
     return {"housie_id": housie_id, "game": game_data}
+
+
+class BingoDeckItemRequest(BaseModel):
+    id: str = ""
+    kind: str = "text"
+    value: str = ""
+    display: str = ""
+    image_asset_id: str = ""
+    image_url: str = ""
+    alt_text: str = ""
+
+
+class BingoCreateRequest(BaseModel):
+    game_title: str = "Bingo"
+    deck: List[BingoDeckItemRequest]
+    pattern_ids: List[str] = Field(default_factory=lambda: [pattern["id"] for pattern in DEFAULT_BINGO_PATTERNS])
+    free_center: bool = True
+    free_center_label: str = "FREE"
+    caller_mode: str = "manual"
+    claim_requires_latest_call: bool = False
+
+    @field_validator("game_title")
+    @classmethod
+    def validate_game_title(cls, value: str) -> str:
+        value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", value or "").strip()
+        if not value or len(value) > 120:
+            raise ValueError("Game title must be 1-120 characters")
+        return value
+
+    @field_validator("caller_mode")
+    @classmethod
+    def validate_caller_mode(cls, value: str) -> str:
+        value = (value or "manual").lower().strip()
+        if value not in ("manual", "auto"):
+            raise ValueError('caller_mode must be "manual" or "auto"')
+        return value
+
+
+@app.post("/bingo/create")
+async def create_bingo(request: BingoCreateRequest, req: Request):
+    if not config.BINGO_ENABLED:
+        raise HTTPException(status_code=404, detail="Bingo is not available")
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    tokens.ensure_wallet(wallet_id)
+    _evict_old_content()
+    try:
+        game_data = _sanitize_bingo_game({
+            "game_title": request.game_title,
+            "deck": [item.model_dump() for item in request.deck],
+            "pattern_ids": request.pattern_ids,
+            "free_center": request.free_center,
+            "free_center_label": request.free_center_label,
+            "caller_mode": request.caller_mode,
+            "claim_requires_latest_call": request.claim_requires_latest_call,
+        })
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    bingo_id = str(uuid.uuid4())
+    bingo_games[bingo_id] = game_data
+    bingo_timestamps[bingo_id] = time.time()
+    content_owners[bingo_id] = wallet_id
+    logger.info("Bingo created: %s ('%s') owner=%s", bingo_id, game_data["game_title"], wallet_id[:8])
+    return {"bingo_id": bingo_id, "game": game_data}
+
+
+@app.get("/bingo/{bingo_id}")
+async def get_bingo(bingo_id: str):
+    if not config.BINGO_ENABLED:
+        raise HTTPException(status_code=404, detail="Bingo is not available")
+    if bingo_id not in bingo_games:
+        raise HTTPException(status_code=404, detail="Bingo game not found")
+    return bingo_games[bingo_id]
+
+
+@app.put("/bingo/{bingo_id}")
+async def update_bingo(bingo_id: str, request: BingoCreateRequest, req: Request):
+    if not config.BINGO_ENABLED:
+        raise HTTPException(status_code=404, detail="Bingo is not available")
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if bingo_id not in bingo_games:
+        raise HTTPException(status_code=404, detail="Bingo game not found")
+    _check_content_owner(bingo_id, wallet_id)
+    try:
+        game_data = _sanitize_bingo_game({
+            "game_title": request.game_title,
+            "deck": [item.model_dump() for item in request.deck],
+            "pattern_ids": request.pattern_ids,
+            "free_center": request.free_center,
+            "free_center_label": request.free_center_label,
+            "caller_mode": request.caller_mode,
+            "claim_requires_latest_call": request.claim_requires_latest_call,
+        })
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    bingo_games[bingo_id] = game_data
+    return {"bingo_id": bingo_id, "game": game_data}
 
 
 # --- Game History ---

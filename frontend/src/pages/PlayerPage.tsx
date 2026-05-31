@@ -14,6 +14,7 @@ import Avatar from '../components/Avatar';
 import DrawingCanvas from '../components/DrawingCanvas';
 import GameImage from '../components/media/GameImage';
 import { HousieClaimButtons, HousieTicketGrid, HousieWinners } from '../components/HousieBoard';
+import { BingoCardGrid, BingoCalledList, BingoClaimButtons } from '../components/BingoBoard';
 import { mediaUrl } from '../utils/media';
 import { apiUrl } from '../utils/api';
 import { returnToHostApp } from '../utils/hostAppReturn';
@@ -148,8 +149,8 @@ export default function PlayerPage() {
         patterns?: HousiePattern[];
         winners?: HousieWinner[];
         play_mode?: 'beginner' | 'pro';
-    }) => {
-        setGameType('housie');
+    }, nextGameType: GameType = 'housie') => {
+        setGameType(nextGameType);
         setHousieTicket(bingo?.ticket || null);
         setHousieCalled(bingo?.called_items || []);
         setHousieLatest(bingo?.latest_item || null);
@@ -239,8 +240,8 @@ export default function PlayerPage() {
                 if (msg.power_ups) setPowerUps(msg.power_ups as PowerUps);
                 if (msg.state === 'LOBBY') {
                     setState('LOBBY');
-                } else if (msg.game_type === 'housie' || msg.state === 'BINGO_CALLING') {
-                    applyBingoState(msg.bingo as Parameters<typeof applyBingoState>[0]);
+                } else if (msg.game_type === 'housie' || msg.game_type === 'bingo' || msg.state === 'BINGO_CALLING') {
+                    applyBingoState(msg.bingo as Parameters<typeof applyBingoState>[0], (msg.game_type as GameType) || 'housie');
                 } else if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
                         setGameType('drawing');
@@ -286,14 +287,17 @@ export default function PlayerPage() {
                 if (msg.players) setLobbyPlayers(msg.players);
             }
             if (msg.type === 'GAME_STARTING') {
-                if (msg.game_type === 'housie') setState('BINGO');
+                if (msg.game_type === 'housie' || msg.game_type === 'bingo') {
+                    setGameType(msg.game_type as GameType);
+                    setState('BINGO');
+                }
                 else setState('INTRO');
             }
             if (msg.type === 'BINGO_SYNC') {
-                applyBingoState(msg.bingo as Parameters<typeof applyBingoState>[0]);
+                applyBingoState(msg.bingo as Parameters<typeof applyBingoState>[0], (msg.game_type as GameType) || 'housie');
             }
             if (msg.type === 'BINGO_CALL') {
-                setGameType('housie');
+                setGameType((msg.game_type as GameType) || 'housie');
                 setHousieCalled(msg.called_items as Array<{ value: number | string; display: string }> || []);
                 setHousieLatest(msg.item as { value: number | string; display: string });
                 setHousieCallFlash({ display: String((msg.item as { display?: string })?.display || ''), key: Date.now() });
@@ -795,20 +799,30 @@ export default function PlayerPage() {
                             </div>
                         )}
                         <div className="housie-runtime-header">
-                            <p>Housie</p>
+                            <p>{gameType === 'bingo' ? 'Bingo' : 'Housie'}</p>
                             <h1 className="hero-title">{housieLatest ? housieLatest.display : 'Waiting for first call'}</h1>
-                            <span>{housiePlayMode === 'pro' ? 'Pro mode · mark manually' : `${housieCalled.length} numbers called`}</span>
+                            <span>{gameType === 'bingo' ? `${housieCalled.length} items called` : housiePlayMode === 'pro' ? 'Pro mode · mark manually' : `${housieCalled.length} numbers called`}</span>
                         </div>
                         {housieTicket && (
                             <div className="housie-ticket-wrap">
-                                <HousieTicketGrid
-                                    ticket={housieTicket}
-                                    calledValues={new Set(housieCalled.map((item) => String(item.value)))}
-                                    marked={markedNumbers}
-                                    playMode={housiePlayMode}
-                                    winningValues={housieAnnouncement?.winningNumber ? new Set([housieAnnouncement.winningNumber]) : undefined}
-                                    onToggle={(cell) => toggleHousieMark(cell.value)}
-                                />
+                                {gameType === 'bingo' ? (
+                                    <BingoCardGrid
+                                        ticket={housieTicket}
+                                        calledValues={new Set(housieCalled.flatMap((item) => [String(item.value), String((item as { id?: string }).id || '')]))}
+                                        marked={markedNumbers}
+                                        winningValues={housieAnnouncement?.winningNumber ? new Set([housieAnnouncement.winningNumber]) : undefined}
+                                        onToggle={(cell) => toggleHousieMark(cell.id || cell.item_id || cell.value)}
+                                    />
+                                ) : (
+                                    <HousieTicketGrid
+                                        ticket={housieTicket}
+                                        calledValues={new Set(housieCalled.map((item) => String(item.value)))}
+                                        marked={markedNumbers}
+                                        playMode={housiePlayMode}
+                                        winningValues={housieAnnouncement?.winningNumber ? new Set([housieAnnouncement.winningNumber]) : undefined}
+                                        onToggle={(cell) => toggleHousieMark(cell.value)}
+                                    />
+                                )}
                             </div>
                         )}
                         <div className="housie-runtime-panel">
@@ -816,8 +830,16 @@ export default function PlayerPage() {
                             {error && (
                                 <div className="status-pill status-error animate-shake">{error}</div>
                             )}
-                            <HousieClaimButtons patterns={housiePatterns} winners={housieWinners} onClaim={submitHousieClaim} />
+                            {gameType === 'bingo'
+                                ? <BingoClaimButtons patterns={housiePatterns} winners={housieWinners} onClaim={submitHousieClaim} />
+                                : <HousieClaimButtons patterns={housiePatterns} winners={housieWinners} onClaim={submitHousieClaim} />}
                         </div>
+                        {gameType === 'bingo' && (
+                            <div className="housie-runtime-panel">
+                                <h2>Called</h2>
+                                <BingoCalledList items={housieCalled} />
+                            </div>
+                        )}
                         <div className="housie-runtime-panel">
                             <h2>Winners</h2>
                             <HousieWinners winners={housieWinners} />

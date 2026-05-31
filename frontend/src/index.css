@@ -4062,6 +4062,119 @@ body {
     flex: 0 0 auto;
 }
 
+.bingo-bulk-input {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.bingo-deck-editor {
+    display: grid;
+    gap: 10px;
+    max-height: 520px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.bingo-deck-row {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr) auto auto auto;
+    gap: 8px;
+    align-items: center;
+    padding: 10px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(248, 235, 217, 0.06);
+}
+
+.bingo-image-slot {
+    width: 72px;
+    height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-tertiary);
+    overflow: hidden;
+}
+
+.bingo-image-slot > .game-image {
+    width: 100%;
+    height: 100%;
+}
+
+.bingo-card-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+    width: min(100%, 560px);
+    margin: 0 auto;
+}
+
+.bingo-card-cell {
+    min-width: 0;
+    aspect-ratio: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-weight: 900;
+    font-size: clamp(0.68rem, 2.4vw, 0.95rem);
+    line-height: 1.05;
+    text-align: center;
+    overflow: hidden;
+}
+
+.bingo-card-cell .game-image {
+    width: 100%;
+    max-height: 58%;
+}
+
+.bingo-card-cell.free,
+.bingo-card-cell.marked {
+    background: rgba(109, 255, 230, 0.18);
+    border-color: var(--accent-success);
+}
+
+.bingo-card-cell.called {
+    box-shadow: inset 0 0 0 2px rgba(255, 199, 107, 0.35);
+}
+
+.bingo-card-cell.winning {
+    animation: pulse 0.8s ease-in-out infinite alternate;
+}
+
+.bingo-called-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.bingo-called-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 6px 10px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(248, 235, 217, 0.08);
+    color: var(--text-primary);
+    font-weight: 850;
+}
+
+.bingo-called-chip .game-image {
+    width: 42px;
+    height: 32px;
+}
+
 @media (max-width: 640px) {
     .party-hub__header {
         grid-template-columns: 1fr;
@@ -4087,5 +4200,15 @@ body {
 
     .revelry-ai-authoring-grid {
         grid-template-columns: 1fr;
+    }
+
+    .bingo-deck-row {
+        grid-template-columns: minmax(0, 1fr) repeat(3, auto);
+    }
+
+    .bingo-image-slot {
+        grid-column: 1 / -1;
+        width: 100%;
+        height: 120px;
     }
 }

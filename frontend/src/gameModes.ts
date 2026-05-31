@@ -2,7 +2,7 @@ import { type GameType, type QuizVariantGameType } from './types';
 
 export interface GameModeConfig {
     id: GameType;
-    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie';
+    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo';
     icon: string;
     title: string;
     description: string;
@@ -103,6 +103,13 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         title: 'Housie',
         description: 'Call numbers, check tickets, and claim classic prizes',
     },
+    {
+        id: 'bingo',
+        runtimeType: 'bingo',
+        icon: '▦',
+        title: 'Bingo',
+        description: 'Create custom boards with words, emojis, and photos',
+    },
 ];
 
 export const QUIZ_VARIANT_IDS: QuizVariantGameType[] = [
@@ -127,6 +134,6 @@ export function isQuizRuntimeGame(gameType: GameType): boolean {
     return getGameModeConfig(gameType).runtimeType === 'quiz';
 }
 
-export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' {
+export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' {
     return getGameModeConfig(gameType).runtimeType;
 }

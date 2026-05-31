@@ -67,7 +67,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -106,13 +106,40 @@ export interface HousieGame {
     auto_pause_on_claim?: boolean;
 }
 
+export interface BingoDeckItem {
+    id: string;
+    kind: 'text' | 'emoji' | 'image';
+    value: string;
+    display: string;
+    image_asset_id?: string;
+    image_url?: string;
+    alt_text?: string;
+}
+
+export interface BingoGame {
+    game_title: string;
+    ruleset?: string;
+    layout?: 'bingo_5x5_free' | 'bingo_5x5';
+    free_center?: boolean;
+    free_center_label?: string;
+    deck: BingoDeckItem[];
+    patterns: HousiePattern[];
+    caller_mode?: 'manual' | 'auto';
+    claim_requires_latest_call?: boolean;
+}
+
 export interface HousieCell {
-    kind: 'number' | 'text' | 'emoji' | 'image';
+    kind: 'number' | 'text' | 'emoji' | 'image' | 'free';
     value: number | string;
     display: string;
     sort_value?: number;
     row?: number;
     col?: number;
+    id?: string;
+    item_id?: string;
+    image_asset_id?: string;
+    image_url?: string;
+    alt_text?: string;
 }
 
 export interface HousieTicket {

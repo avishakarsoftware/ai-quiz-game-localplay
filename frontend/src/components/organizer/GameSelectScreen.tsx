@@ -1,5 +1,6 @@
 import { type GameType } from '../../types';
 import { filterGameModesForCatalog, GAME_MODE_CONFIGS } from '../../gameModes';
+import { ENABLE_BINGO } from '../../config';
 
 interface GameSelectScreenProps {
     onSelect: (gameType: GameType) => void;
@@ -7,7 +8,8 @@ interface GameSelectScreenProps {
 }
 
 export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreenProps) {
-    const gameModes = catalog ? filterGameModesForCatalog(catalog) : GAME_MODE_CONFIGS;
+    const gameModes = (catalog ? filterGameModesForCatalog(catalog) : GAME_MODE_CONFIGS)
+        .filter((game) => ENABLE_BINGO || game.id !== 'bingo');
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
