@@ -2,7 +2,7 @@ import { type GameType, type QuizVariantGameType } from './types';
 
 export interface GameModeConfig {
     id: GameType;
-    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff';
+    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths';
     icon: string;
     title: string;
     description: string;
@@ -131,6 +131,13 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         title: 'Bluff',
         description: 'Play cards face down, claim a rank, and dare the room to call you',
     },
+    {
+        id: 'two_truths',
+        runtimeType: 'two_truths',
+        icon: '🤥',
+        title: 'Two Truths and a Lie',
+        description: 'Submit three statements and see who can spot the lie',
+    },
 ];
 
 export const QUIZ_VARIANT_IDS: QuizVariantGameType[] = [
@@ -155,6 +162,6 @@ export function isQuizRuntimeGame(gameType: GameType): boolean {
     return getGameModeConfig(gameType).runtimeType === 'quiz';
 }
 
-export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' {
+export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' {
     return getGameModeConfig(gameType).runtimeType;
 }

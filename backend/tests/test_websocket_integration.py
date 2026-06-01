@@ -111,6 +111,17 @@ def create_bluff_room():
     return data["room_code"], data["organizer_token"]
 
 
+def create_two_truths_room():
+    res = client.post(
+        "/room/create",
+        json={"game_type": "two_truths", "two_truths_config": {"game_title": "Two Truths"}},
+        headers={"X-Device-Id": "two-truths-test-wallet"},
+    )
+    assert res.status_code == 200, res.text
+    data = res.json()
+    return data["room_code"], data["organizer_token"]
+
+
 @contextmanager
 def org_connect(room_code, token, client_id="org-1"):
     """Connect as organizer and send first-frame AUTH. Yields the websocket."""
@@ -143,6 +154,43 @@ def recv_bluff_phase(ws, phase, max_messages=50):
         if data.get("type") == "BLUFF_SYNC" and data.get("bluff", {}).get("phase") == phase:
             return data
     raise TimeoutError(f"Never received Bluff phase {phase} after {max_messages} messages")
+
+
+def recv_two_truths_submission(ws, nickname, max_messages=50):
+    for i in range(max_messages):
+        try:
+            data = ws.receive_json()
+        except Exception as e:
+            raise TimeoutError(f"Connection closed while waiting for Two Truths submission (after {i} messages): {e}")
+        payload = data.get("two_truths", {}) if data.get("type") == "TT_SYNC" else {}
+        submission = payload.get("my_submission") if isinstance(payload, dict) else None
+        if isinstance(submission, dict) and submission.get("player_id") == nickname:
+            return data
+    raise TimeoutError(f"Never received Two Truths submission for {nickname}")
+
+
+def recv_two_truths_phase(ws, phase, max_messages=50):
+    for i in range(max_messages):
+        try:
+            data = ws.receive_json()
+        except Exception as e:
+            raise TimeoutError(f"Connection closed while waiting for Two Truths phase {phase} (after {i} messages): {e}")
+        payload = data.get("two_truths", {}) if data.get("type") == "TT_SYNC" else {}
+        if isinstance(payload, dict) and payload.get("phase") == phase:
+            return data
+    raise TimeoutError(f"Never received Two Truths phase {phase}")
+
+
+def recv_two_truths_vote(ws, statement_id, max_messages=50):
+    for i in range(max_messages):
+        try:
+            data = ws.receive_json()
+        except Exception as e:
+            raise TimeoutError(f"Connection closed while waiting for Two Truths vote (after {i} messages): {e}")
+        payload = data.get("two_truths", {}) if data.get("type") == "TT_SYNC" else {}
+        if isinstance(payload, dict) and payload.get("my_vote") == statement_id:
+            return data
+    raise TimeoutError("Never received Two Truths vote confirmation")
 
 
 class TestBluffWS:
@@ -188,6 +236,72 @@ class TestBluffWS:
                 org_ws.send_json({"type": "BLUFF_CONTINUE"})
                 next_sync = recv_bluff_phase(org_ws, "BLUFF_TURN")
                 assert next_sync["bluff"]["phase"] == "BLUFF_TURN"
+            finally:
+                for cm, _ws, _name in players:
+                    cm.__exit__(None, None, None)
+
+
+class TestTwoTruthsWS:
+    def test_two_truths_submit_vote_and_result_flow(self):
+        room_code, org_token = create_two_truths_room()
+
+        with org_connect(room_code, org_token) as org_ws:
+            org_ws.receive_json()
+            players = []
+            try:
+                for idx, name in enumerate(["Alice", "Bob", "Cara"], start=1):
+                    ws = client.websocket_connect(f"/ws/{room_code}/tt-player-{idx}")
+                    player_ws = ws.__enter__()
+                    players.append((ws, player_ws, name))
+                    player_ws.send_json({"type": "JOIN", "nickname": name})
+                    assert player_ws.receive_json()["type"] == "JOINED_ROOM"
+                    recv_until(org_ws, "PLAYER_JOINED")
+
+                org_ws.send_json({"type": "START_GAME"})
+                org_sync = recv_until(org_ws, "TT_SYNC")
+                assert org_sync["two_truths"]["phase"] == "TT_SUBMISSION"
+                for _cm, player_ws, _name in players:
+                    recv_until(player_ws, "TT_SYNC")
+
+                submissions = {
+                    "Alice": [
+                        {"text": "I once baked a wedding cake.", "is_lie": False},
+                        {"text": "I have lived in three cities.", "is_lie": False},
+                        {"text": "I can juggle flaming torches.", "is_lie": True},
+                    ],
+                    "Bob": [
+                        {"text": "I have run a half marathon.", "is_lie": False},
+                        {"text": "I collect vintage postcards.", "is_lie": True},
+                        {"text": "I speak a little Spanish.", "is_lie": False},
+                    ],
+                    "Cara": [
+                        {"text": "I broke my arm roller skating.", "is_lie": False},
+                        {"text": "I have never eaten mango.", "is_lie": True},
+                        {"text": "I can play the piano.", "is_lie": False},
+                    ],
+                }
+                for _cm, player_ws, name in players:
+                    player_ws.send_json({"type": "TT_SUBMIT_STATEMENTS", "statements": submissions[name]})
+                    sync = recv_two_truths_submission(player_ws, name)
+                    assert sync["two_truths"]["my_submission"]["player_id"] == name
+
+                org_ws.send_json({"type": "TT_START_REVEAL"})
+                reveal_sync = recv_two_truths_phase(org_ws, "TT_VOTING")
+                assert reveal_sync["two_truths"]["phase"] == "TT_VOTING"
+                author = reveal_sync["two_truths"]["current_author_id"]
+                assert all("is_lie" not in item for item in reveal_sync["two_truths"]["statements"])
+                lie_id = next(item["id"] for item in reveal_sync["two_truths"]["statements"] if "torches" in item["text"] or "postcards" in item["text"] or "mango" in item["text"])
+
+                voter_ws = next(player_ws for _cm, player_ws, name in players if name != author)
+                voter_ws.send_json({"type": "TT_VOTE", "statement_id": lie_id})
+                vote_sync = recv_two_truths_vote(voter_ws, lie_id)
+                assert vote_sync["two_truths"]["my_vote"] == lie_id
+
+                org_ws.send_json({"type": "TT_NEXT_AUTHOR"})
+                result_sync = recv_two_truths_phase(org_ws, "TT_RESULT")
+                assert result_sync["two_truths"]["phase"] == "TT_RESULT"
+                assert result_sync["two_truths"]["round_result"]["lie_statement_id"] == lie_id
+                assert any(item.get("is_lie") for item in result_sync["two_truths"]["statements"])
             finally:
                 for cm, _ws, _name in players:
                     cm.__exit__(None, None, None)

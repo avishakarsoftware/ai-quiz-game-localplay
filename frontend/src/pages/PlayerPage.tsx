@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { WS_URL } from '../config';
-import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -20,8 +20,9 @@ import { apiUrl } from '../utils/api';
 import { returnToHostApp } from '../utils/hostAppReturn';
 import MusicalChairsPlayer from '../components/player/MusicalChairsPlayer';
 import BluffTable from '../components/BluffTable';
+import TwoTruthsGame from '../components/TwoTruthsGame';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
 interface PlayerQuestion {
     id: number;
@@ -137,6 +138,7 @@ export default function PlayerPage() {
     const [mcReactionMs, setMcReactionMs] = useState<number | null>(null);
     const [bluffState, setBluffState] = useState<BluffState | null>(null);
     const [selectedBluffCards, setSelectedBluffCards] = useState<Set<string>>(new Set());
+    const [twoTruthsState, setTwoTruthsState] = useState<TwoTruthsState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const submittedRef = useRef(false);
@@ -259,6 +261,10 @@ export default function PlayerPage() {
                     setBluffState(msg.bluff as BluffState);
                     setSelectedBluffCards(new Set());
                     setState('BLUFF');
+                } else if (msg.game_type === 'two_truths' && msg.two_truths) {
+                    setGameType('two_truths');
+                    setTwoTruthsState(msg.two_truths as TwoTruthsState);
+                    setState('TWO_TRUTHS');
                 } else if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
                         setGameType('drawing');
@@ -316,6 +322,9 @@ export default function PlayerPage() {
                 } else if (msg.game_type === 'bluff') {
                     setGameType('bluff');
                     setState('BLUFF');
+                } else if (msg.game_type === 'two_truths') {
+                    setGameType('two_truths');
+                    setState('TWO_TRUTHS');
                 }
                 else setState('INTRO');
             }
@@ -390,6 +399,12 @@ export default function PlayerPage() {
                 setBluffState(msg.bluff as BluffState);
                 setSelectedBluffCards(new Set());
                 setState('BLUFF');
+            }
+            if (msg.type === 'TT_SYNC') {
+                setGameType('two_truths');
+                setTwoTruthsState(msg.two_truths as TwoTruthsState);
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+                setState('TWO_TRUTHS');
             }
             if (msg.type === 'QUESTION') {
                 if (msg.game_type === 'drawing') {
@@ -693,6 +708,14 @@ export default function PlayerPage() {
     };
 
     const continueBluff = () => wsRef.current?.send(JSON.stringify({ type: 'BLUFF_CONTINUE' }));
+    const submitTwoTruths = (statements: Array<{ text: string; is_lie: boolean }>) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'TT_SUBMIT_STATEMENTS', statements }));
+    };
+    const voteTwoTruths = (statementId: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'TT_VOTE', statement_id: statementId }));
+    };
 
     const activatePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
         soundManager.hapticsSelect();
@@ -974,6 +997,16 @@ export default function PlayerPage() {
                         onPass={passBluffTurn}
                         onChallenge={challengeBluff}
                         onContinue={continueBluff}
+                    />
+                )}
+
+                {state === 'TWO_TRUTHS' && (
+                    <TwoTruthsGame
+                        state={twoTruthsState}
+                        viewerName={nickname}
+                        controls="player"
+                        onSubmitStatements={submitTwoTruths}
+                        onVote={voteTwoTruths}
                     />
                 )}
 

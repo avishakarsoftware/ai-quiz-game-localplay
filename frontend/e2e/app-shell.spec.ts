@@ -13,6 +13,7 @@ test.describe('Standalone app shell', () => {
     await expect(page.getByRole('button', { name: /Most Likely To/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Drawing Game/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Bluff/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Two Truths and a Lie/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Baby Bingo/ })).toBeVisible();
     await expect(page.locator('.settings-trigger')).toBeVisible();
     await expectNoHorizontalOverflow(page);

@@ -31,6 +31,19 @@ from bluff_engine import (
     resolve_unchallenged as bluff_resolve_unchallenged,
     validate_config as validate_bluff_config,
 )
+from two_truths_engine import (
+    PHASE_PODIUM as TT_PHASE_PODIUM,
+    create_initial_state as tt_create_initial_state,
+    final_standings as tt_final_standings,
+    next_author as tt_next_author,
+    private_sync as tt_private_sync,
+    public_sync as tt_public_sync,
+    score_current_round as tt_score_current_round,
+    start_reveal as tt_start_reveal,
+    submit_statements as tt_submit_statements,
+    submit_vote as tt_submit_vote,
+    validate_config as validate_two_truths_config,
+)
 from bingo_engine import (
     BINGO_PATTERN_ORDER,
     create_bingo_call_deck,
@@ -54,7 +67,7 @@ class Room:
         self.room_code = room_code
         self.quiz = game_data  # generic game content (quiz or WMLT)
         self.content_id = content_id
-        self.game_type = game_type  # "quiz", "wmlt", "drawing", "housie", "bingo", or "musical_chairs"
+        self.game_type = game_type  # "quiz", "wmlt", "drawing", "housie", "bingo", or standalone runtimes
         self.time_limit = time_limit
         self.organizer_token = organizer_token  # secret token for organizer auth
         self.players: Dict[str, dict] = {}  # socket_id -> {nickname, score, prev_rank, streak, ...}
@@ -128,6 +141,9 @@ class Room:
         # Bluff state
         self.bluff_config = validate_bluff_config(game_data) if game_type == "bluff" else {}
         self.bluff_state: dict = {}
+        # Two Truths and a Lie state
+        self.tt_config = validate_two_truths_config(game_data) if game_type == "two_truths" else {}
+        self.tt_state: dict = {}
 
     def reset_for_new_game(self, new_game_data: dict, new_time_limit: int,
                            game_type: Optional[str] = None,
@@ -209,6 +225,8 @@ class Room:
         self.mc_round_results = []
         self.bluff_config = validate_bluff_config(new_game_data) if self.game_type == "bluff" else {}
         self.bluff_state = {}
+        self.tt_config = validate_two_truths_config(new_game_data) if self.game_type == "two_truths" else {}
+        self.tt_state = {}
 
         for nickname in self.power_ups:
             self.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
@@ -234,6 +252,8 @@ class Room:
             return self.mc_total_rounds or mc_total_rounds(len(self.mc_active_players) + len(self.mc_eliminated_players), int(self.mc_config.get("eliminations_per_round", 1) or 1))
         if self.game_type == "bluff":
             return max(1, len(self.bluff_state.get("winners", [])) + len([p for p in self.bluff_state.get("players", []) if p not in {w.get("player_id") for w in self.bluff_state.get("winners", [])}]))
+        if self.game_type == "two_truths":
+            return len(self.tt_state.get("reveal_order", [])) or len(self.tt_state.get("submissions_by_player", {})) or len(self.players)
         return len(self.quiz.get("questions", []))
 
     def current_round_data(self) -> Optional[dict]:
@@ -253,6 +273,8 @@ class Room:
             return self.mc_public_state()
         if self.game_type == "bluff":
             return bluff_public_sync(self.bluff_state) if self.bluff_state else None
+        if self.game_type == "two_truths":
+            return tt_public_sync(self.tt_state, players=self.player_public_list()) if self.tt_state else None
         return self.quiz["questions"][idx]
 
     def game_title(self) -> str:
@@ -265,6 +287,9 @@ class Room:
 
     def player_avatar_map(self) -> Dict[str, str]:
         return {p["nickname"]: p.get("avatar", "") for p in self.players.values()}
+
+    def player_public_list(self) -> List[dict]:
+        return [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in self.players.values()]
 
     def mc_public_state(self) -> dict:
         avatars = self.player_avatar_map()
@@ -572,6 +597,8 @@ class SocketManager:
                     sync["musical_chairs"] = room.mc_public_state()
                 if room.game_type == "bluff" and room.bluff_state:
                     sync["bluff"] = bluff_public_sync(room.bluff_state)
+                if room.game_type == "two_truths" and room.tt_state:
+                    sync["two_truths"] = tt_public_sync(room.tt_state, players=room.player_public_list())
                 await websocket.send_json(sync)
                 while True:
                     try:
@@ -741,6 +768,8 @@ class SocketManager:
             sync["musical_chairs"] = room.mc_public_state()
         if room.game_type == "bluff" and room.bluff_state:
             sync["bluff"] = bluff_public_sync(room.bluff_state)
+        if room.game_type == "two_truths" and room.tt_state:
+            sync["two_truths"] = tt_public_sync(room.tt_state, players=room.player_public_list())
 
         if room.organizer:
             await room.organizer.send_json(sync)
@@ -815,6 +844,14 @@ class SocketManager:
                                 "message": f"Bluff needs at least {config.MIN_BLUFF_PLAYERS} players to start",
                             })
                             return
+                    elif room.game_type == "two_truths":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_TWO_TRUTHS_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Two Truths and a Lie needs at least {config.MIN_TWO_TRUTHS_PLAYERS} players to start",
+                            })
+                            return
                     if room.billing_mode == "host_app_managed":
                         spent = True
                     else:
@@ -846,12 +883,16 @@ class SocketManager:
                         self._start_bluff_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": "bluff"})
                         await self._broadcast_bluff_sync(room)
+                    elif room.game_type == "two_truths":
+                        self._start_two_truths_game(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": "two_truths"})
+                        await self._broadcast_two_truths_sync(room)
                     else:
                         room.state = "INTRO"
                         await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
-                if room.game_type in ("housie", "bingo", "musical_chairs"):
+                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths"):
                     return
                 if room.state == "QUESTION":
                     await self.end_question(room)
@@ -906,6 +947,12 @@ class SocketManager:
             elif msg_type == "BLUFF_CONTINUE" and room.game_type == "bluff":
                 await self._bluff_continue(room)
 
+            elif msg_type == "TT_START_REVEAL" and room.game_type == "two_truths":
+                await self._tt_start_reveal(room, client_id)
+
+            elif msg_type == "TT_NEXT_AUTHOR" and room.game_type == "two_truths":
+                await self._tt_next_step(room)
+
             elif msg_type == "SET_TIME_LIMIT":
                 if room.state in ("LOBBY", "LEADERBOARD", "PODIUM"):
                     new_limit = message.get("time_limit", 15)
@@ -924,6 +971,9 @@ class SocketManager:
                     return
                 if room.game_type == "bluff":
                     await self._bluff_complete_game(room)
+                    return
+                if room.game_type == "two_truths":
+                    await self._two_truths_complete_game(room)
                     return
                 if room.game_type in ("housie", "bingo") and room.state == "BINGO_CALLING":
                     await self._complete_housie(room)
@@ -959,7 +1009,7 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff") else room.game_type
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths") else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
 
                     # Validate time_limit
@@ -981,6 +1031,8 @@ class SocketManager:
                         new_game_data = bingo_games.get(new_content_id)
                     elif new_game_type == "bluff":
                         new_game_data = validate_bluff_config({})
+                    elif new_game_type == "two_truths":
+                        new_game_data = validate_two_truths_config({})
                     else:
                         new_game_data = quizzes.get(new_content_id)
 
@@ -1130,6 +1182,8 @@ class SocketManager:
                             state_info["musical_chairs"] = room.mc_public_state()
                         elif room.game_type == "bluff" and room.bluff_state:
                             state_info["bluff"] = bluff_private_sync(room.bluff_state, nickname)
+                        elif room.game_type == "two_truths" and room.tt_state:
+                            state_info["two_truths"] = tt_private_sync(room.tt_state, nickname, players=room.player_public_list())
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1216,6 +1270,8 @@ class SocketManager:
                             state_info["musical_chairs"] = room.mc_public_state()
                         elif room.game_type == "bluff" and room.bluff_state:
                             state_info["bluff"] = bluff_private_sync(room.bluff_state, player_data["nickname"])
+                        elif room.game_type == "two_truths" and room.tt_state:
+                            state_info["two_truths"] = tt_private_sync(room.tt_state, player_data["nickname"], players=room.player_public_list())
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1359,8 +1415,14 @@ class SocketManager:
             elif msg_type == "BLUFF_CONTINUE" and room.game_type == "bluff":
                 await self._bluff_continue(room)
 
+            elif msg_type == "TT_SUBMIT_STATEMENTS" and room.game_type == "two_truths":
+                await self._tt_submit_statements(room, client_id, message)
+
+            elif msg_type == "TT_VOTE" and room.game_type == "two_truths":
+                await self._tt_vote(room, client_id, message)
+
             elif msg_type == "ANSWER":
-                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs"):
+                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths"):
                     return  # Other games use their own input messages
                 if client_id not in room.players:
                     return
@@ -1734,6 +1796,139 @@ class SocketManager:
             self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Bluff history for room %s", room.room_code)
+
+    def _start_two_truths_game(self, room: Room):
+        nicknames = [player["nickname"] for player in room.players.values()]
+        room.tt_config = validate_two_truths_config(room.quiz)
+        room.tt_state = tt_create_initial_state(nicknames, room.tt_config, seed=secrets.randbits(32))
+        room.state = room.tt_state["phase"]
+        room.answer_log = []
+
+    def _sync_two_truths_phase_to_room(self, room: Room):
+        room.state = room.tt_state.get("phase") or room.state
+
+    def _sync_two_truths_scores_to_players(self, room: Room):
+        scores = room.tt_state.get("scores", {}) if room.tt_state else {}
+        for player in room.players.values():
+            player["score"] = int(scores.get(player.get("nickname"), player.get("score", 0)))
+
+    async def _broadcast_two_truths_sync(self, room: Room):
+        if not room.tt_state:
+            return
+        players = room.player_public_list()
+        public = {
+            "type": "TT_SYNC",
+            "game_type": "two_truths",
+            "two_truths": tt_public_sync(room.tt_state, players=players),
+            "player_count": len(room.players),
+            "players": players,
+            "leaderboard": self.get_leaderboard(room),
+        }
+        for client_id, ws in list(room.connections.items()):
+            if client_id in room.players:
+                nickname = room.players[client_id]["nickname"]
+                payload = dict(public)
+                payload["two_truths"] = tt_private_sync(room.tt_state, nickname, players=players)
+                try:
+                    await ws.send_json(payload)
+                except Exception:
+                    room._remove_connection(client_id)
+        await room.emit_pending_player_event()
+        await room.send_to_organizer(public)
+        for ws in list(room.spectators.values()):
+            try:
+                await ws.send_json(public)
+            except Exception:
+                pass
+
+    async def _tt_submit_statements(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players or not room.tt_state:
+            return
+        nickname = room.players[client_id]["nickname"]
+        try:
+            async with room.lock:
+                room.tt_state = tt_submit_statements(room.tt_state, nickname, message.get("statements") or [], now=time.time())
+                self._sync_two_truths_phase_to_room(room)
+                room.answer_log.append({"kind": "submission", "nickname": nickname})
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._broadcast_two_truths_sync(room)
+
+    async def _tt_start_reveal(self, room: Room, client_id: str):
+        if not room.tt_state:
+            return
+        try:
+            async with room.lock:
+                room.tt_state = tt_start_reveal(room.tt_state)
+                self._sync_two_truths_phase_to_room(room)
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._broadcast_two_truths_sync(room)
+
+    async def _tt_vote(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players or not room.tt_state:
+            return
+        nickname = room.players[client_id]["nickname"]
+        try:
+            async with room.lock:
+                room.tt_state = tt_submit_vote(room.tt_state, nickname, str(message.get("statement_id") or ""))
+                self._sync_two_truths_phase_to_room(room)
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._broadcast_two_truths_sync(room)
+
+    async def _tt_next_step(self, room: Room):
+        if not room.tt_state:
+            return
+        try:
+            async with room.lock:
+                phase = room.tt_state.get("phase")
+                if phase == "TT_SUBMISSION":
+                    room.tt_state = tt_start_reveal(room.tt_state)
+                elif phase == "TT_VOTING":
+                    room.tt_state = tt_score_current_round(room.tt_state)
+                    self._sync_two_truths_scores_to_players(room)
+                    result = room.tt_state.get("round_result") or {}
+                    room.answer_log.append({"kind": "round_result", **result})
+                elif phase == "TT_RESULT":
+                    room.tt_state = tt_next_author(room.tt_state)
+                else:
+                    return
+                self._sync_two_truths_phase_to_room(room)
+        except ValueError:
+            return
+        await self._broadcast_two_truths_sync(room)
+        if room.tt_state.get("phase") == TT_PHASE_PODIUM:
+            await self._two_truths_complete_game(room)
+
+    async def _two_truths_complete_game(self, room: Room):
+        if room.state == "PODIUM":
+            return
+        if room.tt_state:
+            room.tt_state["phase"] = TT_PHASE_PODIUM
+        self._sync_two_truths_scores_to_players(room)
+        room.state = "PODIUM"
+        leaderboard = self.get_leaderboard(room)
+        await room.broadcast({
+            "type": "PODIUM",
+            "game_type": "two_truths",
+            "leaderboard": leaderboard,
+            "team_leaderboard": [],
+            "two_truths": tt_public_sync(room.tt_state, players=room.player_public_list()) if room.tt_state else {},
+        })
+        try:
+            from main import game_history
+            summary = self.get_game_summary(room)
+            summary["two_truths_standings"] = tt_final_standings(room.tt_state) if room.tt_state else []
+            game_history.append(summary)
+            if len(game_history) > config.MAX_GAME_HISTORY:
+                del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+            self._mark_game_session_complete(room, summary)
+        except Exception:
+            logger.warning("Could not save Two Truths history for room %s", room.room_code)
 
     def _start_musical_chairs_game(self, room: Room):
         room.mc_config = validate_musical_chairs_config(room.quiz)

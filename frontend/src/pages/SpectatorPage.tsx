@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
@@ -20,6 +20,7 @@ import { apiUrl } from '../utils/api';
 import { returnToHostApp } from '../utils/hostAppReturn';
 import MusicalChairsVisualizer from '../components/musical-chairs/MusicalChairsVisualizer';
 import BluffTable from '../components/BluffTable';
+import TwoTruthsGame from '../components/TwoTruthsGame';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
@@ -109,6 +110,7 @@ export default function SpectatorPage() {
     const [housieAnnouncement, setHousieAnnouncement] = useState<{ text: string; key: number } | null>(null);
     const [musicalChairsState, setMusicalChairsState] = useState<MusicalChairsState | null>(null);
     const [bluffState, setBluffState] = useState<BluffState | null>(null);
+    const [twoTruthsState, setTwoTruthsState] = useState<TwoTruthsState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -240,6 +242,11 @@ export default function SpectatorPage() {
                     setGameState('BLUFF');
                     return;
                 }
+                if (msg.game_type === 'two_truths' && msg.two_truths) {
+                    setTwoTruthsState(msg.two_truths);
+                    setGameState('TWO_TRUTHS');
+                    return;
+                }
                 // Handle mid-question sync
                 if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
@@ -278,6 +285,9 @@ export default function SpectatorPage() {
                 } else if (msg.game_type === 'musical_chairs') {
                     setGameType('musical_chairs');
                     setGameState('MUSICAL_CHAIRS');
+                } else if (msg.game_type === 'two_truths') {
+                    setGameType('two_truths');
+                    setGameState('TWO_TRUTHS');
                 }
                 else setGameState('INTRO');
             }
@@ -316,6 +326,12 @@ export default function SpectatorPage() {
                 setGameType('bluff');
                 setBluffState(msg.bluff || null);
                 setGameState('BLUFF');
+            }
+            else if (msg.type === 'TT_SYNC') {
+                setGameType('two_truths');
+                setTwoTruthsState(msg.two_truths || null);
+                setLeaderboard(msg.leaderboard || []);
+                setGameState('TWO_TRUTHS');
             }
             else if (msg.type === 'MC_WINNER') {
                 setGameType('musical_chairs');
@@ -739,6 +755,10 @@ export default function SpectatorPage() {
 
                     {gameState === 'BLUFF' && (
                         <BluffTable state={bluffState} controls="spectator" />
+                    )}
+
+                    {gameState === 'TWO_TRUTHS' && (
+                        <TwoTruthsGame state={twoTruthsState} controls="spectator" />
                     )}
 
                     {gameState === 'QUESTION' && (question || currentStatement || gameType === 'drawing') && (

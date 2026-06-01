@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState } from '../types';
+import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type TwoTruthsState } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending } from '../utils/storage';
@@ -22,6 +22,7 @@ import BingoSetupScreen from '../components/organizer/BingoSetupScreen';
 import MusicalChairsSetupScreen, { defaultMusicalChairsConfig } from '../components/organizer/MusicalChairsSetupScreen';
 import MusicalChairsGameScreen from '../components/organizer/MusicalChairsGameScreen';
 import BluffTable from '../components/BluffTable';
+import TwoTruthsGame from '../components/TwoTruthsGame';
 import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
 import { BingoCalledList, BingoCallOverlay } from '../components/BingoBoard';
 import ImageGenerationScreen from '../components/organizer/ImageGenerationScreen';
@@ -36,12 +37,13 @@ import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'LEADERBOARD' | 'PODIUM';
 
 function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'housie' || type === 'bingo' || type === 'baby_bingo') return 15;
     if (type === 'musical_chairs') return 5;
     if (type === 'bluff') return 30;
+    if (type === 'two_truths') return 30;
     return type === 'drawing' ? 30 : 15;
 }
 
@@ -145,6 +147,7 @@ export default function OrganizerPage() {
     const [musicalChairsConfig, setMusicalChairsConfig] = useState<MusicalChairsConfig>(defaultMusicalChairsConfig);
     const [musicalChairsState, setMusicalChairsState] = useState<MusicalChairsState | null>(null);
     const [bluffState, setBluffState] = useState<BluffState | null>(null);
+    const [twoTruthsState, setTwoTruthsState] = useState<TwoTruthsState | null>(null);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean; returnToHostApp?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -195,7 +198,7 @@ export default function OrganizerPage() {
                 'DRAWING_REVIEW',
                 'GENERATING_IMAGES',
             ];
-            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF'];
+            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS'];
             if (homeSafeStates.includes(stateRef.current)) {
                 flowEpochRef.current += 1;
                 setQuiz(null);
@@ -205,6 +208,7 @@ export default function OrganizerPage() {
                 setHousieLatest(null);
                 setHousieCanUndoLastCall(false);
                 setHousieWinners([]);
+                setTwoTruthsState(null);
                 setEditingPackId(undefined);
                 setContentId('');
                 setQuestionImages({});
@@ -225,6 +229,7 @@ export default function OrganizerPage() {
                 setHousieLatest(null);
                 setHousieCanUndoLastCall(false);
                 setHousieWinners([]);
+                setTwoTruthsState(null);
                 setEditingPackId(undefined);
                 setContentId('');
                 setQuestionImages({});
@@ -398,6 +403,12 @@ export default function OrganizerPage() {
             setBluffState(msg.bluff as BluffState);
             setState('BLUFF');
         }
+        else if (msg.type === 'TT_SYNC') {
+            setGameType('two_truths');
+            setTwoTruthsState(msg.two_truths as TwoTruthsState);
+            setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+            setState('TWO_TRUTHS');
+        }
         else if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED') {
             setPlayerCount(msg.player_count as number);
             setPlayers(msg.players as PlayerInfo[] || []);
@@ -417,6 +428,7 @@ export default function OrganizerPage() {
             setHousieLatest(null);
             setHousieCanUndoLastCall(false);
             setHousieWinners([]);
+            setTwoTruthsState(null);
             setAnsweredCount(0);
             setLiveQuestion(null);
             setCurrentStatement('');
@@ -444,6 +456,7 @@ export default function OrganizerPage() {
             if (msg.game_type) setGameType(msg.game_type as GameType);
             if (msg.musical_chairs) setMusicalChairsState(msg.musical_chairs as MusicalChairsState);
             if (msg.bluff) setBluffState(msg.bluff as BluffState);
+            if (msg.two_truths) setTwoTruthsState(msg.two_truths as TwoTruthsState);
             if (msg.quiz) {
                 const quizData = msg.quiz as Record<string, unknown>;
                 if (quizData.questions) {
@@ -479,6 +492,8 @@ export default function OrganizerPage() {
                 setState('MUSICAL_CHAIRS');
             } else if (String(msg.state || '').startsWith('BLUFF_')) {
                 setState('BLUFF');
+            } else if (String(msg.state || '').startsWith('TT_')) {
+                setState('TWO_TRUTHS');
             }
         }
         else if (msg.type === 'ERROR') {
@@ -544,6 +559,10 @@ export default function OrganizerPage() {
         else if (type === 'bluff') {
             setBluffState(null);
             void createRoom(undefined, 'bluff', defaultTimeLimitForGame('bluff'));
+        }
+        else if (type === 'two_truths') {
+            setTwoTruthsState(null);
+            void createRoom(undefined, 'two_truths', defaultTimeLimitForGame('two_truths'));
         }
         else if (type === 'quiz') {
             setPrompt(randomQuizTopic(prompt));
@@ -1050,6 +1069,8 @@ export default function OrganizerPage() {
                 body.musical_chairs_config = musicalChairsConfig;
             } else if (effectiveGameType === 'bluff') {
                 body.bluff_config = { game_title: 'Bluff' };
+            } else if (effectiveGameType === 'two_truths') {
+                body.two_truths_config = { game_title: 'Two Truths and a Lie' };
             } else if (isQuizRuntimeGame(effectiveGameType)) {
                 body.quiz_id = selectedContentId;
             }
@@ -1186,7 +1207,7 @@ export default function OrganizerPage() {
             wsRef.current?.send(JSON.stringify({ type: 'SET_SHOW_VOTES', show_votes: showVotes }));
         }
         wsRef.current?.send(JSON.stringify({ type: 'START_GAME' }));
-        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'musical_chairs' && gameType !== 'bluff') {
+        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'musical_chairs' && gameType !== 'bluff' && gameType !== 'two_truths') {
             wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
         }
     };
@@ -1205,6 +1226,8 @@ export default function OrganizerPage() {
     const stopMusicalChairsMusic = () => wsRef.current?.send(JSON.stringify({ type: 'MC_STOP_MUSIC' }));
     const eliminateMusicalChairsPlayer = (nickname: string) => wsRef.current?.send(JSON.stringify({ type: 'MC_ELIMINATE_PLAYER', nickname }));
     const continueBluff = () => wsRef.current?.send(JSON.stringify({ type: 'BLUFF_CONTINUE' }));
+    const startTwoTruthsReveal = () => wsRef.current?.send(JSON.stringify({ type: 'TT_START_REVEAL' }));
+    const nextTwoTruthsStep = () => wsRef.current?.send(JSON.stringify({ type: 'TT_NEXT_AUTHOR' }));
 
     const playAgain = () => {
         setCurrentQuestion(0);
@@ -1586,6 +1609,16 @@ export default function OrganizerPage() {
                         state={bluffState}
                         controls="host"
                         onContinue={continueBluff}
+                        onEndGame={endQuiz}
+                    />
+                )}
+
+                {state === 'TWO_TRUTHS' && (
+                    <TwoTruthsGame
+                        state={twoTruthsState}
+                        controls="host"
+                        onStartReveal={startTwoTruthsReveal}
+                        onNext={nextTwoTruthsStep}
                         onEndGame={endQuiz}
                     />
                 )}

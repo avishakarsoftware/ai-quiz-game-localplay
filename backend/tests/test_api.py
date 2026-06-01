@@ -69,6 +69,20 @@ class TestHealthEndpoints:
         assert room.game_type == "bluff"
         assert room.quiz["game_title"] == "Bluff Night"
 
+    def test_create_two_truths_room(self):
+        res = client.post(
+            "/room/create",
+            json={"game_type": "two_truths", "two_truths_config": {"game_title": "Confession Night"}},
+            headers=AUTH_HEADERS,
+        )
+
+        assert res.status_code == 200, res.text
+        body = res.json()
+        room = main.socket_manager.rooms[body["room_code"]]
+        assert room.game_type == "two_truths"
+        assert room.quiz["game_title"] == "Confession Night"
+        assert room.time_limit == 30
+
     def test_catalog_includes_baby_bingo_preset_on_bingo_runtime(self):
         res = client.get("/catalog")
 
@@ -77,6 +91,8 @@ class TestHealthEndpoints:
         assert games["baby_bingo"]["game_type"] == "bingo"
         assert games["baby_bingo"]["runtime_type"] == "bingo"
         assert games["baby_bingo"]["content_schema"]["ruleset"] == "baby_bingo"
+        assert games["two_truths"]["runtime_type"] == "two_truths"
+        assert games["two_truths"]["config_schema"]["players"]["min"] == config.MIN_TWO_TRUTHS_PLAYERS
 
 
 class TestFrontendStaticServing:

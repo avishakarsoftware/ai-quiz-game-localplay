@@ -13,9 +13,27 @@ Backend engine: two_truths_engine.py
 Frontend display name: Two Truths and a Lie
 ```
 
-## Implementation-Ready MVP Scope
+## Implementation Status
 
-Status: implementation-ready.
+Status: standalone MVP implemented locally.
+
+Implemented:
+
+- `backend/two_truths_engine.py` pure runtime engine.
+- `/room/create` support for `game_type = two_truths`.
+- Catalog card and standalone organizer quick-start flow.
+- WebSocket runtime with `TT_SYNC`, `TT_SUBMIT_STATEMENTS`, `TT_VOTE`, `TT_START_REVEAL`, and `TT_NEXT_AUTHOR`.
+- Organizer, player, and spectator screens using a shared `TwoTruthsGame` component.
+- Backend engine/API tests, frontend unit suite, and production frontend build verification.
+
+Not implemented in the first slice:
+
+- AI inspiration.
+- Auto-paced timers.
+- Host moderation/editing of player statements.
+- Revelry exposure.
+
+## MVP Scope
 
 - Standalone LocalPlay first.
 - Every player submits exactly three statements:
@@ -131,7 +149,7 @@ export interface TwoTruthsStatement {
 }
 
 export interface TwoTruthsGameState {
-  phase: 'TT_SUBMISSION' | 'TT_REVEAL' | 'TT_VOTING' | 'TT_RESULT' | 'PODIUM';
+  phase: 'TT_SUBMISSION' | 'TT_VOTING' | 'TT_RESULT' | 'PODIUM';
   current_author_id?: string;
   reveal_order: string[];
   submissions_by_player: Record<string, TwoTruthsSubmission>;
@@ -149,11 +167,11 @@ Public reveal payload must not include `is_lie` until result.
 3. Host starts submission phase.
 4. Each player writes three statements and marks the lie.
 5. Server stores each submission privately.
-6. When all players submit or host starts reveal, server creates reveal order.
+6. When the host starts reveal, server creates reveal order from submitted players.
 7. Round begins for author 1.
 8. TV/player screens show the author's three shuffled statements.
 9. Everyone except the author votes for the lie.
-10. Server closes voting when timer ends or all eligible players vote.
+10. Host closes voting to reveal the result.
 11. Result reveals the lie and vote distribution.
 12. Scores update.
 13. Host/auto advances to next author.
@@ -172,7 +190,7 @@ Player requirements:
 Server should allow late joiners during submission:
 
 - If they submit before reveal starts, include them.
-- If they join after reveal starts, they become spectators/voters only and do not get an author round in MVP.
+- New players are currently blocked once the room is locked and the game starts.
 
 ## Reveal and Voting
 
@@ -311,7 +329,7 @@ Reveal phase:
 
 ## Backend Implementation
 
-Add:
+Added:
 
 ```text
 backend/two_truths_engine.py
@@ -321,21 +339,29 @@ backend/tests/test_two_truths_engine.py
 Pure helpers:
 
 ```py
-def validate_two_truths_config(raw: dict) -> dict: ...
+def validate_config(raw: dict) -> dict: ...
 
-def validate_submission(raw: dict, max_chars: int = 180) -> dict: ...
+def validate_submission(raw_statements: list[dict], max_chars: int = 180) -> list[dict]: ...
 
-def create_reveal_order(player_ids: list[str], seed: str | None = None) -> list[str]: ...
+def create_initial_state(player_ids: list[str], config: dict, seed: int | None = None) -> dict: ...
 
-def public_submission_status(submissions: dict, player_ids: list[str]) -> dict: ...
+def submit_statements(state: dict, player_id: str, raw_statements: list[dict], now: float | None = None) -> dict: ...
 
-def build_reveal_payload(submission: dict, include_answer: bool = False) -> dict: ...
+def start_reveal(state: dict) -> dict: ...
 
-def submit_vote(state: dict, voter_id: str, statement_id: str) -> tuple[dict, dict]: ...
+def next_author(state: dict) -> dict: ...
 
-def score_round(author_id: str, submission: dict, votes: dict) -> dict: ...
+def reveal_payload(submission: dict | None, include_answer: bool = False) -> list[dict]: ...
 
-def final_standings(scores: dict) -> list[dict]: ...
+def submit_vote(state: dict, voter_id: str, statement_id: str) -> dict: ...
+
+def score_current_round(state: dict) -> dict: ...
+
+def public_sync(state: dict, players: list[dict] | None = None) -> dict: ...
+
+def private_sync(state: dict, player_id: str, players: list[dict] | None = None) -> dict: ...
+
+def final_standings(state: dict) -> list[dict]: ...
 ```
 
 ## AI Inspiration

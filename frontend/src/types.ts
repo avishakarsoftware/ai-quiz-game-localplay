@@ -67,7 +67,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -192,6 +192,45 @@ export interface BluffState {
     } | null;
     revealed_cards: PlayingCard[];
     winners: Array<{ player_id: string; place: number }>;
+}
+
+export interface TwoTruthsStatement {
+    id: string;
+    text: string;
+    display_order: number;
+    is_lie?: boolean;
+}
+
+export interface TwoTruthsSubmission {
+    player_id: string;
+    statements: TwoTruthsStatement[];
+}
+
+export interface TwoTruthsState {
+    phase: 'TT_SUBMISSION' | 'TT_VOTING' | 'TT_RESULT' | 'PODIUM' | string;
+    config: { game_title?: string; submission_time_seconds?: number; vote_time_seconds?: number };
+    players: PlayerInfo[];
+    submitted_players: string[];
+    submitted_count: number;
+    total_players: number;
+    current_author_id: string;
+    current_round: number;
+    total_rounds: number;
+    statements: TwoTruthsStatement[];
+    votes_count: number;
+    scores: Record<string, number>;
+    round_result?: {
+        author_id: string;
+        lie_statement_id: string;
+        votes: Record<string, string>;
+        vote_tally: Record<string, number>;
+        correct_voters: string[];
+        fooled_voters: string[];
+        author_points: number;
+    } | null;
+    my_submission?: TwoTruthsSubmission;
+    my_vote?: string;
+    is_author?: boolean;
 }
 
 export interface HousieCell {
