@@ -7,7 +7,7 @@ import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPendi
 import { apiHeaders, apiUrl, generateIdempotencyKey } from '../utils/api';
 import { mediaUrl } from '../utils/media';
 import GameSelectScreen from '../components/organizer/GameSelectScreen';
-import PromptScreen, { type AIProvider } from '../components/organizer/PromptScreen';
+import PromptScreen, { randomQuizTopic, type AIProvider } from '../components/organizer/PromptScreen';
 import QuizVariantPromptScreen from '../components/organizer/QuizVariantPromptScreen';
 import CustomQuizEditor from '../components/organizer/CustomQuizEditor';
 import MLTPromptScreen from '../components/organizer/MLTPromptScreen';
@@ -502,8 +502,14 @@ export default function OrganizerPage() {
             setMusicalChairsState(null);
             setState('MUSICAL_CHAIRS_SETUP');
         }
-        else if (type === 'quiz') setState('PROMPT');
-        else setState('QUIZ_VARIANT_PROMPT');
+        else if (type === 'quiz') {
+            setPrompt(randomQuizTopic(prompt));
+            setState('PROMPT');
+        }
+        else {
+            setPrompt(randomQuizTopic(prompt));
+            setState('QUIZ_VARIANT_PROMPT');
+        }
     };
 
     const generateQuiz = async () => {

@@ -40,7 +40,7 @@ const PROVIDER_ICONS: Record<string, string> = {
     claude: '🤖',
 };
 
-const TOPIC_IDEAS = [
+export const TOPIC_IDEAS = [
     // Science & Space
     'The solar system and space exploration',
     'Black holes, dark matter, and the mysteries of the universe',
@@ -242,6 +242,14 @@ const TOPIC_IDEAS = [
     'Famous heists and unsolved mysteries',
 ];
 
+export function randomQuizTopic(current = '') {
+    let next: string;
+    do {
+        next = TOPIC_IDEAS[Math.floor(Math.random() * TOPIC_IDEAS.length)];
+    } while (next === current && TOPIC_IDEAS.length > 1);
+    return next;
+}
+
 export default function PromptScreen({
     prompt, setPrompt, difficulty, setDifficulty,
     numQuestions, setNumQuestions, provider, setProvider,
@@ -250,13 +258,7 @@ export default function PromptScreen({
 }: PromptScreenProps) {
     const { tokenStatus } = useTokenBalance();
 
-    const shuffleTopic = () => {
-        let next: string;
-        do {
-            next = TOPIC_IDEAS[Math.floor(Math.random() * TOPIC_IDEAS.length)];
-        } while (next === prompt && TOPIC_IDEAS.length > 1);
-        setPrompt(next);
-    };
+    const shuffleTopic = () => setPrompt(randomQuizTopic(prompt));
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">

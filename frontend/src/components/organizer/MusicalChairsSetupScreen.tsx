@@ -13,8 +13,8 @@ export const defaultMusicalChairsConfig: MusicalChairsConfig = {
     gameplay_mode: 'physical',
     music_mode: 'builtin',
     music_style: 'upbeat',
-    min_music_seconds: 5,
-    max_music_seconds: 20,
+    min_music_seconds: 60,
+    max_music_seconds: 300,
     grab_window_seconds: 5,
     eliminations_per_round: 1,
     auto_stop: true,
@@ -33,7 +33,20 @@ export default function MusicalChairsSetupScreen({
     onBack: () => void;
 }) {
     const update = (patch: Partial<MusicalChairsConfig>) => setConfig({ ...config, ...patch });
-    const setMode = (mode: MusicalChairsMusicMode) => update({ music_mode: mode, auto_stop: mode === 'builtin' ? config.auto_stop : false });
+    const setMode = (mode: MusicalChairsMusicMode) => update({ music_mode: mode });
+    const minMusicMinutes = Math.max(1, Math.round(config.min_music_seconds / 60));
+    const maxMusicMinutes = Math.max(minMusicMinutes + 1, Math.round(config.max_music_seconds / 60));
+    const setMinMusicMinutes = (minutes: number) => {
+        const nextMin = Math.max(1, Math.min(10, minutes || 1));
+        update({
+            min_music_seconds: nextMin * 60,
+            max_music_seconds: Math.max(config.max_music_seconds, (nextMin + 1) * 60),
+        });
+    };
+    const setMaxMusicMinutes = (minutes: number) => {
+        const nextMax = Math.max(minMusicMinutes + 1, Math.min(15, minutes || minMusicMinutes + 1));
+        update({ max_music_seconds: nextMax * 60 });
+    };
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
@@ -51,11 +64,11 @@ export default function MusicalChairsSetupScreen({
                         <input className="input-field" value={config.game_title} onChange={(event) => update({ game_title: event.target.value.slice(0, 120) })} />
                     </label>
 
-                    <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+                    <div className="settings-row mc-setup-card">
                         <p className="font-medium">Game mode</p>
-                        <div className="difficulty-grid">
+                        <div className="mc-segment-grid two">
                             {(['physical', 'digital'] as MusicalChairsGameplayMode[]).map((mode) => (
-                                <button key={mode} type="button" onClick={() => update({ gameplay_mode: mode })} className={`btn ${config.gameplay_mode === mode ? 'btn-primary' : 'btn-secondary'}`}>
+                                <button key={mode} type="button" onClick={() => update({ gameplay_mode: mode })} className={`btn mc-setup-option ${config.gameplay_mode === mode ? 'btn-primary' : 'btn-secondary'}`}>
                                     {mode === 'physical' ? 'Physical chairs' : 'Phone tap'}
                                 </button>
                             ))}
@@ -67,23 +80,28 @@ export default function MusicalChairsSetupScreen({
                         </p>
                     </div>
 
-                    <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+                    <div className="settings-row mc-setup-card">
                         <p className="font-medium">Music mode</p>
-                        <div className="difficulty-grid">
+                        <div className="mc-segment-grid two">
                             {(['builtin', 'external'] as MusicalChairsMusicMode[]).map((mode) => (
-                                <button key={mode} type="button" onClick={() => setMode(mode)} className={`btn ${config.music_mode === mode ? 'btn-primary' : 'btn-secondary'}`}>
+                                <button key={mode} type="button" onClick={() => setMode(mode)} className={`btn mc-setup-option ${config.music_mode === mode ? 'btn-primary' : 'btn-secondary'}`}>
                                     {mode === 'builtin' ? 'Built-in' : 'External'}
                                 </button>
                             ))}
                         </div>
+                        <p className="text-xs text-[--text-tertiary]">
+                            {config.music_mode === 'builtin'
+                                ? 'LocalPlay runs the round timer and stop cue. Full in-app music is coming next.'
+                                : 'Use your own speaker or playlist; LocalPlay only gives the random stop cue and tracks who is out.'}
+                        </p>
                     </div>
 
                     {config.music_mode === 'builtin' && (
-                        <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+                        <div className="settings-row mc-setup-card">
                             <p className="font-medium">Style</p>
                             <div className="mc-style-grid">
                                 {STYLES.map((style) => (
-                                    <button key={style.id} type="button" onClick={() => update({ music_style: style.id })} className={`btn ${config.music_style === style.id ? 'btn-primary' : 'btn-secondary'}`}>
+                                    <button key={style.id} type="button" onClick={() => update({ music_style: style.id })} className={`btn mc-setup-option ${config.music_style === style.id ? 'btn-primary' : 'btn-secondary'}`}>
                                         {style.label}
                                     </button>
                                 ))}
@@ -91,11 +109,11 @@ export default function MusicalChairsSetupScreen({
                         </div>
                     )}
 
-                    <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+                    <div className="settings-row mc-setup-card">
                         <p className="font-medium">{config.gameplay_mode === 'physical' ? 'Music window' : 'Music and tap window'}</p>
                         <div className="mc-range-row">
-                            <label>Min <input type="number" min={3} max={30} value={config.min_music_seconds} onChange={(event) => update({ min_music_seconds: Number(event.target.value) })} /></label>
-                            <label>Max <input type="number" min={4} max={60} value={config.max_music_seconds} onChange={(event) => update({ max_music_seconds: Number(event.target.value) })} /></label>
+                            <label>Min minutes <input type="number" min={1} max={10} value={minMusicMinutes} onChange={(event) => setMinMusicMinutes(Number(event.target.value))} /></label>
+                            <label>Max minutes <input type="number" min={2} max={15} value={maxMusicMinutes} onChange={(event) => setMaxMusicMinutes(Number(event.target.value))} /></label>
                             {config.gameplay_mode === 'digital' && (
                                 <label>Grab <input type="number" min={2} max={10} value={config.grab_window_seconds} onChange={(event) => update({ grab_window_seconds: Number(event.target.value) })} /></label>
                             )}

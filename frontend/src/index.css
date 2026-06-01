@@ -3796,15 +3796,39 @@ body {
     flex-shrink: 0;
 }
 
+.mc-setup-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+}
+
+.mc-segment-grid,
 .mc-style-grid,
 .mc-range-row {
     display: grid;
+    gap: 10px;
+    width: 100%;
+}
+
+.mc-segment-grid.two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mc-style-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 8px;
 }
 
 .mc-range-row {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mc-setup-option {
+    min-height: 56px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: clamp(1rem, 3vw, 1.2rem);
+    white-space: normal;
+    line-height: 1.12;
 }
 
 .mc-range-row label {
@@ -3823,6 +3847,7 @@ body {
     color: var(--ink);
     text-align: center;
     font-weight: 900;
+    min-height: 56px;
 }
 
 .mc-game-shell {
@@ -3943,6 +3968,7 @@ body {
 }
 
 @media (max-width: 640px) {
+    .mc-segment-grid.two,
     .mc-style-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }

@@ -18,8 +18,8 @@ def test_validate_config_clamps_and_sanitizes_values():
     assert config["gameplay_mode"] == "physical"
     assert config["music_mode"] == "external"
     assert config["music_style"] == "upbeat"
-    assert config["min_music_seconds"] == 3
-    assert config["max_music_seconds"] == 4
+    assert config["min_music_seconds"] == 5
+    assert config["max_music_seconds"] == 6
     assert config["grab_window_seconds"] == 10
     assert config["eliminations_per_round"] == 1
     assert config["auto_stop"] is False

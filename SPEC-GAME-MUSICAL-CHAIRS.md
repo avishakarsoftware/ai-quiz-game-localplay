@@ -73,7 +73,7 @@ Music is the core of Musical Chairs. The spec proposes a two-mode approach.
 
 ### Mode 1: Built-In Music (Default)
 
-Use the **Web Audio API** to procedurally generate music directly in the browser. This is the recommended default because:
+Use the **Web Audio API** to procedurally generate music directly in the browser. This is the intended default once the full audio layer lands because:
 
 - Zero licensing cost or legal risk.
 - Zero storage — no audio files to bundle, host, or CDN-serve.
@@ -90,6 +90,11 @@ Implementation approach:
 - The organizer/spectator page owns the `AudioContext`. Player phones do NOT play music — the music comes from the host device or TV, just like real musical chairs.
 - Music fades out over 200-400ms when the stop signal fires, rather than cutting abruptly.
 - A visual waveform/beat visualizer on the spectator/TV screen adds atmosphere.
+
+Current MVP behavior:
+
+- Built-in mode runs the server-randomized music/stop window and shows the visual stop cue.
+- Full procedural Web Audio music generation is deferred. The setup copy should make clear that full in-app music is coming next.
 
 Fallback if Web Audio is unavailable (very rare): the organizer sees a visual-only pulsing animation and a manual "STOP" button, effectively degrading to external music mode.
 
@@ -170,13 +175,15 @@ Music play duration per round should be randomized within a window:
 
 ```json
 {
-  "min_music_seconds": 5,
-  "max_music_seconds": 20,
+  "min_music_seconds": 60,
+  "max_music_seconds": 300,
   "grab_window_seconds": 5
 }
 ```
 
 - `min_music_seconds` / `max_music_seconds`: the server picks a random stop time within this range each round.
+- Setup shows this window in minutes. The product default is 1 minute minimum and 5 minutes maximum.
+- Backend validation accepts a minimum as low as 5 seconds for tests/debugging, but the product default is minutes-oriented for real physical play.
 - `grab_window_seconds`: how long players have to tap after the stop signal. After this window closes, any player who hasn't tapped is automatically eliminated.
 - As rounds progress and fewer players remain, the grab window should tighten slightly (e.g., -0.5s per elimination, floor of 2s) to increase tension.
 

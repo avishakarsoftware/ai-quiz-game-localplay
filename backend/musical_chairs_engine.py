@@ -14,11 +14,11 @@ GAMEPLAY_MODES = ("digital", "physical")
 @dataclass(frozen=True)
 class MusicalChairsConfig:
     game_title: str = "Musical Chairs"
-    gameplay_mode: str = "digital"
+    gameplay_mode: str = "physical"
     music_mode: str = "builtin"
     music_style: str = "upbeat"
-    min_music_seconds: int = 5
-    max_music_seconds: int = 20
+    min_music_seconds: int = 60
+    max_music_seconds: int = 300
     grab_window_seconds: float = 5.0
     eliminations_per_round: int = 1
     auto_stop: bool = True
@@ -46,9 +46,9 @@ def _clamp(value: int | float, minimum: int | float, maximum: int | float):
 def validate_config(raw: Optional[dict]) -> dict:
     raw = raw or {}
     title = str(raw.get("game_title") or raw.get("title") or "Musical Chairs").strip()[:120] or "Musical Chairs"
-    gameplay_mode = str(raw.get("gameplay_mode") or "digital").strip().lower()
+    gameplay_mode = str(raw.get("gameplay_mode") or "physical").strip().lower()
     if gameplay_mode not in GAMEPLAY_MODES:
-        gameplay_mode = "digital"
+        gameplay_mode = "physical"
     music_mode = str(raw.get("music_mode") or "builtin").strip().lower()
     if music_mode not in MUSIC_MODES:
         music_mode = "builtin"
@@ -57,16 +57,16 @@ def validate_config(raw: Optional[dict]) -> dict:
         music_style = "upbeat"
 
     try:
-        min_music = int(raw.get("min_music_seconds", 5))
+        min_music = int(raw.get("min_music_seconds", 60))
     except (TypeError, ValueError):
-        min_music = 5
-    min_music = int(_clamp(min_music, 3, 30))
+        min_music = 60
+    min_music = int(_clamp(min_music, 5, 600))
 
     try:
-        max_music = int(raw.get("max_music_seconds", 20))
+        max_music = int(raw.get("max_music_seconds", 300))
     except (TypeError, ValueError):
-        max_music = 20
-    max_music = int(_clamp(max_music, min_music + 1, 60))
+        max_music = 300
+    max_music = int(_clamp(max_music, min_music + 1, 900))
 
     try:
         grab_window = float(raw.get("grab_window_seconds", 5))

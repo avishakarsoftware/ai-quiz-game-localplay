@@ -127,7 +127,7 @@ Options: True, False
 - Game card icon: `🕵️`
 - Host subtitle: "Spot which surprising claims are real."
 - Prompt placeholder: "Science myths, history, sports records, office lore..."
-- Generate button: "Generate Claims"
+- Generate button: "Generate Questions"
 
 ## Game 4: Timeline Twist
 
@@ -252,9 +252,10 @@ Organizer flow:
 
 1. Selecting a variant opens `QuizVariantPromptScreen`.
 2. `QuizVariantPromptScreen` uses variant-specific title, icon, description, placeholder, and button copy.
-3. Generate calls `/quiz/generate` with `mode`.
-4. Review screen is the existing `ReviewScreen`.
-5. Room create maps every quiz variant to backend `game_type="quiz"`.
+3. Quiz variants reuse the same curated topic library as AI Quiz. Opening a quiz or quiz-variant prompt prepopulates the textarea with one random topic, and the dice button replaces it with another topic.
+4. Generate calls `/quiz/generate` with `mode`.
+5. Review screen is the existing `ReviewScreen`.
+6. Room create maps every quiz variant to backend `game_type="quiz"`.
 
 Player/spectator:
 
