@@ -23,6 +23,18 @@ describe('quiz variant game modes', () => {
         expect(onSelect).toHaveBeenCalledWith('rebus');
     });
 
+    it('filters games by category and search text', () => {
+        render(<GameSelectScreen onSelect={() => {}} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Classic' }));
+        expect(screen.getByRole('button', { name: /Housie/ })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Most Likely To/ })).not.toBeInTheDocument();
+
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Search games' }), { target: { value: 'bingo' } });
+        expect(screen.queryByRole('button', { name: /Housie/ })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Bingo/ })).toBeInTheDocument();
+    });
+
     it('renders tailored variant prompt copy and generate action', () => {
         const onGenerate = vi.fn();
         render(
