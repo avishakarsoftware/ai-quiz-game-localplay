@@ -52,7 +52,7 @@ test.describe('Standalone live turn handoff on gamma', () => {
       await expect(page.getByRole('heading', { name: 'Story Chain' })).toBeVisible({ timeout: 20_000 });
 
       const firstActive = await findActiveStoryPlayer(players);
-      await expect(firstActive.page.getByText('Your turn')).toBeVisible();
+      await expect(firstActive.page.getByText('Your turn', { exact: true })).toBeVisible();
       await expect(firstActive.page.getByText('Add one sentence, then control passes to the next player.')).toBeVisible();
       await firstActive.page.getByPlaceholder('Add one sentence...').fill('The first song made everyone laugh loudly.');
       await firstActive.page.getByRole('button', { name: 'Add Sentence' }).click();
