@@ -25,6 +25,7 @@ Launch readiness baseline:
 - Standalone **My Quizzes** is scoped to the current LocalPlay wallet/session and must not show Revelry party-scoped content or images.
 - Host-app launches must hide standalone economy/account/library chrome unless explicitly allowed by the host-app context.
 - All user-facing labels should treat the app as a multi-game surface, not as "Revelry Quiz".
+- The standalone game picker is a catalog, not a long vertical list: show all available games by default, include search, and filter with the product categories **All**, **Quiz/Trivia**, **Creative**, and **Bingo/Housie**. Do not include a generic "Social" category because all LocalPlay games are social by design. Games that support AI-generated setup/content should show a small sparkle marker after the game name.
 - Backend-served SPA and service worker routing must never allow API routes to be fulfilled by cached app shell HTML.
 - PWA prompts should improve continuity without interrupting gameplay: update prompts are allowed globally, while install and notification prompts are standalone-first and suppressed in Revelry/host-app embedded surfaces.
 
@@ -1013,6 +1014,7 @@ Organizer states:
 Game select:
 
 - Host chooses from `frontend/src/gameModes.ts`.
+- The standalone picker renders a responsive searchable catalog. Category filters are **All**, **Quiz/Trivia**, **Creative**, and **Bingo/Housie**; games with AI setup/generation are visually marked with a sparkle after the title.
 - Quiz and quiz variants go through quiz prompt/review or custom quiz authoring.
 - WMLT goes to `MLT_PROMPT` and `MLT_REVIEW`.
 - Drawing goes to `DRAWING_PROMPT` and `DRAWING_REVIEW`.
@@ -1025,8 +1027,17 @@ Generation:
 - WMLT calls `/mlt/generate`.
 - Drawing calls `/drawing/generate`.
 - Successful generation moves to review.
+- Provider-picking UI is a local/gamma diagnostic affordance only. Production standalone and production backend-served surfaces must hide raw provider selectors such as "Google AI"; production still uses the configured backend/default provider and remote config.
+- AI Quiz, quiz variants, and Drawing prompt screens must include a consistent back control positioned with the header/icon area so hosts can return to the game catalog without using the global menu.
 - `402`, `429`, and `503` are surfaced in an error modal.
 - In host-app party hub mode, prompt-list setup games such as WMLT and Drawing may call `/integrations/revelry/party-games/prompts/generate` with a party-scoped token. Generated prompts populate the editable setup form and are not persisted until the host saves the setup.
+
+Review:
+
+- Quiz and quiz-variant review use the shared `ReviewScreen`.
+- The **Show Answers** toggle belongs with the lower review actions near room creation, not in the header.
+- Player preview answer choices must use a stable badge/text grid so answer labels and copy align for every quiz-family game and wrap cleanly on mobile.
+- Button groups, including **My Quizzes** empty/library footer actions, must keep visible spacing between adjacent buttons on desktop and mobile.
 
 Room creation:
 
