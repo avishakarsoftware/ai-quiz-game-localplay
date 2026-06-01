@@ -127,6 +127,20 @@ Persistent room-level state:
 }
 ```
 
+## Host Controller and Player Seating
+
+Party Poker should use the shared card-game host model:
+
+- The server is the dealer and owns all hidden state.
+- The organizer controls setup, start, pause, and end-game actions.
+- The organizer is not automatically seated.
+- If the host wants to play, they join the room as a normal player from a phone or separate tab.
+- The organizer control view never receives hole cards, undealt deck order, or any private player-only payload.
+- A host who is also a player receives their hole cards only on their player connection.
+- Spectator/TV remains public-state only.
+
+This lets the host play without introducing a trusted human dealer or leaking private hands to the control screen.
+
 Hand-level state:
 
 ```json

@@ -1564,9 +1564,13 @@ Spectator/TV display needs vary by game:
 - **WMLT**: Show statement, vote counts, round podium. (Already built.)
 - **Word Association**: Show seed word, then reveal all submissions grouped. Great for TV.
 - **Chinese Whispers**: Show the chain reveal sequence. The best spectator experience — watching the chain degrade is the fun.
+- **Story Chain**: Show turn progress while writing, then reveal the collaborative story sentence by sentence with contributor moments.
 - **DrawingGame**: Show the drawing canvas in real-time + guess stream. Ideal for TV/Chromecast.
+- **Find Someone Who**: Show timer, aggregate confirmed matches, prize winners, and safe prompt highlights; avoid showing every private card/person match on TV.
+- **Common Ground**: Show prompt, team rosters, discussion timer, submission status, reveal cards, voting prompt, and team leaderboard.
+- **Party Quests**: During the event, show low-noise aggregate progress; at reveal, show podium, social awards, and safe party stats.
 - **Taboo**: Public spectator view should show timer, score, team, and safe round state. Do not show target/forbidden words on a shared TV by default because the guessing team may see it. A private host/judge view can show the hidden card.
-- **Two Truths and a Lie**: Show statements, vote distribution, reveal which was the lie.
+- **Two Truths and a Lie**: Show author, three statement cards, vote progress, vote distribution, and reveal which was the lie.
 
 All games should produce a spectator-friendly live view. The existing `SPECTATOR_SYNC` pattern (send current state on connect, then stream updates) works for all game types.
 
@@ -1578,12 +1582,19 @@ Games fall into several runtime patterns that affect socket_manager architecture
 - Quiz (answer)
 - WMLT (vote)
 - Word Association (submit word)
-- Two Truths and a Lie (vote on lie)
+- Common Ground (team discussion/submission, then vote)
 
 These share: timer, round start → collect submissions → reveal → score → next round.
 
+### Ambient / Long-Running
+- Party Quests (players complete tasks throughout the party and confirm with each other)
+
+These need: durable active room timers, low-interruption player UX, confirmation requests, late reconnect, final reveal, and safe aggregate spectator state.
+
 ### Sequential (players take private turns)
 - Chinese Whispers (chain of turns)
+- Story Chain (each player adds one sentence)
+- Two Truths and a Lie (sequential author reveal, simultaneous voting per author)
 
 These need: turn queue, active-player tracking, per-player private prompts, and waiting state for inactive players.
 

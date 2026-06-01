@@ -86,6 +86,41 @@ backend/tests/test_bluff_engine.py
 - Player elimination/win detection.
 - Public sync payloads.
 
+## Host Controller vs Player Seat
+
+Card games need the host to be able to play without giving the host unfair access to hidden state. Treat the host role as a **room controller**, not automatically as a player.
+
+Concepts:
+
+- `organizer`: setup/control identity. Can create the room, start the game, pause/skip/end when allowed, and open spectator/TV.
+- `player`: seated game participant with a private hand.
+- `spectator`: watch-only participant with redacted public state.
+- `system dealer`: server-owned authority that shuffles, deals, advances turns, resolves timers, and validates moves.
+
+Rules:
+
+- The organizer may also join as a player, but only through a normal player session/device/tab.
+- The organizer's player session receives only that player's private hand, exactly like every other player.
+- The organizer control session never receives hidden cards or deck order.
+- The server is the dealer. There is no human dealer who can see the deck or all hands.
+- Spectator/TV surfaces use public sync only.
+- If the host is playing, they should ideally keep organizer controls on a TV/laptop and their player hand on their phone.
+
+Implementation shape:
+
+```json
+{
+  "room_code": "ABCD12",
+  "organizer_token": "control-token",
+  "system_dealer_id": "system",
+  "seats": {
+    "player-device-id": {"player_id": "p1", "nickname": "Avi", "role": "player"}
+  }
+}
+```
+
+This model avoids a special "host hand" path and keeps all private information scoped to player connections.
+
 ## Shared Card Model
 
 Use text ranks and suits instead of Unicode card symbols in backend state.

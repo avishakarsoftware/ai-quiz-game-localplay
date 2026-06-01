@@ -6,13 +6,13 @@ Add a reusable **Bingo-family engine** to LocalPlay, with **Housie** as the firs
 
 Housie, also known as Tambola, is a caller-led number game. Each player receives a ticket with 3 rows, usually arranged into number columns covering 1 through 90. Exactly 15 cells are filled. Numbers are called one by one by the host/caller, either manually or with auto-caller mode. Players mark matching numbers on their tickets and claim prizes such as Quick 5, Corners, Top Row, Middle Row, Bottom Row, and Full House.
 
-This spec deliberately treats Housie as the first ruleset on top of a broader Bingo engine. Bingo variants such as Baby Bingo, Wedding Bingo, Holiday Bingo, Emoji Bingo, Image Bingo, Photo Bingo, and Word Bingo should reuse the same card/deck/draw/claim model with different card cell content, layouts, prize patterns, and theme packs.
+This spec deliberately treats Housie as the first ruleset on top of a broader Bingo engine. Bingo variants such as Baby Bingo, Wedding Bingo, Holiday Bingo, Emoji Bingo, Image Bingo, Photo Bingo, Word Bingo, and Find Someone Who should reuse the same card/layout/pattern model where practical, with different completion mechanics and theme packs.
 
 ```text
 Engine family: bingo
 First game type: housie
 Implemented sibling ruleset: bingo
-Next game types/rulesets: baby_bingo, word_bingo, emoji_bingo, image_bingo, photo_bingo
+Next game types/rulesets: baby_bingo, word_bingo, emoji_bingo, image_bingo, photo_bingo, find_someone_who
 Backend engine: bingo_engine.py / housie_engine.py / bingo_content_engine.py
 Frontend display names: Housie, Bingo
 ```
@@ -42,7 +42,7 @@ Known v1 limitations:
 - Latest-call and winner announcement animations exist, but need a final visual polish pass across organizer, player, and spectator screens.
 - Housie setup is still in-memory for standalone room creation; Revelry gamma Housie setup is persisted party-scoped through `generated_content`.
 - Generic Bingo is implemented for standalone/gamma UX first. It is not exposed to Revelry yet.
-- Baby Bingo, Word Bingo, Emoji Bingo, Image Bingo, and Photo Bingo remain future named rulesets on the same engine.
+- Baby Bingo, Word Bingo, Emoji Bingo, Image Bingo, Photo Bingo, and Find Someone Who remain future named rulesets on the same card/layout foundation.
 - Image Bingo has schema and validation requirements, but the full media upload / AI image generation authoring path remains a later slice.
 
 ## Goals
@@ -111,11 +111,13 @@ Recommended game types:
 | `emoji_bingo` | Emoji Bingo | Emoji plus short labels for accessibility | 5x5 with optional free center | template, AI prompt |
 | `image_bingo` | Image Bingo | Host-uploaded or AI-generated images with labels | 4x4 or 5x5 | upload, AI image generation |
 | `photo_bingo` | Photo Bingo | Host-uploaded party/event photos or image prompts | 4x4 or 5x5 | upload, AI image generation |
+| `find_someone_who` | Find Someone Who | Social prompts completed by matching real people in the room | 5x5 with optional free center | template, manual, AI prompt |
 
 Product guidance:
 
 - `housie` remains the classic 90-ball/Tambola experience with 3x9 tickets and latest-called-number claim validation.
-- `bingo`, `baby_bingo`, `word_bingo`, `emoji_bingo`, `image_bingo`, and `photo_bingo` use a standard Bingo card model where the called item can be text, emoji, or an image.
+- `bingo`, `baby_bingo`, `word_bingo`, `emoji_bingo`, `image_bingo`, and `photo_bingo` use a standard caller-led Bingo card model where the called item can be text, emoji, or an image.
+- `find_someone_who` reuses Bingo-style card layout and claim patterns but is not caller-led; cells are marked by finding and optionally confirming real people who match prompts. Its implementation-ready spec is `SPEC-GAME-FIND-SOMEONE-WHO.md`.
 - The default non-Housie card is 5x5 with a free center. Image-heavy games may default to 4x4 for readability on phones.
 - The host should be able to choose a creation path:
   - **Ready-made**: built-in themed template.
