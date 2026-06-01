@@ -98,4 +98,11 @@ describe('ReviewScreen', () => {
         expect(screen.getByRole('button', { name: /Hide Answers/i })).toHaveAttribute('aria-pressed', 'true');
         expect(screen.getByText('Correct').closest('.answer-option')).toHaveClass('review-option-correct');
     });
+
+    it('separates generated variant topics from the game title', () => {
+        renderReview({ quiz: { ...quiz, quiz_title: 'Animal Kingdom Odd One Out' } });
+
+        expect(screen.getByRole('heading', { name: 'Odd One Out' })).toBeInTheDocument();
+        expect(screen.getByText('Animal Kingdom')).toBeInTheDocument();
+    });
 });

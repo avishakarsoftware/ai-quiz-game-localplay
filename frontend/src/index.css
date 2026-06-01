@@ -1868,6 +1868,35 @@ body {
     background: var(--paper-2);
 }
 
+.mlt-review-controls,
+.drawing-review-controls {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 24px;
+}
+
+.mlt-vote-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 46, 122, 0.06)), var(--paper);
+}
+
+@media (max-width: 520px) {
+    .mlt-vote-toggle-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .mlt-vote-toggle-row .velvet-toggle {
+        align-self: flex-start;
+    }
+}
+
 /* AI Provider selector */
 .provider-selector {
     display: flex;
@@ -2655,6 +2684,15 @@ body {
     height: 3px;
     border-radius: 2px;
     background: linear-gradient(90deg, transparent, var(--accent), var(--olive), transparent);
+}
+
+.review-title-subtitle {
+    margin: 0 0 10px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: clamp(1.1rem, 2.8vw, 1.55rem);
+    font-weight: 800;
+    line-height: 1.15;
 }
 
 /* Review question card */

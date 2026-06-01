@@ -86,7 +86,14 @@ export default function MLTPromptScreen({
             style={swipeProgress > 0 ? { transform: `translateX(${swipeProgress}px)`, opacity: 1 - swipeProgress / 400 } : undefined}
         >
             <div className="flex-1 flex flex-col justify-center py-8">
-                <div className="text-center mb-8">
+                <div className="text-center mb-8 prompt-header">
+                    <button
+                        type="button"
+                        onClick={onBack}
+                        className="btn btn-secondary prompt-header-back"
+                    >
+                        Back
+                    </button>
                     <div className="hero-icon mb-4">🎯</div>
                     <h1 className="hero-title">Most Likely To</h1>
                     <p className="text-[--text-tertiary] mt-2">Enter a theme for your statements</p>
@@ -181,9 +188,6 @@ export default function MLTPromptScreen({
                     className="btn btn-primary btn-glow w-full prompt-primary-action"
                 >
                     Generate Questions
-                </button>
-                <button onClick={onBack} className="btn btn-secondary w-full">
-                    Back
                 </button>
             </div>
         </div>

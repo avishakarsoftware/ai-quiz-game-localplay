@@ -1020,6 +1020,7 @@ Game select:
 - Drawing goes to `DRAWING_PROMPT` and `DRAWING_REVIEW`.
 - **My Quizzes** opens `QUIZ_LIBRARY`; starting a saved pack materializes it and enters normal review.
 - Home/menu navigation must reset safely from setup, loading, review, library, and terminal states.
+- Entering a new organizer state or switching game type must reset page scroll to the top so setup/review screens never open partially scrolled from the previous catalog or editor position.
 
 Generation:
 
@@ -1036,10 +1037,12 @@ Generation:
 Review:
 
 - Quiz and quiz-variant review use the shared `ReviewScreen`.
+- Generated quiz-variant review titles should show the stable game name first, for example **Odd One Out**, and place the generated topic/theme, for example **Animal Kingdom**, in a smaller subtitle.
 - The **Show Answers** toggle belongs with the lower review actions near room creation, not in the header.
 - Player preview answer choices must use a stable badge/text grid with clear row boundaries so answer labels and copy align for every quiz-family game and wrap cleanly on mobile.
 - When **Show Answers** is active, the review screen must make the state visible with an answer-key indicator, active toggle styling, and an unmistakable correct-answer row. It should be obvious even on mirrored host screens.
 - Button groups, including **My Quizzes** empty/library footer actions, must keep visible spacing between adjacent buttons on desktop and mobile.
+- WMLT and Drawing review should place timer/round controls before the editable content list and use the shared clock label and time preset styling.
 
 Room creation:
 

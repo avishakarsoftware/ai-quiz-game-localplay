@@ -10,13 +10,6 @@ interface DrawingReviewScreenProps {
 }
 
 export default function DrawingReviewScreen({ game, timeLimit, setTimeLimit, onCreateRoom, onUpdateGame, onBack }: DrawingReviewScreenProps) {
-    const timeGrid = {
-        display: 'grid',
-        gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
-        gap: 10,
-        width: '100%',
-    };
-
     const updatePrompt = (id: number, text: string) => {
         onUpdateGame({
             ...game,
@@ -34,16 +27,18 @@ export default function DrawingReviewScreen({ game, timeLimit, setTimeLimit, onC
                     <p className="text-[--text-secondary] mt-2">{game.prompts.length} drawable prompts</p>
                 </div>
 
-                <div className="mb-6">
-                    <p className="text-[--text-tertiary] text-sm font-semibold mb-2 text-center">Time per round</p>
-                    <div style={timeGrid}>
+                <div className="drawing-review-controls">
+                    <p className="text-center font-semibold text-base mb-2">
+                        <span style={{ fontSize: '1.5rem', verticalAlign: 'middle', marginRight: 6 }}>⏱</span>
+                        Time per round
+                    </p>
+                    <div className="time-preset-selector">
                         {[15, 30, 45, 50, 60].map((value) => (
                             <button
                                 key={value}
                                 type="button"
                                 onClick={() => setTimeLimit(value)}
-                                className={`btn ${timeLimit === value ? 'btn-primary' : 'btn-secondary'}`}
-                                style={{ minHeight: 52, borderRadius: 14, fontSize: 17, fontWeight: 800 }}
+                                className={`time-preset-option ${timeLimit === value ? 'active' : ''}`}
                             >
                                 {value}s
                             </button>
@@ -68,9 +63,12 @@ export default function DrawingReviewScreen({ game, timeLimit, setTimeLimit, onC
                     ))}
                 </div>
 
-                <button type="button" onClick={() => onCreateRoom()} className="btn btn-primary btn-glow w-full">
-                    Create Room
-                </button>
+                <div className="quiz-library-footer">
+                    <button type="button" onClick={onBack} className="btn btn-secondary" aria-label="Back">‹</button>
+                    <button type="button" onClick={() => onCreateRoom()} className="btn btn-primary btn-glow w-full">
+                        Create Room
+                    </button>
+                </div>
             </div>
         </div>
     );

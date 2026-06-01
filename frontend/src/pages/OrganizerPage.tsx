@@ -141,6 +141,11 @@ export default function OrganizerPage() {
     useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
     useEffect(() => { gameTypeRef.current = gameType; }, [gameType]);
     useEffect(() => {
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+    }, [state, gameType]);
+    useEffect(() => {
         if (!hostAppMode && errorModal?.upgradeAvailable) track('paywall_shown', { source: 'error_modal' });
     }, [errorModal, hostAppMode]);
 

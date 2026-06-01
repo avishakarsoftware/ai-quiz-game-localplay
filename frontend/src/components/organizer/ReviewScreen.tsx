@@ -25,6 +25,30 @@ const TIME_PRESETS = [
     { value: 60, label: '60s' },
 ];
 
+const REVIEW_GAME_TITLES = [
+    'Odd One Out',
+    'Timeline Twist',
+    'Fact or Fiction',
+    'Emoji Charades',
+    'Rebus Rush',
+    'AI Quiz',
+    'Classic Quiz',
+];
+
+function getReviewTitleParts(rawTitle: string): { gameTitle: string; subtitle?: string } {
+    const title = rawTitle.trim();
+    for (const gameTitle of REVIEW_GAME_TITLES) {
+        if (title === gameTitle) return { gameTitle };
+
+        const prefixMatch = title.match(new RegExp(`^${gameTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[-:|]\\s*(.+)$`, 'i'));
+        if (prefixMatch?.[1]?.trim()) return { gameTitle, subtitle: prefixMatch[1].trim() };
+
+        const suffixMatch = title.match(new RegExp(`^(.+?)\\s*[-:|]?\\s+${gameTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'));
+        if (suffixMatch?.[1]?.trim()) return { gameTitle, subtitle: suffixMatch[1].trim() };
+    }
+    return { gameTitle: title };
+}
+
 export default function ReviewScreen({
     quiz, timeLimit, setTimeLimit,
     sdAvailable, questionImages, onGenerateImages,
@@ -42,6 +66,7 @@ export default function ReviewScreen({
     const selectedImageUrl = selectedQuestion?.image_url
         ? mediaUrl(selectedQuestion.image_url)
         : (selectedQuestion ? questionImages[selectedQuestion.id] : '');
+    const reviewTitle = getReviewTitleParts(quiz.quiz_title || 'Quiz');
 
     const startEdit = (q: Question) => {
         setEditingId(q.id);
@@ -106,7 +131,8 @@ export default function ReviewScreen({
             )}
             <div className="review-header mb-4">
                 <div className="review-header-accent" />
-                <h1 className="hero-title" style={{ textAlign: 'center', marginBottom: 8 }}>{quiz.quiz_title}</h1>
+                <h1 className="hero-title" style={{ textAlign: 'center', marginBottom: reviewTitle.subtitle ? 2 : 8 }}>{reviewTitle.gameTitle}</h1>
+                {reviewTitle.subtitle && <p className="review-title-subtitle">{reviewTitle.subtitle}</p>}
                 <div className="flex items-center justify-center gap-3 flex-wrap">
                     <p className="text-[--text-tertiary] text-base">{quiz.questions.length} questions ready to go</p>
                     {sdAvailable && (

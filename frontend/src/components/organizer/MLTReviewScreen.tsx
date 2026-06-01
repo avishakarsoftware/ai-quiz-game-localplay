@@ -72,6 +72,40 @@ export default function MLTReviewScreen({
                     </p>
                 </div>
 
+                {/* Time per round */}
+                <div className="mlt-review-controls">
+                    <div>
+                        <p className="text-center font-semibold text-base mb-2">
+                            <span style={{ fontSize: '1.5rem', verticalAlign: 'middle', marginRight: 6 }}>⏱</span>
+                            Time per round
+                        </p>
+                        <div className="time-preset-selector">
+                            {TIME_PRESETS.map((t) => (
+                                <button
+                                    key={t.value}
+                                    onClick={() => setTimeLimit(t.value)}
+                                    className={`time-preset-option ${timeLimit === t.value ? 'active' : ''}`}
+                                >
+                                    {t.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="mlt-vote-toggle-row">
+                        <div>
+                            <p className="font-medium">Anonymous Votes</p>
+                            <p className="text-xs text-[--text-tertiary]">{showVotes ? 'Everyone can see who voted for whom' : 'Votes are hidden — only totals shown'}</p>
+                        </div>
+                        <button
+                            onClick={() => setShowVotes(!showVotes)}
+                            className={`velvet-toggle ${showVotes ? 'velvet-toggle-on' : 'velvet-toggle-off'}`}
+                        >
+                            {showVotes ? 'OFF' : 'ON'}
+                        </button>
+                    </div>
+                </div>
+
                 {/* Statements list */}
                 <div className="space-y-3 mb-6">
                     {game.statements.map((statement, i) => (
@@ -122,37 +156,6 @@ export default function MLTReviewScreen({
                             </div>
                         </div>
                     ))}
-                </div>
-
-                {/* Time per round */}
-                <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
-                    <p className="font-medium">Time per Round</p>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                        {TIME_PRESETS.map((t) => (
-                            <button
-                                key={t.value}
-                                onClick={() => setTimeLimit(t.value)}
-                                className={`btn ${timeLimit === t.value ? 'btn-primary' : 'btn-secondary'}`}
-                                style={{ flex: 1, padding: '8px 0', fontSize: '1rem' }}
-                            >
-                                {t.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Anonymous votes toggle */}
-                <div className="settings-row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                        <p className="font-medium">Anonymous Votes</p>
-                        <p className="text-xs text-[--text-tertiary]">{showVotes ? 'Everyone can see who voted for whom' : 'Votes are hidden — only totals shown'}</p>
-                    </div>
-                    <button
-                        onClick={() => setShowVotes(!showVotes)}
-                        className={`velvet-toggle ${showVotes ? 'velvet-toggle-on' : 'velvet-toggle-off'}`}
-                    >
-                        {showVotes ? 'OFF' : 'ON'}
-                    </button>
                 </div>
             </div>
 
