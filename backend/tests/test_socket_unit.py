@@ -55,6 +55,11 @@ class MockWebSocket:
         return [m for m in self.sent_messages if m.get("type") == msg_type]
 
 
+class FailingWebSocket(MockWebSocket):
+    async def send_json(self, data: dict):
+        raise RuntimeError("socket is gone")
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1095,6 +1100,25 @@ class TestBroadcastRouting:
         assert org_ws.last("TEST") is not None
         assert p_ws.last("TEST") is not None
         assert spec_ws.last("TEST") is not None
+
+    @pytest.mark.asyncio
+    async def test_broadcast_dead_lobby_player_sends_updated_roster(self):
+        room = make_room()
+        room.state = "LOBBY"
+        org_ws = add_organizer(room, "org-1")
+        add_player(room, "p1", "Alice")
+        add_player(room, "p2", "Bob")
+        room.connections["p1"] = FailingWebSocket()
+
+        await room.broadcast({"type": "ROOM_RESET", "player_count": 2, "players": []})
+
+        assert "p1" not in room.players
+        assert "p2" in room.players
+        update = org_ws.last("PLAYER_LEFT")
+        assert update is not None
+        assert update["nickname"] == "Alice"
+        assert update["player_count"] == 1
+        assert update["players"] == [{"nickname": "Bob", "avatar": ""}]
 
     @pytest.mark.asyncio
     async def test_broadcast_to_players_excludes_organizer_and_spectators(self):

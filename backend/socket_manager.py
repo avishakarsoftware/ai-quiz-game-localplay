@@ -279,6 +279,19 @@ class Room:
                 spec_disconnected.append(client_id)
         for client_id in disconnected + spec_disconnected:
             self._remove_connection(client_id)
+        if self._player_event:
+            event_type, nickname = self._player_event
+            self._player_event = None
+            msg_type = "PLAYER_LEFT" if event_type == "left" else "PLAYER_DISCONNECTED"
+            await self.broadcast({
+                "type": msg_type,
+                "nickname": nickname,
+                "player_count": len(self.players),
+                "players": [
+                    {"nickname": p["nickname"], "avatar": p.get("avatar", "")}
+                    for p in self.players.values()
+                ],
+            })
 
     async def broadcast_to_players(self, message: dict):
         """Broadcast to players only, not organizer."""
