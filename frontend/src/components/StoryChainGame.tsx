@@ -42,6 +42,7 @@ export default function StoryChainGame({
     const isActive = Boolean(state?.is_active || (viewerName && viewerName === state?.active_player_id && state?.phase === 'STORY_TURN'));
     const title = state?.config?.game_title || 'Story Chain';
     const revealedSentences = state?.sentences || [];
+    const activeName = state?.active_player_id || 'Someone';
     const fullStory = useMemo(() => {
         if (!state) return [];
         return [state.starter_prompt, ...revealedSentences.map((item) => item.text)];
@@ -94,13 +95,17 @@ export default function StoryChainGame({
                         <div className="story-chain-active">
                             <span>{playerAvatar(state, state.active_player_id)}</span>
                             <div>
-                                <small>Writing now</small>
-                                <strong>{state.active_player_id || 'Someone'}</strong>
+                                <small>{isPlayer && isActive ? 'Your turn now' : 'Writing now'}</small>
+                                <strong>{isPlayer && isActive ? 'You' : activeName}</strong>
                             </div>
                         </div>
 
                         {isPlayer && isActive ? (
                             <>
+                                <div className="turn-handoff-banner active">
+                                    <strong>Your turn</strong>
+                                    <span>Add one sentence, then control passes to the next player.</span>
+                                </div>
                                 <div className="story-chain-context">
                                     <small>{state.config?.visibility_mode === 'full_context' ? 'Story so far' : 'Last sentence'}</small>
                                     {state.visible_context?.length ? (
@@ -125,7 +130,10 @@ export default function StoryChainGame({
                             </>
                         ) : (
                             <div className="story-chain-waiting">
-                                <p>{isPlayer ? 'Hang tight. Your turn is coming.' : 'Players are building the story privately.'}</p>
+                                <div className="turn-handoff-banner">
+                                    <strong>{activeName} is writing</strong>
+                                    <span>{isPlayer ? 'Your turn will unlock automatically when control reaches you.' : 'The writing box is only active for the current player.'}</span>
+                                </div>
                                 <div className="story-chain-order">
                                     {state.turn_order.map((name, index) => (
                                         <span key={name} className={name === state.active_player_id ? 'active' : index < state.current_turn_index ? 'done' : ''}>

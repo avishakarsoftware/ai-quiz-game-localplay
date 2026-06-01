@@ -82,6 +82,25 @@ export default function BluffTable({
     const winnerNames = new Set(state.winners.map((winner) => winner.player_id));
     const claim = state.last_claim;
     const selectedCount = selectedCardIds.size;
+    const challengeWindow = state.phase === 'BLUFF_CHALLENGE';
+    const turnLabel = myTurn
+        ? 'Your turn'
+        : challengeWindow
+            ? 'Challenge window'
+            : state.phase === 'BLUFF_TURN'
+                ? `${state.active_player_id}'s turn`
+                : state.phase === 'BLUFF_REVEAL'
+                    ? 'Reveal'
+                    : 'Final results';
+    const turnDetail = myTurn
+        ? `Play one or more ${state.required_rank}s, or pass.`
+        : challengeWindow
+            ? `${claim?.actor_id} played ${claim?.claimed_count || 0}. Call bluff or continue to pass control.`
+            : state.phase === 'BLUFF_TURN'
+                ? `Waiting for ${state.active_player_id} to act.`
+                : state.phase === 'BLUFF_REVEAL'
+                    ? 'Review the reveal, then continue.'
+                    : 'Game complete.';
 
     return (
         <div className="bluff-shell container-responsive safe-top safe-bottom animate-in">
@@ -100,6 +119,11 @@ export default function BluffTable({
                                     : 'Final results'}
                     </p>
                 </div>
+            </div>
+
+            <div className={`turn-handoff-banner ${myTurn ? 'active' : challengeWindow ? 'warning' : ''}`}>
+                <strong>{turnLabel}</strong>
+                <span>{turnDetail}</span>
             </div>
 
             <div className="bluff-status-card">

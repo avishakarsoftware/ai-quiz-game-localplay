@@ -63,6 +63,8 @@ test.describe('Bluff gamma live flow', () => {
       await activePlayer.page.getByRole('button', { name: /Play 1/ }).click();
 
       await expect(page.getByText(/claims 1/)).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText('Challenge window')).toBeVisible();
+      await expect(page.getByText(/Call bluff or continue to pass control/)).toBeVisible();
       await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Continue', exact: true }).click();
       await expect(page.getByText(/'s turn · claim/)).toBeVisible({ timeout: 20_000 });
