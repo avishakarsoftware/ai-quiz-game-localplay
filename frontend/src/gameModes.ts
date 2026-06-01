@@ -55,7 +55,7 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         promptTitle: 'Fact or Fiction',
         promptSubtitle: 'Spot which surprising claims are real.',
         promptPlaceholder: 'Science myths, history, sports records, office lore...',
-        generateLabel: 'Generate Claims',
+        generateLabel: 'Generate Questions',
         mode: 'fact_fiction',
     },
     {

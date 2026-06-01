@@ -1,6 +1,7 @@
 import { type CSSProperties } from 'react';
 import { type GameModeConfig } from '../../gameModes';
 import { type AIProvider } from './PromptScreen';
+import { SHOW_PROVIDER_SELECTOR } from '../../config';
 
 interface QuizVariantPromptScreenProps {
     config: GameModeConfig;
@@ -113,7 +114,7 @@ export default function QuizVariantPromptScreen({
                         </div>
                     </div>
 
-                    {providers.length > 0 && (
+                    {SHOW_PROVIDER_SELECTOR && providers.length > 0 && (
                         <select value={provider} onChange={(event) => setProvider(event.target.value)} className="input-field">
                             {providers.map((item) => (
                                 <option key={item.id} value={item.id} disabled={!item.available}>
@@ -127,7 +128,7 @@ export default function QuizVariantPromptScreen({
                         type="button"
                         onClick={onGenerate}
                         disabled={!prompt.trim()}
-                        className="btn btn-primary btn-glow w-full"
+                        className="btn btn-primary btn-glow w-full quiz-variant-generate-btn"
                     >
                         {config.generateLabel || 'Generate Game'}
                     </button>

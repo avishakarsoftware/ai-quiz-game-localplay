@@ -9,31 +9,34 @@ interface GameSelectScreenProps {
     catalog?: Array<{ id: string; launchable?: boolean }>;
 }
 
-type GameCategory = 'all' | 'ai' | 'social' | 'creative' | 'classic';
+type GameCategory = 'all' | 'quiz' | 'creative' | 'bingo_housie';
 
 const CATEGORY_OPTIONS: Array<{ id: GameCategory; label: string }> = [
     { id: 'all', label: 'All' },
-    { id: 'ai', label: 'AI & trivia' },
-    { id: 'social', label: 'Social' },
+    { id: 'quiz', label: 'Quiz/Trivia' },
     { id: 'creative', label: 'Creative' },
-    { id: 'classic', label: 'Classic' },
+    { id: 'bingo_housie', label: 'Bingo/Housie' },
 ];
 
 const GAME_CATEGORY_BY_ID: Partial<Record<GameType, GameCategory>> = {
-    quiz: 'ai',
-    rebus: 'ai',
-    emoji_charades: 'ai',
-    fact_fiction: 'ai',
-    timeline: 'ai',
-    odd_one_out: 'ai',
-    wmlt: 'social',
+    quiz: 'quiz',
+    rebus: 'quiz',
+    emoji_charades: 'quiz',
+    fact_fiction: 'quiz',
+    timeline: 'quiz',
+    odd_one_out: 'quiz',
+    wmlt: 'creative',
     drawing: 'creative',
-    housie: 'classic',
-    bingo: 'classic',
+    housie: 'bingo_housie',
+    bingo: 'bingo_housie',
 };
 
 function getGameCategory(game: GameModeConfig): GameCategory {
     return GAME_CATEGORY_BY_ID[game.id] || 'all';
+}
+
+function hasAiGeneration(game: GameModeConfig): boolean {
+    return game.id !== 'housie';
 }
 
 export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreenProps) {
@@ -99,7 +102,9 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
                         >
                             <span className="game-select-icon">{game.icon}</span>
                             <div className="game-select-info">
-                                <span className="game-select-title">{game.title}</span>
+                                <span className="game-select-title">
+                                    {game.title}{hasAiGeneration(game) ? ' ✨' : ''}
+                                </span>
                                 <span className="game-select-desc">{game.description}</span>
                             </div>
                             <span className="game-select-arrow">›</span>

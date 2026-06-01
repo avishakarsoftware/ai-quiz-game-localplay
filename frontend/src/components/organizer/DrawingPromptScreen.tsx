@@ -1,5 +1,6 @@
 import { type CSSProperties } from 'react';
 import { type AIProvider } from './PromptScreen';
+import { SHOW_PROVIDER_SELECTOR } from '../../config';
 
 interface DrawingPromptScreenProps {
     prompt: string;
@@ -98,7 +99,7 @@ export default function DrawingPromptScreen({
                         </div>
                     </div>
 
-                    {providers.length > 0 && (
+                    {SHOW_PROVIDER_SELECTOR && providers.length > 0 && (
                         <select value={provider} onChange={(event) => setProvider(event.target.value)} className="input-field">
                             {providers.map((item) => (
                                 <option key={item.id} value={item.id} disabled={!item.available}>

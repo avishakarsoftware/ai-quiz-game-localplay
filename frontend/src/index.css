@@ -3609,6 +3609,10 @@ body {
     margin: 0 auto;
 }
 
+.quiz-variant-generate-btn {
+    margin-top: 10px;
+}
+
 .game-select-arrow {
     align-self: center;
     font-size: 1.45rem;

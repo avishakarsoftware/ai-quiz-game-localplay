@@ -12,5 +12,9 @@ const ENABLE_BINGO =
   || API_HOST === 'localhost'
   || API_HOST === '127.0.0.1'
   || API_HOST.includes('gamma');
+const SHOW_PROVIDER_SELECTOR =
+  import.meta.env.DEV
+  || window.location.hostname.includes('gamma')
+  || API_HOST.includes('gamma');
 
-export { API_URL, WS_URL, API_HOST, ENABLE_BINGO };
+export { API_URL, WS_URL, API_HOST, ENABLE_BINGO, SHOW_PROVIDER_SELECTOR };

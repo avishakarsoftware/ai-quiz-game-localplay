@@ -2,6 +2,7 @@ import { type AIProvider } from './PromptScreen';
 import { useSwipeBack } from '../../utils/useSwipeBack';
 import { useTokenBalance } from '../../hooks/useTokenBalance';
 import SignInNudge from '../SignInNudge';
+import { SHOW_PROVIDER_SELECTOR } from '../../config';
 
 interface MLTPromptScreenProps {
     prompt: string;
@@ -117,7 +118,7 @@ export default function MLTPromptScreen({
                     </div>
 
                     {/* AI Provider selector */}
-                    {import.meta.env.DEV && providers.length > 0 && (
+                    {SHOW_PROVIDER_SELECTOR && providers.length > 0 && (
                         <div>
                             <p className="section-header mb-2">AI Provider</p>
                             <div className="provider-selector">

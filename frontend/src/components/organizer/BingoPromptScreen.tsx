@@ -2,6 +2,7 @@ import { Wand2 } from 'lucide-react';
 import SignInNudge from '../SignInNudge';
 import { useTokenBalance } from '../../hooks/useTokenBalance';
 import { type AIProvider } from './PromptScreen';
+import { SHOW_PROVIDER_SELECTOR } from '../../config';
 
 const ITEM_COUNTS = [24, 30, 40, 50];
 const DIFFICULTIES = [
@@ -60,7 +61,7 @@ export default function BingoPromptScreen({
                         maxLength={140}
                     />
 
-                    {import.meta.env.DEV && providers.length > 0 && (
+                    {SHOW_PROVIDER_SELECTOR && providers.length > 0 && (
                         <div>
                             <p className="section-header mb-2">AI Provider</p>
                             <div className="provider-selector">
