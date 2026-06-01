@@ -134,6 +134,17 @@ def recv_until(ws, msg_type, max_messages=50):
     raise TimeoutError(f"Never received {msg_type} after {max_messages} messages")
 
 
+def recv_bluff_phase(ws, phase, max_messages=50):
+    for i in range(max_messages):
+        try:
+            data = ws.receive_json()
+        except Exception as e:
+            raise TimeoutError(f"Connection closed while waiting for Bluff phase {phase} (after {i} messages): {e}")
+        if data.get("type") == "BLUFF_SYNC" and data.get("bluff", {}).get("phase") == phase:
+            return data
+    raise TimeoutError(f"Never received Bluff phase {phase} after {max_messages} messages")
+
+
 class TestBluffWS:
     def test_bluff_start_play_and_challenge_flow(self):
         room_code, org_token = create_bluff_room()
@@ -163,19 +174,19 @@ class TestBluffWS:
                 assert hand and not hand[0].get("hidden")
 
                 alice.send_json({"type": "BLUFF_PLAY", "card_ids": [hand[0]["id"]]})
-                challenge_sync = recv_until(org_ws, "BLUFF_SYNC")
+                challenge_sync = recv_bluff_phase(org_ws, "BLUFF_CHALLENGE")
                 assert challenge_sync["bluff"]["phase"] == "BLUFF_CHALLENGE"
                 assert challenge_sync["bluff"]["last_claim"]["actor_id"] == "Alice"
 
                 bob = players[1][1]
                 recv_until(bob, "BLUFF_SYNC")
                 bob.send_json({"type": "BLUFF_CHALLENGE"})
-                reveal_sync = recv_until(org_ws, "BLUFF_SYNC")
+                reveal_sync = recv_bluff_phase(org_ws, "BLUFF_REVEAL")
                 assert reveal_sync["bluff"]["phase"] == "BLUFF_REVEAL"
                 assert reveal_sync["bluff"]["revealed_cards"]
 
                 org_ws.send_json({"type": "BLUFF_CONTINUE"})
-                next_sync = recv_until(org_ws, "BLUFF_SYNC")
+                next_sync = recv_bluff_phase(org_ws, "BLUFF_TURN")
                 assert next_sync["bluff"]["phase"] == "BLUFF_TURN"
             finally:
                 for cm, _ws, _name in players:

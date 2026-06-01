@@ -515,7 +515,7 @@ export default function OrganizerPage() {
         }
         else if (type === 'bluff') {
             setBluffState(null);
-            void createRoom();
+            void createRoom(undefined, 'bluff', defaultTimeLimitForGame('bluff'));
         }
         else if (type === 'quiz') {
             setPrompt(randomQuizTopic(prompt));
@@ -983,16 +983,22 @@ export default function OrganizerPage() {
         };
     }, []);
 
-    const createRoom = async (contentOverride?: string) => {
+    const createRoom = async (
+        contentOverride?: string,
+        gameTypeOverride: GameType = gameType,
+        timeLimitOverride: number = timeLimit,
+    ) => {
         const selectedContentId = contentOverride ?? contentId;
+        const effectiveGameType = gameTypeOverride;
+        const effectiveTimeLimit = timeLimitOverride;
         // Play Again path: reuse existing room via RESET_ROOM
         if (roomCode && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
             if (selectedContentId) {
                 wsRef.current.send(JSON.stringify({
                     type: 'RESET_ROOM',
                     content_id: selectedContentId,
-                    time_limit: timeLimit,
-                    game_type: runtimeGameType(gameType),
+                    time_limit: effectiveTimeLimit,
+                    game_type: runtimeGameType(effectiveGameType),
                 }));
                 return;
             }
@@ -1001,22 +1007,22 @@ export default function OrganizerPage() {
         // First-time room creation
         try {
             const body: Record<string, unknown> = {
-                time_limit: timeLimit,
-                game_type: runtimeGameType(gameType),
+                time_limit: effectiveTimeLimit,
+                game_type: runtimeGameType(effectiveGameType),
             };
-            if (gameType === 'wmlt') {
+            if (effectiveGameType === 'wmlt') {
                 body.mlt_id = selectedContentId;
-            } else if (gameType === 'drawing') {
+            } else if (effectiveGameType === 'drawing') {
                 body.drawing_id = selectedContentId;
-            } else if (gameType === 'housie') {
+            } else if (effectiveGameType === 'housie') {
                 body.housie_id = selectedContentId;
-            } else if (gameType === 'bingo') {
+            } else if (effectiveGameType === 'bingo') {
                 body.bingo_id = selectedContentId;
-            } else if (gameType === 'musical_chairs') {
+            } else if (effectiveGameType === 'musical_chairs') {
                 body.musical_chairs_config = musicalChairsConfig;
-            } else if (gameType === 'bluff') {
+            } else if (effectiveGameType === 'bluff') {
                 body.bluff_config = { game_title: 'Bluff' };
-            } else if (isQuizRuntimeGame(gameType)) {
+            } else if (isQuizRuntimeGame(effectiveGameType)) {
                 body.quiz_id = selectedContentId;
             }
 
@@ -1033,7 +1039,7 @@ export default function OrganizerPage() {
             const data = await res.json();
             setRoomCode(data.room_code);
             organizerTokenRef.current = data.organizer_token || '';
-            track('room_created', { room_code: data.room_code, game_type: gameType, time_limit: timeLimit });
+            track('room_created', { room_code: data.room_code, game_type: effectiveGameType, time_limit: effectiveTimeLimit });
             setState('ROOM');
             connectWs(data.room_code);
         } catch {
@@ -1065,7 +1071,7 @@ export default function OrganizerPage() {
             setContentId(newContentId);
             setGameType('housie');
             setTotalQuestions(90);
-            await createRoom(newContentId);
+            await createRoom(newContentId, 'housie');
         } catch {
             setErrorModal({ title: 'Connection Error', message: 'Could not create the Housie setup.' });
         }
@@ -1139,7 +1145,7 @@ export default function OrganizerPage() {
             setContentId(newContentId);
             setGameType('bingo');
             setTotalQuestions((data.game?.deck?.length as number) || bingoDeck.length);
-            await createRoom(newContentId);
+            await createRoom(newContentId, 'bingo');
         } catch {
             setErrorModal({ title: 'Connection Error', message: 'Could not create the Bingo setup.' });
         }
@@ -1472,7 +1478,7 @@ export default function OrganizerPage() {
                         setConfig={setMusicalChairsConfig}
                         onCreateRoom={() => {
                             setGameType('musical_chairs');
-                            void createRoom();
+                            void createRoom(undefined, 'musical_chairs', defaultTimeLimitForGame('musical_chairs'));
                         }}
                         onBack={() => setState('SELECT_GAME')}
                     />
