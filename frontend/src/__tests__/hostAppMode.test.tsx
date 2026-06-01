@@ -153,6 +153,17 @@ describe('host-app mode filtering', () => {
                             creation_modes: ['template', 'manual', 'ai'],
                         },
                         {
+                            id: 'housie',
+                            game_type: 'housie',
+                            title: 'Housie',
+                            description: 'Numbers',
+                            launchable: true,
+                            can_create_content: true,
+                            can_edit_content: true,
+                            can_quick_start: true,
+                            creation_modes: ['manual', 'template'],
+                        },
+                        {
                             id: 'rebus',
                             game_type: 'rebus',
                             title: 'Rebus Rush',
@@ -171,11 +182,13 @@ describe('host-app mode filtering', () => {
         expect(screen.getByText('AI Quiz')).toBeInTheDocument();
         expect(screen.getByText('Most Likely To')).toBeInTheDocument();
         expect(screen.getByText('Drawing Game')).toBeInTheDocument();
+        expect(screen.getByText('Housie')).toBeInTheDocument();
         expect(screen.queryByText('Rebus Rush')).not.toBeInTheDocument();
         expect(screen.getByText('Saved Quiz')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /create quiz/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /set up round/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /set up drawing/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /set up housie/i })).toBeInTheDocument();
         expect(screen.getByText(/write your own or use ai/i)).toBeInTheDocument();
         expect(screen.getAllByText(/ready-made or ai prompts/i)).toHaveLength(2);
         expect(screen.queryByText(/manual \/ ai/i)).not.toBeInTheDocument();

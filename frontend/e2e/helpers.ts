@@ -91,6 +91,18 @@ export function revelryCatalog() {
       config_schema: { time_limit: { min: 5, max: 60, default: 30 } },
     },
     {
+      id: 'housie',
+      game_type: 'housie',
+      title: 'Housie',
+      description: 'Classic 90-ball number calling with tickets and prize claims.',
+      launchable: true,
+      can_create_content: true,
+      can_edit_content: true,
+      can_quick_start: true,
+      supports_ai_generation: false,
+      creation_modes: ['manual', 'template'],
+    },
+    {
       id: 'rebus',
       game_type: 'rebus',
       title: 'Rebus Rush',

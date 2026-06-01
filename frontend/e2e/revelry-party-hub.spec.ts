@@ -29,11 +29,13 @@ test.describe('Revelry Games party hub', () => {
     await expect(page.getByRole('heading', { name: 'AI Quiz' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Most Likely To' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Drawing Game' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Housie' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Rebus Rush' })).not.toBeVisible();
     await expect(page.getByText('Christmas Quiz')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Create quiz' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Set up round' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Set up drawing' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Set up Housie' })).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
 
@@ -102,6 +104,91 @@ test.describe('Revelry Games party hub', () => {
           { id: 2, text: 'gingerbread house' },
         ],
       },
+    });
+  });
+
+  test('saves and starts Housie setup from the Revelry hub', async ({ page }) => {
+    let saveRequest: Record<string, unknown> | undefined;
+    let startRequest: Record<string, unknown> | undefined;
+    await page.route('**/integrations/revelry/party-games/resolve?**', async (route) => {
+      await route.fulfill({
+        json: {
+          launch_context: revelryLaunchContext(),
+          workspace: revelryWorkspace({ prepared_content: [] }),
+        },
+      });
+    });
+    await page.route('**/integrations/revelry/party-games/content', async (route) => {
+      saveRequest = route.request().postDataJSON();
+      await route.fulfill({
+        json: {
+          localplay_content_id: 'housie-party-1',
+          content: {
+            localplay_content_id: 'housie-party-1',
+            game_type: 'housie',
+            title: 'Holiday Housie',
+            question_count: 6,
+            status: 'ready',
+          },
+          workspace: revelryWorkspace({
+            prepared_content: [
+              {
+                localplay_content_id: 'housie-party-1',
+                game_type: 'housie',
+                title: 'Holiday Housie',
+                question_count: 6,
+                status: 'ready',
+              },
+            ],
+          }),
+        },
+      });
+    });
+    await page.route('**/integrations/revelry/party-games/start', async (route) => {
+      startRequest = route.request().postDataJSON();
+      await route.fulfill({
+        json: {
+          session: { session_id: 'lp-housie', status: 'lobby', room_code: 'HOU123' },
+          launch_url: '/organizer?session_id=lp-housie&launch_token=housie-token&embed=1',
+        },
+      });
+    });
+
+    await page.goto('/revelry/games?party_games_token=party-token');
+    await page.getByRole('button', { name: 'Set up Housie' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Set up Housie' })).toBeVisible();
+    await expect(page.getByText('Default prizes: Quick 5, Four Corners, Top Row, Middle Row, Bottom Row, Full House.')).toBeVisible();
+    await expect(page.getByText('Generate prompts with AI')).not.toBeVisible();
+    await page.getByLabel('Title').fill('Holiday Housie');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+    await expect(page.getByText('Holiday Housie')).toBeVisible();
+    await expect(page.getByText('6 prizes')).toBeVisible();
+    expect(saveRequest).toMatchObject({
+      party_games_token: 'party-token',
+      game_type: 'housie',
+      title: 'Holiday Housie',
+      status: 'ready',
+    });
+    expect(saveRequest?.content_payload).toMatchObject({
+      game: {
+        game_title: 'Holiday Housie',
+        pattern_ids: ['quick_5', 'four_corners', 'top_row', 'middle_row', 'bottom_row', 'full_house'],
+        play_mode: 'beginner',
+        caller_mode: 'manual',
+        auto_interval_seconds: 8,
+        auto_pause_on_claim: true,
+      },
+    });
+
+    await page.getByRole('button', { name: 'Start' }).click();
+    await expect(page).toHaveURL(/\/organizer\?session_id=lp-housie/);
+    expect(startRequest).toMatchObject({
+      party_games_token: 'party-token',
+      content_id: 'housie-party-1',
+      game_type: 'housie',
+      replacement_confirmed: false,
     });
   });
 

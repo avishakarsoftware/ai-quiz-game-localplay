@@ -14,8 +14,7 @@ def setup_function():
 def test_local_missing_policy_uses_static_host_app_catalog():
     games = effective_catalog(GAME_CATALOG, host_app="revelry", environment="local")
     game_ids = {game["id"] for game in games}
-    assert {"quiz", "wmlt", "drawing"}.issubset(game_ids)
-    assert "housie" not in game_ids
+    assert {"quiz", "wmlt", "drawing", "housie"}.issubset(game_ids)
 
 
 def test_production_missing_policy_fails_closed():
@@ -93,7 +92,7 @@ def test_policy_allowlists_party_exposure():
 
 def test_policy_never_enables_static_unsupported_game():
     env = f"test-unsupported-{uuid.uuid4().hex}"
-    db.upsert_host_app_catalog_flag(env, "revelry", "housie", {
+    db.upsert_host_app_catalog_flag(env, "revelry", "bingo", {
         "enabled": True,
         "status": "live",
     })
@@ -101,8 +100,8 @@ def test_policy_never_enables_static_unsupported_game():
 
     games = effective_catalog(GAME_CATALOG, host_app="revelry", environment=env)
 
-    assert "housie" not in {game["id"] for game in games}
-    assert not is_game_allowed(GAME_CATALOG, "housie", host_app="revelry", environment=env)
+    assert "bingo" not in {game["id"] for game in games}
+    assert not is_game_allowed(GAME_CATALOG, "bingo", host_app="revelry", environment=env)
 
 
 def test_route_catalog_uses_policy(monkeypatch):

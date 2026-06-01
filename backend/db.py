@@ -116,7 +116,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS generated_content (
             id TEXT PRIMARY KEY,
             wallet_id TEXT NOT NULL,
-            content_type TEXT NOT NULL CHECK (content_type IN ('quiz', 'mlt', 'drawing')),
+            content_type TEXT NOT NULL CHECK (content_type IN ('quiz', 'mlt', 'drawing', 'housie')),
             title TEXT NOT NULL DEFAULT '',
             payload TEXT NOT NULL,
             prompt TEXT,
@@ -241,9 +241,46 @@ def init_db():
         if "duplicate column" not in str(e).lower():
             logger.error("Failed to add metadata column: %s", e)
             raise
+    _migrate_generated_content_housie_type()
     # Run one-time migration of old entitlements to token wallets
     migrate_entitlements_to_wallets()
     logger.info("Database initialized at %s", DB_PATH)
+
+
+def _migrate_generated_content_housie_type() -> None:
+    """Expand generated_content.content_type CHECK constraint for saved Housie setups."""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'generated_content'"
+    ).fetchone()
+    table_sql = row["sql"] if row else ""
+    if "'housie'" in table_sql:
+        return
+    conn.executescript("""
+        CREATE TABLE generated_content_new (
+            id TEXT PRIMARY KEY,
+            wallet_id TEXT NOT NULL,
+            content_type TEXT NOT NULL CHECK (content_type IN ('quiz', 'mlt', 'drawing', 'housie')),
+            title TEXT NOT NULL DEFAULT '',
+            payload TEXT NOT NULL,
+            prompt TEXT,
+            model TEXT,
+            provider TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER
+        );
+        INSERT INTO generated_content_new
+            (id, wallet_id, content_type, title, payload, prompt, model, provider, created_at, updated_at)
+        SELECT id, wallet_id, content_type, title, payload, prompt, model, provider, created_at, updated_at
+        FROM generated_content;
+        DROP TABLE generated_content;
+        ALTER TABLE generated_content_new RENAME TO generated_content;
+        CREATE INDEX IF NOT EXISTS idx_generated_content_wallet
+            ON generated_content(wallet_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_generated_content_type
+            ON generated_content(content_type, created_at DESC);
+    """)
+    conn.commit()
 
 
 # --- Entitlements ---

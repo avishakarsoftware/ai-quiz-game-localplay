@@ -1024,6 +1024,64 @@ def test_revelry_party_hub_can_save_and_start_catalog_game_content(monkeypatch):
     assert resolve_res.json()["organizer_token"]
 
 
+def test_revelry_party_hub_can_save_and_start_housie(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-hub-housie-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Ava's Housie Night",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["author_content", "operate_game"],
+        },
+    }
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+    assert link_res.status_code == 200
+    party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
+
+    resolve_res = client.get(f"/integrations/revelry/party-games/resolve?party_games_token={party_token}")
+    assert resolve_res.status_code == 200
+    assert "housie" in {game["id"] for game in resolve_res.json()["workspace"]["catalog"]}
+
+    save_res = client.post(
+        "/integrations/revelry/party-games/content",
+        json={
+            "party_games_token": party_token,
+            "game_type": "housie",
+            "title": "Ava's Housie",
+            "content_payload": {
+                "game": {
+                    "game_title": "Ava's Housie",
+                    "pattern_ids": ["quick_5", "four_corners", "top_row", "middle_row", "bottom_row", "full_house"],
+                    "play_mode": "beginner",
+                    "caller_mode": "manual",
+                },
+            },
+        },
+    )
+    assert save_res.status_code == 200, save_res.text
+    saved = save_res.json()["content"]
+    assert saved["game_type"] == "housie"
+    assert saved["question_count"] == 6
+
+    start_res = client.post(
+        "/integrations/revelry/party-games/start",
+        json={"party_games_token": party_token, "game_type": "housie", "content_id": saved["localplay_content_id"]},
+    )
+    assert start_res.status_code == 200, start_res.text
+    body = start_res.json()
+    room = socket_manager.rooms[body["session"]["room_code"]]
+    assert room.game_type == "housie"
+    assert room.quiz["game_title"] == "Ava's Housie"
+
+
 def test_revelry_party_hub_can_generate_drawing_setup_prompts(monkeypatch):
     monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
     db.init_db()

@@ -129,6 +129,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="AI Quiz Game Backend", lifespan=lifespan)
+REVELRY_PARTY_GAME_TYPES = ("quiz", "wmlt", "drawing", "housie")
+REVELRY_PARTY_GAME_TYPES_ERROR = 'game_type must be "quiz", "wmlt", "drawing", or "housie"'
 
 
 def get_local_ip():
@@ -518,8 +520,8 @@ GAME_CATALOG = [
         "title": "Housie",
         "description": "Classic 90-ball number calling with tickets and prize claims.",
         "launchable": True,
-        "host_app_supported": False,
-        "supported_host_apps": [],
+        "host_app_supported": True,
+        "supported_host_apps": ["revelry"],
         "supports_custom_content": True,
         "supports_images": False,
         "can_create_content": True,
@@ -1446,8 +1448,8 @@ class RevelryContentAuthoringLinkRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value not in ("quiz", "wmlt", "drawing"):
-            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
+        if value not in REVELRY_PARTY_GAME_TYPES:
+            raise ValueError(REVELRY_PARTY_GAME_TYPES_ERROR)
         return value
 
     @field_validator("mode")
@@ -1467,8 +1469,8 @@ class RevelryPartyGamesAuthoringLinkRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value not in ("quiz", "wmlt", "drawing"):
-            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
+        if value not in REVELRY_PARTY_GAME_TYPES:
+            raise ValueError(REVELRY_PARTY_GAME_TYPES_ERROR)
         return value
 
 
@@ -1487,8 +1489,8 @@ class RevelryPartyGamesContentSaveRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value not in ("quiz", "wmlt", "drawing"):
-            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
+        if value not in REVELRY_PARTY_GAME_TYPES:
+            raise ValueError(REVELRY_PARTY_GAME_TYPES_ERROR)
         return value
 
 
@@ -1503,8 +1505,8 @@ class RevelryPartyGamesPromptGenerateRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value not in ("quiz", "wmlt", "drawing"):
-            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
+        if value not in REVELRY_PARTY_GAME_TYPES:
+            raise ValueError(REVELRY_PARTY_GAME_TYPES_ERROR)
         return value
 
     @field_validator("prompt")
@@ -1544,8 +1546,8 @@ class RevelryContentSaveRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value not in ("quiz", "wmlt", "drawing"):
-            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
+        if value not in REVELRY_PARTY_GAME_TYPES:
+            raise ValueError(REVELRY_PARTY_GAME_TYPES_ERROR)
         return value
 
 
@@ -1569,8 +1571,8 @@ class RevelryPartyGameStartRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value not in ("quiz", "wmlt", "drawing"):
-            raise ValueError('game_type must be "quiz", "wmlt", or "drawing"')
+        if value not in REVELRY_PARTY_GAME_TYPES:
+            raise ValueError(REVELRY_PARTY_GAME_TYPES_ERROR)
         return value
 
 
@@ -2078,6 +2080,8 @@ def _count_game_items(game_type: str, payload: dict) -> int:
         return len(game.get("statements") or [])
     if game_type == "drawing":
         return len(game.get("prompts") or [])
+    if game_type == "housie":
+        return len(game.get("patterns") or [])
     if game_type == "quiz":
         return len(game.get("questions") or [])
     return 0
@@ -2090,7 +2094,7 @@ def _game_content_summary(content: dict) -> dict:
     return {
         "localplay_content_id": content["id"],
         "game_type": game_type,
-        "title": content.get("title") or ("Drawing Game" if game_type == "drawing" else "Most Likely To"),
+        "title": content.get("title") or ("Drawing Game" if game_type == "drawing" else "Housie" if game_type == "housie" else "Most Likely To"),
         "status": content.get("status") or "ready",
         "thumbnail_url": "",
         "question_count": count,
@@ -2479,6 +2483,11 @@ def _content_game_from_payload(game_type: str, title: str, payload: dict[str, An
         except (TypeError, ValueError):
             time_limit = 30
         return {"game": game_data, "time_limit": max(5, min(60, time_limit))}
+    if game_type == "housie":
+        if "game_title" not in game_data and title:
+            game_data = {**game_data, "game_title": title}
+        game_data = _sanitize_housie_game(game_data)
+        return {"game": game_data}
     raise HTTPException(status_code=422, detail="Unsupported game_type")
 
 

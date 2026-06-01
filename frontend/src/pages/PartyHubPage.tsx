@@ -128,7 +128,9 @@ function cardMetaForGame(game: CatalogGame): string {
 
 function savedContentSummary(content: PreparedContent): string {
     const count = content.question_count || 0;
-    const unit = content.game_type === 'quiz'
+    const unit = content.game_type === 'housie'
+        ? `${count || 'Saved'} prize${count === 1 ? '' : 's'}`
+        : content.game_type === 'quiz'
         ? `${count} question${count === 1 ? '' : 's'}`
         : `${count || 'Saved'} prompt${count === 1 ? '' : 's'}`;
     return `${unit} · ${content.status}`;
@@ -144,6 +146,9 @@ function defaultPromptsForGame(gameType: string): string {
     }
     if (gameType === 'drawing') {
         return ['birthday cake', 'dance party', 'confetti'].join('\n');
+    }
+    if (gameType === 'housie') {
+        return '';
     }
     return '';
 }
@@ -163,6 +168,13 @@ function setupCopyForGame(gameType: string): { heading: string; promptLabel: str
             help: 'Add one drawable prompt per line.',
         };
     }
+    if (gameType === 'housie') {
+        return {
+            heading: 'Set up Housie',
+            promptLabel: 'Prizes',
+            help: 'Classic 90-ball Housie with Quick 5, rows, corners, and full house prizes.',
+        };
+    }
     return {
         heading: 'Set up game',
         promptLabel: 'Prompts',
@@ -174,6 +186,9 @@ function promptLinesFromPayload(gameType: string, payload: Record<string, unknow
     const gamePayload = payload?.game && typeof payload.game === 'object'
         ? payload.game as Record<string, unknown>
         : payload || {};
+    if (gameType === 'housie') {
+        return [];
+    }
     return gameType === 'wmlt'
         ? ((gamePayload.statements as Array<{ text?: string }> | undefined) || []).map((item) => item.text || '').filter(Boolean)
         : ((gamePayload.prompts as Array<{ text?: string }> | undefined) || []).map((item) => item.text || '').filter(Boolean);
@@ -206,6 +221,18 @@ function contentPayloadFromDraft(draft: SetupDraft) {
                 })),
             },
             time_limit: draft.timeLimit || 30,
+        };
+    }
+    if (gameType === 'housie') {
+        return {
+            game: {
+                game_title: draft.title,
+                pattern_ids: ['quick_5', 'four_corners', 'top_row', 'middle_row', 'bottom_row', 'full_house'],
+                play_mode: 'beginner',
+                caller_mode: 'manual',
+                auto_interval_seconds: 8,
+                auto_pause_on_claim: true,
+            },
         };
     }
     return { game: { game_title: draft.title, prompts } };
@@ -470,7 +497,9 @@ export default function PartyHubPage() {
         if (!setupDraft) return;
         const gameType = setupDraft.game.game_type || setupDraft.game.id;
         const payload = contentPayloadFromDraft(setupDraft);
-        const promptCount = gameType === 'wmlt'
+        const promptCount = gameType === 'housie'
+            ? 1
+            : gameType === 'wmlt'
             ? (payload.game.statements || []).length
             : (payload.game.prompts || []).length;
         if (!setupDraft.title.trim() || promptCount < 1) {
@@ -729,14 +758,18 @@ export default function PartyHubPage() {
                             onChange={(event) => setSetupDraft({ ...setupDraft, title: event.target.value })}
                         />
                     </label>
-                    <label>
-                        <span>{setupCopyForGame(setupDraft.game.game_type || setupDraft.game.id).promptLabel}</span>
-                        <textarea
-                            value={setupDraft.promptsText}
-                            rows={7}
-                            onChange={(event) => setSetupDraft({ ...setupDraft, promptsText: event.target.value })}
-                        />
-                    </label>
+                    {(setupDraft.game.game_type || setupDraft.game.id) === 'housie' ? (
+                        <div className="party-hub__empty">Default prizes: Quick 5, Four Corners, Top Row, Middle Row, Bottom Row, Full House.</div>
+                    ) : (
+                        <label>
+                            <span>{setupCopyForGame(setupDraft.game.game_type || setupDraft.game.id).promptLabel}</span>
+                            <textarea
+                                value={setupDraft.promptsText}
+                                rows={7}
+                                onChange={(event) => setSetupDraft({ ...setupDraft, promptsText: event.target.value })}
+                            />
+                        </label>
+                    )}
                     {setupDraft.game.supports_ai_generation && (
                         <div className="party-hub__ai-box">
                             <div>
