@@ -119,7 +119,7 @@ export default function DrawingPromptScreen({
                         type="button"
                         onClick={onGenerate}
                         disabled={!prompt.trim()}
-                        className="btn btn-primary btn-glow w-full"
+                        className="btn btn-primary btn-glow w-full prompt-primary-action"
                     >
                         Generate Prompts
                     </button>

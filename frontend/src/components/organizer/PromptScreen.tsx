@@ -375,11 +375,11 @@ export default function PromptScreen({
                 </div>
             </div>
 
-            <div className="mt-auto pb-4 space-y-2">
+            <div className="mt-auto pb-4 space-y-2 prompt-footer-actions">
                 <button
                     onClick={onGenerate}
                     disabled={!prompt.trim()}
-                    className="btn btn-primary btn-glow w-full"
+                    className="btn btn-primary btn-glow w-full prompt-primary-action"
                 >
                     Generate Quiz
                 </button>

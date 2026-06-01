@@ -126,7 +126,7 @@ export default function QuizVariantPromptScreen({
                         type="button"
                         onClick={onGenerate}
                         disabled={!prompt.trim()}
-                        className="btn btn-primary btn-glow w-full quiz-variant-generate-btn"
+                        className="btn btn-primary btn-glow w-full prompt-primary-action quiz-variant-generate-btn"
                     >
                         {config.generateLabel || 'Generate Game'}
                     </button>

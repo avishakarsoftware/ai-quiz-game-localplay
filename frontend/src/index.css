@@ -2760,12 +2760,46 @@ body {
 }
 
 .review-answer-grid .review-option {
+    position: relative;
     display: grid;
     grid-template-columns: 42px minmax(0, 1fr) auto;
     align-items: center;
     column-gap: 12px;
     min-height: 46px;
+    padding: 12px 14px 12px 18px;
+    overflow: hidden;
     text-align: left;
+    border: 1px solid rgba(248, 234, 211, 0.16);
+    border-left: 0;
+    background: rgba(248, 234, 211, 0.035);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.review-answer-grid .review-option::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 5px;
+    border-radius: 0 999px 999px 0;
+    background: var(--text-quaternary);
+}
+
+.review-answer-grid .answer-red::before {
+    background: var(--accent);
+}
+
+.review-answer-grid .answer-blue::before {
+    background: var(--purple);
+}
+
+.review-answer-grid .answer-yellow::before {
+    background: var(--mustard);
+}
+
+.review-answer-grid .answer-green::before {
+    background: var(--olive);
 }
 
 .review-answer-grid .answer-label {
@@ -2790,6 +2824,25 @@ body {
     padding-left: 16px;
     padding-right: 16px;
     white-space: nowrap;
+}
+
+.review-answer-toggle.active {
+    border-color: rgba(109, 255, 230, 0.72);
+    background: linear-gradient(180deg, rgba(109, 255, 230, 0.18), rgba(109, 255, 230, 0.08));
+    color: var(--ink);
+    box-shadow: 0 0 0 3px rgba(109, 255, 230, 0.10), var(--glow-mint);
+}
+
+.review-answer-key-pill {
+    margin-left: auto;
+    padding: 4px 8px;
+    border: 1px solid rgba(109, 255, 230, 0.48);
+    border-radius: 999px;
+    background: rgba(109, 255, 230, 0.12);
+    color: var(--olive);
+    font-size: 0.7rem;
+    font-weight: 1000;
+    text-transform: uppercase;
 }
 
 .quiz-library-empty-action {
@@ -3690,8 +3743,12 @@ body {
     padding: 0 18px;
 }
 
-.quiz-variant-generate-btn {
-    margin-top: 10px;
+.prompt-primary-action {
+    margin-top: 32px;
+}
+
+.prompt-footer-actions {
+    padding-top: 18px;
 }
 
 .game-select-arrow {

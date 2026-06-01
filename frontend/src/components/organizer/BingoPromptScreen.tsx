@@ -113,8 +113,8 @@ export default function BingoPromptScreen({
                 </div>
             </div>
 
-            <div className="mt-auto pb-4 space-y-2">
-                <button onClick={onGenerate} disabled={!prompt.trim()} className="btn btn-primary btn-glow w-full">
+            <div className="mt-auto pb-4 space-y-2 prompt-footer-actions">
+                <button onClick={onGenerate} disabled={!prompt.trim()} className="btn btn-primary btn-glow w-full prompt-primary-action">
                     <Wand2 size={18} /> Generate Bingo
                 </button>
                 <button type="button" onClick={onCreateCustom} className="btn btn-secondary w-full">

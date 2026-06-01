@@ -94,6 +94,8 @@ describe('ReviewScreen', () => {
         fireEvent.click(screen.getByRole('button', { name: /Show Answers/i }));
 
         expect(screen.getByText('Correct')).toBeInTheDocument();
+        expect(screen.getByText('Answer key visible')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Hide Answers/i })).toHaveAttribute('aria-pressed', 'true');
         expect(screen.getByText('Correct').closest('.answer-option')).toHaveClass('review-option-correct');
     });
 });

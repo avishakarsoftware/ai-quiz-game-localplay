@@ -1029,6 +1029,7 @@ Generation:
 - Successful generation moves to review.
 - Provider-picking UI is a local/gamma diagnostic affordance only. Production standalone and production backend-served surfaces must hide raw provider selectors such as "Google AI"; production still uses the configured backend/default provider and remote config.
 - AI Quiz, quiz variants, and Drawing prompt screens must include a consistent back control positioned with the header/icon area so hosts can return to the game catalog without using the global menu.
+- AI-generated setup screens must keep visible vertical separation between count selectors and the final generate action. The primary action should not visually attach to the last selector row.
 - `402`, `429`, and `503` are surfaced in an error modal.
 - In host-app party hub mode, prompt-list setup games such as WMLT and Drawing may call `/integrations/revelry/party-games/prompts/generate` with a party-scoped token. Generated prompts populate the editable setup form and are not persisted until the host saves the setup.
 
@@ -1036,7 +1037,8 @@ Review:
 
 - Quiz and quiz-variant review use the shared `ReviewScreen`.
 - The **Show Answers** toggle belongs with the lower review actions near room creation, not in the header.
-- Player preview answer choices must use a stable badge/text grid so answer labels and copy align for every quiz-family game and wrap cleanly on mobile.
+- Player preview answer choices must use a stable badge/text grid with clear row boundaries so answer labels and copy align for every quiz-family game and wrap cleanly on mobile.
+- When **Show Answers** is active, the review screen must make the state visible with an answer-key indicator, active toggle styling, and an unmistakable correct-answer row. It should be obvious even on mirrored host screens.
 - Button groups, including **My Quizzes** empty/library footer actions, must keep visible spacing between adjacent buttons on desktop and mobile.
 
 Room creation:

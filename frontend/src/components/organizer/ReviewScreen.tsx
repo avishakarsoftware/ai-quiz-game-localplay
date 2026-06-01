@@ -248,6 +248,7 @@ export default function ReviewScreen({
                                     <div className="flex items-center gap-2 mb-3">
                                         <span className="review-q-number">{boundedIndex + 1}</span>
                                         <span className="text-xs font-bold text-[--text-tertiary]">Player preview</span>
+                                        {showAnswers && <span className="review-answer-key-pill">Answer key visible</span>}
                                     </div>
                                     <div className={`question-card review-player-preview ${selectedImageUrl ? 'has-image' : ''}`}>
                                         {selectedImageUrl && (
@@ -290,7 +291,8 @@ export default function ReviewScreen({
                 </button>
                 <button
                     onClick={() => setShowAnswers(!showAnswers)}
-                    className="btn btn-secondary review-answer-toggle"
+                    className={`btn btn-secondary review-answer-toggle ${showAnswers ? 'active' : ''}`}
+                    aria-pressed={showAnswers}
                     title={showAnswers ? 'Hide answers (safe for screen mirroring)' : 'Show correct answers'}
                 >
                     {showAnswers ? 'Hide Answers' : 'Show Answers'}
