@@ -1173,7 +1173,7 @@ export default function OrganizerPage() {
     // In Capacitor, window.location.origin is capacitor://localhost — use the web URL instead
     const isCapacitor = window.location.protocol === 'capacitor:' || window.location.hostname === 'localhost' && !window.location.port;
     const baseUrl = isCapacitor
-        ? (import.meta.env.VITE_WEB_URL || 'https://games.revelryapp.me/quiz/')
+        ? (import.meta.env.VITE_WEB_URL || 'https://games.revelryapp.me/')
         : `${window.location.origin}${import.meta.env.BASE_URL}`;
     const joinUrl = `${baseUrl}join/${roomCode}`;
     const currentQ = liveQuestion || quiz?.questions[currentQuestion - 1];

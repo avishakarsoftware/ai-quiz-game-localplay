@@ -90,11 +90,11 @@ Users -> games.revelryapp.me (IONOS CDN/static hosting) -> React/Vite frontend
 
 Production URLs:
 
-- Frontend: `https://games.revelryapp.me/quiz/`
+- Frontend: `https://games.revelryapp.me/`
 - Backend API + SPA fallback: `https://gamesapi.revelryapp.me`
 - Gamma full stack: `https://gamesapi-gamma.revelryapp.me`
-- Player join: `https://games.revelryapp.me/quiz/join`
-- Spectator/TV: `https://games.revelryapp.me/quiz/spectator`
+- Player join: `https://games.revelryapp.me/join`
+- Spectator/TV: `https://games.revelryapp.me/spectator`
 - Cast App ID: `1BC9ACD8`
 
 Backend hosting:
@@ -110,8 +110,8 @@ Backend hosting:
 
 Frontend hosting:
 
-- Static Vite build uploaded under the IONOS `games/quiz/` directory.
-- SPA routing is handled by `.htaccess` under `/quiz/`.
+- Static Vite build uploaded under the IONOS `games/` directory.
+- SPA routing is handled by `.htaccess` at the IONOS game root.
 
 Backend-served frontend:
 
@@ -127,7 +127,7 @@ Production notes:
 
 - Ollama and Stable Diffusion are not expected to be available on the production VM.
 - Production should use cloud AI providers, primarily Gemini.
-- The frontend is built with `VITE_BASE_PATH=/quiz/` and `VITE_API_URL=https://gamesapi.revelryapp.me`.
+- The frontend is built with `VITE_BASE_PATH=/`, `VITE_API_URL=https://gamesapi.revelryapp.me`, and `VITE_WEB_URL=https://games.revelryapp.me/`.
 
 ## Runtime Configuration
 
@@ -1353,7 +1353,7 @@ Current deployed infrastructure:
 - Production data lives in `/home/revelry-games/revelry-data`; gamma data lives in `/home/revelry-games/revelry-data-gamma`.
 - Production env should include `TRUST_PROXY_HEADERS=true`, `https://gamesapi.revelryapp.me`, the IONOS PWA origin, and the native/local origins the app can launch from: `capacitor://localhost`, `http://localhost`, `https://localhost`, `http://localhost:9200`, and `http://127.0.0.1:9200`.
 - Gamma env should include `CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/`, `TRUST_PROXY_HEADERS=true`, gamma origin plus local dev origins in `ALLOWED_ORIGINS`, and test Stripe keys before checkout testing.
-- AI model defaults can be overridden by both VM env and remote `config.json`. Keep `GEMINI_MODEL=gemini-2.5-flash-lite`, `GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite`, production `REMOTE_CONFIG_URL=https://games.revelryapp.me/quiz/config.json`, and gamma `REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json`. Free and premium generation intentionally use the same Flash Lite model.
+- AI model defaults can be overridden by both VM env and remote `config.json`. Keep `GEMINI_MODEL=gemini-2.5-flash-lite`, `GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite`, production `REMOTE_CONFIG_URL=https://games.revelryapp.me/config.json`, and gamma `REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json`. Free and premium generation intentionally use the same Flash Lite model.
 - Prod and gamma envs must set a strong `JWT_SECRET`; provider sign-in can verify a valid Google/Apple token but still fail if the backend cannot mint the app session JWT.
 - Prod and gamma envs must set the browser auth client IDs used for backend token verification: `GOOGLE_CLIENT_ID=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com`, `APPLE_CLIENT_ID=me.revelryapp.quiz.web`, and `APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz`.
 - Google OAuth Web Client authorized JavaScript origins must include every SPA host: `https://games.revelryapp.me`, `https://gamesapi.revelryapp.me`, `https://gamesapi-gamma.revelryapp.me`, `http://localhost:5173`, `http://localhost:9200`, and `http://127.0.0.1:9200`.

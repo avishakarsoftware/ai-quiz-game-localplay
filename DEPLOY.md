@@ -15,17 +15,17 @@ Users → games.revelryapp.me (IONOS CDN) → static frontend
 - **Reverse proxy**: Nginx on the VM handles HTTPS termination + WebSocket upgrade
 - **SSL**: Let's Encrypt via Certbot (auto-renewing)
 
-The public production game is still expected to run at `https://games.revelryapp.me/quiz/` from IONOS. The backend-served SPA gives us a same-origin deployment path for gamma, previews, and emergency/prod fallback at the API domains.
+The public production game is expected to run at `https://games.revelryapp.me/` from IONOS. The backend-served SPA gives us a same-origin deployment path for gamma, previews, and emergency/prod fallback at the API domains.
 
 ## Production URLs
 
 | Component | URL |
 |-----------|-----|
-| Frontend  | https://games.revelryapp.me/quiz/ |
+| Frontend  | https://games.revelryapp.me/ |
 | Backend API + SPA fallback | https://gamesapi.revelryapp.me |
 | Gamma full stack | https://gamesapi-gamma.revelryapp.me |
-| Spectator/TV | https://games.revelryapp.me/quiz/spectator |
-| Player join  | https://games.revelryapp.me/quiz/join |
+| Spectator/TV | https://games.revelryapp.me/spectator |
+| Player join  | https://games.revelryapp.me/join |
 | Cast App ID  | `1BC9ACD8` |
 
 ## Current VM State
@@ -55,8 +55,8 @@ curl -sS -i https://gamesapi-gamma.revelryapp.me/health
 ~/revelryapp/
   site/          → revelryapp.me (marketing website)
   app/           → app.revelryapp.me (platform frontend, future)
-  games/         → games.revelryapp.me
-    quiz/        → games.revelryapp.me/quiz (legacy public LocalPlay game surface)
+  games/         → games.revelryapp.me (public LocalPlay game surface)
+    quiz/        → legacy LocalPlay static build, kept only for old links/PWAs
   media/         → media.revelryapp.me
     apps/
       localplay/ → LocalPlay uploaded/generated game images
@@ -264,7 +264,7 @@ Verified browser sign-in coverage:
 | Origin | Google | Apple |
 |--------|--------|-------|
 | `https://gamesapi-gamma.revelryapp.me` | Verified | Verified |
-| `https://games.revelryapp.me/quiz/` | Configured; expected to work with the same web client | Verified |
+| `https://games.revelryapp.me/` | Configured; expected to work with the same web client | Verified |
 
 The LocalPlay session is separate from the main Revelry app. It may share Google Cloud/Firebase project infrastructure, but it does not share the main Revelry app's login cookie or session.
 
@@ -382,9 +382,10 @@ The IONOS frontend remains the canonical public game surface:
 
 ```bash
 cd frontend
-VITE_BASE_PATH=/quiz/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npx vite build
-ssh u69414981@home420463025.1and1-data.host "rm -rf ~/revelryapp/games/quiz/assets"
-scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/quiz/
+VITE_BASE_PATH=/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_WEB_URL=https://games.revelryapp.me/ VITE_CAST_APP_ID=1BC9ACD8 npx vite build
+ssh u69414981@home420463025.1and1-data.host "mkdir -p ~/revelryapp/games"
+scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/
+rsync -avz dist/.htaccess u69414981@home420463025.1and1-data.host:~/revelryapp/games/.htaccess
 ```
 
 ---
@@ -400,43 +401,44 @@ scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/quiz/
 ```bash
 cd frontend
 
-# Production build with subpath and backend URL
-VITE_BASE_PATH=/quiz/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npx vite build
+# Production build with root path and backend URL
+VITE_BASE_PATH=/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_WEB_URL=https://games.revelryapp.me/ VITE_CAST_APP_ID=1BC9ACD8 npx vite build
 ```
 
 This produces `frontend/dist/` with all static assets.
 
-### Step 2: Clean old assets on IONOS
+### Step 2: Prepare the IONOS target directory
 
 ```bash
-ssh u69414981@home420463025.1and1-data.host "rm -rf ~/revelryapp/games/quiz/assets"
+ssh u69414981@home420463025.1and1-data.host "mkdir -p ~/revelryapp/games"
 ```
 
-Old JS/CSS bundles have hashed filenames that accumulate. Always clean before deploying.
+Old JS/CSS bundles have hashed filenames that accumulate. Clean `~/revelryapp/games/assets` before deploying when you want to remove stale root bundles; keep `~/revelryapp/games/quiz` unless intentionally removing the legacy path.
 
 ### Step 3: Upload to IONOS
 
 ```bash
-scp -r frontend/dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/quiz/
+scp -r frontend/dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/
+rsync -avz frontend/dist/.htaccess u69414981@home420463025.1and1-data.host:~/revelryapp/games/.htaccess
 ```
 
 ### Step 4: Verify
 
-Open https://games.revelryapp.me/quiz/ in a browser. Check the browser console for errors.
+Open https://games.revelryapp.me/ in a browser. Check the browser console for errors.
 
 ### SPA Routing
 
-An `.htaccess` file at `~/revelryapp/games/quiz/.htaccess` handles client-side routing:
+An `.htaccess` file at `~/revelryapp/games/.htaccess` handles client-side routing:
 
 ```apache
 RewriteEngine On
-RewriteBase /quiz/
+RewriteBase /
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule . /quiz/index.html [L]
+RewriteRule ^ index.html [L]
 ```
 
-This file is already deployed. Only re-upload it if the base path changes.
+The legacy `/quiz/` directory can remain for old links/PWAs, but new production builds should be uploaded at the root.
 
 ---
 
@@ -666,7 +668,7 @@ GEMINI_API_KEY=<your-key>
 GEMINI_MODEL=gemini-2.5-flash-lite
 GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite
 DEFAULT_PROVIDER=gemini
-REMOTE_CONFIG_URL=https://games.revelryapp.me/quiz/config.json
+REMOTE_CONFIG_URL=https://games.revelryapp.me/config.json
 
 # Server
 HOST=0.0.0.0
@@ -1389,18 +1391,20 @@ ssh u69414981@home420463025.1and1-data.host "du -sh ~/revelryapp/media/apps/loca
 
 # Public IONOS frontend
 cd frontend
-VITE_BASE_PATH=/quiz/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npx vite build
-ssh u69414981@home420463025.1and1-data.host "rm -rf ~/revelryapp/games/quiz/assets"
-scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/quiz/
+VITE_BASE_PATH=/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_WEB_URL=https://games.revelryapp.me/ VITE_CAST_APP_ID=1BC9ACD8 npx vite build
+ssh u69414981@home420463025.1and1-data.host "mkdir -p ~/revelryapp/games"
+scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/
+rsync -avz dist/.htaccess u69414981@home420463025.1and1-data.host:~/revelryapp/games/.htaccess
 ```
 
 ### Public IONOS frontend only
 
 ```bash
 cd frontend
-VITE_BASE_PATH=/quiz/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_CAST_APP_ID=1BC9ACD8 npx vite build
-ssh u69414981@home420463025.1and1-data.host "rm -rf ~/revelryapp/games/quiz/assets"
-scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/quiz/
+VITE_BASE_PATH=/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_WEB_URL=https://games.revelryapp.me/ VITE_CAST_APP_ID=1BC9ACD8 npx vite build
+ssh u69414981@home420463025.1and1-data.host "mkdir -p ~/revelryapp/games"
+scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/
+rsync -avz dist/.htaccess u69414981@home420463025.1and1-data.host:~/revelryapp/games/.htaccess
 ```
 
 ### Backend containers only
@@ -1551,7 +1555,7 @@ Manual provider sign-in smoke is still required for the browser popup flows:
 
 - Google: open the SPA, sign in, verify the menu shows **Signed in**, account/email prefix, and **Sign Out**.
 - Apple: same as Google; verify Apple returns to the same host.
-- IONOS production frontend: repeat on `https://games.revelryapp.me/quiz/`.
+- IONOS production frontend: repeat on `https://games.revelryapp.me/`.
 - Backend-served prod/gamma: repeat on `https://gamesapi.revelryapp.me` and `https://gamesapi-gamma.revelryapp.me` when those origins have changed.
 
 Stripe smoke should stay manual/test-mode unless explicitly doing a paid production checkout:
@@ -1576,7 +1580,7 @@ backend-served SPA fallback.
 
 ### Check IONOS disk usage
 ```bash
-ssh u69414981@home420463025.1and1-data.host "du -sh ~/revelryapp/games/quiz/"
+ssh u69414981@home420463025.1and1-data.host "du -sh ~/revelryapp/games/"
 ```
 
 ---
