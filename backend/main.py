@@ -2120,7 +2120,7 @@ def _prepared_content_summary(content: dict) -> dict:
 def _workspace_payload(context: RevelryExternalContext, actor: Optional[RevelryActor] = None) -> dict:
     wallet_id = _revelry_party_wallet_id(context.external_container_id)
     packs = db.list_quiz_packs(wallet_id)
-    saved_games = db.list_game_content(wallet_id, ["wmlt", "drawing"])
+    saved_games = db.list_game_content(wallet_id, ["wmlt", "drawing", "housie"])
     prepared = [_quiz_pack_summary(pack) for pack in packs] + [_game_content_summary(game) for game in saved_games]
     prepared.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
     active = db.get_active_game_session(context.host_app, context.external_container_id)
@@ -2317,6 +2317,19 @@ def _create_revelry_session_from_context(
         })
         session["_superseded_session"] = superseded or db.get_game_session(active["id"]) or active
     return session
+
+
+async def _close_superseded_runtime_session(superseded: Optional[dict]) -> None:
+    if not superseded:
+        return
+    room_code = superseded.get("room_code") or ""
+    if not room_code:
+        return
+    await socket_manager.close_room(
+        room_code,
+        reason="superseded",
+        message="The host started a newer game.",
+    )
 
 
 @app.post("/integrations/revelry/party-games-link")
@@ -2770,6 +2783,7 @@ async def start_revelry_party_game(request: RevelryPartyGameStartRequest, req: R
         replace_session_id=request.replace_session_id,
     )
     superseded = session.pop("_superseded_session", None)
+    await _close_superseded_runtime_session(superseded)
     if superseded:
         await _send_revelry_callback("session.superseded", {
             "host_app": context.host_app,
@@ -2970,6 +2984,7 @@ async def create_revelry_session(request: RevelrySessionCreateRequest, req: Requ
         replace_session_id=request.replace_session_id,
     )
     superseded = session.pop("_superseded_session", None)
+    await _close_superseded_runtime_session(superseded)
     if superseded:
         await _send_revelry_callback("session.superseded", {
             "host_app": context.host_app,

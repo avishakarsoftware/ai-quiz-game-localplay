@@ -2,7 +2,7 @@
 
 ## Overview
 
-Add a reusable **Bingo-family engine** to LocalPlay, with **Housie** as the first full game and configurable Bingo variants as the next expansion.
+Add a reusable **Bingo-family engine** to LocalPlay, with **Housie** as the first full game and configurable Bingo as the first generic Bingo ruleset.
 
 Housie, also known as Tambola, is a caller-led number game. Each player receives a ticket with 3 rows, usually arranged into number columns covering 1 through 90. Exactly 15 cells are filled. Numbers are called one by one by the host/caller, either manually or with auto-caller mode. Players mark matching numbers on their tickets and claim prizes such as Quick 5, Corners, Top Row, Middle Row, Bottom Row, and Full House.
 
@@ -11,37 +11,45 @@ This spec deliberately treats Housie as the first ruleset on top of a broader Bi
 ```text
 Engine family: bingo
 First game type: housie
-Next game types/rulesets: bingo, baby_bingo, word_bingo, emoji_bingo, image_bingo, photo_bingo
+Implemented sibling ruleset: bingo
+Next game types/rulesets: baby_bingo, word_bingo, emoji_bingo, image_bingo, photo_bingo
 Backend engine: bingo_engine.py / housie_engine.py / bingo_content_engine.py
-Frontend display name: Housie
+Frontend display names: Housie, Bingo
 ```
 
 ## Current Implementation Status
 
-Standalone Housie is implemented as the first Bingo-family runtime:
+Standalone Housie and configurable Bingo are implemented on the Bingo-family runtime:
 
-- `backend/bingo_engine.py` provides reusable deck/item helpers for future numeric, word, emoji, and image Bingo variants.
+- `backend/bingo_engine.py` provides reusable deck/item helpers for numeric, text, emoji, and image-capable Bingo deck items.
+- `backend/bingo_content_engine.py` normalizes configurable Bingo setup payloads, validates deck size/item fields, sanitizes text/image metadata, and creates 5x5 cards with optional free center.
 - `backend/housie_engine.py` generates classic 3x9 / 15-number Housie tickets, creates the 1-90 call deck, and validates Quick 5, Four Corners, Top/Middle/Bottom Row, and Full House claims.
-- `backend/socket_manager.py` has a dedicated `BINGO_CALLING` runtime path. Housie does not overload quiz `QUESTION` rounds.
-- Standalone catalog shows Housie. `GET /catalog?host_app=revelry` does not expose Housie yet because the host-app setup/result contract is not enabled.
+- `backend/socket_manager.py` has a dedicated `BINGO_CALLING` runtime path. Housie/Bingo do not overload quiz `QUESTION` rounds.
+- Standalone catalog shows Housie and Bingo. `GET /catalog?host_app=revelry` exposes Housie on gamma after host-app policy allows it; generic Bingo remains standalone-only until its Revelry bridge contract is promoted.
 - Organizer can create a Housie setup, create a room, start with at least two players, call/undo numbers, view the called board, and end the game.
 - Organizer can choose Beginner/Pro mode, manual/auto caller mode, configurable auto interval, and auto-pause-on-claim behavior.
 - Players receive server-generated tickets, mark cells locally, submit prize claims, and see accepted claims.
 - Spectator/TV receives current called numbers, latest number, and winners through `SPECTATOR_SYNC` / `BINGO_*` messages.
 - Housie claim validation enforces the Tambola last-number rule: the prize must first become true on the latest called number.
+- Bingo setup supports template/manual/AI-text deck creation in standalone LocalPlay. The MVP supports text, emoji, number, and image-shaped deck items in the schema; image deck items require media-backed `asset_id`, `public_url`, `display`, and `alt_text` before they can be saved/started.
+- Bingo AI generation is a host-reviewed setup helper: the host gives a theme/prompt, LocalPlay generates editable deck items, and the deck is not live until the host reviews and saves/starts.
+- Housie is available in the Revelry gamma party hub as a party-scoped setup with default prizes: Quick 5, Four Corners, Top Row, Middle Row, Bottom Row, and Full House. Housie uses `generated_content` with `content_type = housie` in gamma Supabase.
+- `ROOM_RESET`/play-again keeps the same room code but now uses the shared all-games socket cleanup rule: dead player sockets discovered during reset broadcasts, runtime syncs, or pre-start probes are removed and followed by an updated roster. This prevents stale lobby counts such as "2 players" when those players are actually still on an old completed-results screen or have disconnected.
+- Housie/Bingo start gates prune dead player sockets before checking `MIN_HOUSIE_PLAYERS` / `MIN_BINGO_PLAYERS`, so stale roster entries cannot either block a valid start or allow a start with too few live players.
 
 Known v1 limitations:
 
 - Latest-call and winner announcement animations exist, but need a final visual polish pass across organizer, player, and spectator screens.
-- Housie setup is in-memory like generated quiz/drawing content; durable saved Bingo templates are future work.
-- Host-app/Revelry mode remains disabled until party-scoped setup, callbacks, result summaries, and e2e tests are added.
-- Generic Bingo variants are not implemented yet. The next Bingo-family slice should add content-backed 5x5 Bingo cards, text/emoji/image deck generation, creator setup, and AI generation.
+- Housie setup is still in-memory for standalone room creation; Revelry gamma Housie setup is persisted party-scoped through `generated_content`.
+- Generic Bingo is implemented for standalone/gamma UX first. It is not exposed to Revelry yet.
+- Baby Bingo, Word Bingo, Emoji Bingo, Image Bingo, and Photo Bingo remain future named rulesets on the same engine.
+- Image Bingo has schema and validation requirements, but the full media upload / AI image generation authoring path remains a later slice.
 
 ## Goals
 
 - Add a generic Bingo-family runtime that can support numbers, words, emojis, and images.
 - Ship Housie as the first implementation using classic 1-90 tickets.
-- Ship configurable Bingo variants after Housie: classic 5x5 text Bingo, Baby/Event Bingo, Emoji Bingo, Image Bingo, and Photo Bingo.
+- Ship configurable Bingo after Housie: classic 5x5 text Bingo first, then Baby/Event Bingo, Emoji Bingo, Image Bingo, and Photo Bingo.
 - Let creators choose from ready-made templates, enter a prompt for AI-generated deck items, manually edit deck items, upload images, or ask AI to generate images for image Bingo.
 - Generate valid Housie tickets with 15 filled cells and configurable number-column layout.
 - Support creator-selected Beginner and Pro modes.
@@ -55,7 +63,7 @@ Known v1 limitations:
 - Keep the spectator/TV screen useful: latest number, called board/history, live claims, winners, and player count.
 - Make the engine extensible enough for Baby Bingo and other event Bingo variants without rewriting the room lifecycle.
 - Make image-based Bingo reuse the shared media layer and image safety rules from `SPEC-IMAGE-GAMES.md`.
-- Support standalone LocalPlay first; expose to Revelry only after standalone UX and safe result summaries are polished.
+- Support standalone LocalPlay first; expose individual games to Revelry only after their catalog, setup, runtime, result-summary, and regression tests are bridge-ready.
 
 ## Constraints
 
@@ -71,7 +79,7 @@ Known v1 limitations:
 - No automatic optical/voice recognition of calls.
 - No multi-room tournaments in v1.
 - No real-time persistence beyond the current LocalPlay room model in v1.
-- No Revelry/host-app launch until the catalog, setup, runtime, and result summary contracts are implemented and tested.
+- No Revelry/host-app launch for a Bingo-family ruleset until that ruleset's catalog, setup, runtime, and result summary contracts are implemented and tested. Housie satisfies this for gamma; generic Bingo does not yet.
 
 ## Product Model
 
@@ -1010,7 +1018,7 @@ Planned standalone catalog entries for Bingo-family expansion:
 ]
 ```
 
-Revelry/host-app catalog should keep `launchable = false` until:
+Revelry/host-app catalog should keep a Bingo-family ruleset `launchable = false` until:
 
 - standalone Housie runtime is playable.
 - organizer/player/spectator routes work.
@@ -1018,6 +1026,8 @@ Revelry/host-app catalog should keep `launchable = false` until:
 - host-app chrome and share policies are applied.
 - party-scoped setup save/start is tested.
 - callbacks include safe `game.session_created`, `game.started`, and `game.completed` summaries.
+
+Housie has met this threshold for gamma and may be returned by `GET /catalog?host_app=revelry` with `status = "gamma"`. Generic Bingo and named variants such as Baby Bingo remain hidden from Revelry until their own bridge tests pass.
 
 ## Results
 
@@ -1050,15 +1060,41 @@ Do not include:
 
 ## Integration With Revelry / Host Apps
 
-Housie should start in standalone LocalPlay. Later, when enabled for Revelry:
+Housie is enabled for Revelry gamma through the party hub:
 
 - The Revelry Games hub shows Housie from `GET /catalog?host_app=revelry`.
-- Host/cohost can set up Housie or quick-start a default Housie room.
+- Host/cohost can set up Housie with default prize patterns or quick-start a default Housie room.
 - Guests see join/watch only.
 - Runtime hides sparks/wallet/paywall/account/library chrome in host-app mode.
 - QR/share uses Revelry-owned join URLs when provided.
 - Results callback posts safe winner/prize summaries.
 - Party type can influence templates later, such as holiday Housie or baby shower Bingo.
+- Housie content saves through `POST /integrations/revelry/party-games/content` use:
+
+```json
+{
+  "party_games_token": "...",
+  "game_type": "housie",
+  "title": "Housie",
+  "status": "ready",
+  "content_payload": {
+    "game": {
+      "game_title": "Housie",
+      "pattern_ids": ["quick_5", "four_corners", "top_row", "middle_row", "bottom_row", "full_house"],
+      "play_mode": "beginner",
+      "caller_mode": "manual",
+      "auto_interval_seconds": 8,
+      "auto_pause_on_claim": true
+    }
+  }
+}
+```
+
+- Saved Housie summaries treat `question_count` / `item_count` as prize-pattern count, not questions.
+- Housie has `supports_ai_generation = false`; the Revelry hub hides AI prompt generation for it.
+- Housie launch/start uses the same party-games start endpoint as other games with `game_type = "housie"` and optional `content_id`.
+- The gamma Supabase table `games_gamma_generated_content` must allow `content_type = 'housie'`; production remains unchanged until promotion.
+- Generic Bingo remains standalone-only in host-app policy. Do not expose `bingo` to Revelry until party-scoped setup save/start, result summaries, and E2E coverage are complete.
 
 ## Future Payment Integration
 
@@ -1640,7 +1676,7 @@ Standalone Housie `Play Again` should reuse the current Housie setup/content id 
 
 ### Catalog And API Guardrails
 
-Do not expose Housie in host-app catalog until the host-app contract is done. Standalone catalog can show Housie only when playable.
+Expose only Bingo-family rulesets whose host-app contract is complete. Housie is gamma-enabled for Revelry; generic Bingo remains standalone-only. Standalone catalog can show Housie/Bingo when playable.
 
 Required backend validation:
 
@@ -1788,14 +1824,16 @@ Playwright tests:
 8. Generic Bingo standalone runtime: player cards, caller surface, spectator surface, and claims.
 9. Image Bingo media slice: upload flow, image card rendering, media-backed setup persistence, and safety validation.
 10. AI Bingo generation slice: text/emoji prompts first, then AI image generation with review/edit.
-11. Host-app/Revelry enablement in a later slice after standalone gamma testing.
+11. Housie host-app/Revelry gamma enablement. Done.
+12. Generic Bingo host-app/Revelry enablement in a later slice after standalone gamma testing.
 
 ## Implementation Plan
 
 ### Phase 0: Spec And Engine Shape
 
 - Add this spec. Done.
-- Add `housie` to standalone catalog metadata while keeping it hidden from host-app catalog until runtime contracts are complete. Done.
+- Add `housie` to standalone catalog metadata. Done.
+- Add `housie` to Revelry gamma host-app catalog after party-scoped setup/save/start and E2E coverage. Done.
 - Write pure engine tests for Housie ticket generation and claim validation. Done.
 
 ### Phase 1: Standalone Housie Runtime
@@ -1835,6 +1873,7 @@ Phase 3A: Generic text/emoji Bingo setup and engine:
 - Add generic pattern validation for line, two lines, corners, postage stamp, and blackout.
 - Add manual word/phrase and emoji deck editor.
 - Add built-in templates for classic, baby, holiday, wedding, office, and emoji Bingo.
+- Add standalone Bingo setup UI with template/manual/AI text generation and host-reviewed editable items. Done for the first configurable Bingo slice.
 - Keep catalog entries planned/hidden until setup, runtime, and tests are complete.
 
 Phase 3B: Generic Bingo standalone runtime:
@@ -1860,18 +1899,18 @@ Phase 3D: AI Bingo generation:
 
 Phase 3E: Saved content and catalog enablement:
 
-- Persist Bingo setups with `bingo_setup_v2`.
-- Add standalone catalog cards for Classic Bingo, Baby Bingo, Word Bingo, Emoji Bingo, Image Bingo, and Photo Bingo.
+- Persist Bingo setups with `bingo_setup_v2`. Standalone Bingo uses normalized saved setup payloads; host-app persistence remains gated.
+- Add standalone catalog cards for Classic Bingo, Baby Bingo, Word Bingo, Emoji Bingo, Image Bingo, and Photo Bingo. Classic configurable Bingo is visible; named future variants remain planned/hidden.
 - Add safe result summaries for generic Bingo.
 - Only enable host-app/Revelry after party-scoped saved content and callbacks are tested.
 
 ### Phase 4: Host-App / Revelry Enablement
 
-- Add host-app catalog metadata.
-- Add party-scoped setup/save/start path.
-- Add safe result callbacks.
-- Add e2e tests for host/cohost/guest hub roles.
-- Gamma test through Revelry before enabling production.
+- Add host-app catalog metadata. Done for Housie gamma.
+- Add party-scoped setup/save/start path. Done for Housie gamma.
+- Add safe result callbacks. Done through the shared Revelry session/result callback path.
+- Add e2e tests for host/cohost/guest hub roles. Done for the Revelry party hub Housie setup/start path, plus existing gamma Revelry flows.
+- Gamma test through Revelry before enabling production. Done for Housie gamma; production remains disabled until explicitly promoted.
 
 ## Acceptance Criteria
 

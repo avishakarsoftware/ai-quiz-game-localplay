@@ -878,7 +878,7 @@ export default function OrganizerPage() {
         ws.onclose = () => {
             wsRef.current = null;
             if (!mountedRef.current) return;
-            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'LEADERBOARD', 'PODIUM'];
+            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'LEADERBOARD', 'PODIUM'];
             if (roomCodeRef.current && activeStates.includes(stateRef.current)) {
                 if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                 reconnectTimerRef.current = setTimeout(() => connectWsRef.current(roomCodeRef.current), 2000);

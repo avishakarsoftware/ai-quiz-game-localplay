@@ -279,19 +279,24 @@ class Room:
                 spec_disconnected.append(client_id)
         for client_id in disconnected + spec_disconnected:
             self._remove_connection(client_id)
-        if self._player_event:
-            event_type, nickname = self._player_event
-            self._player_event = None
-            msg_type = "PLAYER_LEFT" if event_type == "left" else "PLAYER_DISCONNECTED"
-            await self.broadcast({
-                "type": msg_type,
-                "nickname": nickname,
-                "player_count": len(self.players),
-                "players": [
-                    {"nickname": p["nickname"], "avatar": p.get("avatar", "")}
-                    for p in self.players.values()
-                ],
-            })
+        await self.emit_pending_player_event()
+
+    async def emit_pending_player_event(self):
+        """Publish the corrected roster after any send path removes a player."""
+        if not self._player_event:
+            return
+        event_type, nickname = self._player_event
+        self._player_event = None
+        msg_type = "PLAYER_LEFT" if event_type == "left" else "PLAYER_DISCONNECTED"
+        await self.broadcast({
+            "type": msg_type,
+            "nickname": nickname,
+            "player_count": len(self.players),
+            "players": [
+                {"nickname": p["nickname"], "avatar": p.get("avatar", "")}
+                for p in self.players.values()
+            ],
+        })
 
     async def broadcast_to_players(self, message: dict):
         """Broadcast to players only, not organizer."""
@@ -304,14 +309,15 @@ class Room:
                     disconnected.append(client_id)
         for client_id in disconnected:
             self._remove_connection(client_id)
+        await self.emit_pending_player_event()
 
     async def send_to_organizer(self, message: dict):
         if self.organizer:
             try:
                 await self.organizer.send_json(message)
             except Exception:
-                self.organizer = None
-                self.organizer_id = None
+                if self.organizer_id:
+                    self._remove_connection(self.organizer_id)
 
 
 class SocketManager:
@@ -383,6 +389,32 @@ class SocketManager:
         self.rooms[room_code] = room
         self.start_cleanup_loop()
         return room
+
+    async def close_room(self, room_code: str, reason: str = "cancelled", message: str = "This game was closed."):
+        """Close and remove a runtime room, notifying connected clients first."""
+        room = self.rooms.pop(room_code, None)
+        if not room:
+            return
+        await room.broadcast({
+            "type": "ROOM_CLOSED",
+            "reason": reason,
+            "message": message,
+        })
+        if room.timer_task:
+            room.timer_task.cancel()
+            room.timer_task = None
+        await room.close_all_connections()
+
+    async def _prune_dead_player_connections(self, room: Room):
+        """Probe player sockets before lifecycle decisions that depend on live players."""
+        for client_id, ws in list(room.connections.items()):
+            if client_id not in room.players:
+                continue
+            try:
+                await ws.send_json({"type": "PING"})
+            except Exception:
+                room._remove_connection(client_id)
+        await room.emit_pending_player_event()
 
     async def connect(self, websocket: WebSocket, room_code: str, client_id: str,
                       is_organizer: bool = False, is_spectator: bool = False):
@@ -635,6 +667,7 @@ class SocketManager:
                 async with room.lock:
                     if room.state != "LOBBY":
                         return
+                    await self._prune_dead_player_connections(room)
                     # Charge sparks to start the game
                     if not room.wallet_id:
                         await self._send_to_client(room, client_id, {
@@ -1373,6 +1406,7 @@ class SocketManager:
                     await ws.send_json(payload)
                 except Exception:
                     room._remove_connection(client_id)
+        await room.emit_pending_player_event()
         await room.send_to_organizer(base)
         for ws in list(room.spectators.values()):
             try:
@@ -1615,6 +1649,7 @@ class SocketManager:
                 await ws.send_json(payload)
             except Exception:
                 room._remove_connection(client_id)
+        await room.emit_pending_player_event()
         await room.send_to_organizer({
             **base,
             "drawing_prompt": prompt,
@@ -1852,6 +1887,8 @@ class SocketManager:
             import db
             session = db.get_game_session_by_room(room.room_code)
             if not session:
+                return
+            if session.get("status") in ("complete", "superseded", "cancelled", "expired"):
                 return
             now = int(time.time())
             safe_summary = self._safe_result_summary(summary)

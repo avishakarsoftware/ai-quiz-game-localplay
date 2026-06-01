@@ -1070,6 +1070,11 @@ def test_revelry_party_hub_can_save_and_start_housie(monkeypatch):
     saved = save_res.json()["content"]
     assert saved["game_type"] == "housie"
     assert saved["question_count"] == 6
+    prepared_ids = {
+        item["localplay_content_id"]
+        for item in save_res.json()["workspace"]["prepared_content"]
+    }
+    assert saved["localplay_content_id"] in prepared_ids
 
     start_res = client.post(
         "/integrations/revelry/party-games/start",
@@ -1080,6 +1085,34 @@ def test_revelry_party_hub_can_save_and_start_housie(monkeypatch):
     room = socket_manager.rooms[body["session"]["room_code"]]
     assert room.game_type == "housie"
     assert room.quiz["game_title"] == "Ava's Housie"
+
+
+def test_revelry_replacement_closes_superseded_runtime_room(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"replace-room-{uuid.uuid4().hex}"
+    payload = _create_payload(container_id=container_id, game_type="quiz")
+
+    first_res = client.post("/integrations/revelry/sessions", headers=_headers(), json=payload)
+    assert first_res.status_code == 200
+    first = first_res.json()
+    first_room_code = first["room_code"]
+    assert first_room_code in socket_manager.rooms
+
+    second_payload = {
+        **payload,
+        "replacement_confirmed": True,
+        "replace_session_id": first["session_id"],
+    }
+    second_res = client.post("/integrations/revelry/sessions", headers=_headers(), json=second_payload)
+    assert second_res.status_code == 200, second_res.text
+    second = second_res.json()
+
+    assert first_room_code not in socket_manager.rooms
+    assert second["room_code"] in socket_manager.rooms
+    old_session = db.get_game_session(first["session_id"])
+    assert old_session["status"] == "superseded"
+    assert old_session["joinable"] is False
 
 
 def test_revelry_party_hub_can_generate_drawing_setup_prompts(monkeypatch):

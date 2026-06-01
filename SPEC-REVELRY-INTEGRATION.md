@@ -1,8 +1,8 @@
 # LocalPlay Revelry Integration Spec
 
-Status: Gamma bridge plus party-scoped quiz authoring, generic WMLT/Drawing setup/save flow, catalog-driven party hub creation, and party hub start flow implemented; production hardening remains
+Status: Gamma bridge plus party-scoped quiz authoring, generic WMLT/Drawing/Housie setup-save-start flow, catalog-driven party hub creation, and party hub start flow implemented; production hardening remains
 
-Last updated: 2026-05-24
+Last updated: 2026-06-01
 
 ## Purpose
 
@@ -612,10 +612,10 @@ Rules:
 - Status values may include `live`, `gamma`, `planned`, and `disabled`.
 - Revelry should only enable launch actions for games where `launchable = true`.
 - The Revelry-launched LocalPlay UI must only expose games returned as `launchable = true` for `GET /catalog?host_app=revelry`.
-- The party hub's "Create a game" section must be driven by this catalog, not by hardcoded quiz-only UI. Quiz opens the full quiz authoring flow. WMLT/Drawing open a lightweight setup form that lets the host edit ready-made or AI-generated prompts/settings, save the setup, and optionally start immediately. Future games should use the same setup/save/start contract unless they have a richer dedicated authoring surface.
+- The party hub's "Create a game" section must be driven by this catalog, not by hardcoded quiz-only UI. Quiz opens the full quiz authoring flow. WMLT/Drawing open a lightweight setup form that lets the host edit ready-made or AI-generated prompts/settings, save the setup, and optionally start immediately. Housie opens a lightweight setup that saves default prize/caller settings without AI generation. Future games should use the same setup/save/start contract unless they have a richer dedicated authoring surface.
 - If a quiz variant such as Rebus, Timeline, or Odd One Out should appear in Revelry, it must first be represented in the bridge contract with catalog metadata, accepted `game_type` or mode validation, content/session creation semantics, launch-token handling, status, and result summary support.
 - Games not represented in the bridge contract must be hidden in Revelry-launched host-app mode even if they are available in standalone LocalPlay.
-- Backlog games such as Bingo, Baby Bingo, and Housie may appear as `planned` if Revelry wants to show coming-soon cards.
+- Backlog games such as Bingo and Baby Bingo may appear as `planned` if Revelry wants to show coming-soon cards. Housie is implemented and may be `gamma`/launchable in Revelry gamma when policy allows it; production remains disabled until explicitly promoted.
 
 Implementation-ready remote catalog policy:
 
@@ -644,8 +644,13 @@ Implementation-ready remote catalog policy:
           "allowlist_party_ids": []
         },
         "housie": {
-          "enabled": false,
-          "status": "planned"
+          "enabled": true,
+          "status": "gamma",
+          "can_create_content": true,
+          "can_edit_content": true,
+          "can_quick_start": true,
+          "supports_ai_generation": false,
+          "supports_images": false
         }
       }
     }
@@ -702,7 +707,7 @@ create index if not exists {prefix}host_app_catalog_flags_lookup_idx
 - Support a kill switch by setting `enabled = false` for `(production, revelry, game_id)`. After cache expiry, the game disappears from the Revelry catalog and start/session APIs reject new starts for that game.
 - Remote policy is a rollout/control plane for games that LocalPlay already knows how to run. It cannot enable a brand-new game id by itself. A game that is not yet implemented still needs one LocalPlay release that adds the static catalog entry, runtime/setup/content contracts, host-app-safe launch routes, callbacks/results, and tests. After that release, gamma/prod exposure, allowlists, feature flags, and kill switches should be policy changes rather than another Revelry release.
 - Operator update path must not require a LocalPlay deploy. Acceptable first implementation: a documented SQL/psql/Supabase script plus smoke commands. Later implementation: an admin-only endpoint or dashboard.
-- Seed initial production policy explicitly for bridge-ready games. Example initial state: `quiz`, `drawing`, and `wmlt` can be enabled independently; Housie/Bingo-family games remain `planned` or `disabled` until their Revelry bridge contract and tests are complete.
+- Seed initial production policy explicitly for bridge-ready games. Example current state: `quiz`, `drawing`, and `wmlt` can be enabled independently in production; `housie` is enabled for gamma only; generic `bingo` and future Bingo-family games remain `planned` or `disabled` until their Revelry bridge contract and tests are complete.
 - Add tests for: default fail-closed production behavior, gamma-only exposure, remote disable of a statically supported game, allowlisted party exposure, allowlisted user exposure, rollout hashing, feature-flag intersection, malformed policy, unsupported game ids being ignored, disabled saved-game start rejection, and party hub using the same filtered catalog as `/catalog`.
 
 ### LocalPlay-Hosted Authoring And Play
@@ -742,7 +747,30 @@ DELETE /integrations/revelry/party-games/content/{content_id}
 
 `POST /integrations/revelry/content/authoring-link` mints an edit-only token and URL for the LocalPlay-hosted authoring surface. LocalPlay is the only service that mints the browser `authoring_token`; Revelry calls this endpoint with service credentials and must not construct token-bearing LocalPlay authoring URLs itself.
 
-`POST /integrations/revelry/party-games/content` is the party-hub runtime save API. It uses `party_games_token`, not the shared service secret, and persists a party-scoped setup for the selected `game_type`. Quiz saves still use the quiz-pack storage model; generic prompt/setup games such as WMLT and Drawing use `generated_content` rows with `content_type = mlt` or `drawing`. The response returns stable `localplay_content_id`, safe content metadata, and refreshed workspace. `GET /integrations/revelry/party-games/content/{content_id}?include_payload=true` is available only to authorized hub actors so LocalPlay can reopen generic setup forms; Revelry should continue storing pointer metadata only.
+`POST /integrations/revelry/party-games/content` is the party-hub runtime save API. It uses `party_games_token`, not the shared service secret, and persists a party-scoped setup for the selected `game_type`. Quiz saves still use the quiz-pack storage model; generic prompt/setup games such as WMLT and Drawing use `generated_content` rows with `content_type = mlt` or `drawing`; Housie uses `generated_content` with `content_type = housie` in gamma. The response returns stable `localplay_content_id`, safe content metadata, and refreshed workspace. `GET /integrations/revelry/party-games/content/{content_id}?include_payload=true` is available only to authorized hub actors so LocalPlay can reopen generic setup forms; Revelry should continue storing pointer metadata only.
+
+Current Housie save payload shape:
+
+```json
+{
+  "party_games_token": "...",
+  "game_type": "housie",
+  "title": "Housie",
+  "status": "ready",
+  "content_payload": {
+    "game": {
+      "game_title": "Housie",
+      "pattern_ids": ["quick_5", "four_corners", "top_row", "middle_row", "bottom_row", "full_house"],
+      "play_mode": "beginner",
+      "caller_mode": "manual",
+      "auto_interval_seconds": 8,
+      "auto_pause_on_claim": true
+    }
+  }
+}
+```
+
+Saved Housie summaries return `question_count` / `item_count` as prize-pattern count, not questions. Housie catalog entries must expose `supports_ai_generation = false`; the LocalPlay party hub must hide AI generation controls for Housie.
 
 `POST /integrations/revelry/party-games/prompts/generate` is the party-hub AI content helper for catalog entries with `supports_ai_generation = true`. It accepts a `party_games_token`, `game_type`, party/theme prompt, prompt/question count, and game-specific vibe/difficulty, then returns a safe `content_payload` shaped like the corresponding save payload. For Quiz, the payload is `{ "quiz": { "quiz_title": "...", "questions": [...] } }` and is loaded into the LocalPlay-hosted quiz editor so the host can review, edit, save, and start it like any other party-scoped custom quiz. For generic setup games such as WMLT and Drawing, the generated prompts populate the current setup form. Generated content is not persisted or mirrored to Revelry until the host chooses **Save**, **Save and return**, or **Save and start**. The endpoint must use the party launch context and actor capabilities, hide standalone sparks/wallet/paywall UI, and never return raw provider prompts, tokens, private media paths, or unrelated internals. Quiz answer indexes are allowed in this host-only authoring response because the editor needs them; they must not be sent to player/spectator runtime surfaces except through the existing protected organizer flow.
 
@@ -1158,9 +1186,9 @@ Expected hub behavior:
 - Creation actions must start a new item for the selected catalog game; they must not reuse an arbitrary saved game. Saved/prepared games stay in a separate **Saved games** section with Start/Edit/Delete actions.
 - If a catalog entry has `can_create_content = true` or `embedded_authoring_supported = true`, the Create action opens LocalPlay's host-app-aware authoring route with `mode = create` and no existing `content_id`.
 - Quiz creation must offer both **AI generated quiz** and **custom/manual quiz** inside the LocalPlay authoring surface. The AI path should prompt for topic/theme, difficulty, and question count, call `/integrations/revelry/party-games/prompts/generate` with `game_type = "quiz"`, load the generated quiz into the editor, and require the host to save before it appears in the party's prepared games. This is LocalPlay-owned UI/API behavior; Revelry should not implement a separate AI quiz builder.
-- If a catalog entry has `can_create_content = true` but no dedicated authoring route, the Create action opens a generic LocalPlay setup form driven by the catalog/content schema. The MVP generic form supports prompt-list games such as WMLT and Drawing: title, one prompt per line, optional AI prompt generation when `supports_ai_generation = true`, and game-specific fields such as drawing round timer. The host can edit generated prompts before **Save** or **Save and start**. Save creates a stable `localplay_content_id` and makes the setup visible in the Saved games section and Revelry mirror.
+- If a catalog entry has `can_create_content = true` but no dedicated authoring route, the Create action opens a generic LocalPlay setup form driven by the catalog/content schema. The MVP generic form supports prompt-list games such as WMLT and Drawing: title, one prompt per line, optional AI prompt generation when `supports_ai_generation = true`, and game-specific fields such as drawing round timer. Housie uses the same setup/save/start shell but has a Housie-specific schema: title plus default prize patterns/caller settings, no prompt textarea, and no AI generation. The host can edit generated prompts/settings where supported before **Save** or **Save and start**. Save creates a stable `localplay_content_id` and makes the setup visible in the Saved games section and Revelry mirror.
 - If a future catalog entry has `can_quick_start = true` but no editable content authoring, the action may start a fresh LocalPlay room from default/template/generated content for that `game_type`; this should be used sparingly because it does not create a reusable party setup unless LocalPlay persists one first.
-- MVP card labels should be game-specific so hosts understand the path: AI Quiz uses "Create quiz" and opens authoring; Most Likely To uses "Set up round"; Drawing uses "Set up drawing". Do not render raw `creation_modes` values like `manual`, `ai`, or `template` directly in host-facing UI; map them to friendly copy such as "Write your own or use AI", "Ready-made prompts", or "Ready-made or AI prompts." Future games should define similar labels through catalog/config rather than hardcoding a generic "Create quiz" entry.
+- MVP card labels should be game-specific so hosts understand the path: AI Quiz uses "Create quiz" and opens authoring; Most Likely To uses "Set up round"; Drawing uses "Set up drawing"; Housie uses "Set up Housie". Do not render raw `creation_modes` values like `manual`, `ai`, or `template` directly in host-facing UI; map them to friendly copy such as "Write your own or use AI", "Ready-made prompts", "Ready-made or AI prompts", or "Default prizes". Future games should define similar labels through catalog/config rather than hardcoding a generic "Create quiz" entry.
 - Unsupported standalone games and quiz variants must not appear in the Create section. Rebus and similar variants remain hidden until they have full bridge support.
 - The primary hub entry can be labeled like "Open Ava's Birthday Games Hub on Revelry Games" and should use party-safe cover art/metadata when provided.
 - Starting from the LocalPlay hub or a LocalPlay start-intent route is the canonical control-plane path: validate `settings.content_id`, enforce one active session per party, show an in-hub replacement confirmation when needed, create the replacement before superseding the old session, and return safe launch/result metadata.
@@ -1808,7 +1836,7 @@ Run focused automated tests before merge/deploy. Live gamma/prod browser smokes 
 
 Roll out integration changes on gamma first, then promote to production after the changed path is playable end to end.
 
-Current LocalPlay gamma status: gamma has passed direct smoke for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, party workspace, party hub link/resolve, host-app-managed billing wallet behavior, LocalPlay-hosted quiz authoring, start from saved `localplay_content_id`, WebSocket organizer/player play-through, completion, result polling, host-app join-link QR/copy behavior, completed-game return to Revelry Games, spectator alias SPA routing, terminal organizer/player/spectator host-app error egress, and lowercase typed TV URL normalization to uppercase websocket room codes. Basic Revelry gamma end-to-end launch testing has worked for catalog, create session, organizer/player launch, and gameplay. Before each rollout or manual test pass, verify the deployed gamma container against the current repo HEAD because this spec intentionally does not act as the sole source of truth for deployed commit tracking.
+Current LocalPlay gamma status: gamma has passed direct smoke for health, config, catalog, session creation, launch-token generation, status polling, tokenless player launch redirect, party workspace, party hub link/resolve, host-app-managed billing wallet behavior, LocalPlay-hosted quiz authoring, start from saved `localplay_content_id`, WebSocket organizer/player play-through, completion, result polling, host-app join-link QR/copy behavior, completed-game return to Revelry Games, spectator alias SPA routing, terminal organizer/player/spectator host-app error egress, and lowercase typed TV URL normalization to uppercase websocket room codes. The live gamma catalog includes Housie for `host_app = revelry` with `status = "gamma"`, `can_create_content = true`, `can_quick_start = true`, and `supports_ai_generation = false`; `games_gamma_generated_content_content_type_check` allows `housie`. Gamma tests now cover Housie save/start through the LocalPlay party hub, Housie appearing in refreshed `prepared_content`, and a live Housie content save. Basic Revelry gamma end-to-end launch testing has worked for catalog, create session, organizer/player launch, gameplay, Drawing save/start/re-entry, complete quiz result mirroring, and custom quiz image upload. Before each rollout or manual test pass, verify the deployed gamma container against the current repo HEAD because this spec intentionally does not act as the sole source of truth for deployed commit tracking.
 
 Current LocalPlay production status as of 2026-05-25: production LocalPlay is deployed at `https://gamesapi.revelryapp.me` with the Revelry bridge code, `REVELRY_INTEGRATION_SECRET`, production callback URL, custom media uploads, and AI image generation disabled. Direct production smoke passed for health, host-app catalog, media status, party-games link generation, host chrome suppression, upload URL generation, remote smoke with generation skipped, and Supabase schema parity for LocalPlay `games_*` tables. Revelry production is expected to use `GAMES_ENGINE_URL=https://gamesapi.revelryapp.me` and the matching `LOCALPLAY_INTEGRATION_SECRET`. Full production gameplay/callback E2E should still be run for any newly promoted path, including prepared setup mirror updates for non-quiz games such as Drawing.
 
@@ -1828,6 +1856,9 @@ Gamma acceptance checklist:
 - Revelry gamma can mint an authoring link, create/edit a quiz with an image, return with `localplay_content_id`, refresh party workspace, and start the saved quiz.
 - LocalPlay hub can create/edit/start party-scoped saved quizzes without exposing the Revelry service secret.
 - If configured, signed callbacks reach Revelry for content/session events; LocalPlay signs `${timestamp}.${raw_body}` with `REVELRY_INTEGRATION_SECRET`, uses ISO UTC `occurred_at`, emits `content.deleted`, and retries `429` / transient `5xx` responses with short bounded backoff. If callbacks are unavailable, polling recovers state.
+- Housie appears in the gamma party hub, saves a party-scoped setup, starts from the saved `localplay_content_id`, and hides AI generation controls.
+- WebSocket roster cleanup is shared across games, not Bingo-specific. `ROOM_RESET`, lobby broadcasts, per-player runtime syncs, drawing question broadcasts, and pre-start min-player probes must remove dead player sockets and emit corrected `PLAYER_LEFT` / `PLAYER_DISCONNECTED` roster updates. WMLT, Drawing, Housie, Bingo, and future min-player-gated games must prune dead sockets before evaluating their minimum-player checks.
+- Starting a replacement Revelry party game must close the superseded LocalPlay runtime room, notify old sockets with a closed/superseded message, and keep the superseded DB session terminal. A stale old room must not later mark a superseded/cancelled/expired session as complete.
 
 Do not promote new integration changes to production until the changed gamma flow is playable end to end.
 
@@ -1845,13 +1876,13 @@ Recommended LocalPlay order:
 8. Add safe one-active-game replacement handling. Done.
 9. Add on-demand launch-token exchange. Done.
 10. Add status/result polling endpoint. Done.
-11. Add embedded host-app authoring/setup mode, including host-app content APIs and session creation via `settings.content_id`. Done for quiz content using party-scoped quiz packs and for WMLT/Drawing using generic prompt/setup content rows. Used content now versions on edit by creating a new `localplay_content_id` rather than mutating a played pack/setup.
+11. Add embedded host-app authoring/setup mode, including host-app content APIs and session creation via `settings.content_id`. Done for quiz content using party-scoped quiz packs, for WMLT/Drawing using generic prompt/setup content rows, and for Housie gamma using party-scoped `generated_content` with default prize/caller settings. Used content now versions on edit by creating a new `localplay_content_id` rather than mutating a played pack/setup.
 12. Add signed callback/webhook delivery for content/session/result events, with polling as recovery. Done as best-effort delivery when callback env vars are configured, including short bounded retry for `429` and transient `5xx`; durable queued retry remains backlog.
 13. Add postMessage events only where they improve embedded UX.
 14. Backlog: cleanup jobs for party drafts/content/media retention.
 15. Backlog: late-join policy, live Games tab refresh hooks, player-count display, result-card image generation, and play-again/new-round shortcuts.
 16. Backlog: make TV display Kahoot-style and party-safe. The near-term path is one shared Revelry game link that lets users choose **Join to Play** or **Join to Watch**, plus a LocalPlay lobby helper that explains how to open/watch/project the spectator surface. Keep `/tv/{room_code}` as a typed-TV fallback. Add first-class Chromecast/Google Cast, Apple TV/AirPlay, and platform receiver support later as native-cast enhancements, not as the only display path.
-17. Backlog: extend the generic setup/save/start model to future non-quiz catalog games such as Bingo, Baby Bingo, and Housie. WMLT and Drawing now use the party hub setup path. Future slices should keep labels, creation actions, content schemas, media support, and default prompts in catalog/server config instead of expanding hub-side conditionals.
+17. Extend the generic setup/save/start model to future non-quiz catalog games. Done for Housie in gamma. Generic Bingo, Baby Bingo, and image/media Bingo remain backlog for Revelry. Future slices should keep labels, creation actions, content schemas, media support, and default prompts in catalog/server config instead of expanding hub-side conditionals.
 18. Backlog: revisit whether configurable party games must always persist a saved setup before start. Saving first is acceptable for the current WMLT/Drawing MVP because it gives Revelry a stable mirror pointer and supports pre-party setup, but some future games may be better as ephemeral setup-and-start flows or true quick-start rooms when the host does not intend to save/reuse them. Keep the catalog expressive enough to distinguish `requires_saved_content`, `can_save_setup`, and `can_start_ephemeral` if this becomes important.
 19. Backlog: add server-side draft/autosave recovery for generic WMLT/Drawing setup forms. Quiz authoring has browser-local draft isolation; generic setup forms should gain equivalent party-scoped draft ids before long editing flows become common.
 20. Backlog: move WMLT/Drawing default prompts and party-type recommendations into catalog/server config. Current MVP defaults are safe built-ins, but future party types should receive context-aware prompt suggestions without adding hub-side conditionals.
@@ -1877,7 +1908,7 @@ Recommended LocalPlay order:
 - Decision: Expose `GET /catalog` as part of the MVP. Revelry should use it to render available LocalPlay games, filtered by host app/environment where needed. LocalPlay still validates launch requests server-side. The catalog may include `live`, `gamma`, `planned`, or `disabled` status values, but Revelry should only enable launch for games LocalPlay marks `launchable`.
 - Decision: Enabling more games for Revelry should be controlled by remote host-app catalog policy after the game is bridge-ready, not by shipping a release for every rollout decision. The static LocalPlay catalog declares the maximum safe support; remote policy controls environment rollout, kill switches, allowlists, and feature flags such as create/edit/quick-start/AI/images/payments. A game that does not exist in LocalPlay yet still requires one LocalPlay implementation release before policy can expose it.
 - Decision: Custom quiz authoring remains owned by LocalPlay. The MVP authoring path is LocalPlay-hosted prepared content: Revelry opens the authoring link, LocalPlay returns canonical `localplay_content_id`, Revelry stores a prepared setup pointer, and session creation passes `settings.content_id`. Do not add or revive a separate generic quiz/`quiz_pack_id` bypass for Revelry-launched custom quizzes. Once a content id has been used to start a session, future edits create a new LocalPlay content id/version and Revelry should update the prepared setup pointer after save.
-- Decision: Reuse existing custom quiz tables for Revelry quiz content now. Existing quiz-pack tables already serve the non-Revelry custom quiz use case and can also support Revelry by scoping ownership to `revelry:party:<party_id>`, so the quiz authoring implementation should not be blocked on a new generic content-table migration. For current WMLT/Drawing party setups, reuse `generated_content` with party-scoped ownership and a stable `localplay_content_id`; add a richer generic host-app content table later only when future games need stronger versioning, media, collaboration, or library/search semantics.
+- Decision: Reuse existing custom quiz tables for Revelry quiz content now. Existing quiz-pack tables already serve the non-Revelry custom quiz use case and can also support Revelry by scoping ownership to `revelry:party:<party_id>`, so the quiz authoring implementation should not be blocked on a new generic content-table migration. For current WMLT/Drawing/Housie party setups, reuse `generated_content` with party-scoped ownership and a stable `localplay_content_id`; add a richer generic host-app content table later only when future games need stronger versioning, media, collaboration, or library/search semantics.
 - Decision: A generic Games/LocalPlay entry from Revelry opens a party-scoped LocalPlay "Revelry Games" hub, not standalone LocalPlay. The hub shows the same party prepared games, drafts, active session, recent results, and launchable catalog that Revelry mirrors in its Games tab. LocalPlay hub/start-intent surfaces are the canonical place for Start, replacement confirmation, runtime recovery, and "start another game"; Revelry may expose shortcuts, but they are ingress into LocalPlay rather than a separate control plane.
 - Decision: Embedded host-app authoring must run in host-app-aware mode. The UI may reuse standalone LocalPlay components, but it must hide unsupported games, standalone economy/account chrome, and standalone-only content paths. Authored content should be saved as LocalPlay host-app content and attached to the Revelry-managed session with `settings.content_id`.
 - Decision: Rebus and other quiz variants stay hidden from Revelry-launched LocalPlay mode until explicitly promoted into the bridge contract with catalog metadata, content schema, room materialization, launch/status/results support, and feed-safe summaries.

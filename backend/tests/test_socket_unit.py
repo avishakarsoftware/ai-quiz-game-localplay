@@ -1121,6 +1121,26 @@ class TestBroadcastRouting:
         assert update["players"] == [{"nickname": "Bob", "avatar": ""}]
 
     @pytest.mark.asyncio
+    async def test_housie_sync_dead_player_sends_updated_roster(self):
+        room = make_housie_room()
+        sm = SocketManager()
+        org_ws = add_organizer(room, "org-1")
+        add_player(room, "p1", "Alice")
+        add_player(room, "p2", "Bob")
+        room.connections["p1"] = FailingWebSocket()
+        sm._start_housie_round(room)
+
+        await sm._broadcast_housie_sync(room)
+
+        assert "p1" not in room.players
+        assert "Alice" in room.disconnected_players
+        update = org_ws.last("PLAYER_DISCONNECTED")
+        assert update is not None
+        assert update["nickname"] == "Alice"
+        assert update["player_count"] == 1
+        assert update["players"] == [{"nickname": "Bob", "avatar": ""}]
+
+    @pytest.mark.asyncio
     async def test_broadcast_to_players_excludes_organizer_and_spectators(self):
         room = make_room()
         org_ws = add_organizer(room, "org-1")
@@ -1170,6 +1190,31 @@ class TestSparkChargingStartGame:
             await sm.handle_message(room, "org-1", {"type": "START_GAME"}, is_organizer=True)
         assert room.state == "LOBBY"
         assert org_ws.last("INSUFFICIENT_SPARKS") is not None
+
+    @pytest.mark.asyncio
+    async def test_housie_start_prunes_dead_players_before_minimum_check(self):
+        room = Room("HOU002", default_housie_game("Unit Housie"), game_type="housie")
+        room.wallet_id = "test-wallet-id"
+        room.state = "LOBBY"
+        sm = SocketManager()
+        org_ws = add_organizer(room, "org-1")
+        add_player(room, "p1", "Alice")
+        add_player(room, "p2", "Bob")
+        room.connections["p1"] = FailingWebSocket()
+
+        with patch("socket_manager.token_module.spend_room", return_value=(True, 10)) as spend_room:
+            await sm.handle_message(room, "org-1", {"type": "START_GAME"}, is_organizer=True)
+
+        spend_room.assert_not_called()
+        assert room.state == "LOBBY"
+        assert "p1" not in room.players
+        assert "p2" in room.players
+        roster = org_ws.last("PLAYER_LEFT")
+        assert roster is not None
+        assert roster["player_count"] == 1
+        error = org_ws.last("ERROR")
+        assert error is not None
+        assert "at least" in error["message"]
 
     @pytest.mark.asyncio
     async def test_start_game_no_wallet_sends_error(self):

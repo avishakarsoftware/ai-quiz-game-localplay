@@ -798,7 +798,7 @@ All apps share one Supabase project. Prefixes prevent collisions.
 {prefix}rejections
 ```
 
-`{prefix}generated_content.content_type` must allow `quiz`, `mlt`, and `drawing`. The schema template includes a constraint refresh for existing Supabase tables; apply the rendered gamma/prod SQL before deploying a build that saves Drawing setups from the Revelry Games hub.
+`{prefix}generated_content.content_type` must allow the game setup types enabled in that environment. Production currently requires `quiz`, `mlt`, and `drawing`. Gamma additionally allows `housie` for the Housie party-hub setup/save/start path. The schema template includes a constraint refresh for existing Supabase tables; apply the rendered environment-specific SQL before deploying a build that saves a new setup type from the Revelry Games hub.
 
 ### LocalPlay RPCs (per prefix)
 
@@ -1179,6 +1179,10 @@ curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sess
 - Deployed gamma-only extended party-games token TTL support on 2026-05-25 with `./scripts/deploy-gcp.sh --gamma --with-frontend`. The Revelry gamma mint script can now write a 30-day disposable-party URL to `gamma_party_games_url.txt`; production rejects custom party-games token TTLs. Verified the minted token expiry was 30 days, then reran Playwright: `REVELRY_GAMMA_PARTY_GAMES_URL_FILE=... npm run test:e2e:gamma:revelry` returned `2 passed`, and `npm run test:e2e:gamma` returned `2 passed`.
 - On 2026-05-26, added gamma callback URL management to the deploy bootstrap, set `/home/revelry-games/app/.env.gamma` to call `https://api-gamma.revelryapp.me/api/games/localplay/callback`, and redeployed gamma with `./scripts/deploy-gcp.sh --gamma --with-frontend`.
 - On 2026-05-26, `REVELRY_GAMMA_PARTY_GAMES_URL_FILE=... npm run test:e2e:gamma:revelry` returned `3 passed`, now covering Drawing save/start/re-entry, a complete Revelry-started Quiz through LocalPlay WebSockets to podium, Revelry callback/session mirror, Revelry session-results polling with final player score, workspace cleanup after completion, and custom Quiz image upload/save/payload verification. `npm run test:e2e:gamma` returned `2 passed`.
+- On 2026-06-01, applied the gamma-only Housie schema update: `games_gamma_generated_content_content_type_check` now allows `quiz`, `mlt`, `drawing`, and `housie`. Production `games_generated_content_content_type_check` remains unchanged until Housie is promoted.
+- On 2026-06-01, deployed Housie Revelry gamma enablement. Live gamma catalog returns `housie` for `host_app=revelry` with `status: "gamma"`, `can_create_content: true`, `can_quick_start: true`, and `supports_ai_generation: false`; gamma Housie content save returned `question_count/item_count = 6`.
+- On 2026-06-01, deployed the stale lobby roster fix. When `ROOM_RESET` or another lobby broadcast discovers dead player sockets, LocalPlay removes them and emits an updated roster so the organizer player count matches server-side minimum-player checks.
+- On 2026-06-01, broadened the socket lifecycle fix across game families. Per-player runtime syncs and drawing broadcasts now publish corrected rosters after removing dead player sockets; min-player-gated starts prune dead sockets before checking player counts; superseded Revelry sessions close their old runtime rooms and cannot later be marked complete by stale callbacks. Housie saved setups are included in the Revelry party workspace `prepared_content` list.
 - Basic Revelry gamma end-to-end testing has worked for catalog, session creation, organizer/player/spectator launch, Drawing setup/start/re-entry, custom Quiz image upload/save, completion, result polling, callback delivery, and workspace active-session cleanup. Before production promotion, still repeat from Revelry gamma for native app/universal-link return flows and any production-only host-app chrome checks.
 - Full spec: `SPEC-REVELRY-INTEGRATION.md`
 

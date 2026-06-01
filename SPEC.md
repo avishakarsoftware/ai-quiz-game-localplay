@@ -229,7 +229,7 @@ Drawing storage:
 
 Host-app/party setup storage:
 
-- Current WMLT and Drawing party setups reuse `*_generated_content` with scoped owner ids such as `revelry:party:{party_id}`.
+- Current WMLT, Drawing, and Revelry gamma Housie party setups reuse `*_generated_content` with scoped owner ids such as `revelry:party:{party_id}`.
 - Revelry party quiz authoring reuses quiz-pack storage under the same party-scoped ownership pattern.
 - A richer generic content table remains backlog for future games that need collaboration, search, versioning, richer media, or cross-party reuse.
 
@@ -252,7 +252,7 @@ Frontend game types are defined in `frontend/src/types.ts`:
 
 ```ts
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | QuizVariantGameType;
 ```
 
 The frontend catalog in `frontend/src/gameModes.ts` maps visible game ids to runtime types:
@@ -260,12 +260,16 @@ The frontend catalog in `frontend/src/gameModes.ts` maps visible game ids to run
 - `quiz`, `rebus`, `emoji_charades`, `fact_fiction`, `timeline`, and `odd_one_out` use the quiz runtime.
 - `wmlt` uses the WMLT runtime.
 - `drawing` uses the Drawing runtime.
+- `housie` uses the 90-ball Bingo-family runtime.
+- `bingo` uses the configurable 5x5 Bingo-family runtime.
 
 Backend room creation accepts runtime game types:
 
 - `quiz`
 - `wmlt`
 - `drawing`
+- `housie`
+- `bingo`
 
 Unsupported game types are rejected by `RoomCreateRequest.validate_game_type`.
 
@@ -298,7 +302,7 @@ Implementation-ready availability model:
 
 Revelry content callbacks must treat safe `payload.content` metadata as a first-class prepared-game mirror source. `content.created` and `content.updated` callbacks include top-level host-app/container/content ids plus a safe summary object with `localplay_content_id`, `game_type`, `title`, `status`, item/question count, optional thumbnail, and time limit. They must never include raw prompts, questions, answers, options, full media paths, provider prompts, launch tokens, or participant secrets. After signature and envelope validation, Revelry may fetch LocalPlay metadata to confirm or enrich, but a fetch failure must not skip the prepared-game mirror update when safe `payload.content` is present. Versioned updates move the visible prepared setup pointer to the new `content_id` rather than creating a duplicate visible card.
 
-Bingo-family games are a separate runtime family rather than quiz variants. `SPEC-GAME-BINGO-HOUSIE.md` defines the reusable Bingo/Housie engine. Housie is now implemented for standalone LocalPlay with server-generated tickets, manual number calling, server-side claim validation, and spectator called-board sync. Baby Bingo / word / emoji / image Bingo remain later rulesets on the same engine.
+Bingo-family games are a separate runtime family rather than quiz variants. `SPEC-GAME-BINGO-HOUSIE.md` defines the reusable Bingo/Housie engine. Housie is implemented for standalone LocalPlay and Revelry gamma with server-generated tickets, manual/auto number calling, server-side claim validation, and spectator called-board sync. Configurable standalone Bingo is implemented with text/emoji/number/image-shaped deck items, 5x5 cards, optional free center, template/manual/AI-text setup, and host-reviewed generated items. Baby Bingo / dedicated word / emoji / image / photo Bingo remain later named rulesets on the same engine.
 
 ## LLM Generation Pattern
 
@@ -1055,6 +1059,9 @@ Play again:
 - `Choose Another Game` intentionally leaves the current content path. In standalone mode it returns to game select while keeping the room/socket available so the next content can reset the existing room. In host-app mode it returns to the party-scoped LocalPlay/Revelry Games hub instead of standalone game select.
 - If no reusable content id/socket is available, `Play Again` may fall back to the same behavior as `Choose Another Game`.
 - `RESET_ROOM` validates the content id, charges the room-start cost, clears round-specific state, and broadcasts `ROOM_RESET` so players return to lobby with the same room code.
+- Dead socket cleanup is a shared room-lifecycle rule for all games. If `ROOM_RESET`, a lobby broadcast, a per-player runtime sync, or a drawing question broadcast discovers a dead player socket, the server removes that player and emits a corrected `PLAYER_LEFT` / `PLAYER_DISCONNECTED` roster update. The organizer's displayed player count must match the server roster used by start-game minimum-player checks.
+- Before any minimum-player-gated game starts, the server probes/prunes dead player sockets and then evaluates the minimum-player rule. This applies to WMLT, Drawing, Housie, Bingo, and future games with player-count requirements.
+- Revelry replacement starts must close the superseded runtime room and notify old sockets before exposing the newer session as the party's active game. Superseded/cancelled/expired sessions must not later be overwritten as completed by stale runtime callbacks.
 
 ## Frontend Player State Machine
 
