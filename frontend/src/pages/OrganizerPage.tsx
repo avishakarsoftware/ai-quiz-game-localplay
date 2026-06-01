@@ -39,7 +39,7 @@ import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn
 type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'LEADERBOARD' | 'PODIUM';
 
 function defaultTimeLimitForGame(type: GameType): number {
-    if (type === 'housie' || type === 'bingo') return 15;
+    if (type === 'housie' || type === 'bingo' || type === 'baby_bingo') return 15;
     if (type === 'musical_chairs') return 5;
     if (type === 'bluff') return 30;
     return type === 'drawing' ? 30 : 15;
@@ -53,9 +53,26 @@ const STARTER_BINGO_ITEMS = [
     'Table games', 'A surprise', 'Best dressed', 'Last call', 'Confetti',
 ];
 
+const BABY_BINGO_ITEMS = [
+    'Baby bottle', 'Tiny socks', 'Diaper cake', 'Pacifier', 'Baby blanket',
+    'Stroller', 'Nursery rhyme', 'Onesie', 'Baby name guess', 'Pregnancy craving',
+    'Late-night feeding', 'Baby monitor', 'Rubber duck', 'Gift wrap', 'Lullaby',
+    'Baby shoes', 'Cute bib', 'Wipes pack', 'Parent advice', 'Photo moment',
+    'Stuffed toy', 'Storybook', 'Teether', 'Baby giggles', 'Nap time',
+];
+
 function starterBingoDeck(): BingoDeckItem[] {
     return STARTER_BINGO_ITEMS.map((display, index) => ({
         id: `starter_${index + 1}`,
+        kind: 'text',
+        value: display.toLowerCase(),
+        display,
+    }));
+}
+
+function babyBingoDeck(): BingoDeckItem[] {
+    return BABY_BINGO_ITEMS.map((display, index) => ({
+        id: `baby_${index + 1}`,
         kind: 'text',
         value: display.toLowerCase(),
         display,
@@ -507,6 +524,17 @@ export default function OrganizerPage() {
             setPrompt('');
             setDifficulty('medium');
             setState('BINGO_PROMPT');
+        }
+        else if (type === 'baby_bingo') {
+            setBingoTitle('Baby Bingo');
+            setBingoDeck(babyBingoDeck());
+            setGeneratedBingoId('');
+            setBingoFreeCenter(true);
+            setBingoClaimRequiresLatest(false);
+            setNumQuestions(25);
+            setPrompt('baby shower');
+            setDifficulty('easy');
+            setState('BINGO_SETUP');
         }
         else if (type === 'musical_chairs') {
             setMusicalChairsConfig(defaultMusicalChairsConfig);

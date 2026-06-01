@@ -69,6 +69,15 @@ class TestHealthEndpoints:
         assert room.game_type == "bluff"
         assert room.quiz["game_title"] == "Bluff Night"
 
+    def test_catalog_includes_baby_bingo_preset_on_bingo_runtime(self):
+        res = client.get("/catalog")
+
+        assert res.status_code == 200, res.text
+        games = {game["id"]: game for game in res.json()["games"]}
+        assert games["baby_bingo"]["game_type"] == "bingo"
+        assert games["baby_bingo"]["runtime_type"] == "bingo"
+        assert games["baby_bingo"]["content_schema"]["ruleset"] == "baby_bingo"
+
 
 class TestFrontendStaticServing:
     def test_root_serves_api_status_without_frontend_build(self):

@@ -80,7 +80,7 @@ Separate product expectations:
 
 ## Game Types And Catalog Model
 
-Standalone catalog should initially show:
+Current standalone catalog shows:
 
 ```ts
 {
@@ -91,7 +91,7 @@ Standalone catalog should initially show:
 }
 ```
 
-Future preset cards should be separate catalog ids with the same runtime:
+Preset cards are separate catalog ids with the same runtime:
 
 ```ts
 {
@@ -106,6 +106,13 @@ Future preset cards should be separate catalog ids with the same runtime:
 This mirrors quiz variants: separate visible cards, shared runtime.
 
 Backend room creation should use `game_type = "bingo"` for MVP. Presets can pass `ruleset` and `template_id` inside the Bingo setup content rather than creating new backend runtime types immediately.
+
+Implemented preset behavior:
+
+- `baby_bingo` appears as its own standalone catalog card when Bingo is enabled.
+- Selecting Baby Bingo opens the Bingo setup screen with title `Baby Bingo`, free center enabled, casual claim rules, and a ready-made 25-item baby shower deck.
+- Starting the preset still creates a normal `bingo` setup and room; no new backend runtime type is introduced.
+- Baby Bingo remains disabled for Revelry/host-app mode until the generic Bingo bridge contract is deliberately enabled.
 
 Because the rollout is gamma-only, catalog exposure should be gated by environment/config. Production builds and production `/catalog` responses must not show `bingo` until an explicit production rollout.
 

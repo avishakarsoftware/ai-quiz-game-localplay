@@ -67,7 +67,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;

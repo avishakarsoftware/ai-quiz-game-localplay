@@ -32,6 +32,7 @@ const GAME_CATEGORY_BY_ID: Partial<Record<GameType, GameCategory>> = {
     bluff: 'cards',
     housie: 'bingo_housie',
     bingo: 'bingo_housie',
+    baby_bingo: 'bingo_housie',
 };
 
 function getGameCategory(game: GameModeConfig): GameCategory {
@@ -39,14 +40,14 @@ function getGameCategory(game: GameModeConfig): GameCategory {
 }
 
 function hasAiGeneration(game: GameModeConfig): boolean {
-    return !['housie', 'musical_chairs', 'bluff'].includes(game.id);
+    return !['housie', 'bingo', 'baby_bingo', 'musical_chairs', 'bluff'].includes(game.id);
 }
 
 export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreenProps) {
     const [activeCategory, setActiveCategory] = useState<GameCategory>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const gameModes = (catalog ? filterGameModesForCatalog(catalog) : GAME_MODE_CONFIGS)
-        .filter((game) => ENABLE_BINGO || game.id !== 'bingo');
+        .filter((game) => ENABLE_BINGO || !['bingo', 'baby_bingo'].includes(game.id));
     const query = searchQuery.trim().toLowerCase();
     const filteredGameModes = useMemo(() => {
         return gameModes.filter((game) => {

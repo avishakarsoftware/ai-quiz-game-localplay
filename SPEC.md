@@ -261,7 +261,7 @@ Frontend game types are defined in `frontend/src/types.ts`:
 
 ```ts
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | QuizVariantGameType;
 ```
 
 The frontend catalog in `frontend/src/gameModes.ts` maps visible game ids to runtime types:
@@ -271,6 +271,9 @@ The frontend catalog in `frontend/src/gameModes.ts` maps visible game ids to run
 - `drawing` uses the Drawing runtime.
 - `housie` uses the 90-ball Bingo-family runtime.
 - `bingo` uses the configurable 5x5 Bingo-family runtime.
+- `baby_bingo` is a standalone preset card that opens the Bingo setup with a baby-shower deck, then creates a normal `bingo` runtime room.
+- `musical_chairs` uses the Musical Chairs runtime.
+- `bluff` uses the shared card-game runtime.
 
 Backend room creation accepts runtime game types:
 

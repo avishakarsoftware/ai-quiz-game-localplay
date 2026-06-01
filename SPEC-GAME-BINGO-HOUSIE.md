@@ -25,7 +25,7 @@ Standalone Housie and configurable Bingo are implemented on the Bingo-family run
 - `backend/bingo_content_engine.py` normalizes configurable Bingo setup payloads, validates deck size/item fields, sanitizes text/image metadata, and creates 5x5 cards with optional free center.
 - `backend/housie_engine.py` generates classic 3x9 / 15-number Housie tickets, creates the 1-90 call deck, and validates Quick 5, Four Corners, Top/Middle/Bottom Row, and Full House claims.
 - `backend/socket_manager.py` has a dedicated `BINGO_CALLING` runtime path. Housie/Bingo do not overload quiz `QUESTION` rounds.
-- Standalone catalog shows Housie and Bingo. `GET /catalog?host_app=revelry` exposes Housie on gamma after host-app policy allows it; generic Bingo remains standalone-only until its Revelry bridge contract is promoted.
+- Standalone catalog shows Housie, Bingo, and Baby Bingo. `GET /catalog?host_app=revelry` exposes Housie on gamma after host-app policy allows it; generic Bingo/Baby Bingo remain standalone-only until their Revelry bridge contract is promoted.
 - Organizer can create a Housie setup, create a room, start with at least two players, call/undo numbers, view the called board, and end the game.
 - Organizer can choose Beginner/Pro mode, manual/auto caller mode, configurable auto interval, and auto-pause-on-claim behavior.
 - Players receive server-generated tickets, mark cells locally, submit prize claims, and see accepted claims.
@@ -41,8 +41,8 @@ Known v1 limitations:
 
 - Latest-call and winner announcement animations exist, but need a final visual polish pass across organizer, player, and spectator screens.
 - Housie setup is still in-memory for standalone room creation; Revelry gamma Housie setup is persisted party-scoped through `generated_content`.
-- Generic Bingo is implemented for standalone/gamma UX first. It is not exposed to Revelry yet.
-- Baby Bingo, Word Bingo, Emoji Bingo, Image Bingo, Photo Bingo, and Find Someone Who remain future named rulesets on the same card/layout foundation.
+- Generic Bingo and Baby Bingo are implemented for standalone/gamma UX first. They are not exposed to Revelry yet.
+- Word Bingo, Emoji Bingo, Image Bingo, Photo Bingo, and Find Someone Who remain future named rulesets on the same card/layout foundation.
 - Image Bingo has schema and validation requirements, but the full media upload / AI image generation authoring path remains a later slice.
 
 ## Goals

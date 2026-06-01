@@ -13,7 +13,20 @@ test.describe('Standalone app shell', () => {
     await expect(page.getByRole('button', { name: /Most Likely To/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Drawing Game/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Bluff/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Baby Bingo/ })).toBeVisible();
     await expect(page.locator('.settings-trigger')).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
+
+  test('opens Baby Bingo as an editable Bingo preset', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: /Baby Bingo/ }).click();
+
+    await expect(page.getByRole('heading', { name: 'Set Up Bingo' })).toBeVisible();
+    await expect(page.getByLabel('Game title')).toHaveValue('Baby Bingo');
+    await expect(page.getByText('Deck (25/24 ready)')).toBeVisible();
+    await expect(page.locator('input[value="Baby bottle"]')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create Room' })).toBeEnabled();
     await expectNoHorizontalOverflow(page);
   });
 

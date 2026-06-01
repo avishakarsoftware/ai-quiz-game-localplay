@@ -111,6 +111,13 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         description: 'Create custom boards with words, emojis, and photos',
     },
     {
+        id: 'baby_bingo',
+        runtimeType: 'bingo',
+        icon: '🍼',
+        title: 'Baby Bingo',
+        description: 'A ready-made baby shower board with gifts, moments, and tiny socks',
+    },
+    {
         id: 'musical_chairs',
         runtimeType: 'musical_chairs',
         icon: '🎵',
