@@ -48,8 +48,14 @@ export default function DrawingPromptScreen({
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
             <div className="flex-1 flex flex-col justify-center py-8" style={{ maxWidth: 560, width: '100%', margin: '0 auto' }}>
-                <button type="button" onClick={onBack} className="btn btn-secondary mb-6 drawing-prompt-back" style={{ alignSelf: 'flex-start', minWidth: 92 }}>Back</button>
-                <div className="text-center mb-7">
+                <div className="text-center mb-7 prompt-header">
+                    <button
+                        type="button"
+                        onClick={onBack}
+                        className="btn btn-secondary prompt-header-back"
+                    >
+                        Back
+                    </button>
                     <div className="hero-icon mb-4">🎨</div>
                     <h1 className="hero-title">Drawing Game</h1>
                     <p className="text-[--text-tertiary] mt-2">Generate drawable prompts for your group</p>

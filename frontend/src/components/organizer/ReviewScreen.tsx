@@ -109,14 +109,6 @@ export default function ReviewScreen({
                 <h1 className="hero-title" style={{ textAlign: 'center', marginBottom: 8 }}>{quiz.quiz_title}</h1>
                 <div className="flex items-center justify-center gap-3 flex-wrap">
                     <p className="text-[--text-tertiary] text-base">{quiz.questions.length} questions ready to go</p>
-                    <button
-                        onClick={() => setShowAnswers(!showAnswers)}
-                        className="btn btn-secondary"
-                        style={{ padding: '4px 12px', fontSize: 13, minWidth: 0 }}
-                        title={showAnswers ? 'Hide answers (safe for screen mirroring)' : 'Show correct answers'}
-                    >
-                        {showAnswers ? '👁 Hide' : '👁‍🗨 Show'} Answers
-                    </button>
                     {sdAvailable && (
                         <button
                             onClick={onGenerateImages}
@@ -266,17 +258,17 @@ export default function ReviewScreen({
                                             />
                                         )}
                                         <h2>{selectedQuestion.text}</h2>
-                                        <div className={`grid gap-3 ${selectedQuestion.options.length === 2 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                                        <div className="review-answer-grid">
                                             {selectedQuestion.options.map((opt, j) => {
                                                 const isCorrect = showAnswers && j === selectedQuestion.answer_index;
                                                 const style = ANSWER_STYLES[j];
                                                 return (
                                                     <div
                                                         key={j}
-                                                        className={`answer-option ${style.className} ${isCorrect ? 'review-option-correct' : ''} ${showAnswers && !isCorrect ? 'review-option-muted' : ''}`}
+                                                        className={`answer-option review-option ${style.className} ${isCorrect ? 'review-option-correct' : ''} ${showAnswers && !isCorrect ? 'review-option-muted' : ''}`}
                                                     >
                                                         <span className="answer-label">{String.fromCharCode(65 + j)}</span>
-                                                        <span>{opt}</span>
+                                                        <span className="review-option-text">{opt}</span>
                                                         {isCorrect && <span className="review-correct-badge">Correct</span>}
                                                     </div>
                                                 );
@@ -290,11 +282,18 @@ export default function ReviewScreen({
                 </div>
             )}
 
-            <div className="pb-4" style={{ display: 'flex', gap: 8 }}>
+            <div className="review-footer-actions pb-4">
                 <button onClick={onBack} className="btn btn-secondary" style={{ flexShrink: 0, paddingLeft: 16, paddingRight: 16 }}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="15 18 9 12 15 6" />
                     </svg>
+                </button>
+                <button
+                    onClick={() => setShowAnswers(!showAnswers)}
+                    className="btn btn-secondary review-answer-toggle"
+                    title={showAnswers ? 'Hide answers (safe for screen mirroring)' : 'Show correct answers'}
+                >
+                    {showAnswers ? 'Hide Answers' : 'Show Answers'}
                 </button>
                 <button onClick={() => onCreateRoom()} className="btn btn-primary btn-glow" style={{ flex: 1 }}>Create Room</button>
             </div>

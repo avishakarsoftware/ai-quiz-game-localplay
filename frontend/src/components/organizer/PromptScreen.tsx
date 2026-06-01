@@ -25,6 +25,7 @@ interface PromptScreenProps {
     onGenerate: () => void;
     onCreateCustom?: () => void;
     onOpenLibrary?: () => void;
+    onBack?: () => void;
 }
 
 const DIFFICULTIES = [
@@ -245,7 +246,7 @@ export default function PromptScreen({
     prompt, setPrompt, difficulty, setDifficulty,
     numQuestions, setNumQuestions, provider, setProvider,
     providers, imageGenerationAvailable = false, generateImages = false, setGenerateImages,
-    onGenerate, onCreateCustom, onOpenLibrary,
+    onGenerate, onCreateCustom, onOpenLibrary, onBack,
 }: PromptScreenProps) {
     const { tokenStatus } = useTokenBalance();
 
@@ -261,7 +262,16 @@ export default function PromptScreen({
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
             <div className="flex-1 flex flex-col justify-center py-8">
                 {/* Hero header */}
-                <div className="text-center mb-8">
+                <div className="text-center mb-8 prompt-header">
+                    {onBack && (
+                        <button
+                            type="button"
+                            onClick={onBack}
+                            className="btn btn-secondary prompt-header-back"
+                        >
+                            Back
+                        </button>
+                    )}
                     <div className="hero-icon mb-4">⚡</div>
                     <h1 className="hero-title">Create Quiz</h1>
                     <p className="text-[--text-tertiary] mt-2">What should your players be quizzed on?</p>

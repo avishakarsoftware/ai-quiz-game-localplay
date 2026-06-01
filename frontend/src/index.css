@@ -2751,6 +2751,58 @@ body {
     margin: 0 0 16px;
 }
 
+.review-answer-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    width: min(100%, 520px);
+    margin: 0 auto;
+}
+
+.review-answer-grid .review-option {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 12px;
+    min-height: 46px;
+    text-align: left;
+}
+
+.review-answer-grid .answer-label {
+    margin-right: 0;
+    justify-self: center;
+}
+
+.review-option-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    line-height: 1.3;
+}
+
+.review-footer-actions {
+    display: grid;
+    grid-template-columns: auto minmax(140px, auto) 1fr;
+    gap: 8px;
+    align-items: center;
+}
+
+.review-answer-toggle {
+    padding-left: 16px;
+    padding-right: 16px;
+    white-space: nowrap;
+}
+
+.quiz-library-empty-action {
+    margin-top: 8px;
+}
+
+.quiz-library-footer {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 14px;
+    align-items: center;
+}
+
 /* Question number badge */
 .review-q-number {
     width: 28px;
@@ -3209,8 +3261,24 @@ body {
         grid-row: 2;
     }
 
-    .review-player-preview .grid {
+    .review-footer-actions,
+    .quiz-library-footer {
         grid-template-columns: 1fr;
+    }
+
+    .review-footer-actions .btn,
+    .quiz-library-footer .btn {
+        width: 100%;
+    }
+
+    .review-answer-grid .review-option {
+        grid-template-columns: 38px minmax(0, 1fr);
+    }
+
+    .review-correct-badge {
+        grid-column: 2;
+        justify-self: start;
+        margin-left: 0;
     }
 }
 
@@ -3609,6 +3677,19 @@ body {
     margin: 0 auto;
 }
 
+.prompt-header {
+    position: relative;
+}
+
+.prompt-header-back {
+    position: absolute;
+    left: 0;
+    top: 0;
+    min-width: 92px;
+    min-height: 44px;
+    padding: 0 18px;
+}
+
 .quiz-variant-generate-btn {
     margin-top: 10px;
 }
@@ -3701,6 +3782,14 @@ body {
 
     .game-select-desc {
         font-size: 0.9rem;
+    }
+
+    .prompt-header {
+        padding-top: 54px;
+    }
+
+    .prompt-header-back {
+        top: 0;
     }
 }
 

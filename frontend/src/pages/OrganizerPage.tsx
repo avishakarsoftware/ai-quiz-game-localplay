@@ -1220,6 +1220,7 @@ export default function OrganizerPage() {
                             setState('CUSTOM_QUIZ');
                         }}
                         onOpenLibrary={openQuizLibrary}
+                        onBack={() => setState('SELECT_GAME')}
                     />
                 )}
 
@@ -1247,7 +1248,7 @@ export default function OrganizerPage() {
                                     <div className="p-4 text-center">
                                         <p className="font-semibold mb-2">No saved quizzes yet</p>
                                         <button
-                                            className="btn btn-primary"
+                                            className="btn btn-primary quiz-library-empty-action"
                                             onClick={() => {
                                                 setQuiz(null);
                                                 setEditingPackId(undefined);
@@ -1281,7 +1282,7 @@ export default function OrganizerPage() {
                                 </div>
                             ))}
                         </div>
-                        <div className="pb-4" style={{ display: 'flex', gap: 8 }}>
+                        <div className="quiz-library-footer pb-4">
                             <button onClick={() => setState('PROMPT')} className="btn btn-secondary" style={{ flexShrink: 0, paddingLeft: 16, paddingRight: 16 }}>
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                     <polyline points="15 18 9 12 15 6" />
