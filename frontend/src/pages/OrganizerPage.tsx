@@ -3,7 +3,7 @@ import { API_URL, WS_URL } from '../config';
 import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
-import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending } from '../utils/storage';
+import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending, saveOrganizerSession, getSavedOrganizerSession, clearOrganizerSession } from '../utils/storage';
 import { apiHeaders, apiUrl, generateIdempotencyKey } from '../utils/api';
 import { mediaUrl } from '../utils/media';
 import GameSelectScreen from '../components/organizer/GameSelectScreen';
@@ -171,6 +171,21 @@ export default function OrganizerPage() {
     useEffect(() => { stateRef.current = state; }, [state]);
     useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
     useEffect(() => { gameTypeRef.current = gameType; }, [gameType]);
+    const persistOrganizerSession = useCallback((overrides: Record<string, unknown> = {}) => {
+        const code = String(overrides?.roomCode || roomCodeRef.current || roomCode || '');
+        const token = String(overrides?.organizerToken || organizerTokenRef.current || '');
+        if (!code || !token) return;
+        saveOrganizerSession({
+            roomCode: code,
+            organizerToken: token,
+            gameType: String(overrides?.gameType || gameTypeRef.current || gameType),
+            contentId: String(overrides?.contentId || contentId || ''),
+            hostAppJoinUrl: String(overrides?.hostAppJoinUrl || hostAppJoinUrl || ''),
+            hostAppJoinLabel: String(overrides?.hostAppJoinLabel || hostAppJoinLabel || ''),
+            hostAppReturnUrl: String(overrides?.hostAppReturnUrl || hostAppReturnUrl || ''),
+            hostAppPartyHubUrl: String(overrides?.hostAppPartyHubUrl || hostAppPartyHubUrl || ''),
+        });
+    }, [contentId, gameType, hostAppJoinLabel, hostAppJoinUrl, hostAppPartyHubUrl, hostAppReturnUrl, roomCode]);
     useEffect(() => {
         window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
         document.documentElement.scrollTop = 0;
@@ -204,6 +219,7 @@ export default function OrganizerPage() {
             const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN'];
             if (homeSafeStates.includes(stateRef.current)) {
                 flowEpochRef.current += 1;
+                clearOrganizerSession();
                 setQuiz(null);
                 setMltGame(null);
                 setDrawingGame(null);
@@ -221,6 +237,7 @@ export default function OrganizerPage() {
                 const confirmed = window.confirm('Going home will leave this active room. Players may be interrupted if the game is in progress. Continue?');
                 if (!confirmed) return;
                 flowEpochRef.current += 1;
+                clearOrganizerSession();
                 wsRef.current?.close();
                 wsRef.current = null;
                 setRoomCode('');
@@ -458,6 +475,10 @@ export default function OrganizerPage() {
         }
         else if (msg.type === 'ORGANIZER_RECONNECTED') {
             setRoomCode(msg.room_code as string);
+            persistOrganizerSession({
+                roomCode: msg.room_code as string,
+                gameType: msg.game_type as string || gameTypeRef.current,
+            });
             setPlayerCount(msg.player_count as number);
             setPlayers(msg.players as PlayerInfo[] || []);
             setTotalQuestions(msg.total_questions as number);
@@ -518,6 +539,7 @@ export default function OrganizerPage() {
             if (message.includes('players')) {
                 alert(message);
             } else {
+                clearOrganizerSession();
                 if (hostAppMode) {
                     setErrorModal({
                         title: 'Game Unavailable',
@@ -525,12 +547,13 @@ export default function OrganizerPage() {
                         returnToHostApp: true,
                     });
                 } else {
+                    clearOrganizerSession();
                     setRoomCode('');
                     setState('SELECT_GAME');
                 }
             }
         }
-    }, [hostAppMode]);
+    }, [hostAppMode, persistOrganizerSession]);
 
     const handleGameSelect = (type: GameType) => {
         window.dispatchEvent(new CustomEvent('close-settings'));
@@ -1001,7 +1024,7 @@ export default function OrganizerPage() {
         ws.onclose = () => {
             wsRef.current = null;
             if (!mountedRef.current) return;
-            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'LEADERBOARD', 'PODIUM'];
+            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'LEADERBOARD', 'PODIUM'];
             if (roomCodeRef.current && activeStates.includes(stateRef.current)) {
                 if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                 reconnectTimerRef.current = setTimeout(() => connectWsRef.current(roomCodeRef.current), 2000);
@@ -1009,6 +1032,24 @@ export default function OrganizerPage() {
         };
     }, [handleWsMessage]);
     useEffect(() => { connectWsRef.current = connectWs; }, [connectWs]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('launch_token')) return;
+        if (roomCodeRef.current || stateRef.current !== 'SELECT_GAME') return;
+        const saved = getSavedOrganizerSession();
+        if (!saved) return;
+        organizerTokenRef.current = saved.organizerToken;
+        setRoomCode(saved.roomCode);
+        if (saved.gameType) setGameType(saved.gameType as GameType);
+        if (saved.contentId) setContentId(saved.contentId);
+        if (saved.hostAppJoinUrl) setHostAppJoinUrl(saved.hostAppJoinUrl);
+        if (saved.hostAppJoinLabel) setHostAppJoinLabel(saved.hostAppJoinLabel);
+        if (saved.hostAppReturnUrl) setHostAppReturnUrl(saved.hostAppReturnUrl);
+        if (saved.hostAppPartyHubUrl) setHostAppPartyHubUrl(saved.hostAppPartyHubUrl);
+        setState('ROOM');
+        connectWsRef.current(saved.roomCode);
+    }, []);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -1028,6 +1069,14 @@ export default function OrganizerPage() {
                 setHostAppReturnUrl(data.launch_context?.return_url || data.return_url || '');
                 setHostAppPartyHubUrl(data.launch_context?.party_hub_url || '');
                 organizerTokenRef.current = data.organizer_token || '';
+                persistOrganizerSession({
+                    roomCode: data.room_code,
+                    organizerToken: data.organizer_token || '',
+                    hostAppJoinUrl: display.guest_join_url || data.launch_context?.guest_join_url || '',
+                    hostAppJoinLabel: display.guest_join_label || 'Scan to join from Revelry',
+                    hostAppReturnUrl: data.launch_context?.return_url || data.return_url || '',
+                    hostAppPartyHubUrl: data.launch_context?.party_hub_url || '',
+                });
                 setState('ROOM');
                 connectWsRef.current(data.room_code);
             } catch {
@@ -1116,6 +1165,12 @@ export default function OrganizerPage() {
             const data = await res.json();
             setRoomCode(data.room_code);
             organizerTokenRef.current = data.organizer_token || '';
+            persistOrganizerSession({
+                roomCode: data.room_code,
+                organizerToken: data.organizer_token || '',
+                gameType: effectiveGameType,
+                contentId: selectedContentId,
+            });
             track('room_created', { room_code: data.room_code, game_type: effectiveGameType, time_limit: effectiveTimeLimit });
             setState('ROOM');
             connectWs(data.room_code);
@@ -1280,6 +1335,7 @@ export default function OrganizerPage() {
     };
 
     const chooseAnotherGame = () => {
+        clearOrganizerSession();
         setQuiz(null);
         setMltGame(null);
         setDrawingGame(null);

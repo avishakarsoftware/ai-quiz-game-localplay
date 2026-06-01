@@ -20,6 +20,7 @@ Object.defineProperty(globalThis, 'localStorage', {
 // Import AFTER localStorage mock is set up
 const {
     setCheckoutPending, getCheckoutPending,
+    saveOrganizerSession, getSavedOrganizerSession, clearOrganizerSession,
     setSessionToken, getSessionToken,
     setUserProfile, getUserProfile,
     signOut,
@@ -59,6 +60,39 @@ describe('storage utilities', () => {
             const profile = getUserProfile();
             expect(profile).not.toBeNull();
             expect(profile!.provider).toBe('apple');
+        });
+    });
+
+    describe('organizer session recovery', () => {
+        it('stores and retrieves the current organizer room credentials', () => {
+            saveOrganizerSession({
+                roomCode: 'ABC123',
+                organizerToken: 'secret-token',
+                gameType: 'housie',
+                hostAppJoinUrl: 'https://example.test/join',
+            });
+
+            const saved = getSavedOrganizerSession();
+            expect(saved?.roomCode).toBe('ABC123');
+            expect(saved?.organizerToken).toBe('secret-token');
+            expect(saved?.gameType).toBe('housie');
+            expect(saved?.hostAppJoinUrl).toBe('https://example.test/join');
+        });
+
+        it('clears expired or corrupted organizer recovery data', () => {
+            mockLocalStorage.setItem('localplay_organizer_session', JSON.stringify({
+                roomCode: 'OLD123',
+                organizerToken: 'old-token',
+                savedAt: 1,
+            }));
+            expect(getSavedOrganizerSession(1000)).toBeNull();
+
+            mockLocalStorage.setItem('localplay_organizer_session', 'not-json');
+            expect(getSavedOrganizerSession()).toBeNull();
+
+            saveOrganizerSession({ roomCode: 'NEW123', organizerToken: 'new-token' });
+            clearOrganizerSession();
+            expect(getSavedOrganizerSession()).toBeNull();
         });
     });
 });

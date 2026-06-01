@@ -6,6 +6,7 @@
 const DEVICE_ID_KEY = 'revelry_device_id';
 const CHECKOUT_PENDING_KEY = 'checkout_pending';
 const CHECKOUT_SESSION_KEY = 'checkout_session_id';
+const ORGANIZER_SESSION_KEY = 'localplay_organizer_session';
 
 // For now, always use localStorage. When Capacitor secure-storage plugin
 // is added, this wrapper makes the switch transparent.
@@ -61,6 +62,46 @@ export function getCheckoutPending(): { pending: boolean; sessionId: string | nu
 export function clearCheckoutPending(): void {
     remove(CHECKOUT_PENDING_KEY);
     remove(CHECKOUT_SESSION_KEY);
+}
+
+// --- Organizer Room Recovery ---
+
+export interface SavedOrganizerSession {
+    roomCode: string;
+    organizerToken: string;
+    gameType?: string;
+    contentId?: string;
+    hostAppJoinUrl?: string;
+    hostAppJoinLabel?: string;
+    hostAppReturnUrl?: string;
+    hostAppPartyHubUrl?: string;
+    savedAt: number;
+}
+
+export function saveOrganizerSession(session: Omit<SavedOrganizerSession, 'savedAt'>): void {
+    if (!session.roomCode || !session.organizerToken) return;
+    set(ORGANIZER_SESSION_KEY, JSON.stringify({ ...session, savedAt: Date.now() }));
+}
+
+export function getSavedOrganizerSession(maxAgeMs = 12 * 60 * 60 * 1000): SavedOrganizerSession | null {
+    const raw = get(ORGANIZER_SESSION_KEY);
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw) as SavedOrganizerSession;
+        if (!parsed.roomCode || !parsed.organizerToken) return null;
+        if (Date.now() - Number(parsed.savedAt || 0) > maxAgeMs) {
+            clearOrganizerSession();
+            return null;
+        }
+        return parsed;
+    } catch {
+        clearOrganizerSession();
+        return null;
+    }
+}
+
+export function clearOrganizerSession(): void {
+    remove(ORGANIZER_SESSION_KEY);
 }
 
 // --- Session Token (Auth Phase 2) ---

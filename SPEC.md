@@ -1126,6 +1126,7 @@ Join:
 - Player enters room code, nickname, optional team, and avatar.
 - Session info is stored in `sessionStorage` under `localplay_session`.
 - Saved sessions auto-rejoin after refresh.
+- Organizer room credentials are stored locally after room creation or host-app launch. Refreshing the host lobby or an active host screen must reconnect as organizer and restore the same room instead of returning to the game catalog while players remain in the old lobby.
 
 Quiz round UI:
 
