@@ -1057,6 +1057,18 @@ Classic bingo, housie/tambola, and baby bingo are adjacent to quiz authoring but
 
 Complexity: medium. Standalone Housie now covers the new board/claim state: server-generated tickets, manual caller, claim validation, winners, and spectator sync. The next platform slice is Beginner/Pro setup, auto-caller controls, latest-call/winner visual polish, last-called-number claim validation, and durable templates, then host-app/Revelry enablement once party-scoped setup and safe result callbacks are ready.
 
+### Card Games Runtime
+
+Card games use a server-owned system dealer so hidden information never leaks to the organizer control surface or spectator/TV view.
+
+Current first slice:
+
+- **Bluff**: implemented as a standalone MVP with server-dealt standard cards, redacted public hands, private player hands, face-down rank claims, pass, challenge, reveal, continue, and podium support.
+- Organizer controls are room controls only. If the host wants to play, they join from a normal player session and receive only their own hand.
+- Spectator view shows table state, pile, active player, hand counts, claims, reveals, and final ordering, never unrevealed hidden cards.
+
+Future card games should reuse `backend/card_engine.py`, private/public sync payloads, and the same host-controller/player-seat split.
+
 ### Image-Based Game Modes
 
 Many games can be enhanced or built around images instead of (or alongside) text:
@@ -1569,6 +1581,7 @@ Spectator/TV display needs vary by game:
 - **Find Someone Who**: Show timer, aggregate confirmed matches, prize winners, and safe prompt highlights; avoid showing every private card/person match on TV.
 - **Common Ground**: Show prompt, team rosters, discussion timer, submission status, reveal cards, voting prompt, and team leaderboard.
 - **Party Quests**: During the event, show low-noise aggregate progress; at reveal, show podium, social awards, and safe party stats.
+- **Bluff / Card Games**: Show table state, hand counts, pile size, active player, claim/challenge/reveal moments, and podium. Do not show hidden hands or deck order.
 - **Taboo**: Public spectator view should show timer, score, team, and safe round state. Do not show target/forbidden words on a shared TV by default because the guessing team may see it. A private host/judge view can show the hidden card.
 - **Two Truths and a Lie**: Show author, three statement cards, vote progress, vote distribution, and reveal which was the lie.
 
@@ -1597,6 +1610,13 @@ These need: durable active room timers, low-interruption player UX, confirmation
 - Two Truths and a Lie (sequential author reveal, simultaneous voting per author)
 
 These need: turn queue, active-player tracking, per-player private prompts, and waiting state for inactive players.
+
+### Card / Hidden-Information Turn Games
+
+- Bluff (one active player acts, others may challenge)
+- Party Poker (future)
+
+These need: server-owned deck/dealer, per-player private sync, public redacted sync, active-player turn gating, challenge/betting/action windows, reconnect-safe private hand restoration, and spectator-safe reveal rules.
 
 ### Role-Based / Turn-Led (one player has a special role)
 

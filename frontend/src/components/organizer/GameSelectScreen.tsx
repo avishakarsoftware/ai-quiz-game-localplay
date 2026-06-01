@@ -9,13 +9,14 @@ interface GameSelectScreenProps {
     catalog?: Array<{ id: string; launchable?: boolean }>;
 }
 
-type GameCategory = 'all' | 'quiz' | 'creative' | 'bingo_housie';
+type GameCategory = 'all' | 'quiz' | 'creative' | 'bingo_housie' | 'cards';
 
 const CATEGORY_OPTIONS: Array<{ id: GameCategory; label: string }> = [
     { id: 'all', label: 'All' },
     { id: 'quiz', label: 'Quiz/Trivia' },
     { id: 'creative', label: 'Creative' },
     { id: 'bingo_housie', label: 'Bingo/Housie' },
+    { id: 'cards', label: 'Cards' },
 ];
 
 const GAME_CATEGORY_BY_ID: Partial<Record<GameType, GameCategory>> = {
@@ -28,6 +29,7 @@ const GAME_CATEGORY_BY_ID: Partial<Record<GameType, GameCategory>> = {
     wmlt: 'creative',
     drawing: 'creative',
     musical_chairs: 'creative',
+    bluff: 'cards',
     housie: 'bingo_housie',
     bingo: 'bingo_housie',
 };
@@ -37,7 +39,7 @@ function getGameCategory(game: GameModeConfig): GameCategory {
 }
 
 function hasAiGeneration(game: GameModeConfig): boolean {
-    return !['housie', 'musical_chairs'].includes(game.id);
+    return !['housie', 'musical_chairs', 'bluff'].includes(game.id);
 }
 
 export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreenProps) {

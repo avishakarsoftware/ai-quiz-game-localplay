@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
@@ -19,6 +19,7 @@ import { mediaUrl } from '../utils/media';
 import { apiUrl } from '../utils/api';
 import { returnToHostApp } from '../utils/hostAppReturn';
 import MusicalChairsVisualizer from '../components/musical-chairs/MusicalChairsVisualizer';
+import BluffTable from '../components/BluffTable';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
@@ -107,6 +108,7 @@ export default function SpectatorPage() {
     const [housieCallFlash, setHousieCallFlash] = useState<{ item: { value?: number | string; display: string; kind?: string; image_url?: string; alt_text?: string }; key: number } | null>(null);
     const [housieAnnouncement, setHousieAnnouncement] = useState<{ text: string; key: number } | null>(null);
     const [musicalChairsState, setMusicalChairsState] = useState<MusicalChairsState | null>(null);
+    const [bluffState, setBluffState] = useState<BluffState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -233,6 +235,11 @@ export default function SpectatorPage() {
                     setGameState('MUSICAL_CHAIRS');
                     return;
                 }
+                if (msg.game_type === 'bluff' && msg.bluff) {
+                    setBluffState(msg.bluff);
+                    setGameState('BLUFF');
+                    return;
+                }
                 // Handle mid-question sync
                 if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
@@ -304,6 +311,11 @@ export default function SpectatorPage() {
                 setGameType('musical_chairs');
                 setMusicalChairsState(msg.musical_chairs || null);
                 setGameState('MUSICAL_CHAIRS');
+            }
+            else if (msg.type === 'BLUFF_SYNC') {
+                setGameType('bluff');
+                setBluffState(msg.bluff || null);
+                setGameState('BLUFF');
             }
             else if (msg.type === 'MC_WINNER') {
                 setGameType('musical_chairs');
@@ -723,6 +735,10 @@ export default function SpectatorPage() {
                                 </div>
                             ) : null}
                         </div>
+                    )}
+
+                    {gameState === 'BLUFF' && (
+                        <BluffTable state={bluffState} controls="spectator" />
                     )}
 
                     {gameState === 'QUESTION' && (question || currentStatement || gameType === 'drawing') && (

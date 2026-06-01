@@ -13,7 +13,7 @@ Backend engine: card_engine.py / bluff_engine.py
 Frontend display name: Bluff
 ```
 
-This spec is implementation-ready, but it is not yet implemented. It should be built as a pure engine first, then wired into room creation and WebSocket runtime after tests cover the rules.
+Status: **Bluff MVP implemented locally**. The shared card engine and Bluff rules engine now exist with unit tests, and Bluff is wired into standalone room creation, WebSocket runtime, organizer/player/spectator views, and focused API/socket tests. Gamma deployment and full remote visual QA should be completed before promoting it as production-ready.
 
 ## Goals
 
@@ -62,6 +62,8 @@ backend/card_engine.py
 backend/bluff_engine.py
 backend/tests/test_card_engine.py
 backend/tests/test_bluff_engine.py
+backend/tests/test_websocket_integration.py
+frontend/src/components/BluffTable.tsx
 ```
 
 `card_engine.py` owns reusable deck operations:
@@ -85,6 +87,15 @@ backend/tests/test_bluff_engine.py
 - Penalty pickup.
 - Player elimination/win detection.
 - Public sync payloads.
+
+Runtime wiring:
+
+- `/room/create` accepts `game_type: "bluff"` with optional `bluff_config`.
+- `START_GAME` validates at least 3 connected players, charges room start normally, locks the room, deals cards server-side, and broadcasts `BLUFF_SYNC`.
+- Player sockets receive `private_sync`, which includes only that player's cards.
+- Organizer and spectator sockets receive `public_sync`, which includes hand counts only.
+- Supported WS actions: `BLUFF_PLAY`, `BLUFF_PASS`, `BLUFF_CHALLENGE`, `BLUFF_CONTINUE`, and organizer `END_QUIZ`.
+- The current MVP uses host/player-driven continue for challenge windows; automatic challenge timers can be added after remote UX testing.
 
 ## Host Controller vs Player Seat
 

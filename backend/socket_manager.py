@@ -17,6 +17,20 @@ import random
 import config
 import tokens as token_module
 from musical_chairs_engine import choose_eliminated, intensity_for_round, rank_grabs, total_rounds as mc_total_rounds, validate_config as validate_musical_chairs_config
+from bluff_engine import (
+    PHASE_CHALLENGE as BLUFF_PHASE_CHALLENGE,
+    PHASE_PODIUM as BLUFF_PHASE_PODIUM,
+    PHASE_REVEAL as BLUFF_PHASE_REVEAL,
+    challenge_claim as bluff_challenge_claim,
+    continue_after_reveal as bluff_continue_after_reveal,
+    create_initial_state as bluff_create_initial_state,
+    pass_turn as bluff_pass_turn,
+    play_cards as bluff_play_cards,
+    private_sync as bluff_private_sync,
+    public_sync as bluff_public_sync,
+    resolve_unchallenged as bluff_resolve_unchallenged,
+    validate_config as validate_bluff_config,
+)
 from bingo_engine import (
     BINGO_PATTERN_ORDER,
     create_bingo_call_deck,
@@ -111,6 +125,9 @@ class Room:
         self.mc_round_results: List[dict] = []
         self.mc_auto_stop_task: Optional[asyncio.Task] = None
         self.mc_grab_task: Optional[asyncio.Task] = None
+        # Bluff state
+        self.bluff_config = validate_bluff_config(game_data) if game_type == "bluff" else {}
+        self.bluff_state: dict = {}
 
     def reset_for_new_game(self, new_game_data: dict, new_time_limit: int,
                            game_type: Optional[str] = None,
@@ -190,6 +207,8 @@ class Room:
         self.mc_grab_deadline = None
         self.mc_grabs = {}
         self.mc_round_results = []
+        self.bluff_config = validate_bluff_config(new_game_data) if self.game_type == "bluff" else {}
+        self.bluff_state = {}
 
         for nickname in self.power_ups:
             self.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
@@ -213,6 +232,8 @@ class Room:
             return len(self.quiz.get("deck", [])) or 90
         if self.game_type == "musical_chairs":
             return self.mc_total_rounds or mc_total_rounds(len(self.mc_active_players) + len(self.mc_eliminated_players), int(self.mc_config.get("eliminations_per_round", 1) or 1))
+        if self.game_type == "bluff":
+            return max(1, len(self.bluff_state.get("winners", [])) + len([p for p in self.bluff_state.get("players", []) if p not in {w.get("player_id") for w in self.bluff_state.get("winners", [])}]))
         return len(self.quiz.get("questions", []))
 
     def current_round_data(self) -> Optional[dict]:
@@ -230,6 +251,8 @@ class Room:
             return None
         if self.game_type == "musical_chairs":
             return self.mc_public_state()
+        if self.game_type == "bluff":
+            return bluff_public_sync(self.bluff_state) if self.bluff_state else None
         return self.quiz["questions"][idx]
 
     def game_title(self) -> str:
@@ -547,6 +570,8 @@ class SocketManager:
                     sync["bingo"] = self._housie_public_state(room)
                 if room.game_type == "musical_chairs":
                     sync["musical_chairs"] = room.mc_public_state()
+                if room.game_type == "bluff" and room.bluff_state:
+                    sync["bluff"] = bluff_public_sync(room.bluff_state)
                 await websocket.send_json(sync)
                 while True:
                     try:
@@ -714,6 +739,8 @@ class SocketManager:
             sync["bingo"] = self._housie_public_state(room)
         if room.game_type == "musical_chairs":
             sync["musical_chairs"] = room.mc_public_state()
+        if room.game_type == "bluff" and room.bluff_state:
+            sync["bluff"] = bluff_public_sync(room.bluff_state)
 
         if room.organizer:
             await room.organizer.send_json(sync)
@@ -780,6 +807,14 @@ class SocketManager:
                                 "message": f"Musical Chairs needs at least {config.MIN_MUSICAL_CHAIRS_PLAYERS} players to start",
                             })
                             return
+                    elif room.game_type == "bluff":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_BLUFF_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Bluff needs at least {config.MIN_BLUFF_PLAYERS} players to start",
+                            })
+                            return
                     if room.billing_mode == "host_app_managed":
                         spent = True
                     else:
@@ -807,6 +842,10 @@ class SocketManager:
                         self._start_musical_chairs_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": "musical_chairs"})
                         await room.broadcast({"type": "MC_SYNC", "musical_chairs": room.mc_public_state()})
+                    elif room.game_type == "bluff":
+                        self._start_bluff_game(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": "bluff"})
+                        await self._broadcast_bluff_sync(room)
                     else:
                         room.state = "INTRO"
                         await room.broadcast({"type": "GAME_STARTING"})
@@ -861,6 +900,12 @@ class SocketManager:
             elif msg_type == "MC_NEXT_ROUND" and room.game_type == "musical_chairs":
                 await self._mc_start_round(room)
 
+            elif msg_type == "BLUFF_RESOLVE" and room.game_type == "bluff":
+                await self._bluff_resolve(room)
+
+            elif msg_type == "BLUFF_CONTINUE" and room.game_type == "bluff":
+                await self._bluff_continue(room)
+
             elif msg_type == "SET_TIME_LIMIT":
                 if room.state in ("LOBBY", "LEADERBOARD", "PODIUM"):
                     new_limit = message.get("time_limit", 15)
@@ -876,6 +921,9 @@ class SocketManager:
             elif msg_type == "END_QUIZ":
                 if room.game_type == "musical_chairs":
                     await self._mc_complete_game(room)
+                    return
+                if room.game_type == "bluff":
+                    await self._bluff_complete_game(room)
                     return
                 if room.game_type in ("housie", "bingo") and room.state == "BINGO_CALLING":
                     await self._complete_housie(room)
@@ -911,7 +959,7 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs") else room.game_type
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff") else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
 
                     # Validate time_limit
@@ -931,6 +979,8 @@ class SocketManager:
                         new_game_data = housie_games.get(new_content_id)
                     elif new_game_type == "bingo":
                         new_game_data = bingo_games.get(new_content_id)
+                    elif new_game_type == "bluff":
+                        new_game_data = validate_bluff_config({})
                     else:
                         new_game_data = quizzes.get(new_content_id)
 
@@ -1078,6 +1128,8 @@ class SocketManager:
                             state_info["bingo"] = self._housie_player_state(room, nickname)
                         elif room.game_type == "musical_chairs":
                             state_info["musical_chairs"] = room.mc_public_state()
+                        elif room.game_type == "bluff" and room.bluff_state:
+                            state_info["bluff"] = bluff_private_sync(room.bluff_state, nickname)
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1162,6 +1214,8 @@ class SocketManager:
                             state_info["bingo"] = self._housie_player_state(room, player_data["nickname"])
                         elif room.game_type == "musical_chairs":
                             state_info["musical_chairs"] = room.mc_public_state()
+                        elif room.game_type == "bluff" and room.bluff_state:
+                            state_info["bluff"] = bluff_private_sync(room.bluff_state, player_data["nickname"])
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1289,6 +1343,21 @@ class SocketManager:
 
             elif msg_type == "MC_GRAB" and room.game_type == "musical_chairs":
                 await self._mc_handle_grab(room, client_id)
+
+            elif msg_type == "BLUFF_PLAY" and room.game_type == "bluff":
+                await self._bluff_play(room, client_id, message)
+
+            elif msg_type == "BLUFF_PASS" and room.game_type == "bluff":
+                await self._bluff_pass(room, client_id)
+
+            elif msg_type == "BLUFF_CHALLENGE" and room.game_type == "bluff":
+                await self._bluff_challenge(room, client_id)
+
+            elif msg_type == "BLUFF_RESOLVE" and room.game_type == "bluff":
+                await self._bluff_resolve(room)
+
+            elif msg_type == "BLUFF_CONTINUE" and room.game_type == "bluff":
+                await self._bluff_continue(room)
 
             elif msg_type == "ANSWER":
                 if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs"):
@@ -1519,6 +1588,152 @@ class SocketManager:
                 await ws.send_json(base)
             except Exception:
                 pass
+
+    def _start_bluff_game(self, room: Room):
+        nicknames = [player["nickname"] for player in room.players.values()]
+        room.bluff_config = validate_bluff_config(room.quiz, player_count=len(nicknames))
+        room.bluff_state = bluff_create_initial_state(nicknames, room.bluff_config, seed=secrets.randbits(32))
+        room.state = room.bluff_state["phase"]
+        room.answer_log = []
+
+    async def _broadcast_bluff_sync(self, room: Room):
+        if not room.bluff_state:
+            return
+        public = {
+            "type": "BLUFF_SYNC",
+            "game_type": "bluff",
+            "bluff": bluff_public_sync(room.bluff_state),
+            "player_count": len(room.players),
+            "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
+        }
+        for client_id, ws in list(room.connections.items()):
+            if client_id in room.players:
+                nickname = room.players[client_id]["nickname"]
+                payload = dict(public)
+                payload["bluff"] = bluff_private_sync(room.bluff_state, nickname)
+                try:
+                    await ws.send_json(payload)
+                except Exception:
+                    room._remove_connection(client_id)
+        await room.emit_pending_player_event()
+        await room.send_to_organizer(public)
+        for ws in list(room.spectators.values()):
+            try:
+                await ws.send_json(public)
+            except Exception:
+                pass
+
+    def _sync_bluff_phase_to_room(self, room: Room):
+        room.state = room.bluff_state.get("phase") or room.state
+
+    async def _bluff_play(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players or not room.bluff_state:
+            return
+        nickname = room.players[client_id]["nickname"]
+        card_ids = message.get("card_ids")
+        if not isinstance(card_ids, list):
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": "Choose cards to play"})
+            return
+        try:
+            async with room.lock:
+                room.bluff_state = bluff_play_cards(room.bluff_state, nickname, [str(card_id) for card_id in card_ids], now=time.time())
+                self._sync_bluff_phase_to_room(room)
+                room.answer_log.append({"kind": "play", "nickname": nickname, "count": len(card_ids), "claimed_rank": room.bluff_state.get("last_claim", {}).get("claimed_rank")})
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._broadcast_bluff_sync(room)
+
+    async def _bluff_pass(self, room: Room, client_id: str):
+        if client_id not in room.players or not room.bluff_state:
+            return
+        nickname = room.players[client_id]["nickname"]
+        try:
+            async with room.lock:
+                room.bluff_state = bluff_pass_turn(room.bluff_state, nickname)
+                self._sync_bluff_phase_to_room(room)
+                room.answer_log.append({"kind": "pass", "nickname": nickname})
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._broadcast_bluff_sync(room)
+
+    async def _bluff_challenge(self, room: Room, client_id: str):
+        if client_id not in room.players or not room.bluff_state:
+            return
+        nickname = room.players[client_id]["nickname"]
+        try:
+            async with room.lock:
+                room.bluff_state = bluff_challenge_claim(room.bluff_state, nickname)
+                self._sync_bluff_phase_to_room(room)
+                claim = room.bluff_state.get("last_claim") or {}
+                room.answer_log.append({
+                    "kind": "challenge",
+                    "challenger": nickname,
+                    "actor": claim.get("actor_id"),
+                    "truthful": claim.get("truthful"),
+                    "loser": claim.get("loser_id"),
+                })
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._broadcast_bluff_sync(room)
+
+    async def _bluff_resolve(self, room: Room):
+        if not room.bluff_state:
+            return
+        try:
+            async with room.lock:
+                room.bluff_state = bluff_resolve_unchallenged(room.bluff_state)
+                self._sync_bluff_phase_to_room(room)
+                room.answer_log.append({"kind": "unchallenged"})
+        except ValueError:
+            return
+        await self._broadcast_bluff_sync(room)
+        if room.bluff_state.get("phase") == BLUFF_PHASE_PODIUM:
+            await self._bluff_complete_game(room)
+
+    async def _bluff_continue(self, room: Room):
+        if not room.bluff_state:
+            return
+        try:
+            async with room.lock:
+                if room.bluff_state.get("phase") == BLUFF_PHASE_REVEAL:
+                    room.bluff_state = bluff_continue_after_reveal(room.bluff_state)
+                elif room.bluff_state.get("phase") == BLUFF_PHASE_CHALLENGE:
+                    room.bluff_state = bluff_resolve_unchallenged(room.bluff_state)
+                else:
+                    return
+                self._sync_bluff_phase_to_room(room)
+        except ValueError:
+            return
+        await self._broadcast_bluff_sync(room)
+        if room.bluff_state.get("phase") == BLUFF_PHASE_PODIUM:
+            await self._bluff_complete_game(room)
+
+    async def _bluff_complete_game(self, room: Room):
+        if room.state == "PODIUM":
+            return
+        if room.bluff_state:
+            room.bluff_state["phase"] = BLUFF_PHASE_PODIUM
+        room.state = "PODIUM"
+        leaderboard = self.get_leaderboard(room)
+        await room.broadcast({
+            "type": "PODIUM",
+            "game_type": "bluff",
+            "leaderboard": leaderboard,
+            "team_leaderboard": [],
+            "bluff": bluff_public_sync(room.bluff_state) if room.bluff_state else {},
+        })
+        try:
+            from main import game_history
+            summary = self.get_game_summary(room)
+            game_history.append(summary)
+            if len(game_history) > config.MAX_GAME_HISTORY:
+                del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+            self._mark_game_session_complete(room, summary)
+        except Exception:
+            logger.warning("Could not save Bluff history for room %s", room.room_code)
 
     def _start_musical_chairs_game(self, room: Room):
         room.mc_config = validate_musical_chairs_config(room.quiz)
@@ -2151,6 +2366,11 @@ class SocketManager:
             summary["round_results"] = room.mc_round_results
             summary["music_mode"] = room.mc_config.get("music_mode")
             summary["music_style"] = room.mc_config.get("music_style")
+        if room.game_type == "bluff" and room.bluff_state:
+            summary["total_questions"] = len(room.answer_log)
+            summary["total_rounds"] = len(room.answer_log)
+            summary["winners"] = room.bluff_state.get("winners", [])
+            summary["pile_count"] = len(room.bluff_state.get("pile", []))
         return summary
 
     def _callback_event_type(self, event_type: str) -> str:
@@ -2758,6 +2978,27 @@ class SocketManager:
                     "avatar": avatars.get(nickname, next((item.get("avatar", "") for item in room.mc_eliminated_players if item.get("nickname") == nickname), "")),
                 })
             return result
+        if room.game_type == "bluff" and room.bluff_state:
+            avatars = room.player_avatar_map()
+            for nickname, data in room.disconnected_players.items():
+                avatars[nickname] = data.get("avatar", "")
+            hands = room.bluff_state.get("hands", {})
+            winners = room.bluff_state.get("winners", [])
+            winner_places = {winner["player_id"]: int(winner.get("place", 99)) for winner in winners}
+            all_names = list(room.bluff_state.get("players", []))
+            ordered = sorted(
+                all_names,
+                key=lambda name: (winner_places.get(name, 99), len(hands.get(name, []))),
+            )
+            total = len(all_names)
+            return [
+                {
+                    "nickname": name,
+                    "score": max(0, total - index) if name in winner_places else max(0, 52 - len(hands.get(name, []))),
+                    "avatar": avatars.get(name, ""),
+                }
+                for index, name in enumerate(ordered)
+            ]
         sorted_players = sorted(
             self._all_players_for_leaderboard(room),
             key=lambda x: x["score"],

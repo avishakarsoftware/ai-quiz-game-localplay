@@ -100,6 +100,17 @@ def create_room(quiz_id, time_limit=30):
     return data["room_code"], data["organizer_token"]
 
 
+def create_bluff_room():
+    res = client.post(
+        "/room/create",
+        json={"game_type": "bluff", "bluff_config": {"game_title": "Bluff"}},
+        headers={"X-Device-Id": "bluff-test-wallet"},
+    )
+    assert res.status_code == 200, res.text
+    data = res.json()
+    return data["room_code"], data["organizer_token"]
+
+
 @contextmanager
 def org_connect(room_code, token, client_id="org-1"):
     """Connect as organizer and send first-frame AUTH. Yields the websocket."""
@@ -121,6 +132,54 @@ def recv_until(ws, msg_type, max_messages=50):
         if data.get("type") == msg_type:
             return data
     raise TimeoutError(f"Never received {msg_type} after {max_messages} messages")
+
+
+class TestBluffWS:
+    def test_bluff_start_play_and_challenge_flow(self):
+        room_code, org_token = create_bluff_room()
+
+        with org_connect(room_code, org_token) as org_ws:
+            org_ws.receive_json()
+            players = []
+            try:
+                for idx, name in enumerate(["Alice", "Bob", "Cara"], start=1):
+                    ws = client.websocket_connect(f"/ws/{room_code}/bluff-player-{idx}")
+                    player_ws = ws.__enter__()
+                    players.append((ws, player_ws, name))
+                    player_ws.send_json({"type": "JOIN", "nickname": name})
+                    assert player_ws.receive_json()["type"] == "JOINED_ROOM"
+                    recv_until(org_ws, "PLAYER_JOINED")
+
+                org_ws.send_json({"type": "START_GAME"})
+                org_sync = recv_until(org_ws, "BLUFF_SYNC")
+                assert org_sync["bluff"]["phase"] == "BLUFF_TURN"
+                assert org_sync["bluff"]["active_player_id"] == "Alice"
+                assert "cards" not in org_sync["bluff"]["hands"]["Alice"]
+                assert org_sync["bluff"]["hands"]["Alice"]["count"] > 0
+
+                alice = players[0][1]
+                alice_sync = recv_until(alice, "BLUFF_SYNC")
+                hand = alice_sync["bluff"]["hands"]["Alice"]["cards"]
+                assert hand and not hand[0].get("hidden")
+
+                alice.send_json({"type": "BLUFF_PLAY", "card_ids": [hand[0]["id"]]})
+                challenge_sync = recv_until(org_ws, "BLUFF_SYNC")
+                assert challenge_sync["bluff"]["phase"] == "BLUFF_CHALLENGE"
+                assert challenge_sync["bluff"]["last_claim"]["actor_id"] == "Alice"
+
+                bob = players[1][1]
+                recv_until(bob, "BLUFF_SYNC")
+                bob.send_json({"type": "BLUFF_CHALLENGE"})
+                reveal_sync = recv_until(org_ws, "BLUFF_SYNC")
+                assert reveal_sync["bluff"]["phase"] == "BLUFF_REVEAL"
+                assert reveal_sync["bluff"]["revealed_cards"]
+
+                org_ws.send_json({"type": "BLUFF_CONTINUE"})
+                next_sync = recv_until(org_ws, "BLUFF_SYNC")
+                assert next_sync["bluff"]["phase"] == "BLUFF_TURN"
+            finally:
+                for cm, _ws, _name in players:
+                    cm.__exit__(None, None, None)
 
 
 # ---------------------------------------------------------------------------

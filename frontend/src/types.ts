@@ -67,7 +67,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -164,6 +164,34 @@ export interface MusicalChairsState {
     music_style: MusicalChairsMusicStyle;
     grab_window_seconds: number;
     intensity: number;
+}
+
+export interface PlayingCard {
+    id: string;
+    rank?: string;
+    suit?: string;
+    label?: string;
+    color?: 'red' | 'black';
+    hidden?: boolean;
+}
+
+export interface BluffState {
+    phase: 'BLUFF_TURN' | 'BLUFF_CHALLENGE' | 'BLUFF_REVEAL' | 'PODIUM' | string;
+    players: string[];
+    active_player_id?: string | null;
+    required_rank?: string;
+    pile_count: number;
+    hands: Record<string, { count: number; cards?: PlayingCard[] }>;
+    last_claim?: {
+        actor_id: string;
+        claimed_rank: string;
+        claimed_count: number;
+        challenger_id?: string;
+        truthful?: boolean;
+        loser_id?: string;
+    } | null;
+    revealed_cards: PlayingCard[];
+    winners: Array<{ player_id: string; place: number }>;
 }
 
 export interface HousieCell {

@@ -34,6 +34,7 @@ from drawing_engine import drawing_engine, _sanitize_drawing_game, _validate_dra
 from housie_engine import DEFAULT_HOUSIE_PATTERNS, default_housie_game, sanitize_patterns
 from bingo_engine import DEFAULT_BINGO_PATTERNS, bingo_engine, default_bingo_game, sanitize_bingo_deck, sanitize_bingo_patterns
 from musical_chairs_engine import validate_config as validate_musical_chairs_config
+from bluff_engine import validate_config as validate_bluff_config
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -419,6 +420,7 @@ class RoomCreateRequest(BaseModel):
     housie_id: str = ""    # For Housie
     bingo_id: str = ""     # For custom Bingo
     musical_chairs_config: dict = {}
+    bluff_config: dict = {}
     game_type: str = "quiz"
     time_limit: Optional[int] = None
 
@@ -434,8 +436,8 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs"):
-            raise ValueError('game_type must be "quiz", "wmlt", "drawing", "housie", "bingo", or "musical_chairs"')
+        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff"):
+            raise ValueError('game_type must be "quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", or "bluff"')
         return v
 
 
@@ -597,6 +599,35 @@ GAME_CATALOG = [
             "supported_media": [],
         },
     },
+    {
+        "id": "bluff",
+        "game_type": "bluff",
+        "runtime_type": "bluff",
+        "title": "Bluff",
+        "description": "A big-group card game of bold claims and louder challenges.",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": False,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "card_game_setup",
+            "deck": "standard_52",
+            "supported_media": [],
+        },
+        "config_schema": {
+            "players": {"min": config.MIN_BLUFF_PLAYERS, "max": 20},
+            "challenge_window_seconds": {"min": 5, "max": 60, "default": 12},
+            "turn_time_seconds": {"min": 10, "max": 120, "default": 30},
+        },
+    },
 ]
 
 
@@ -605,6 +636,8 @@ def _default_time_limit_for_game(game_type: str) -> int:
         return 30
     if game_type == "musical_chairs":
         return 5
+    if game_type == "bluff":
+        return 30
     return config.DEFAULT_TIME_LIMIT
 
 
@@ -687,6 +720,8 @@ def _public_base_url(req: Request) -> str:
 def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
     if game_type == "musical_chairs":
         return str(uuid.uuid4()), validate_musical_chairs_config({"game_title": title or "Musical Chairs"})
+    if game_type == "bluff":
+        return str(uuid.uuid4()), validate_bluff_config({"game_title": title or "Bluff"})
     if game_type == "bingo":
         return str(uuid.uuid4()), default_bingo_game(title or "Bingo")
     if game_type == "housie":
@@ -721,6 +756,8 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
 
 def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = "") -> tuple[str, dict]:
     if game_type == "musical_chairs":
+        return _default_game_content(game_type, title)
+    if game_type == "bluff":
         return _default_game_content(game_type, title)
     if game_type == "bingo":
         if not config.BINGO_ENABLED:
@@ -3213,6 +3250,9 @@ async def create_room(request: RoomCreateRequest, req: Request):
     if request.game_type == "musical_chairs":
         content_id = str(uuid.uuid4())
         game_data = validate_musical_chairs_config(request.musical_chairs_config)
+    elif request.game_type == "bluff":
+        content_id = str(uuid.uuid4())
+        game_data = validate_bluff_config(request.bluff_config)
     else:
         content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
     time_limit = request.time_limit if request.time_limit is not None else _default_time_limit_for_game(request.game_type)

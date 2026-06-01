@@ -56,6 +56,19 @@ class TestHealthEndpoints:
         res = client.get("/system/info")
         assert res.status_code in (403, 401)  # blocked without admin key
 
+    def test_create_bluff_room(self):
+        res = client.post(
+            "/room/create",
+            json={"game_type": "bluff", "bluff_config": {"game_title": "Bluff Night"}},
+            headers=AUTH_HEADERS,
+        )
+
+        assert res.status_code == 200, res.text
+        body = res.json()
+        room = main.socket_manager.rooms[body["room_code"]]
+        assert room.game_type == "bluff"
+        assert room.quiz["game_title"] == "Bluff Night"
+
 
 class TestFrontendStaticServing:
     def test_root_serves_api_status_without_frontend_build(self):

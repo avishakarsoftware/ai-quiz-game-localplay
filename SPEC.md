@@ -15,6 +15,7 @@ The platform currently supports:
 - `wmlt`: "Who's Most Likely To" voting rounds.
 - `drawing`: rotating drawer/guesser rounds with live canvas sync.
 - `musical_chairs`: standalone elimination rounds where music/visual rhythm stops and players race to tap.
+- `bluff`: standalone card-room MVP with server-dealt private hands, redacted public table state, face-down claims, challenges, and spectator support.
 - Standalone custom quiz authoring and saved quiz packs.
 - Host-app/party-scoped authoring and game setup through the Revelry Games hub.
 
@@ -48,6 +49,7 @@ Key files:
 - `backend/mlt_engine.py`: LLM generation and validation for WMLT content.
 - `backend/drawing_engine.py`: LLM generation and validation for drawing prompts.
 - `backend/musical_chairs_engine.py`: setup validation, round counts, tap ranking, and elimination helpers for Musical Chairs.
+- `backend/card_engine.py` and `backend/bluff_engine.py`: reusable playing-card primitives and Bluff/Cheat rules.
 - `backend/image_engine.py`: optional Stable Diffusion image generation for quiz questions.
 - `backend/auth.py`: Google/Apple sign-in and session handling.
 - `backend/remote_config.py`: remote config for provider/model/operation flags.
@@ -69,6 +71,7 @@ Key files:
 - `frontend/src/components/organizer/DrawingPromptScreen.tsx`: drawing prompt setup.
 - `frontend/src/components/organizer/MusicalChairsSetupScreen.tsx`: standalone Musical Chairs timing/music setup.
 - `frontend/src/components/organizer/MusicalChairsGameScreen.tsx`: Musical Chairs host controls.
+- `frontend/src/components/BluffTable.tsx`: shared Bluff table UI for organizer, player, and spectator views.
 - `frontend/src/components/organizer/CustomQuizEditor.tsx`: manual custom quiz authoring.
 - `frontend/src/components/organizer/ReviewScreen.tsx`: quiz review/edit before room creation.
 - `frontend/src/components/organizer/MLTReviewScreen.tsx`: WMLT review/edit before room creation.
@@ -164,6 +167,7 @@ Important settings:
   - `MIN_QUESTIONS`, `MAX_QUESTIONS`.
   - `MAX_PLAYERS_PER_ROOM`.
   - `MIN_WMLT_PLAYERS`.
+  - `MIN_BLUFF_PLAYERS`.
   - `ROOM_TTL_SECONDS`.
   - `ORGANIZER_RECONNECT_GRACE_SECONDS`, default 600 seconds. This protects live rooms from being closed immediately when the host phone locks, backgrounds the browser, or briefly loses connectivity.
   - `QUIZ_TTL_SECONDS`.

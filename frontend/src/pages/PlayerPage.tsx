@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { WS_URL } from '../config';
-import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -19,8 +19,9 @@ import { mediaUrl } from '../utils/media';
 import { apiUrl } from '../utils/api';
 import { returnToHostApp } from '../utils/hostAppReturn';
 import MusicalChairsPlayer from '../components/player/MusicalChairsPlayer';
+import BluffTable from '../components/BluffTable';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
 interface PlayerQuestion {
     id: number;
@@ -134,6 +135,8 @@ export default function PlayerPage() {
     const [mcGrabbed, setMcGrabbed] = useState(false);
     const [mcEliminated, setMcEliminated] = useState(false);
     const [mcReactionMs, setMcReactionMs] = useState<number | null>(null);
+    const [bluffState, setBluffState] = useState<BluffState | null>(null);
+    const [selectedBluffCards, setSelectedBluffCards] = useState<Set<string>>(new Set());
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const submittedRef = useRef(false);
@@ -251,6 +254,11 @@ export default function PlayerPage() {
                     setGameType('musical_chairs');
                     setMusicalChairsState(msg.musical_chairs as MusicalChairsState);
                     setState('MUSICAL_CHAIRS');
+                } else if (msg.game_type === 'bluff' && msg.bluff) {
+                    setGameType('bluff');
+                    setBluffState(msg.bluff as BluffState);
+                    setSelectedBluffCards(new Set());
+                    setState('BLUFF');
                 } else if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
                         setGameType('drawing');
@@ -305,6 +313,9 @@ export default function PlayerPage() {
                     setMcEliminated(false);
                     setMcReactionMs(null);
                     setState('MUSICAL_CHAIRS');
+                } else if (msg.game_type === 'bluff') {
+                    setGameType('bluff');
+                    setState('BLUFF');
                 }
                 else setState('INTRO');
             }
@@ -373,6 +384,12 @@ export default function PlayerPage() {
             }
             if (msg.type === 'MC_WINNER') {
                 setGameType('musical_chairs');
+            }
+            if (msg.type === 'BLUFF_SYNC') {
+                setGameType('bluff');
+                setBluffState(msg.bluff as BluffState);
+                setSelectedBluffCards(new Set());
+                setState('BLUFF');
             }
             if (msg.type === 'QUESTION') {
                 if (msg.game_type === 'drawing') {
@@ -648,6 +665,35 @@ export default function PlayerPage() {
         wsRef.current?.send(JSON.stringify({ type: 'MC_GRAB' }));
     };
 
+    const toggleBluffCard = (cardId: string) => {
+        setSelectedBluffCards((current) => {
+            const next = new Set(current);
+            if (next.has(cardId)) next.delete(cardId);
+            else next.add(cardId);
+            return next;
+        });
+    };
+
+    const playBluffCards = () => {
+        const cardIds = Array.from(selectedBluffCards);
+        if (!cardIds.length) return;
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'BLUFF_PLAY', card_ids: cardIds }));
+        setSelectedBluffCards(new Set());
+    };
+
+    const passBluffTurn = () => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'BLUFF_PASS' }));
+    };
+
+    const challengeBluff = () => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'BLUFF_CHALLENGE' }));
+    };
+
+    const continueBluff = () => wsRef.current?.send(JSON.stringify({ type: 'BLUFF_CONTINUE' }));
+
     const activatePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'USE_POWER_UP', power_up: powerUp }));
@@ -914,6 +960,20 @@ export default function PlayerPage() {
                         eliminated={mcEliminated}
                         reactionMs={mcReactionMs}
                         onGrab={submitMusicalChairsGrab}
+                    />
+                )}
+
+                {state === 'BLUFF' && (
+                    <BluffTable
+                        state={bluffState}
+                        viewerName={nickname}
+                        controls="player"
+                        selectedCardIds={selectedBluffCards}
+                        onToggleCard={toggleBluffCard}
+                        onPlay={playBluffCards}
+                        onPass={passBluffTurn}
+                        onChallenge={challengeBluff}
+                        onContinue={continueBluff}
                     />
                 )}
 
