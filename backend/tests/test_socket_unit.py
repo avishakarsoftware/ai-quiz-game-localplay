@@ -1436,3 +1436,58 @@ class TestHousieAutoPauseOnClaim:
         assert rejected is not None
         assert rejected["reason"] == "not_complete"
         assert room.housie_auto_status == "running"
+
+
+class TestHousieUndo:
+    @pytest.mark.asyncio
+    async def test_undo_pauses_auto_caller_before_rewinding(self):
+        room = make_housie_room()
+        sm = SocketManager()
+        add_player(room, "p1", "Alice")
+        sm._start_housie_round(room)
+        first_item = room.housie_deck[0]
+        await sm._housie_call_next(room)
+        room.housie_auto_status = "running"
+
+        await sm._housie_undo_last_call(room)
+
+        assert room.housie_auto_status == "paused"
+        assert room.housie_called == []
+        assert room.housie_deck[0] == first_item
+        assert room.connections["p1"].last("BINGO_AUTO_STATUS")["auto_status"] == "paused"
+        sync = room.connections["p1"].last("BINGO_SYNC")
+        assert sync is not None
+        assert sync["bingo"]["can_undo_last_call"] is False
+
+    @pytest.mark.asyncio
+    async def test_blocked_undo_does_not_pause_auto_caller(self):
+        room = make_housie_room()
+        sm = SocketManager()
+        add_player(room, "p1", "Alice")
+        sm._start_housie_round(room)
+        await sm._housie_call_next(room)
+        room.housie_winners.append({"pattern_id": "quick_5", "called_count": 1})
+        room.housie_auto_status = "running"
+
+        await sm._housie_undo_last_call(room)
+
+        assert room.housie_auto_status == "running"
+        assert len(room.housie_called) == 1
+        assert room.connections["p1"].last("BINGO_AUTO_STATUS") is None
+
+    @pytest.mark.asyncio
+    async def test_call_and_claim_publish_can_undo_flag(self):
+        room = make_housie_room()
+        sm = SocketManager()
+        add_player(room, "p1", "Alice")
+        sm._start_housie_round(room)
+
+        await sm._housie_call_next(room)
+
+        call = room.connections["p1"].last("BINGO_CALL")
+        assert call is not None
+        assert call["can_undo_last_call"] is True
+
+        room.housie_winners.append({"pattern_id": "quick_5", "called_count": 1})
+        sync = sm._housie_public_state(room)
+        assert sync["can_undo_last_call"] is False

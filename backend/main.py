@@ -2124,6 +2124,9 @@ def _workspace_payload(context: RevelryExternalContext, actor: Optional[RevelryA
     prepared = [_quiz_pack_summary(pack) for pack in packs] + [_game_content_summary(game) for game in saved_games]
     prepared.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
     active = db.get_active_game_session(context.host_app, context.external_container_id)
+    active = _sync_session_runtime_availability(active)
+    if active and active.get("status") not in ("lobby", "active", "paused"):
+        active = None
     return {
         "external_context": {
             "host_app": context.host_app,
@@ -2197,6 +2200,30 @@ def _format_session(session: dict) -> dict:
     }
 
 
+def _sync_session_runtime_availability(session: Optional[dict]) -> Optional[dict]:
+    if not session:
+        return None
+    status = session.get("status", "lobby")
+    if status not in ("lobby", "active", "paused"):
+        return session
+    if session.get("room_code", "") in socket_manager.rooms:
+        return session
+    now = _now_ts()
+    if session.get("expires_at", 0) <= now:
+        closed_reason = "expired"
+        closed_message = "This game session expired."
+    else:
+        closed_reason = "runtime_unavailable"
+        closed_message = "This game room is no longer available. Start a new game from the party hub."
+    return db.update_game_session(session["id"], {
+        "status": "expired",
+        "joinable": False,
+        "closed_reason": closed_reason,
+        "closed_message": closed_message,
+        "last_activity_at": now,
+    }) or {**session, "status": "expired", "joinable": False, "closed_reason": closed_reason, "closed_message": closed_message}
+
+
 def _create_launch_token(
     session_id: str,
     scope: str,
@@ -2251,6 +2278,9 @@ def _create_revelry_session_from_context(
     _require_host_app_game_allowed(context, game_type, actor)
 
     active = db.get_active_game_session(context.host_app, context.external_container_id)
+    active = _sync_session_runtime_availability(active)
+    if active and active.get("status") not in ("lobby", "active", "paused"):
+        active = None
     if active and not replacement_confirmed:
         raise HTTPException(
             status_code=409,
@@ -2839,6 +2869,7 @@ async def create_revelry_party_game_launch_token(request: RevelryPartyGameLaunch
     session = db.get_game_session(request.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    session = _sync_session_runtime_availability(session) or session
     if session.get("host_app") != context.host_app or session.get("external_container_id") != context.external_container_id:
         raise HTTPException(status_code=403, detail="Session does not belong to this Revelry party")
     formatted = _format_session(session)
@@ -3047,6 +3078,7 @@ async def resolve_revelry_launch_token(launch_token: str, scope: str = ""):
     session = db.get_game_session(claims["session_id"])
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    session = _sync_session_runtime_availability(session) or session
     formatted = _format_session(session)
     if not formatted["joinable"] and claims.get("scope") != "spectator":
         raise HTTPException(status_code=409, detail="Session is not joinable")
@@ -3068,6 +3100,7 @@ async def get_revelry_session_status(session_id: str, req: Request):
     session = db.get_game_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    session = _sync_session_runtime_availability(session) or session
     return _format_session(session)
 
 

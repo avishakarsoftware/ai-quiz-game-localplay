@@ -1859,6 +1859,7 @@ Gamma acceptance checklist:
 - Housie appears in the gamma party hub, saves a party-scoped setup, starts from the saved `localplay_content_id`, and hides AI generation controls.
 - WebSocket roster cleanup is shared across games, not Bingo-specific. `ROOM_RESET`, lobby broadcasts, per-player runtime syncs, drawing question broadcasts, and pre-start min-player probes must remove dead player sockets and emit corrected `PLAYER_LEFT` / `PLAYER_DISCONNECTED` roster updates. WMLT, Drawing, Housie, Bingo, and future min-player-gated games must prune dead sockets before evaluating their minimum-player checks.
 - Starting a replacement Revelry party game must close the superseded LocalPlay runtime room, notify old sockets with a closed/superseded message, and keep the superseded DB session terminal. A stale old room must not later mark a superseded/cancelled/expired session as complete.
+- LocalPlay must reconcile durable Revelry session rows with live runtime rooms before presenting active game actions. If a `lobby` / `active` / `paused` session remains in Supabase after a LocalPlay deploy/restart but the corresponding runtime room is gone, LocalPlay marks it `expired`, `joinable = false`, `closed_reason = "runtime_unavailable"`, and omits it from the party hub's active session. Launch-token creation/resolution for organizer/player scopes must reject the stale session, and a new game start for that party must not require replacement confirmation.
 
 Do not promote new integration changes to production until the changed gamma flow is playable end to end.
 

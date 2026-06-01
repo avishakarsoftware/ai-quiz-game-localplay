@@ -439,6 +439,10 @@ def get_wallet_balance(wallet_id: str) -> int:
     return int(row["balance"]) if row else 0
 
 
+def _effective_max_balance(wallet_id: str) -> int:
+    return max(get_wallet_balance(wallet_id), config.MAX_TOKEN_BALANCE)
+
+
 def debit_tokens(wallet_id: str, amount: int, reason: str, reference_id: str = "") -> tuple[bool, int]:
     if amount <= 0:
         raise ValueError(f"debit_tokens amount must be positive, got {amount}")
@@ -460,7 +464,7 @@ def credit_tokens(wallet_id: str, amount: int, reason: str, reference_id: str = 
         "p_reason": reason,
         "p_reference_id": reference_id or None,
         "p_metadata": "",
-        "p_max_balance": config.MAX_TOKEN_BALANCE,
+        "p_max_balance": _effective_max_balance(wallet_id),
     })
     return bool(result["success"]), int(result["balance"])
 
@@ -470,7 +474,7 @@ def check_and_grant_daily_bonus(wallet_id: str) -> tuple[bool, int]:
         "p_wallet_id": wallet_id,
         "p_today": _utc_date_str(),
         "p_amount": config.DAILY_BONUS_TOKENS,
-        "p_max_balance": config.MAX_TOKEN_BALANCE,
+        "p_max_balance": _effective_max_balance(wallet_id),
     })
     return bool(result["granted"]), int(result["balance"])
 
@@ -481,7 +485,7 @@ def check_and_grant_ad_reward(wallet_id: str) -> tuple[bool, int, int]:
         "p_today": _utc_date_str(),
         "p_amount": config.AD_REWARD_TOKENS,
         "p_max_ads_per_day": config.MAX_ADS_PER_DAY,
-        "p_max_balance": config.MAX_TOKEN_BALANCE,
+        "p_max_balance": _effective_max_balance(wallet_id),
     })
     return bool(result["granted"]), int(result["balance"]), int(result["ads_remaining"])
 
@@ -499,7 +503,7 @@ def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: st
         "p_amount": amount,
         "p_reference_id": reference_id,
         "p_metadata": metadata or "",
-        "p_max_balance": config.MAX_TOKEN_BALANCE,
+        "p_max_balance": _effective_max_balance(wallet_id),
     })
     return bool(result["success"]), int(result["balance"])
 
@@ -510,7 +514,7 @@ def merge_wallet(from_id: str, to_id: str):
     _sb().rpc("merge_wallet", {
         "p_from_id": from_id,
         "p_to_id": to_id,
-        "p_max_balance": config.MAX_TOKEN_BALANCE,
+        "p_max_balance": _effective_max_balance(to_id),
     })
 
 

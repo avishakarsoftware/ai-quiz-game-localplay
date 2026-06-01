@@ -925,7 +925,7 @@ def credit_tokens(wallet_id: str, amount: int, reason: str, reference_id: str = 
         else:
             current = row["balance"]
 
-        new_balance = min(current + amount, config.MAX_TOKEN_BALANCE)
+        new_balance = max(current, min(current + amount, config.MAX_TOKEN_BALANCE))
         actual_credit = new_balance - current
         if actual_credit <= 0:
             conn.execute("COMMIT")
@@ -960,7 +960,7 @@ def check_and_grant_daily_bonus(wallet_id: str) -> tuple[bool, int]:
             return False, row["balance"]
 
         # New day — grant bonus and reset ad counter
-        new_balance = min(row["balance"] + config.DAILY_BONUS_TOKENS, config.MAX_TOKEN_BALANCE)
+        new_balance = max(row["balance"], min(row["balance"] + config.DAILY_BONUS_TOKENS, config.MAX_TOKEN_BALANCE))
         actual_bonus = new_balance - row["balance"]
         now = int(time.time())
 
@@ -999,7 +999,7 @@ def check_and_grant_ad_reward(wallet_id: str) -> tuple[bool, int, int]:
             conn.execute("ROLLBACK")
             return False, row["balance"], 0
 
-        new_balance = min(row["balance"] + config.AD_REWARD_TOKENS, config.MAX_TOKEN_BALANCE)
+        new_balance = max(row["balance"], min(row["balance"] + config.AD_REWARD_TOKENS, config.MAX_TOKEN_BALANCE))
         actual_reward = new_balance - row["balance"]
         ads_today += 1
         remaining = config.MAX_ADS_PER_DAY - ads_today
@@ -1061,7 +1061,7 @@ def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: st
         else:
             current = row["balance"]
 
-        new_balance = min(current + amount, config.MAX_TOKEN_BALANCE)
+        new_balance = max(current, min(current + amount, config.MAX_TOKEN_BALANCE))
         actual_credit = new_balance - current
 
         conn.execute(
@@ -1126,7 +1126,7 @@ def merge_wallet(from_id: str, to_id: str):
             to_balance = to_row["balance"]
 
         transfer_amount = from_row["balance"]
-        new_to_balance = min(to_balance + transfer_amount, config.MAX_TOKEN_BALANCE)
+        new_to_balance = max(to_balance, min(to_balance + transfer_amount, config.MAX_TOKEN_BALANCE))
         actual_transfer = new_to_balance - to_balance
 
         if actual_transfer < transfer_amount:

@@ -184,7 +184,7 @@ Organizer sees:
 
 - Latest called item.
 - Call Next button.
-- Undo Last Call, blocked after claims that depend on the latest call.
+- Undo Last Call, blocked after claims that depend on the latest call. The server publishes `can_undo_last_call` in caller sync/call/claim messages so the organizer UI can disable Undo when a claim has locked the latest call. If Undo is used while auto-caller is running, the server pauses auto before rewinding; the host must explicitly resume auto.
 - Called item history.
 - Prize pattern status.
 - Winner/claim log.
@@ -382,6 +382,7 @@ Add runtime support:
 - Add `/bingo/create`, `/bingo/{bingo_id}`, `/bingo/{bingo_id}` update routes if needed for MVP.
 - Reuse existing media upload/finalize APIs for image deck items; do not add production schema unless explicitly needed.
 - Reuse `BINGO_CALL_NEXT`, `BINGO_UNDO_LAST_CALL`, `BINGO_CLAIM`, `BINGO_SYNC`, `BINGO_COMPLETE`.
+- `BINGO_SYNC` and `BINGO_CALL` include `can_undo_last_call`; accepted claim broadcasts also include the updated value so organizer controls immediately disable after a locking claim.
 - Broadcast `game_type: "bingo"` so frontend can choose Bingo card/called-list rendering instead of Housie 1-90 rendering.
 
 Suggested room internals can reuse existing Housie fields initially:

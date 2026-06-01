@@ -130,7 +130,7 @@ CREATE INDEX IF NOT EXISTS idx_games_gamma_webhook_events_processed
 CREATE TABLE IF NOT EXISTS games_gamma_generated_content (
   id TEXT PRIMARY KEY,
   wallet_id TEXT NOT NULL,
-  content_type TEXT NOT NULL CHECK (content_type IN ('quiz', 'mlt', 'drawing', 'housie')),
+  content_type TEXT NOT NULL CHECK (content_type IN ('quiz', 'mlt', 'drawing')),
   title TEXT NOT NULL DEFAULT '',
   payload JSONB NOT NULL,
   prompt TEXT,
@@ -144,7 +144,7 @@ ALTER TABLE games_gamma_generated_content
   DROP CONSTRAINT IF EXISTS games_gamma_generated_content_content_type_check;
 ALTER TABLE games_gamma_generated_content
   ADD CONSTRAINT games_gamma_generated_content_content_type_check
-  CHECK (content_type IN ('quiz', 'mlt', 'drawing', 'housie'));
+  CHECK (content_type IN ('quiz', 'mlt', 'drawing'));
 
 CREATE INDEX IF NOT EXISTS idx_games_gamma_generated_content_wallet
   ON games_gamma_generated_content(wallet_id, created_at DESC);
@@ -505,7 +505,7 @@ BEGIN
   WHERE id = p_wallet_id
   FOR UPDATE;
 
-  v_new_balance := LEAST(v_balance + p_amount, p_max_balance);
+  v_new_balance := GREATEST(v_balance, LEAST(v_balance + p_amount, p_max_balance));
   v_actual_credit := v_new_balance - v_balance;
 
   IF v_actual_credit <= 0 THEN
@@ -570,7 +570,7 @@ BEGIN
   WHERE id = p_wallet_id
   FOR UPDATE;
 
-  v_new_balance := LEAST(v_balance + p_amount, p_max_balance);
+  v_new_balance := GREATEST(v_balance, LEAST(v_balance + p_amount, p_max_balance));
   v_actual_credit := v_new_balance - v_balance;
 
   UPDATE games_gamma_wallets
@@ -647,7 +647,7 @@ BEGIN
   FOR UPDATE;
 
   v_transfer := v_from.balance;
-  v_new_to_balance := LEAST(v_to.balance + v_transfer, p_max_balance);
+  v_new_to_balance := GREATEST(v_to.balance, LEAST(v_to.balance + v_transfer, p_max_balance));
   v_actual_transfer := v_new_to_balance - v_to.balance;
 
   UPDATE games_gamma_wallets
@@ -705,7 +705,7 @@ BEGIN
     RETURN jsonb_build_object('granted', false, 'balance', v_wallet.balance);
   END IF;
 
-  v_new_balance := LEAST(v_wallet.balance + p_amount, p_max_balance);
+  v_new_balance := GREATEST(v_wallet.balance, LEAST(v_wallet.balance + p_amount, p_max_balance));
   v_actual_bonus := v_new_balance - v_wallet.balance;
 
   UPDATE games_gamma_wallets
@@ -766,7 +766,7 @@ BEGIN
     RETURN jsonb_build_object('granted', false, 'balance', v_wallet.balance, 'ads_remaining', 0);
   END IF;
 
-  v_new_balance := LEAST(v_wallet.balance + p_amount, p_max_balance);
+  v_new_balance := GREATEST(v_wallet.balance, LEAST(v_wallet.balance + p_amount, p_max_balance));
   v_actual_reward := v_new_balance - v_wallet.balance;
   v_ads_today := v_ads_today + 1;
   v_remaining := GREATEST(p_max_ads_per_day - v_ads_today, 0);

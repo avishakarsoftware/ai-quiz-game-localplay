@@ -1362,6 +1362,12 @@ class SocketManager:
         order = BINGO_PATTERN_ORDER if room.game_type == "bingo" else PATTERN_ORDER
         return [known[pid] for pid in order if pid in known]
 
+    def _housie_can_undo_last_call(self, room: Room) -> bool:
+        if room.state != "BINGO_CALLING" or not room.housie_called:
+            return False
+        last_call_index = len(room.housie_called)
+        return not any(w.get("called_count", 0) >= last_call_index for w in room.housie_winners)
+
     def _housie_public_state(self, room: Room) -> dict:
         return {
             "game_title": room.game_title(),
@@ -1369,6 +1375,7 @@ class SocketManager:
             "called_items": room.housie_called,
             "latest_item": room.housie_called[-1] if room.housie_called else None,
             "remaining_count": len(room.housie_deck),
+            "can_undo_last_call": self._housie_can_undo_last_call(room),
             "patterns": self._housie_patterns(room),
             "winners": room.housie_winners,
             "claim_log": room.housie_claim_log[-10:],
@@ -1469,6 +1476,7 @@ class SocketManager:
             "called_items": room.housie_called,
             "remaining_count": len(room.housie_deck),
             "call_index": len(room.housie_called),
+            "can_undo_last_call": self._housie_can_undo_last_call(room),
             "animation": "latest_call",
             "auto_status": room.housie_auto_status,
         })
@@ -1481,6 +1489,7 @@ class SocketManager:
             await self._complete_housie(room)
 
     async def _housie_undo_last_call(self, room: Room):
+        should_pause_auto = False
         async with room.lock:
             if room.state != "BINGO_CALLING" or not room.housie_called:
                 return
@@ -1488,9 +1497,12 @@ class SocketManager:
             last_call_index = len(room.housie_called)
             if any(w.get("called_count", 0) >= last_call_index for w in room.housie_winners):
                 return
+            should_pause_auto = room.housie_auto_status == "running"
             item = room.housie_called.pop()
             room.housie_deck.insert(0, item)
             room.current_question_index = len(room.housie_called) - 1
+        if should_pause_auto:
+            await self._set_housie_auto_status(room, "paused")
         await self._broadcast_housie_sync(room)
 
     async def _handle_housie_claim(self, room: Room, client_id: str, message: dict):
@@ -1557,6 +1569,7 @@ class SocketManager:
             "winner": winner,
             "winners": room.housie_winners,
             "leaderboard": self.get_leaderboard(room),
+            "can_undo_last_call": self._housie_can_undo_last_call(room),
             "announce": True,
         })
         is_terminal = pattern.get("terminal", pattern_id == "full_house")

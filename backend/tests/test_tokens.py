@@ -106,6 +106,18 @@ class TestCreditTokens:
         assert ok is True
         assert new_bal == config.MAX_TOKEN_BALANCE
 
+    def test_credit_does_not_reduce_over_cap_balance(self):
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        conn = db._get_conn()
+        conn.execute("UPDATE wallets SET balance = ? WHERE id = ?", (config.MAX_TOKEN_BALANCE + 500, TEST_DEVICE))
+        conn.commit()
+
+        ok, new_bal = db.credit_tokens(TEST_DEVICE, 50, "test")
+
+        assert ok is True
+        assert new_bal == config.MAX_TOKEN_BALANCE + 500
+        assert db.get_wallet_balance(TEST_DEVICE) == config.MAX_TOKEN_BALANCE + 500
+
     def test_credit_creates_wallet_if_missing(self):
         ok, new_bal = db.credit_tokens("new-wallet-id", 50, "test")
         assert ok is True
@@ -135,6 +147,19 @@ class TestCreditPurchase:
         # Only 10 tokens actually credited (capped), not 110
         assert wallet["balance"] == config.MAX_TOKEN_BALANCE
         assert wallet["lifetime_purchased"] == 10
+
+    def test_purchase_does_not_reduce_over_cap_balance(self):
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        conn = db._get_conn()
+        over_cap = config.MAX_TOKEN_BALANCE + 500
+        conn.execute("UPDATE wallets SET balance = ? WHERE id = ?", (over_cap, TEST_DEVICE))
+        conn.commit()
+
+        db.credit_purchase(TEST_DEVICE, 110, "stripe-over-cap-test")
+
+        wallet = db.get_or_create_wallet(TEST_DEVICE)
+        assert wallet["balance"] == over_cap
+        assert wallet["lifetime_purchased"] == 0
 
 
 class TestCreditPurchaseMetadata:
@@ -204,6 +229,19 @@ class TestDailyBonus:
         wallet = db.get_or_create_wallet(TEST_DEVICE)
         assert wallet["ads_watched_today"] == 0
 
+    def test_daily_bonus_does_not_reduce_over_cap_balance(self):
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        conn = db._get_conn()
+        over_cap = config.MAX_TOKEN_BALANCE + 500
+        conn.execute("UPDATE wallets SET balance = ?, last_daily_bonus_date = '' WHERE id = ?", (over_cap, TEST_DEVICE))
+        conn.commit()
+
+        granted, new_bal = db.check_and_grant_daily_bonus(TEST_DEVICE)
+
+        assert granted is True
+        assert new_bal == over_cap
+        assert db.get_wallet_balance(TEST_DEVICE) == over_cap
+
 
 class TestAdReward:
     def test_grant_ad_reward(self):
@@ -220,6 +258,20 @@ class TestAdReward:
         granted, _, remaining = db.check_and_grant_ad_reward(TEST_DEVICE)
         assert granted is False
         assert remaining == 0
+
+    def test_ad_reward_does_not_reduce_over_cap_balance(self):
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        conn = db._get_conn()
+        over_cap = config.MAX_TOKEN_BALANCE + 500
+        conn.execute("UPDATE wallets SET balance = ?, ads_watched_today = 0, ads_watched_date = '' WHERE id = ?", (over_cap, TEST_DEVICE))
+        conn.commit()
+
+        granted, new_bal, remaining = db.check_and_grant_ad_reward(TEST_DEVICE)
+
+        assert granted is True
+        assert new_bal == over_cap
+        assert remaining == config.MAX_ADS_PER_DAY - 1
+        assert db.get_wallet_balance(TEST_DEVICE) == over_cap
 
 
 class TestMergeWallet:
@@ -246,6 +298,20 @@ class TestMergeWallet:
         db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
         db.merge_wallet(TEST_DEVICE, TEST_USER)
         assert db.get_wallet_balance(TEST_USER) == 0  # No wallet created
+
+    def test_merge_does_not_reduce_over_cap_target(self):
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        db.get_or_create_wallet(TEST_USER, signup_bonus=False)
+        conn = db._get_conn()
+        over_cap = config.MAX_TOKEN_BALANCE + 500
+        conn.execute("UPDATE wallets SET balance = ? WHERE id = ?", (50, TEST_DEVICE))
+        conn.execute("UPDATE wallets SET balance = ? WHERE id = ?", (over_cap, TEST_USER))
+        conn.commit()
+
+        db.merge_wallet(TEST_DEVICE, TEST_USER)
+
+        assert db.get_wallet_balance(TEST_USER) == over_cap
+        assert db.get_wallet_balance(TEST_DEVICE) == 0
 
 
 class TestTokensModule:

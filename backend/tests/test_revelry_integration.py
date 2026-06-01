@@ -382,6 +382,90 @@ def test_revelry_session_replacement_sends_superseded_callback(monkeypatch):
     assert superseded["payload"]["status"] == "superseded"
 
 
+def test_revelry_party_hub_hides_session_when_runtime_room_is_missing(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-stale-runtime-{uuid.uuid4().hex}"
+
+    first = client.post("/integrations/revelry/sessions", headers=_headers(), json=_create_payload(container_id))
+    assert first.status_code == 200
+    session_id = first.json()["session_id"]
+    assert first.json()["room_code"] in socket_manager.rooms
+
+    socket_manager.rooms.clear()
+    link = client.post(
+        "/integrations/revelry/party-games-link",
+        headers=_headers(),
+        json={
+            "external_context": _create_payload(container_id)["external_context"],
+            "actor": _create_payload(container_id)["actor"],
+            "return_url": "https://app.revelryapp.me/parties/party-1",
+        },
+    )
+    party_token = link.json()["party_games_url"].split("party_games_token=", 1)[1]
+
+    resolve = client.get(f"/integrations/revelry/party-games/resolve?party_games_token={party_token}")
+
+    assert resolve.status_code == 200
+    assert resolve.json()["workspace"]["active_session"] is None
+    stale = db.get_game_session(session_id)
+    assert stale["status"] == "expired"
+    assert stale["joinable"] is False
+    assert stale["closed_reason"] == "runtime_unavailable"
+
+
+def test_revelry_launch_token_rejects_missing_runtime_room(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-stale-launch-{uuid.uuid4().hex}"
+    first = client.post("/integrations/revelry/sessions", headers=_headers(), json=_create_payload(container_id))
+    session_id = first.json()["session_id"]
+    socket_manager.rooms.clear()
+    link = client.post(
+        "/integrations/revelry/party-games-link",
+        headers=_headers(),
+        json={
+            "external_context": _create_payload(container_id)["external_context"],
+            "actor": _create_payload(container_id)["actor"],
+            "return_url": "https://app.revelryapp.me/parties/party-1",
+        },
+    )
+    party_token = link.json()["party_games_url"].split("party_games_token=", 1)[1]
+
+    launch = client.post(
+        "/integrations/revelry/party-games/launch-token",
+        json={
+            "party_games_token": party_token,
+            "session_id": session_id,
+            "scope": "organizer",
+            "route": "organizer",
+            "embed": True,
+        },
+    )
+
+    assert launch.status_code == 409
+    stale = db.get_game_session(session_id)
+    assert stale["status"] == "expired"
+    assert stale["joinable"] is False
+
+
+def test_revelry_new_session_ignores_stale_missing_runtime_session(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-stale-new-{uuid.uuid4().hex}"
+    first = client.post("/integrations/revelry/sessions", headers=_headers(), json=_create_payload(container_id))
+    first_id = first.json()["session_id"]
+    socket_manager.rooms.clear()
+
+    second = client.post("/integrations/revelry/sessions", headers=_headers(), json=_create_payload(container_id))
+
+    assert second.status_code == 200
+    assert second.json()["session_id"] != first_id
+    stale = db.get_game_session(first_id)
+    assert stale["status"] == "expired"
+    assert stale["closed_reason"] == "runtime_unavailable"
+
+
 def test_revelry_results_endpoint_returns_safe_summary(monkeypatch):
     monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
     db.init_db()
