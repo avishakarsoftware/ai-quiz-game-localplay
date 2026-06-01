@@ -127,6 +127,7 @@ Reason:
 
 Build once the asset layer is trustworthy:
 
+- Photo Clue / Snap Guess: one player receives a secret word or phrase, submits a photo clue, and the room guesses from the photo.
 - Meme Caption.
 - AI Art Guessing.
 - Rebus / Emoji Puzzles.

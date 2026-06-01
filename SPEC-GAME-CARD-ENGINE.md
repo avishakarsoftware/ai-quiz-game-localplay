@@ -43,6 +43,7 @@ Best first games for big groups:
 - **Spoons**: 4-10 players, phone can manage rounds and elimination, but the physical spoon grab makes it less fully digital.
 - **Donkey / Old Maid variants**: 4-12 players, simple passing mechanics, good casual party fit.
 - **President / Scum**: 5-10 players, popular social hierarchy, but rule variations need careful setup options.
+- **Party Poker**: 2-10 players per table with fixed play chips, strong spectator appeal, but should come after Bluff because betting rounds, side pots, and hand evaluation add complexity.
 - **Memory Match Relay**: team-friendly, scalable, uses card primitives without poker/trick-taking complexity.
 
 Good later or smaller-table games:
