@@ -36,6 +36,7 @@ from bingo_engine import DEFAULT_BINGO_PATTERNS, bingo_engine, default_bingo_gam
 from musical_chairs_engine import validate_config as validate_musical_chairs_config
 from bluff_engine import validate_config as validate_bluff_config
 from two_truths_engine import validate_config as validate_two_truths_config
+from story_chain_engine import validate_config as validate_story_chain_config
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -423,6 +424,7 @@ class RoomCreateRequest(BaseModel):
     musical_chairs_config: dict = {}
     bluff_config: dict = {}
     two_truths_config: dict = {}
+    story_chain_config: dict = {}
     game_type: str = "quiz"
     time_limit: Optional[int] = None
 
@@ -438,8 +440,8 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths"):
-            raise ValueError('game_type must be "quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", or "two_truths"')
+        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain"):
+            raise ValueError('game_type must be "quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", or "story_chain"')
         return v
 
 
@@ -688,6 +690,35 @@ GAME_CATALOG = [
             "vote_time_seconds": {"min": 10, "max": 90, "default": 30},
         },
     },
+    {
+        "id": "story_chain",
+        "game_type": "story_chain",
+        "runtime_type": "story_chain",
+        "title": "Story Chain",
+        "description": "Take turns adding sentences, then reveal the final story.",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": False,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "sequential_creative_setup",
+            "supported_media": [],
+        },
+        "config_schema": {
+            "players": {"min": config.MIN_STORY_CHAIN_PLAYERS, "max": config.MAX_PLAYERS_PER_ROOM},
+            "turn_time_seconds": {"min": 20, "max": 120, "default": 45},
+            "sentence_max_chars": {"min": 60, "max": 280, "default": 180},
+            "visibility_modes": ["full_context", "last_sentence_only"],
+        },
+    },
 ]
 
 
@@ -700,6 +731,8 @@ def _default_time_limit_for_game(game_type: str) -> int:
         return 30
     if game_type == "two_truths":
         return 30
+    if game_type == "story_chain":
+        return 45
     return config.DEFAULT_TIME_LIMIT
 
 
@@ -786,6 +819,8 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
         return str(uuid.uuid4()), validate_bluff_config({"game_title": title or "Bluff"})
     if game_type == "two_truths":
         return str(uuid.uuid4()), validate_two_truths_config({"game_title": title or "Two Truths and a Lie"})
+    if game_type == "story_chain":
+        return str(uuid.uuid4()), validate_story_chain_config({"game_title": title or "Story Chain"})
     if game_type == "bingo":
         return str(uuid.uuid4()), default_bingo_game(title or "Bingo")
     if game_type == "housie":
@@ -824,6 +859,8 @@ def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = 
     if game_type == "bluff":
         return _default_game_content(game_type, title)
     if game_type == "two_truths":
+        return _default_game_content(game_type, title)
+    if game_type == "story_chain":
         return _default_game_content(game_type, title)
     if game_type == "bingo":
         if not config.BINGO_ENABLED:
@@ -3322,6 +3359,9 @@ async def create_room(request: RoomCreateRequest, req: Request):
     elif request.game_type == "two_truths":
         content_id = str(uuid.uuid4())
         game_data = validate_two_truths_config(request.two_truths_config)
+    elif request.game_type == "story_chain":
+        content_id = str(uuid.uuid4())
+        game_data = validate_story_chain_config(request.story_chain_config)
     else:
         content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
     time_limit = request.time_limit if request.time_limit is not None else _default_time_limit_for_game(request.game_type)

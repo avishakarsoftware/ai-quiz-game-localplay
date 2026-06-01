@@ -102,6 +102,7 @@ MIN_BINGO_PLAYERS = 2  # Custom Bingo minimum players
 MIN_MUSICAL_CHAIRS_PLAYERS = 3  # Musical Chairs minimum players
 MIN_BLUFF_PLAYERS = 3  # Bluff minimum players
 MIN_TWO_TRUTHS_PLAYERS = 3  # Two Truths and a Lie minimum players
+MIN_STORY_CHAIN_PLAYERS = 3  # Story Chain minimum players
 MC_MIN_MUSIC_SECONDS = 3
 MC_MAX_MUSIC_SECONDS = 60
 MC_MIN_GRAB_WINDOW = 2

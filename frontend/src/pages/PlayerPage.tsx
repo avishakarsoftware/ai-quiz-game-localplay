@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { WS_URL } from '../config';
-import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -21,8 +21,9 @@ import { returnToHostApp } from '../utils/hostAppReturn';
 import MusicalChairsPlayer from '../components/player/MusicalChairsPlayer';
 import BluffTable from '../components/BluffTable';
 import TwoTruthsGame from '../components/TwoTruthsGame';
+import StoryChainGame from '../components/StoryChainGame';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
 interface PlayerQuestion {
     id: number;
@@ -139,6 +140,7 @@ export default function PlayerPage() {
     const [bluffState, setBluffState] = useState<BluffState | null>(null);
     const [selectedBluffCards, setSelectedBluffCards] = useState<Set<string>>(new Set());
     const [twoTruthsState, setTwoTruthsState] = useState<TwoTruthsState | null>(null);
+    const [storyChainState, setStoryChainState] = useState<StoryChainState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const submittedRef = useRef(false);
@@ -265,6 +267,10 @@ export default function PlayerPage() {
                     setGameType('two_truths');
                     setTwoTruthsState(msg.two_truths as TwoTruthsState);
                     setState('TWO_TRUTHS');
+                } else if (msg.game_type === 'story_chain' && msg.story_chain) {
+                    setGameType('story_chain');
+                    setStoryChainState(msg.story_chain as StoryChainState);
+                    setState('STORY_CHAIN');
                 } else if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
                         setGameType('drawing');
@@ -325,6 +331,9 @@ export default function PlayerPage() {
                 } else if (msg.game_type === 'two_truths') {
                     setGameType('two_truths');
                     setState('TWO_TRUTHS');
+                } else if (msg.game_type === 'story_chain') {
+                    setGameType('story_chain');
+                    setState('STORY_CHAIN');
                 }
                 else setState('INTRO');
             }
@@ -405,6 +414,12 @@ export default function PlayerPage() {
                 setTwoTruthsState(msg.two_truths as TwoTruthsState);
                 setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
                 setState('TWO_TRUTHS');
+            }
+            if (msg.type === 'STORY_SYNC') {
+                setGameType('story_chain');
+                setStoryChainState(msg.story_chain as StoryChainState);
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+                setState('STORY_CHAIN');
             }
             if (msg.type === 'QUESTION') {
                 if (msg.game_type === 'drawing') {
@@ -716,6 +731,10 @@ export default function PlayerPage() {
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'TT_VOTE', statement_id: statementId }));
     };
+    const submitStorySentence = (text: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'STORY_SUBMIT_SENTENCE', text }));
+    };
 
     const activatePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
         soundManager.hapticsSelect();
@@ -1007,6 +1026,15 @@ export default function PlayerPage() {
                         controls="player"
                         onSubmitStatements={submitTwoTruths}
                         onVote={voteTwoTruths}
+                    />
+                )}
+
+                {state === 'STORY_CHAIN' && (
+                    <StoryChainGame
+                        state={storyChainState}
+                        viewerName={nickname}
+                        controls="player"
+                        onSubmitSentence={submitStorySentence}
                     />
                 )}
 

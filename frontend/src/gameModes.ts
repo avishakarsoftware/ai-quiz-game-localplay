@@ -2,7 +2,7 @@ import { type GameType, type QuizVariantGameType } from './types';
 
 export interface GameModeConfig {
     id: GameType;
-    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths';
+    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain';
     icon: string;
     title: string;
     description: string;
@@ -138,6 +138,13 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         title: 'Two Truths and a Lie',
         description: 'Submit three statements and see who can spot the lie',
     },
+    {
+        id: 'story_chain',
+        runtimeType: 'story_chain',
+        icon: '📖',
+        title: 'Story Chain',
+        description: 'Take turns adding sentences, then reveal the final story',
+    },
 ];
 
 export const QUIZ_VARIANT_IDS: QuizVariantGameType[] = [
@@ -162,6 +169,6 @@ export function isQuizRuntimeGame(gameType: GameType): boolean {
     return getGameModeConfig(gameType).runtimeType === 'quiz';
 }
 
-export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' {
+export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' {
     return getGameModeConfig(gameType).runtimeType;
 }

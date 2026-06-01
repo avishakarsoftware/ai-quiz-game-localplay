@@ -83,6 +83,21 @@ class TestHealthEndpoints:
         assert room.quiz["game_title"] == "Confession Night"
         assert room.time_limit == 30
 
+    def test_create_story_chain_room(self):
+        res = client.post(
+            "/room/create",
+            json={"game_type": "story_chain", "story_chain_config": {"game_title": "Story Night", "starter_prompt": "A suitcase started singing."}},
+            headers=AUTH_HEADERS,
+        )
+
+        assert res.status_code == 200, res.text
+        body = res.json()
+        room = main.socket_manager.rooms[body["room_code"]]
+        assert room.game_type == "story_chain"
+        assert room.quiz["game_title"] == "Story Night"
+        assert room.quiz["starter_prompt"] == "A suitcase started singing."
+        assert room.time_limit == 45
+
     def test_catalog_includes_baby_bingo_preset_on_bingo_runtime(self):
         res = client.get("/catalog")
 
@@ -93,6 +108,8 @@ class TestHealthEndpoints:
         assert games["baby_bingo"]["content_schema"]["ruleset"] == "baby_bingo"
         assert games["two_truths"]["runtime_type"] == "two_truths"
         assert games["two_truths"]["config_schema"]["players"]["min"] == config.MIN_TWO_TRUTHS_PLAYERS
+        assert games["story_chain"]["runtime_type"] == "story_chain"
+        assert games["story_chain"]["config_schema"]["players"]["min"] == config.MIN_STORY_CHAIN_PLAYERS
 
 
 class TestFrontendStaticServing:

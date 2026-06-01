@@ -122,6 +122,17 @@ def create_two_truths_room():
     return data["room_code"], data["organizer_token"]
 
 
+def create_story_chain_room():
+    res = client.post(
+        "/room/create",
+        json={"game_type": "story_chain", "story_chain_config": {"game_title": "Story Chain", "starter_prompt": "A suitcase started singing."}},
+        headers={"X-Device-Id": "story-chain-test-wallet"},
+    )
+    assert res.status_code == 200, res.text
+    data = res.json()
+    return data["room_code"], data["organizer_token"]
+
+
 @contextmanager
 def org_connect(room_code, token, client_id="org-1"):
     """Connect as organizer and send first-frame AUTH. Yields the websocket."""
@@ -191,6 +202,42 @@ def recv_two_truths_vote(ws, statement_id, max_messages=50):
         if isinstance(payload, dict) and payload.get("my_vote") == statement_id:
             return data
     raise TimeoutError("Never received Two Truths vote confirmation")
+
+
+def recv_story_phase(ws, phase, max_messages=50):
+    for i in range(max_messages):
+        try:
+            data = ws.receive_json()
+        except Exception as e:
+            raise TimeoutError(f"Connection closed while waiting for Story Chain phase {phase} (after {i} messages): {e}")
+        payload = data.get("story_chain", {}) if data.get("type") == "STORY_SYNC" else {}
+        if isinstance(payload, dict) and payload.get("phase") == phase:
+            return data
+    raise TimeoutError(f"Never received Story Chain phase {phase}")
+
+
+def recv_story_score(ws, nickname, max_messages=50):
+    for i in range(max_messages):
+        try:
+            data = ws.receive_json()
+        except Exception as e:
+            raise TimeoutError(f"Connection closed while waiting for Story Chain score (after {i} messages): {e}")
+        payload = data.get("story_chain", {}) if data.get("type") == "STORY_SYNC" else {}
+        if isinstance(payload, dict) and int(payload.get("scores", {}).get(nickname, 0)) >= 100:
+            return data
+    raise TimeoutError(f"Never received Story Chain score for {nickname}")
+
+
+def recv_story_active_context(ws, max_messages=50):
+    for i in range(max_messages):
+        try:
+            data = ws.receive_json()
+        except Exception as e:
+            raise TimeoutError(f"Connection closed while waiting for Story Chain active context (after {i} messages): {e}")
+        payload = data.get("story_chain", {}) if data.get("type") == "STORY_SYNC" else {}
+        if isinstance(payload, dict) and payload.get("is_active") and payload.get("visible_context"):
+            return data
+    raise TimeoutError("Never received Story Chain active private context")
 
 
 class TestBluffWS:
@@ -302,6 +349,69 @@ class TestTwoTruthsWS:
                 assert result_sync["two_truths"]["phase"] == "TT_RESULT"
                 assert result_sync["two_truths"]["round_result"]["lie_statement_id"] == lie_id
                 assert any(item.get("is_lie") for item in result_sync["two_truths"]["statements"])
+            finally:
+                for cm, _ws, _name in players:
+                    cm.__exit__(None, None, None)
+
+
+class TestStoryChainWS:
+    def test_story_chain_submit_and_reveal_flow(self):
+        room_code, org_token = create_story_chain_room()
+
+        with org_connect(room_code, org_token) as org_ws:
+            org_ws.receive_json()
+            players = []
+            try:
+                for idx, name in enumerate(["Alice", "Bob", "Cara"], start=1):
+                    ws = client.websocket_connect(f"/ws/{room_code}/story-player-{idx}")
+                    player_ws = ws.__enter__()
+                    players.append((ws, player_ws, name))
+                    player_ws.send_json({"type": "JOIN", "nickname": name})
+                    assert player_ws.receive_json()["type"] == "JOINED_ROOM"
+                    recv_until(org_ws, "PLAYER_JOINED")
+
+                org_ws.send_json({"type": "START_GAME"})
+                org_sync = recv_story_phase(org_ws, "STORY_TURN")
+                assert org_sync["story_chain"]["starter_prompt"] == "A suitcase started singing."
+                assert org_sync["story_chain"]["sentences"] == []
+                order = org_sync["story_chain"]["turn_order"]
+                player_by_name = {name: player_ws for _cm, player_ws, name in players}
+
+                sentences = {
+                    order[0]: "It sang loudly about forgotten airport sandwiches.",
+                    order[1]: "A sleepy pilot joined in with dramatic harmony.",
+                    order[2]: "Then the suitcase demanded a standing ovation.",
+                }
+                for index, name in enumerate(order):
+                    player_by_name[name].send_json({"type": "STORY_SUBMIT_SENTENCE", "text": sentences[name]})
+                    sync = recv_story_score(player_by_name[name], name)
+                    assert sync["story_chain"]["scores"][name] >= 100
+                    if index < len(order) - 1:
+                        assert sync["story_chain"]["phase"] == "STORY_TURN"
+                        assert sync["story_chain"]["active_player_id"] == order[index + 1]
+                        next_sync = recv_story_active_context(player_by_name[order[index + 1]])
+                        assert next_sync["story_chain"]["visible_context"]
+
+                reveal_sync = recv_story_phase(org_ws, "STORY_REVEAL")
+                assert reveal_sync["story_chain"]["sentences_count"] == 3
+                assert reveal_sync["story_chain"]["sentences"] == []
+
+                org_ws.send_json({"type": "STORY_NEXT_REVEAL_STEP"})
+                step = recv_story_phase(org_ws, "STORY_REVEAL")
+                assert len(step["story_chain"]["sentences"]) == 1
+
+                org_ws.send_json({"type": "STORY_NEXT_REVEAL_STEP"})
+                step = recv_story_phase(org_ws, "STORY_REVEAL")
+                assert len(step["story_chain"]["sentences"]) == 2
+
+                org_ws.send_json({"type": "STORY_NEXT_REVEAL_STEP"})
+                step = recv_story_phase(org_ws, "STORY_REVEAL")
+                assert len(step["story_chain"]["sentences"]) == 3
+
+                org_ws.send_json({"type": "STORY_NEXT_REVEAL_STEP"})
+                podium = recv_until(org_ws, "PODIUM")
+                assert podium["game_type"] == "story_chain"
+                assert len(podium["story_chain"]["sentences"]) == 3
             finally:
                 for cm, _ws, _name in players:
                     cm.__exit__(None, None, None)

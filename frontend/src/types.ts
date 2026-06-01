@@ -67,7 +67,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -231,6 +231,41 @@ export interface TwoTruthsState {
     my_submission?: TwoTruthsSubmission;
     my_vote?: string;
     is_author?: boolean;
+}
+
+export interface StorySentence {
+    id: string;
+    player_id: string;
+    text: string;
+    position: number;
+    created_at: number;
+    timed_out?: boolean;
+}
+
+export interface StoryChainState {
+    phase: 'STORY_TURN' | 'STORY_REVEAL' | 'PODIUM' | string;
+    config: {
+        game_title?: string;
+        starter_prompt?: string;
+        tone?: string;
+        visibility_mode?: 'full_context' | 'last_sentence_only' | string;
+        turn_time_seconds?: number;
+        sentence_max_chars?: number;
+    };
+    players: PlayerInfo[];
+    chain_id: string;
+    turn_order: string[];
+    active_player_id: string;
+    current_turn_index: number;
+    total_turns: number;
+    starter_prompt: string;
+    sentences_count: number;
+    sentences: StorySentence[];
+    deadline?: number | null;
+    reveal_index: number;
+    scores: Record<string, number>;
+    is_active?: boolean;
+    visible_context?: string[];
 }
 
 export interface HousieCell {

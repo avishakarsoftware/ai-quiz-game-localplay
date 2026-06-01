@@ -15,17 +15,38 @@ Frontend display name: Story Chain
 
 ## Implementation-Ready MVP Scope
 
-Status: implementation-ready after private-turn queue infrastructure exists.
+Status: standalone MVP implemented locally.
+
+Implemented:
+
+- Standalone catalog card and quick-start room creation.
+- One chain per room.
+- Default starter prompt, `funny` tone, `last_sentence_only` visibility, 45 second turn window, and 180 character sentence limit.
+- `full_context` and `last_sentence_only` backend support.
+- Server-assigned turn order.
+- Private active-player context over WebSocket.
+- Public host/spectator/player sync that hides unrevealed sentences while writing.
+- Player sentence submission, host skip/placeholder, host-paced reveal, podium, and light scoring.
+- Backend engine, API, and websocket integration tests.
+
+Not implemented yet:
+
+- Dedicated setup screen for starter/tone/timer/visibility choices.
+- AI starter prompt generation.
+- Multiple chains.
+- Voting awards.
+- Automatic timeout task.
+- Revelry/host-app exposure.
 
 - Standalone LocalPlay first.
-- Host chooses a starting prompt, tone, number of chains, sentence timer, and visibility mode.
+- Host quick-starts a default setup in the current MVP. A setup screen for starting prompt, tone, sentence timer, and visibility mode remains future work.
 - Server assigns a turn order.
 - Active player receives the story context they are allowed to see.
 - Active player writes one sentence.
 - Server appends the sentence and advances to the next player.
 - Inactive players see waiting/progress state, not the hidden story if visibility mode says it is hidden.
 - Spectator/TV shows progress while writing and then reveals the final story after the chain is complete.
-- Optional voting can pick funniest, weirdest, most dramatic, or best twist when multiple chains are played.
+- Optional voting can pick funniest, weirdest, most dramatic, or best twist when multiple chains are played in a future slice.
 
 ## Goals
 
