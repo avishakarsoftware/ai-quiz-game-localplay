@@ -3796,6 +3796,162 @@ body {
     flex-shrink: 0;
 }
 
+.mc-style-grid,
+.mc-range-row {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.mc-range-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mc-range-row label {
+    display: grid;
+    gap: 6px;
+    color: var(--text-tertiary);
+    font-weight: 800;
+}
+
+.mc-range-row input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    background: var(--paper);
+    color: var(--ink);
+    text-align: center;
+    font-weight: 900;
+}
+
+.mc-game-shell {
+    display: grid;
+    gap: 18px;
+    align-content: center;
+}
+
+.mc-visualizer {
+    position: relative;
+    width: min(76vw, 360px);
+    aspect-ratio: 1;
+    margin: 0 auto;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(255, 46, 122, 0.18), rgba(109, 255, 230, 0.08) 45%, transparent 68%);
+    animation: mcPulse var(--mc-pulse-ms, 900ms) ease-in-out infinite;
+}
+
+.mc-visualizer.grab {
+    background: radial-gradient(circle, rgba(255, 46, 122, 0.42), rgba(255, 196, 87, 0.22) 50%, transparent 72%);
+}
+
+.mc-visualizer-core {
+    position: absolute;
+    inset: 30%;
+    display: grid;
+    place-items: center;
+    border: 2px solid rgba(248, 234, 211, 0.22);
+    border-radius: 999px;
+    background: var(--paper);
+    box-shadow: var(--glow-accent);
+}
+
+.mc-visualizer-core span {
+    font-size: clamp(2rem, 8vw, 4.5rem);
+    font-weight: 1000;
+}
+
+.mc-player-orbit {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 52px;
+    height: 52px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(248, 234, 211, 0.2);
+    border-radius: 999px;
+    background: var(--paper);
+    box-shadow: var(--shadow);
+}
+
+.mc-player-orbit span {
+    font-size: 1.35rem;
+}
+
+.mc-status-card {
+    width: min(100%, 560px);
+    margin: 0 auto;
+    padding: 18px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: var(--paper);
+    text-align: center;
+}
+
+.mc-status-card h2 {
+    font-size: clamp(1.35rem, 4vw, 2.1rem);
+    font-weight: 1000;
+}
+
+.mc-player-list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+}
+
+.mc-player-chip {
+    padding: 8px 12px;
+    border: 1px solid rgba(248, 234, 211, 0.16);
+    border-radius: 999px;
+    background: rgba(248, 234, 211, 0.05);
+    font-weight: 800;
+}
+
+.mc-player-chip-button {
+    cursor: pointer;
+    color: var(--text-primary);
+    border-color: rgba(255, 47, 133, 0.55);
+}
+
+.mc-player-chip-button:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 47, 133, 0.18);
+}
+
+.mc-grab-button {
+    width: min(100%, 520px);
+    min-height: 180px;
+    margin: 24px auto 0;
+    border: 0;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--bg-primary);
+    font-size: clamp(2rem, 10vw, 4.6rem);
+    font-weight: 1000;
+    box-shadow: var(--glow-accent);
+}
+
+.mc-grab-button:disabled {
+    background: var(--paper-2);
+    color: var(--text-secondary);
+}
+
+@keyframes mcPulse {
+    0%, 100% { transform: scale(0.98); opacity: 0.82; }
+    50% { transform: scale(1.04); opacity: 1; }
+}
+
+@media (max-width: 640px) {
+    .mc-style-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .mc-range-row {
+        grid-template-columns: 1fr;
+    }
+}
+
 .game-empty-state {
     width: 100%;
     max-width: 560px;

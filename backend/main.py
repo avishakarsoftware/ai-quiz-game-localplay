@@ -33,6 +33,7 @@ from mlt_engine import mlt_engine, _sanitize_mlt, _validate_mlt
 from drawing_engine import drawing_engine, _sanitize_drawing_game, _validate_drawing_game
 from housie_engine import DEFAULT_HOUSIE_PATTERNS, default_housie_game, sanitize_patterns
 from bingo_engine import DEFAULT_BINGO_PATTERNS, bingo_engine, default_bingo_game, sanitize_bingo_deck, sanitize_bingo_patterns
+from musical_chairs_engine import validate_config as validate_musical_chairs_config
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -417,6 +418,7 @@ class RoomCreateRequest(BaseModel):
     drawing_id: str = ""   # For DrawingGame
     housie_id: str = ""    # For Housie
     bingo_id: str = ""     # For custom Bingo
+    musical_chairs_config: dict = {}
     game_type: str = "quiz"
     time_limit: Optional[int] = None
 
@@ -432,8 +434,8 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo"):
-            raise ValueError('game_type must be "quiz", "wmlt", "drawing", "housie", or "bingo"')
+        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs"):
+            raise ValueError('game_type must be "quiz", "wmlt", "drawing", "housie", "bingo", or "musical_chairs"')
         return v
 
 
@@ -570,11 +572,40 @@ GAME_CATALOG = [
         },
         "enabled": config.BINGO_ENABLED,
     },
+    {
+        "id": "musical_chairs",
+        "game_type": "musical_chairs",
+        "runtime_type": "musical_chairs",
+        "title": "Musical Chairs",
+        "description": "Music plays, then stops. Race to grab a chair. Last one standing wins.",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": False,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "musical_chairs_setup",
+            "music_modes": ["builtin", "external"],
+            "music_styles": ["upbeat", "jazzy", "suspenseful", "retro", "tropical"],
+            "supported_media": [],
+        },
+    },
 ]
 
 
 def _default_time_limit_for_game(game_type: str) -> int:
-    return 30 if game_type == "drawing" else config.DEFAULT_TIME_LIMIT
+    if game_type == "drawing":
+        return 30
+    if game_type == "musical_chairs":
+        return 5
+    return config.DEFAULT_TIME_LIMIT
 
 
 def _sanitize_housie_game(game: dict) -> dict:
@@ -654,6 +685,8 @@ def _public_base_url(req: Request) -> str:
 
 
 def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
+    if game_type == "musical_chairs":
+        return str(uuid.uuid4()), validate_musical_chairs_config({"game_title": title or "Musical Chairs"})
     if game_type == "bingo":
         return str(uuid.uuid4()), default_bingo_game(title or "Bingo")
     if game_type == "housie":
@@ -687,6 +720,8 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
 
 
 def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = "") -> tuple[str, dict]:
+    if game_type == "musical_chairs":
+        return _default_game_content(game_type, title)
     if game_type == "bingo":
         if not config.BINGO_ENABLED:
             raise HTTPException(status_code=404, detail="Bingo is not available")
@@ -3172,9 +3207,14 @@ async def create_room(request: RoomCreateRequest, req: Request):
         else request.mlt_id if request.game_type == "wmlt"
         else request.drawing_id if request.game_type == "drawing"
         else request.housie_id if request.game_type == "housie"
-        else request.bingo_id
+        else request.bingo_id if request.game_type == "bingo"
+        else ""
     )
-    content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
+    if request.game_type == "musical_chairs":
+        content_id = str(uuid.uuid4())
+        game_data = validate_musical_chairs_config(request.musical_chairs_config)
+    else:
+        content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
     time_limit = request.time_limit if request.time_limit is not None else _default_time_limit_for_game(request.game_type)
     wallet_id = tokens.get_wallet_id(req)
     if not wallet_id:

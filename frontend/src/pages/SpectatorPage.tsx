@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
@@ -18,6 +18,7 @@ import { BingoCalledList, BingoCallOverlay } from '../components/BingoBoard';
 import { mediaUrl } from '../utils/media';
 import { apiUrl } from '../utils/api';
 import { returnToHostApp } from '../utils/hostAppReturn';
+import MusicalChairsVisualizer from '../components/musical-chairs/MusicalChairsVisualizer';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
@@ -105,6 +106,7 @@ export default function SpectatorPage() {
     const [housieWinners, setHousieWinners] = useState<HousieWinner[]>([]);
     const [housieCallFlash, setHousieCallFlash] = useState<{ item: { value?: number | string; display: string; kind?: string; image_url?: string; alt_text?: string }; key: number } | null>(null);
     const [housieAnnouncement, setHousieAnnouncement] = useState<{ text: string; key: number } | null>(null);
+    const [musicalChairsState, setMusicalChairsState] = useState<MusicalChairsState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -226,6 +228,11 @@ export default function SpectatorPage() {
                     setGameState(String(msg.state || 'BINGO_CALLING'));
                     return;
                 }
+                if (msg.game_type === 'musical_chairs' && msg.musical_chairs) {
+                    setMusicalChairsState(msg.musical_chairs);
+                    setGameState('MUSICAL_CHAIRS');
+                    return;
+                }
                 // Handle mid-question sync
                 if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
@@ -261,6 +268,9 @@ export default function SpectatorPage() {
                 if (msg.game_type === 'housie' || msg.game_type === 'bingo') {
                     setGameType(msg.game_type);
                     setGameState('BINGO_CALLING');
+                } else if (msg.game_type === 'musical_chairs') {
+                    setGameType('musical_chairs');
+                    setGameState('MUSICAL_CHAIRS');
                 }
                 else setGameState('INTRO');
             }
@@ -289,6 +299,14 @@ export default function SpectatorPage() {
             else if (msg.type === 'BINGO_COMPLETE') {
                 setHousieWinners(msg.winners || []);
                 setLeaderboard(msg.leaderboard || []);
+            }
+            else if (msg.type === 'MC_SYNC' || msg.type === 'MC_ROUND_START' || msg.type === 'MC_MUSIC_STOP' || msg.type === 'MC_GRAB_COUNT' || msg.type === 'MC_ROUND_OVER') {
+                setGameType('musical_chairs');
+                setMusicalChairsState(msg.musical_chairs || null);
+                setGameState('MUSICAL_CHAIRS');
+            }
+            else if (msg.type === 'MC_WINNER') {
+                setGameType('musical_chairs');
             }
             else if (msg.type === 'QUESTION') {
                 if (msg.game_type) setGameType(msg.game_type);
@@ -383,6 +401,7 @@ export default function SpectatorPage() {
                 setHousieCalled([]);
                 setHousieLatest(null);
                 setHousieWinners([]);
+                setMusicalChairsState(null);
                 if (msg.game_type) setGameType(msg.game_type);
                 setGameState('LOBBY');
             }
@@ -664,6 +683,45 @@ export default function SpectatorPage() {
                                 <h2 className="font-extrabold text-2xl mb-4">Winners</h2>
                                 <HousieWinners winners={housieWinners} />
                             </div>
+                        </div>
+                    )}
+
+                    {gameState === 'MUSICAL_CHAIRS' && (
+                        <div className="flex-1 flex flex-col justify-center animate-in">
+                            <div className="text-center mb-8">
+                                <p className="text-[--text-tertiary] text-xl">Musical Chairs</p>
+                                <h1 className="hero-title" style={{ fontSize: '4rem' }}>{musicalChairsState?.game_title || 'Musical Chairs'}</h1>
+                                <p className="text-[--text-secondary] text-2xl">
+                                    Round {musicalChairsState?.round_number || 0} of {musicalChairsState?.total_rounds || '-'} · {musicalChairsState?.active_players.length || 0} players standing
+                                </p>
+                                <p className="text-[--text-tertiary] text-lg mt-2">
+                                    {musicalChairsState?.gameplay_mode === 'physical' ? 'Physical chairs mode' : 'Phone tap mode'}
+                                </p>
+                            </div>
+                            <div style={{ maxWidth: 560, width: '100%', margin: '0 auto 28px' }}>
+                                <MusicalChairsVisualizer
+                                    players={musicalChairsState?.active_players || []}
+                                    intensity={musicalChairsState?.intensity || 0.35}
+                                    phase={musicalChairsState?.phase || gameState}
+                                />
+                            </div>
+                            <div className="mc-status-card" style={{ maxWidth: 720, width: '100%', margin: '0 auto' }}>
+                                {musicalChairsState?.phase === 'MC_MUSIC' && <h2>Music is playing</h2>}
+                                {musicalChairsState?.phase === 'MC_GRAB' && <h2>Grab a chair: {musicalChairsState.grabbed}/{musicalChairsState.active_players.length}</h2>}
+                                {musicalChairsState?.phase === 'MC_PHYSICAL_ELIMINATION' && <h2>Find a real chair!</h2>}
+                                {(!musicalChairsState || musicalChairsState.phase === 'MC_BETWEEN_ROUNDS') && <h2>Waiting for the host</h2>}
+                                {musicalChairsState?.phase === 'MC_REVEAL' && (
+                                    <h2>{musicalChairsState.eliminated_players[musicalChairsState.eliminated_players.length - 1]?.nickname || 'Someone'} is out</h2>
+                                )}
+                                <p>{musicalChairsState?.chairs || 0} chair{musicalChairsState?.chairs === 1 ? '' : 's'} available</p>
+                            </div>
+                            {musicalChairsState?.active_players.length ? (
+                                <div className="mc-player-list" style={{ justifyContent: 'center', marginTop: 24 }}>
+                                    {musicalChairsState.active_players.map((player) => (
+                                        <span key={player.nickname} className="mc-player-chip">{player.avatar || '🎵'} {player.nickname}</span>
+                                    ))}
+                                </div>
+                            ) : null}
                         </div>
                     )}
 

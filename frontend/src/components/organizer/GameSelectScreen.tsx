@@ -27,6 +27,7 @@ const GAME_CATEGORY_BY_ID: Partial<Record<GameType, GameCategory>> = {
     odd_one_out: 'quiz',
     wmlt: 'creative',
     drawing: 'creative',
+    musical_chairs: 'creative',
     housie: 'bingo_housie',
     bingo: 'bingo_housie',
 };
@@ -36,7 +37,7 @@ function getGameCategory(game: GameModeConfig): GameCategory {
 }
 
 function hasAiGeneration(game: GameModeConfig): boolean {
-    return game.id !== 'housie';
+    return !['housie', 'musical_chairs'].includes(game.id);
 }
 
 export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreenProps) {

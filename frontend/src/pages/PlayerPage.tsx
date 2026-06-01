@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { WS_URL } from '../config';
-import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -18,8 +18,9 @@ import { BingoCallOverlay, BingoCardGrid, BingoCalledList, BingoClaimButtons } f
 import { mediaUrl } from '../utils/media';
 import { apiUrl } from '../utils/api';
 import { returnToHostApp } from '../utils/hostAppReturn';
+import MusicalChairsPlayer from '../components/player/MusicalChairsPlayer';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
 interface PlayerQuestion {
     id: number;
@@ -129,6 +130,10 @@ export default function PlayerPage() {
     const [housieCallFlash, setHousieCallFlash] = useState<{ item: { value?: number | string; display: string; kind?: string; image_url?: string; alt_text?: string }; key: number } | null>(null);
     const [housieAnnouncement, setHousieAnnouncement] = useState<{ text: string; personal: boolean; key: number; winningNumber?: string } | null>(null);
     const [markedNumbers, setMarkedNumbers] = useState<Set<string>>(new Set());
+    const [musicalChairsState, setMusicalChairsState] = useState<MusicalChairsState | null>(null);
+    const [mcGrabbed, setMcGrabbed] = useState(false);
+    const [mcEliminated, setMcEliminated] = useState(false);
+    const [mcReactionMs, setMcReactionMs] = useState<number | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const submittedRef = useRef(false);
@@ -242,6 +247,10 @@ export default function PlayerPage() {
                     setState('LOBBY');
                 } else if (msg.game_type === 'housie' || msg.game_type === 'bingo' || msg.state === 'BINGO_CALLING') {
                     applyBingoState(msg.bingo as Parameters<typeof applyBingoState>[0], (msg.game_type as GameType) || 'housie');
+                } else if (msg.game_type === 'musical_chairs' && msg.musical_chairs) {
+                    setGameType('musical_chairs');
+                    setMusicalChairsState(msg.musical_chairs as MusicalChairsState);
+                    setState('MUSICAL_CHAIRS');
                 } else if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
                         setGameType('drawing');
@@ -290,6 +299,12 @@ export default function PlayerPage() {
                 if (msg.game_type === 'housie' || msg.game_type === 'bingo') {
                     setGameType(msg.game_type as GameType);
                     setState('BINGO');
+                } else if (msg.game_type === 'musical_chairs') {
+                    setGameType('musical_chairs');
+                    setMcGrabbed(false);
+                    setMcEliminated(false);
+                    setMcReactionMs(null);
+                    setState('MUSICAL_CHAIRS');
                 }
                 else setState('INTRO');
             }
@@ -326,6 +341,38 @@ export default function PlayerPage() {
             if (msg.type === 'BINGO_COMPLETE') {
                 setHousieWinners(msg.winners as HousieWinner[] || []);
                 setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+            }
+            if (msg.type === 'MC_SYNC' || msg.type === 'MC_ROUND_START' || msg.type === 'MC_GRAB_COUNT' || msg.type === 'MC_ROUND_OVER') {
+                setGameType('musical_chairs');
+                setMusicalChairsState(msg.musical_chairs as MusicalChairsState);
+                if (msg.type === 'MC_ROUND_START') {
+                    setMcGrabbed(false);
+                    setMcReactionMs(null);
+                }
+                setState('MUSICAL_CHAIRS');
+            }
+            if (msg.type === 'MC_MUSIC_STOP') {
+                setGameType('musical_chairs');
+                setMusicalChairsState(msg.musical_chairs as MusicalChairsState);
+                setMcGrabbed(false);
+                setMcReactionMs(null);
+                setState('MUSICAL_CHAIRS');
+                soundManager.play('timerTick');
+                soundManager.hapticsSelect();
+            }
+            if (msg.type === 'MC_GRAB_CONFIRMED') {
+                setMcGrabbed(true);
+                setMcReactionMs((msg.reaction_ms as number | null) ?? null);
+                soundManager.play('correct');
+                soundManager.hapticsCorrect();
+            }
+            if (msg.type === 'MC_ELIMINATED') {
+                setMcEliminated(true);
+                setMcReactionMs((msg.reaction_ms as number | null) ?? null);
+                soundManager.play('wrong');
+            }
+            if (msg.type === 'MC_WINNER') {
+                setGameType('musical_chairs');
             }
             if (msg.type === 'QUESTION') {
                 if (msg.game_type === 'drawing') {
@@ -493,6 +540,10 @@ export default function PlayerPage() {
                 setCorrectGuessers([]);
                 setGuessLog([]);
                 setDrawingRoundPrompt('');
+                setMusicalChairsState(null);
+                setMcGrabbed(false);
+                setMcEliminated(false);
+                setMcReactionMs(null);
                 if (msg.game_type) setGameType(msg.game_type as GameType);
                 if (msg.players) setLobbyPlayers(msg.players as PlayerInfo[]);
                 setState('LOBBY');
@@ -589,6 +640,12 @@ export default function PlayerPage() {
         setError('');
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'BINGO_CLAIM', pattern_id: patternId }));
+    };
+
+    const submitMusicalChairsGrab = () => {
+        if (mcGrabbed || mcEliminated) return;
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'MC_GRAB' }));
     };
 
     const activatePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
@@ -848,6 +905,16 @@ export default function PlayerPage() {
                             <HousieWinners winners={housieWinners} />
                         </div>
                     </div>
+                )}
+
+                {state === 'MUSICAL_CHAIRS' && (
+                    <MusicalChairsPlayer
+                        state={musicalChairsState}
+                        grabbed={mcGrabbed}
+                        eliminated={mcEliminated}
+                        reactionMs={mcReactionMs}
+                        onGrab={submitMusicalChairsGrab}
+                    />
                 )}
 
                 {/* QUESTION */}

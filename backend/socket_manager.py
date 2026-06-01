@@ -12,9 +12,11 @@ import logging
 import re
 import uuid
 import httpx
+import random
 
 import config
 import tokens as token_module
+from musical_chairs_engine import choose_eliminated, intensity_for_round, rank_grabs, total_rounds as mc_total_rounds, validate_config as validate_musical_chairs_config
 from bingo_engine import (
     BINGO_PATTERN_ORDER,
     create_bingo_call_deck,
@@ -38,7 +40,7 @@ class Room:
         self.room_code = room_code
         self.quiz = game_data  # generic game content (quiz or WMLT)
         self.content_id = content_id
-        self.game_type = game_type  # "quiz", "wmlt", "drawing", "housie", or "bingo"
+        self.game_type = game_type  # "quiz", "wmlt", "drawing", "housie", "bingo", or "musical_chairs"
         self.time_limit = time_limit
         self.organizer_token = organizer_token  # secret token for organizer auth
         self.players: Dict[str, dict] = {}  # socket_id -> {nickname, score, prev_rank, streak, ...}
@@ -97,6 +99,18 @@ class Room:
         self.housie_auto_pause_on_claim: bool = bool(game_data.get("auto_pause_on_claim", True))
         self.housie_next_auto_call_at: Optional[str] = None
         self.housie_auto_task: Optional[asyncio.Task] = None
+        # Musical Chairs state
+        self.mc_config = validate_musical_chairs_config(game_data) if game_type == "musical_chairs" else {}
+        self.mc_active_players: List[str] = []
+        self.mc_eliminated_players: List[dict] = []
+        self.mc_round_number: int = 0
+        self.mc_total_rounds: int = 0
+        self.mc_stop_time: Optional[float] = None
+        self.mc_grab_deadline: Optional[float] = None
+        self.mc_grabs: Dict[str, float] = {}
+        self.mc_round_results: List[dict] = []
+        self.mc_auto_stop_task: Optional[asyncio.Task] = None
+        self.mc_grab_task: Optional[asyncio.Task] = None
 
     def reset_for_new_game(self, new_game_data: dict, new_time_limit: int,
                            game_type: Optional[str] = None,
@@ -161,6 +175,21 @@ class Room:
         if self.housie_auto_task:
             self.housie_auto_task.cancel()
             self.housie_auto_task = None
+        if self.mc_auto_stop_task:
+            self.mc_auto_stop_task.cancel()
+            self.mc_auto_stop_task = None
+        if self.mc_grab_task:
+            self.mc_grab_task.cancel()
+            self.mc_grab_task = None
+        self.mc_config = validate_musical_chairs_config(new_game_data) if self.game_type == "musical_chairs" else {}
+        self.mc_active_players = []
+        self.mc_eliminated_players = []
+        self.mc_round_number = 0
+        self.mc_total_rounds = 0
+        self.mc_stop_time = None
+        self.mc_grab_deadline = None
+        self.mc_grabs = {}
+        self.mc_round_results = []
 
         for nickname in self.power_ups:
             self.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
@@ -182,6 +211,8 @@ class Room:
             return len(self.quiz.get("prompts", []))
         if self.game_type in ("housie", "bingo"):
             return len(self.quiz.get("deck", [])) or 90
+        if self.game_type == "musical_chairs":
+            return self.mc_total_rounds or mc_total_rounds(len(self.mc_active_players) + len(self.mc_eliminated_players), int(self.mc_config.get("eliminations_per_round", 1) or 1))
         return len(self.quiz.get("questions", []))
 
     def current_round_data(self) -> Optional[dict]:
@@ -197,6 +228,8 @@ class Room:
             if 0 <= idx < len(self.housie_called):
                 return self.housie_called[idx]
             return None
+        if self.game_type == "musical_chairs":
+            return self.mc_public_state()
         return self.quiz["questions"][idx]
 
     def game_title(self) -> str:
@@ -206,6 +239,27 @@ class Room:
     def player_nicknames(self) -> List[str]:
         """List of active player nicknames."""
         return [p["nickname"] for p in self.players.values()]
+
+    def player_avatar_map(self) -> Dict[str, str]:
+        return {p["nickname"]: p.get("avatar", "") for p in self.players.values()}
+
+    def mc_public_state(self) -> dict:
+        avatars = self.player_avatar_map()
+        return {
+            "game_title": self.mc_config.get("game_title", self.game_title()),
+            "phase": self.state,
+            "round_number": self.mc_round_number,
+            "total_rounds": self.mc_total_rounds,
+            "active_players": [{"nickname": name, "avatar": avatars.get(name, "")} for name in self.mc_active_players],
+            "eliminated_players": self.mc_eliminated_players,
+            "grabbed": len(self.mc_grabs),
+            "chairs": max(1, len(self.mc_active_players) - int(self.mc_config.get("eliminations_per_round", 1) or 1)),
+            "gameplay_mode": self.mc_config.get("gameplay_mode", "digital"),
+            "music_mode": self.mc_config.get("music_mode", "builtin"),
+            "music_style": self.mc_config.get("music_style", "upbeat"),
+            "grab_window_seconds": self.mc_config.get("grab_window_seconds", 5),
+            "intensity": intensity_for_round(self.mc_round_number or 1, self.mc_total_rounds or 1, bool(self.mc_config.get("intensity_ramp", True))),
+        }
 
     def _remove_connection(self, client_id: str):
         """Remove a connection. During active game, preserve player data for reconnection."""
@@ -250,6 +304,12 @@ class Room:
         if self.housie_auto_task:
             self.housie_auto_task.cancel()
             self.housie_auto_task = None
+        if self.mc_auto_stop_task:
+            self.mc_auto_stop_task.cancel()
+            self.mc_auto_stop_task = None
+        if self.mc_grab_task:
+            self.mc_grab_task.cancel()
+            self.mc_grab_task = None
         self.housie_auto_status = "stopped"
         self.housie_next_auto_call_at = None
         for ws in list(self.connections.values()):
@@ -485,6 +545,8 @@ class SocketManager:
                     sync["is_bonus"] = room.current_question_index in room.bonus_questions
                 if room.game_type in ("housie", "bingo"):
                     sync["bingo"] = self._housie_public_state(room)
+                if room.game_type == "musical_chairs":
+                    sync["musical_chairs"] = room.mc_public_state()
                 await websocket.send_json(sync)
                 while True:
                     try:
@@ -650,6 +712,8 @@ class SocketManager:
 
         if room.game_type in ("housie", "bingo"):
             sync["bingo"] = self._housie_public_state(room)
+        if room.game_type == "musical_chairs":
+            sync["musical_chairs"] = room.mc_public_state()
 
         if room.organizer:
             await room.organizer.send_json(sync)
@@ -708,6 +772,14 @@ class SocketManager:
                                 "message": f"Bingo needs at least {config.MIN_BINGO_PLAYERS} players to start",
                             })
                             return
+                    elif room.game_type == "musical_chairs":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_MUSICAL_CHAIRS_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Musical Chairs needs at least {config.MIN_MUSICAL_CHAIRS_PLAYERS} players to start",
+                            })
+                            return
                     if room.billing_mode == "host_app_managed":
                         spent = True
                     else:
@@ -730,12 +802,17 @@ class SocketManager:
                         await self._broadcast_housie_sync(room)
                         if room.housie_caller_mode == "auto":
                             await self._set_housie_auto_status(room, "running")
+                    elif room.game_type == "musical_chairs":
+                        room.state = "MC_BETWEEN_ROUNDS"
+                        self._start_musical_chairs_game(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": "musical_chairs"})
+                        await room.broadcast({"type": "MC_SYNC", "musical_chairs": room.mc_public_state()})
                     else:
                         room.state = "INTRO"
                         await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
-                if room.game_type in ("housie", "bingo"):
+                if room.game_type in ("housie", "bingo", "musical_chairs"):
                     return
                 if room.state == "QUESTION":
                     await self.end_question(room)
@@ -772,6 +849,18 @@ class SocketManager:
                 room.housie_caller_mode = "auto"
                 await self._set_housie_auto_status(room, "running")
 
+            elif msg_type == "MC_START_ROUND" and room.game_type == "musical_chairs":
+                await self._mc_start_round(room)
+
+            elif msg_type == "MC_STOP_MUSIC" and room.game_type == "musical_chairs":
+                await self._mc_stop_music(room)
+
+            elif msg_type == "MC_ELIMINATE_PLAYER" and room.game_type == "musical_chairs":
+                await self._mc_eliminate_physical(room, str(message.get("nickname") or ""))
+
+            elif msg_type == "MC_NEXT_ROUND" and room.game_type == "musical_chairs":
+                await self._mc_start_round(room)
+
             elif msg_type == "SET_TIME_LIMIT":
                 if room.state in ("LOBBY", "LEADERBOARD", "PODIUM"):
                     new_limit = message.get("time_limit", 15)
@@ -785,6 +874,9 @@ class SocketManager:
                         room.show_votes = val
 
             elif msg_type == "END_QUIZ":
+                if room.game_type == "musical_chairs":
+                    await self._mc_complete_game(room)
+                    return
                 if room.game_type in ("housie", "bingo") and room.state == "BINGO_CALLING":
                     await self._complete_housie(room)
                     return
@@ -819,7 +911,7 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo") else room.game_type
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs") else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
 
                     # Validate time_limit
@@ -984,6 +1076,8 @@ class SocketManager:
                         }
                         if room.game_type in ("housie", "bingo"):
                             state_info["bingo"] = self._housie_player_state(room, nickname)
+                        elif room.game_type == "musical_chairs":
+                            state_info["musical_chairs"] = room.mc_public_state()
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1066,6 +1160,8 @@ class SocketManager:
                         }
                         if room.game_type in ("housie", "bingo"):
                             state_info["bingo"] = self._housie_player_state(room, player_data["nickname"])
+                        elif room.game_type == "musical_chairs":
+                            state_info["musical_chairs"] = room.mc_public_state()
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1191,8 +1287,11 @@ class SocketManager:
             elif msg_type == "BINGO_CLAIM" and room.game_type in ("housie", "bingo"):
                 await self._handle_housie_claim(room, client_id, message)
 
+            elif msg_type == "MC_GRAB" and room.game_type == "musical_chairs":
+                await self._mc_handle_grab(room, client_id)
+
             elif msg_type == "ANSWER":
-                if room.game_type in ("wmlt", "drawing", "housie", "bingo"):
+                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs"):
                     return  # Other games use their own input messages
                 if client_id not in room.players:
                     return
@@ -1420,6 +1519,228 @@ class SocketManager:
                 await ws.send_json(base)
             except Exception:
                 pass
+
+    def _start_musical_chairs_game(self, room: Room):
+        room.mc_config = validate_musical_chairs_config(room.quiz)
+        room.mc_active_players = sorted([p["nickname"] for p in room.players.values()])
+        room.mc_eliminated_players = []
+        room.mc_round_results = []
+        room.mc_round_number = 0
+        room.mc_total_rounds = mc_total_rounds(len(room.mc_active_players), int(room.mc_config.get("eliminations_per_round", 1) or 1))
+        room.mc_stop_time = None
+        room.mc_grab_deadline = None
+        room.mc_grabs = {}
+
+    async def _mc_start_round(self, room: Room):
+        async with room.lock:
+            if room.game_type != "musical_chairs" or room.state not in ("MC_BETWEEN_ROUNDS", "MC_REVEAL"):
+                return
+            if len(room.mc_active_players) <= 1:
+                asyncio.create_task(self._mc_complete_game(room))
+                return
+            if room.mc_auto_stop_task:
+                room.mc_auto_stop_task.cancel()
+                room.mc_auto_stop_task = None
+            if room.mc_grab_task:
+                room.mc_grab_task.cancel()
+                room.mc_grab_task = None
+            room.mc_round_number += 1
+            room.mc_grabs = {}
+            room.mc_stop_time = None
+            room.mc_grab_deadline = None
+            room.state = "MC_MUSIC"
+            min_music = int(room.mc_config.get("min_music_seconds", 5) or 5)
+            max_music = int(room.mc_config.get("max_music_seconds", 20) or 20)
+            stop_after = random.uniform(min_music, max(min_music + 0.5, max_music))
+            await room.broadcast({
+                "type": "MC_ROUND_START",
+                "musical_chairs": room.mc_public_state(),
+                "stop_after_seconds": round(stop_after, 2),
+            })
+            if bool(room.mc_config.get("auto_stop", True)):
+                room.mc_auto_stop_task = asyncio.create_task(self._mc_auto_stop(room, stop_after))
+
+    async def _mc_auto_stop(self, room: Room, delay: float):
+        try:
+            await asyncio.sleep(delay)
+            await self._mc_stop_music(room)
+        except asyncio.CancelledError:
+            pass
+
+    async def _mc_stop_music(self, room: Room):
+        async with room.lock:
+            if room.game_type != "musical_chairs" or room.state != "MC_MUSIC":
+                return
+            if room.mc_auto_stop_task:
+                room.mc_auto_stop_task.cancel()
+                room.mc_auto_stop_task = None
+            room.mc_stop_time = time.time()
+            physical_mode = room.mc_config.get("gameplay_mode", "digital") == "physical"
+            grab_window = float(room.mc_config.get("grab_window_seconds", 5) or 5)
+            room.state = "MC_PHYSICAL_ELIMINATION" if physical_mode else "MC_GRAB"
+            room.mc_grab_deadline = None if physical_mode else room.mc_stop_time + grab_window
+            await room.broadcast({
+                "type": "MC_MUSIC_STOP",
+                "grab_deadline_ms": int(grab_window * 1000),
+                "musical_chairs": room.mc_public_state(),
+            })
+            if not physical_mode:
+                room.mc_grab_task = asyncio.create_task(self._mc_grab_deadline(room, grab_window))
+
+    async def _mc_grab_deadline(self, room: Room, delay: float):
+        try:
+            await asyncio.sleep(delay)
+            await self._mc_end_round(room)
+        except asyncio.CancelledError:
+            pass
+
+    async def _mc_handle_grab(self, room: Room, client_id: str):
+        if client_id not in room.players:
+            return
+        nickname = room.players[client_id]["nickname"]
+        async with room.lock:
+            if room.state != "MC_GRAB" or nickname not in room.mc_active_players or nickname in room.mc_grabs:
+                return
+            now = time.time()
+            if room.mc_grab_deadline and now > room.mc_grab_deadline:
+                return
+            room.mc_grabs[nickname] = now
+            ranked = rank_grabs(room.mc_active_players, room.mc_grabs, room.mc_stop_time or now)
+            player_rank = next((item for item in ranked if item["nickname"] == nickname), {"rank": len(room.mc_grabs), "reaction_ms": None})
+            await self._send_to_client(room, client_id, {"type": "MC_GRAB_CONFIRMED", "rank": player_rank["rank"], "reaction_ms": player_rank["reaction_ms"]})
+            await room.broadcast({
+                "type": "MC_GRAB_COUNT",
+                "grabbed": len(room.mc_grabs),
+                "total": len(room.mc_active_players),
+                "musical_chairs": room.mc_public_state(),
+            })
+            if len(room.mc_grabs) >= len(room.mc_active_players):
+                if room.mc_grab_task:
+                    room.mc_grab_task.cancel()
+                    room.mc_grab_task = None
+                asyncio.create_task(self._mc_end_round(room))
+
+    async def _mc_eliminate_physical(self, room: Room, nickname: str):
+        async with room.lock:
+            if (
+                room.game_type != "musical_chairs"
+                or room.mc_config.get("gameplay_mode", "digital") != "physical"
+                or room.state != "MC_PHYSICAL_ELIMINATION"
+                or nickname not in room.mc_active_players
+                or len(room.mc_active_players) <= 1
+            ):
+                return
+            avatars = room.player_avatar_map()
+            room.mc_eliminated_players.append({
+                "nickname": nickname,
+                "avatar": avatars.get(nickname, ""),
+                "round_number": room.mc_round_number,
+                "reaction_ms": None,
+                "reason": "physical_elimination",
+            })
+            for cid, pdata in list(room.players.items()):
+                if pdata.get("nickname") == nickname:
+                    await self._send_to_client(room, cid, {
+                        "type": "MC_ELIMINATED",
+                        "round_number": room.mc_round_number,
+                        "reaction_ms": None,
+                        "reason": "physical_elimination",
+                    })
+            room.mc_active_players = [name for name in room.mc_active_players if name != nickname]
+            room.state = "MC_REVEAL"
+            round_result = {
+                "round_number": room.mc_round_number,
+                "tap_order": [],
+                "eliminated": [nickname],
+                "remaining_players": room.mc_active_players,
+            }
+            room.mc_round_results.append(round_result)
+            await room.broadcast({
+                "type": "MC_ROUND_OVER",
+                **round_result,
+                "is_final": len(room.mc_active_players) <= 1,
+                "musical_chairs": room.mc_public_state(),
+            })
+            if len(room.mc_active_players) <= 1:
+                asyncio.create_task(self._mc_complete_game(room))
+            else:
+                room.state = "MC_BETWEEN_ROUNDS"
+                await room.broadcast({"type": "MC_SYNC", "musical_chairs": room.mc_public_state()})
+
+    async def _mc_end_round(self, room: Room):
+        async with room.lock:
+            if room.state != "MC_GRAB":
+                return
+            if room.mc_grab_task:
+                room.mc_grab_task.cancel()
+                room.mc_grab_task = None
+            active = list(room.mc_active_players)
+            stop_time = room.mc_stop_time or time.time()
+            eliminations = int(room.mc_config.get("eliminations_per_round", 1) or 1)
+            eliminated = choose_eliminated(active, room.mc_grabs, stop_time, eliminations)
+            tap_order = rank_grabs(active, room.mc_grabs, stop_time)
+            avatars = room.player_avatar_map()
+            for name in eliminated:
+                result = next((item for item in tap_order if item["nickname"] == name), {})
+                room.mc_eliminated_players.append({
+                    "nickname": name,
+                    "avatar": avatars.get(name, ""),
+                    "round_number": room.mc_round_number,
+                    "reaction_ms": result.get("reaction_ms"),
+                    "reason": "no_tap" if result.get("reaction_ms") is None else "slowest_tap",
+                })
+                for cid, pdata in list(room.players.items()):
+                    if pdata.get("nickname") == name:
+                        await self._send_to_client(room, cid, {
+                            "type": "MC_ELIMINATED",
+                            "round_number": room.mc_round_number,
+                            "reaction_ms": result.get("reaction_ms"),
+                            "reason": "no_tap" if result.get("reaction_ms") is None else "slowest_tap",
+                        })
+            room.mc_active_players = [name for name in active if name not in set(eliminated)]
+            room.state = "MC_REVEAL"
+            round_result = {
+                "round_number": room.mc_round_number,
+                "tap_order": tap_order,
+                "eliminated": eliminated,
+                "remaining_players": room.mc_active_players,
+            }
+            room.mc_round_results.append(round_result)
+            await room.broadcast({
+                "type": "MC_ROUND_OVER",
+                **round_result,
+                "is_final": len(room.mc_active_players) <= 1,
+                "musical_chairs": room.mc_public_state(),
+            })
+            if len(room.mc_active_players) <= 1:
+                asyncio.create_task(self._mc_complete_game(room))
+            else:
+                room.state = "MC_BETWEEN_ROUNDS"
+                await room.broadcast({"type": "MC_SYNC", "musical_chairs": room.mc_public_state()})
+
+    async def _mc_complete_game(self, room: Room):
+        if room.mc_auto_stop_task:
+            room.mc_auto_stop_task.cancel()
+            room.mc_auto_stop_task = None
+        if room.mc_grab_task:
+            room.mc_grab_task.cancel()
+            room.mc_grab_task = None
+        if not room.mc_active_players and room.players:
+            room.mc_active_players = [p["nickname"] for p in room.players.values()]
+        winner = room.mc_active_players[0] if room.mc_active_players else ""
+        room.state = "PODIUM"
+        leaderboard = self.get_leaderboard(room)
+        await room.broadcast({"type": "MC_WINNER", "winner": winner, "total_rounds": room.mc_round_number})
+        await room.broadcast({"type": "PODIUM", "game_type": "musical_chairs", "leaderboard": leaderboard, "team_leaderboard": []})
+        try:
+            from main import game_history
+            summary = self.get_game_summary(room)
+            game_history.append(summary)
+            if len(game_history) > config.MAX_GAME_HISTORY:
+                del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+            self._mark_game_session_complete(room, summary)
+        except Exception:
+            logger.warning("Could not save Musical Chairs history for room %s", room.room_code)
 
     async def _broadcast_housie_auto_status(self, room: Room):
         await room.broadcast({
@@ -1823,6 +2144,13 @@ class SocketManager:
                 }
                 for winner in room.housie_winners[:5]
             ]
+        if room.game_type == "musical_chairs":
+            summary["total_questions"] = room.mc_round_number
+            summary["total_rounds"] = room.mc_round_number
+            summary["elimination_order"] = room.mc_eliminated_players
+            summary["round_results"] = room.mc_round_results
+            summary["music_mode"] = room.mc_config.get("music_mode")
+            summary["music_style"] = room.mc_config.get("music_style")
         return summary
 
     def _callback_event_type(self, event_type: str) -> str:
@@ -2411,6 +2739,25 @@ class SocketManager:
         return all_players
 
     def get_leaderboard(self, room: Room) -> List[dict]:
+        if room.game_type == "musical_chairs":
+            avatars = room.player_avatar_map()
+            ordered = []
+            if room.mc_active_players:
+                ordered.extend(room.mc_active_players)
+            ordered.extend([item["nickname"] for item in reversed(room.mc_eliminated_players)])
+            seen = set()
+            result = []
+            total = len(ordered)
+            for index, nickname in enumerate(ordered):
+                if nickname in seen:
+                    continue
+                seen.add(nickname)
+                result.append({
+                    "nickname": nickname,
+                    "score": max(0, total - index),
+                    "avatar": avatars.get(nickname, next((item.get("avatar", "") for item in room.mc_eliminated_players if item.get("nickname") == nickname), "")),
+                })
+            return result
         sorted_players = sorted(
             self._all_players_for_leaderboard(room),
             key=lambda x: x["score"],

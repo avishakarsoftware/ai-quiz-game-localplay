@@ -12,10 +12,45 @@ Backend engine: musical_chairs_engine.py
 Frontend display name: Musical Chairs
 ```
 
+## Implementation-Ready MVP Scope
+
+Status: implementation-ready for standalone LocalPlay first.
+
+The current MVP intentionally ships two gameplay modes before the full audio layer:
+
+- `musical_chairs` is a first-class standalone game type and appears in the standalone catalog.
+- Room creation is setup-only. It does not use AI generation and does not require content authoring.
+- Revelry/host-app launch is explicitly deferred; host-app catalog responses should keep this game hidden until the bridge contract is added and tested.
+- Minimum start requirement is 3 connected players.
+- `physical` gameplay mode is the default: LocalPlay starts the round, stops at a random time, players scramble for real chairs, and the host chooses who is out.
+- `digital` gameplay mode keeps the phone-tap race: LocalPlay opens a grab window after the stop signal and eliminates the slowest/no-tap player automatically.
+- The backend owns all authoritative round state:
+  - `MC_BETWEEN_ROUNDS`: host can start the next round.
+  - `MC_MUSIC`: music/visual rhythm is active; taps are ignored.
+  - `MC_GRAB`: digital mode stop signal has fired; players can tap once.
+  - `MC_PHYSICAL_ELIMINATION`: physical mode stop signal has fired; host chooses who is out.
+  - `MC_REVEAL`: slowest/no-tap player is eliminated.
+  - `PODIUM`: winner is crowned.
+- Organizer controls: start round, stop music manually, end game.
+- Built-in mode currently means server-randomized stop timing plus visual rhythm. Full procedural Web Audio is a later phase.
+- External mode lets the host use their own playlist and manually stop the round.
+- In physical mode, player devices show instructions and do not offer a tap target; in digital mode, player devices show a large grab button only during `MC_GRAB`.
+- Spectator/TV shows the visualizer, active players, chairs remaining, and reveal state.
+- Scoring is survival order: the final active player wins, then eliminated players are ranked by reverse elimination order.
+
+MVP acceptance criteria:
+
+- A standalone host can choose Musical Chairs, pick physical or phone-tap mode, configure basic timing/music options, create a room, and start with 3+ players.
+- Players can join, reconnect into the current state, tap during the grab phase, and see eliminated/surviving state.
+- In digital mode, the server ranks taps by server receipt time and eliminates the slowest/no-tap player while keeping at least one player alive.
+- In physical mode, the server waits for the host to select the eliminated player after the stop signal.
+- Organizer, player, and spectator receive `MC_SYNC`/round event updates.
+- The game reaches the normal podium flow without touching quiz/WMLT/drawing/bingo paths.
+
 ## Goals
 
 - Add `musical_chairs` as a first-class `GameType`.
-- Provide built-in music via Web Audio API procedural generation — no licensing, no bundled audio files, works offline.
+- Provide an MVP built-in visual rhythm and randomized stop timer now; add Web Audio procedural generation later without changing the room protocol.
 - Support an external music mode where the host plays their own music and the app handles timing/game logic only.
 - Elimination-based rounds: N players, N-1 chairs, last to tap is out.
 - Support organizer, player, and spectator surfaces.
@@ -76,6 +111,7 @@ Setup option:
 
 ```json
 {
+  "gameplay_mode": "physical" | "digital",
   "music_mode": "builtin" | "external",
   "music_style": "upbeat" | "jazzy" | "suspenseful" | "retro" | "tropical",
   "auto_stop": true
@@ -819,7 +855,7 @@ Standalone Musical Chairs `Play Again` sends `RESET_ROOM`. Room code and connect
 
 ### Phase 3: Web Audio Music Engine
 
-- Implement `musicEngine.ts` with AudioContext lifecycle.
+- Future phase: implement `musicEngine.ts` with AudioContext lifecycle.
 - Implement at least 2 procedural styles (upbeat, suspenseful).
 - Add music visualizer component.
 - Wire music start/stop to WebSocket events.
@@ -885,7 +921,7 @@ Musical Chairs v1 is launch-ready when:
 
 - `musical_chairs` appears in game select and can create a room without content generation.
 - Room starts with 3+ players.
-- Built-in music plays on organizer/spectator via Web Audio API.
+- Built-in MVP mode provides visual rhythm and server-randomized stop timing; procedural Web Audio is a future phase.
 - Music stops at a random time within the configured window.
 - Players see and can tap the grab button after music stops.
 - Server ranks grabs by arrival time and eliminates the slowest.

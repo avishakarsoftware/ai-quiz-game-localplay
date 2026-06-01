@@ -430,6 +430,31 @@ class TestRoomCreation:
         room_code = res.json()["room_code"]
         assert main.socket_manager.rooms[room_code].time_limit == 30
 
+    def test_create_musical_chairs_room_uses_setup_config(self):
+        res = client.post(
+            "/room/create",
+            json={
+                "game_type": "musical_chairs",
+                "musical_chairs_config": {
+                    "game_title": "Office Chairs",
+                    "gameplay_mode": "physical",
+                    "music_mode": "external",
+                    "min_music_seconds": 4,
+                    "max_music_seconds": 12,
+                    "grab_window_seconds": 3,
+                },
+            },
+            headers=AUTH_HEADERS,
+        )
+
+        assert res.status_code == 200, res.text
+        room = main.socket_manager.rooms[res.json()["room_code"]]
+        assert room.game_type == "musical_chairs"
+        assert room.quiz["game_title"] == "Office Chairs"
+        assert room.quiz["gameplay_mode"] == "physical"
+        assert room.quiz["music_mode"] == "external"
+        assert room.time_limit == 5
+
 
 # ---------------------------------------------------------------------------
 # Prompt Validation Tests

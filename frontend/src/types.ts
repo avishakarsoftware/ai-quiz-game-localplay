@@ -67,7 +67,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -126,6 +126,44 @@ export interface BingoGame {
     patterns: HousiePattern[];
     caller_mode?: 'manual' | 'auto';
     claim_requires_latest_call?: boolean;
+}
+
+export type MusicalChairsMusicMode = 'builtin' | 'external';
+export type MusicalChairsMusicStyle = 'upbeat' | 'jazzy' | 'suspenseful' | 'retro' | 'tropical';
+export type MusicalChairsGameplayMode = 'digital' | 'physical';
+
+export interface MusicalChairsConfig {
+    game_title: string;
+    gameplay_mode: MusicalChairsGameplayMode;
+    music_mode: MusicalChairsMusicMode;
+    music_style: MusicalChairsMusicStyle;
+    min_music_seconds: number;
+    max_music_seconds: number;
+    grab_window_seconds: number;
+    eliminations_per_round: number;
+    auto_stop: boolean;
+    intensity_ramp: boolean;
+}
+
+export interface MusicalChairsPlayer {
+    nickname: string;
+    avatar?: string;
+}
+
+export interface MusicalChairsState {
+    game_title: string;
+    phase: string;
+    round_number: number;
+    total_rounds: number;
+    active_players: MusicalChairsPlayer[];
+    eliminated_players: Array<MusicalChairsPlayer & { round_number?: number; reaction_ms?: number | null; reason?: string }>;
+    grabbed: number;
+    chairs: number;
+    gameplay_mode: MusicalChairsGameplayMode;
+    music_mode: MusicalChairsMusicMode;
+    music_style: MusicalChairsMusicStyle;
+    grab_window_seconds: number;
+    intensity: number;
 }
 
 export interface HousieCell {

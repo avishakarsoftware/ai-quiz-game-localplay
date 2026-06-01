@@ -14,6 +14,7 @@ The platform currently supports:
 - Quiz runtime variants: `rebus`, `emoji_charades`, `fact_fiction`, `timeline`, and `odd_one_out`.
 - `wmlt`: "Who's Most Likely To" voting rounds.
 - `drawing`: rotating drawer/guesser rounds with live canvas sync.
+- `musical_chairs`: standalone elimination rounds where music/visual rhythm stops and players race to tap.
 - Standalone custom quiz authoring and saved quiz packs.
 - Host-app/party-scoped authoring and game setup through the Revelry Games hub.
 
@@ -46,6 +47,7 @@ Key files:
 - `backend/quiz_engine.py`: LLM generation and validation for quiz content.
 - `backend/mlt_engine.py`: LLM generation and validation for WMLT content.
 - `backend/drawing_engine.py`: LLM generation and validation for drawing prompts.
+- `backend/musical_chairs_engine.py`: setup validation, round counts, tap ranking, and elimination helpers for Musical Chairs.
 - `backend/image_engine.py`: optional Stable Diffusion image generation for quiz questions.
 - `backend/auth.py`: Google/Apple sign-in and session handling.
 - `backend/remote_config.py`: remote config for provider/model/operation flags.
@@ -65,6 +67,8 @@ Key files:
 - `frontend/src/components/organizer/PromptScreen.tsx`: quiz generation prompt.
 - `frontend/src/components/organizer/MLTPromptScreen.tsx`: WMLT generation prompt.
 - `frontend/src/components/organizer/DrawingPromptScreen.tsx`: drawing prompt setup.
+- `frontend/src/components/organizer/MusicalChairsSetupScreen.tsx`: standalone Musical Chairs timing/music setup.
+- `frontend/src/components/organizer/MusicalChairsGameScreen.tsx`: Musical Chairs host controls.
 - `frontend/src/components/organizer/CustomQuizEditor.tsx`: manual custom quiz authoring.
 - `frontend/src/components/organizer/ReviewScreen.tsx`: quiz review/edit before room creation.
 - `frontend/src/components/organizer/MLTReviewScreen.tsx`: WMLT review/edit before room creation.
@@ -304,6 +308,10 @@ Implementation-ready availability model:
 Revelry content callbacks must treat safe `payload.content` metadata as a first-class prepared-game mirror source. `content.created` and `content.updated` callbacks include top-level host-app/container/content ids plus a safe summary object with `localplay_content_id`, `game_type`, `title`, `status`, item/question count, optional thumbnail, and time limit. They must never include raw prompts, questions, answers, options, full media paths, provider prompts, launch tokens, or participant secrets. After signature and envelope validation, Revelry may fetch LocalPlay metadata to confirm or enrich, but a fetch failure must not skip the prepared-game mirror update when safe `payload.content` is present. Versioned updates move the visible prepared setup pointer to the new `content_id` rather than creating a duplicate visible card.
 
 Bingo-family games are a separate runtime family rather than quiz variants. `SPEC-GAME-BINGO-HOUSIE.md` defines the reusable Bingo/Housie engine. Housie is implemented for standalone LocalPlay and Revelry gamma with server-generated tickets, manual/auto number calling, server-side claim validation, and spectator called-board sync. Configurable standalone Bingo is implemented with text/emoji/number/image-shaped deck items, 5x5 cards, optional free center, template/manual/AI-text setup, and host-reviewed generated items. Baby Bingo / dedicated word / emoji / image / photo Bingo remain later named rulesets on the same engine.
+
+### Musical Chairs
+
+`musical_chairs` is a standalone-first runtime family, not a quiz variant. `SPEC-GAME-MUSICAL-CHAIRS.md` defines the implementation-ready MVP. A host configures gameplay mode plus timing/music mode, creates a room, and starts with at least 3 connected players. Physical mode is the default: LocalPlay starts/stops rounds randomly while players use real chairs, then the host selects who is out. Digital mode uses phone taps: the stop signal opens a grab window, players tap once, and the slowest/no-tap player is eliminated automatically. MVP built-in mode provides server-randomized stop timing plus visual rhythm; procedural Web Audio is a later phase. Revelry/host-app launch remains deferred until a bridge contract is added and tested.
 
 ## LLM Generation Pattern
 

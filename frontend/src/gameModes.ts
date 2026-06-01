@@ -2,7 +2,7 @@ import { type GameType, type QuizVariantGameType } from './types';
 
 export interface GameModeConfig {
     id: GameType;
-    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo';
+    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs';
     icon: string;
     title: string;
     description: string;
@@ -110,6 +110,13 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         title: 'Bingo',
         description: 'Create custom boards with words, emojis, and photos',
     },
+    {
+        id: 'musical_chairs',
+        runtimeType: 'musical_chairs',
+        icon: '🎵',
+        title: 'Musical Chairs',
+        description: 'Music stops, chairs vanish, and the slowest tap is out',
+    },
 ];
 
 export const QUIZ_VARIANT_IDS: QuizVariantGameType[] = [
@@ -134,6 +141,6 @@ export function isQuizRuntimeGame(gameType: GameType): boolean {
     return getGameModeConfig(gameType).runtimeType === 'quiz';
 }
 
-export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' {
+export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' {
     return getGameModeConfig(gameType).runtimeType;
 }

@@ -99,6 +99,11 @@ MIN_WMLT_PLAYERS = 2  # WMLT minimum players
 MIN_DRAWING_PLAYERS = 2  # DrawingGame minimum players
 MIN_HOUSIE_PLAYERS = 2  # Housie minimum players
 MIN_BINGO_PLAYERS = 2  # Custom Bingo minimum players
+MIN_MUSICAL_CHAIRS_PLAYERS = 3  # Musical Chairs minimum players
+MC_MIN_MUSIC_SECONDS = 3
+MC_MAX_MUSIC_SECONDS = 60
+MC_MIN_GRAB_WINDOW = 2
+MC_MAX_GRAB_WINDOW = 10
 MAX_GAME_HISTORY = 1000
 BINGO_ENABLED = os.getenv("ENABLE_BINGO", "true" if ENVIRONMENT in ("local", "gamma") else "false").lower() == "true"
 

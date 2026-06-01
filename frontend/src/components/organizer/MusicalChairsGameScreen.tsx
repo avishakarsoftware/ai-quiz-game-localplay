@@ -1,0 +1,69 @@
+import { type MusicalChairsState } from '../../types';
+import MusicalChairsVisualizer from '../musical-chairs/MusicalChairsVisualizer';
+
+export default function MusicalChairsGameScreen({
+    state,
+    onStartRound,
+    onStopMusic,
+    onEliminatePlayer,
+    onEndGame,
+}: {
+    state: MusicalChairsState | null;
+    onStartRound: () => void;
+    onStopMusic: () => void;
+    onEliminatePlayer: (nickname: string) => void;
+    onEndGame: () => void;
+}) {
+    const phase = state?.phase || 'MC_BETWEEN_ROUNDS';
+    const canStart = phase === 'MC_BETWEEN_ROUNDS' || phase === 'MC_REVEAL';
+    const canStop = phase === 'MC_MUSIC';
+    const selectingPhysicalOut = phase === 'MC_PHYSICAL_ELIMINATION';
+    const eliminated = state?.eliminated_players?.[state.eliminated_players.length - 1];
+
+    return (
+        <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
+            <div className="flex-1 py-6 mc-game-shell">
+                <div className="text-center mb-5">
+                    <div className="hero-icon mb-4">🎵</div>
+                    <h1 className="hero-title">{state?.game_title || 'Musical Chairs'}</h1>
+                    <p className="text-[--text-tertiary] mt-2">
+                        Round {state?.round_number || 0} of {state?.total_rounds || '-'} · {state?.active_players.length || 0} players left
+                    </p>
+                    <p className="text-[--text-tertiary] text-sm mt-1">
+                        {state?.gameplay_mode === 'physical' ? 'Physical chairs mode' : 'Phone tap mode'}
+                    </p>
+                </div>
+
+                <MusicalChairsVisualizer players={state?.active_players || []} intensity={state?.intensity || 0.35} phase={phase} />
+
+                <div className="mc-status-card">
+                    {phase === 'MC_MUSIC' && <h2>Music is playing</h2>}
+                    {phase === 'MC_GRAB' && <h2>Grab phase: {state?.grabbed || 0}/{state?.active_players.length || 0}</h2>}
+                    {phase === 'MC_PHYSICAL_ELIMINATION' && <h2>Pick who did not get a chair</h2>}
+                    {phase === 'MC_BETWEEN_ROUNDS' && <h2>{state?.round_number ? 'Ready for next round' : 'Ready to start'}</h2>}
+                    {phase === 'MC_REVEAL' && <h2>{eliminated ? `${eliminated.nickname} is out` : 'Round over'}</h2>}
+                    <p>{state?.chairs || 0} chair{state?.chairs === 1 ? '' : 's'} available</p>
+                </div>
+
+                <div className="mc-player-list">
+                    {(state?.active_players || []).map((player) => (
+                        selectingPhysicalOut ? (
+                            <button key={player.nickname} type="button" className="mc-player-chip mc-player-chip-button" onClick={() => onEliminatePlayer(player.nickname)}>
+                                {player.avatar || '🎵'} {player.nickname}
+                            </button>
+                        ) : (
+                            <span key={player.nickname} className="mc-player-chip">{player.avatar || '🎵'} {player.nickname}</span>
+                        )
+                    ))}
+                </div>
+            </div>
+
+            <div className="review-footer-actions pb-4">
+                <button type="button" onClick={onEndGame} className="btn btn-secondary">End</button>
+                <button type="button" onClick={canStop ? onStopMusic : onStartRound} disabled={!canStart && !canStop} className="btn btn-primary btn-glow" style={{ gridColumn: 'span 2' }}>
+                    {canStop ? 'Stop Music' : state?.round_number ? 'Start Next Round' : 'Start Round'}
+                </button>
+            </div>
+        </div>
+    );
+}

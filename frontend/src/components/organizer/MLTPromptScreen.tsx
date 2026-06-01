@@ -119,9 +119,6 @@ export default function MLTPromptScreen({
                         >
                             🎲
                         </button>
-                        <div className="text-xs text-right mt-1" style={{ color: prompt.length > 120 ? 'var(--color-error, #ef4444)' : 'var(--text-tertiary)' }}>
-                            {prompt.length}/140
-                        </div>
                     </div>
 
                     {/* AI Provider selector */}

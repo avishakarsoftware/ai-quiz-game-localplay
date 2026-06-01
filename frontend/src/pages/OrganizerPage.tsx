@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem } from '../types';
+import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending } from '../utils/storage';
@@ -19,6 +19,8 @@ import DrawingReviewScreen from '../components/organizer/DrawingReviewScreen';
 import HousieSetupScreen from '../components/organizer/HousieSetupScreen';
 import BingoPromptScreen from '../components/organizer/BingoPromptScreen';
 import BingoSetupScreen from '../components/organizer/BingoSetupScreen';
+import MusicalChairsSetupScreen, { defaultMusicalChairsConfig } from '../components/organizer/MusicalChairsSetupScreen';
+import MusicalChairsGameScreen from '../components/organizer/MusicalChairsGameScreen';
 import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
 import { BingoCalledList, BingoCallOverlay } from '../components/BingoBoard';
 import ImageGenerationScreen from '../components/organizer/ImageGenerationScreen';
@@ -33,10 +35,11 @@ import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'LEADERBOARD' | 'PODIUM';
 
 function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'housie' || type === 'bingo') return 15;
+    if (type === 'musical_chairs') return 5;
     return type === 'drawing' ? 30 : 15;
 }
 
@@ -120,6 +123,8 @@ export default function OrganizerPage() {
     const [generatedBingoId, setGeneratedBingoId] = useState('');
     const [bingoFreeCenter, setBingoFreeCenter] = useState(true);
     const [bingoClaimRequiresLatest, setBingoClaimRequiresLatest] = useState(false);
+    const [musicalChairsConfig, setMusicalChairsConfig] = useState<MusicalChairsConfig>(defaultMusicalChairsConfig);
+    const [musicalChairsState, setMusicalChairsState] = useState<MusicalChairsState | null>(null);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean; returnToHostApp?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -163,13 +168,14 @@ export default function OrganizerPage() {
                 'HOUSIE_SETUP',
                 'BINGO_PROMPT',
                 'BINGO_SETUP',
+                'MUSICAL_CHAIRS_SETUP',
                 'LOADING',
                 'REVIEW',
                 'MLT_REVIEW',
                 'DRAWING_REVIEW',
                 'GENERATING_IMAGES',
             ];
-            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING'];
+            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS'];
             if (homeSafeStates.includes(stateRef.current)) {
                 flowEpochRef.current += 1;
                 setQuiz(null);
@@ -359,6 +365,14 @@ export default function OrganizerPage() {
             setHousieWinners(msg.winners as HousieWinner[] || []);
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
         }
+        else if (msg.type === 'MC_SYNC' || msg.type === 'MC_ROUND_START' || msg.type === 'MC_MUSIC_STOP' || msg.type === 'MC_GRAB_COUNT' || msg.type === 'MC_ROUND_OVER') {
+            setGameType('musical_chairs');
+            setMusicalChairsState(msg.musical_chairs as MusicalChairsState);
+            setState('MUSICAL_CHAIRS');
+        }
+        else if (msg.type === 'MC_WINNER') {
+            setGameType('musical_chairs');
+        }
         else if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED') {
             setPlayerCount(msg.player_count as number);
             setPlayers(msg.players as PlayerInfo[] || []);
@@ -403,6 +417,7 @@ export default function OrganizerPage() {
             setTimeLimit(msg.time_limit as number);
             setRoomLocked(msg.locked as boolean ?? false);
             if (msg.game_type) setGameType(msg.game_type as GameType);
+            if (msg.musical_chairs) setMusicalChairsState(msg.musical_chairs as MusicalChairsState);
             if (msg.quiz) {
                 const quizData = msg.quiz as Record<string, unknown>;
                 if (quizData.questions) {
@@ -434,6 +449,8 @@ export default function OrganizerPage() {
             } else if (msg.state === 'PODIUM') {
                 setState('PODIUM');
                 soundManager.play('fanfare');
+            } else if (String(msg.state || '').startsWith('MC_')) {
+                setState('MUSICAL_CHAIRS');
             }
         }
         else if (msg.type === 'ERROR') {
@@ -479,6 +496,11 @@ export default function OrganizerPage() {
             setPrompt('');
             setDifficulty('medium');
             setState('BINGO_PROMPT');
+        }
+        else if (type === 'musical_chairs') {
+            setMusicalChairsConfig(defaultMusicalChairsConfig);
+            setMusicalChairsState(null);
+            setState('MUSICAL_CHAIRS_SETUP');
         }
         else if (type === 'quiz') setState('PROMPT');
         else setState('QUIZ_VARIANT_PROMPT');
@@ -969,6 +991,8 @@ export default function OrganizerPage() {
                 body.housie_id = selectedContentId;
             } else if (gameType === 'bingo') {
                 body.bingo_id = selectedContentId;
+            } else if (gameType === 'musical_chairs') {
+                body.musical_chairs_config = musicalChairsConfig;
             } else if (isQuizRuntimeGame(gameType)) {
                 body.quiz_id = selectedContentId;
             }
@@ -1105,7 +1129,7 @@ export default function OrganizerPage() {
             wsRef.current?.send(JSON.stringify({ type: 'SET_SHOW_VOTES', show_votes: showVotes }));
         }
         wsRef.current?.send(JSON.stringify({ type: 'START_GAME' }));
-        if (gameType !== 'housie' && gameType !== 'bingo') {
+        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'musical_chairs') {
             wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
         }
     };
@@ -1120,6 +1144,9 @@ export default function OrganizerPage() {
     const pauseHousieAuto = () => wsRef.current?.send(JSON.stringify({ type: 'BINGO_PAUSE' }));
     const resumeHousieAuto = () => wsRef.current?.send(JSON.stringify({ type: 'BINGO_RESUME' }));
     const endQuiz = () => wsRef.current?.send(JSON.stringify({ type: 'END_QUIZ' }));
+    const startMusicalChairsRound = () => wsRef.current?.send(JSON.stringify({ type: 'MC_START_ROUND' }));
+    const stopMusicalChairsMusic = () => wsRef.current?.send(JSON.stringify({ type: 'MC_STOP_MUSIC' }));
+    const eliminateMusicalChairsPlayer = (nickname: string) => wsRef.current?.send(JSON.stringify({ type: 'MC_ELIMINATE_PLAYER', nickname }));
 
     const playAgain = () => {
         setCurrentQuestion(0);
@@ -1415,6 +1442,18 @@ export default function OrganizerPage() {
                     />
                 )}
 
+                {state === 'MUSICAL_CHAIRS_SETUP' && (
+                    <MusicalChairsSetupScreen
+                        config={musicalChairsConfig}
+                        setConfig={setMusicalChairsConfig}
+                        onCreateRoom={() => {
+                            setGameType('musical_chairs');
+                            void createRoom();
+                        }}
+                        onBack={() => setState('SELECT_GAME')}
+                    />
+                )}
+
                 {state === 'LOADING' && <LoadingScreen title={loadingCopy.title} messages={loadingCopy.messages} />}
 
                 {state === 'REVIEW' && quiz && (
@@ -1471,6 +1510,16 @@ export default function OrganizerPage() {
                         hostAppJoinLabel={hostAppJoinLabel}
                         onStartGame={startGame}
                         onToggleLock={() => wsRef.current?.send(JSON.stringify({ type: 'TOGGLE_LOCK' }))}
+                    />
+                )}
+
+                {state === 'MUSICAL_CHAIRS' && (
+                    <MusicalChairsGameScreen
+                        state={musicalChairsState}
+                        onStartRound={startMusicalChairsRound}
+                        onStopMusic={stopMusicalChairsMusic}
+                        onEliminatePlayer={eliminateMusicalChairsPlayer}
+                        onEndGame={endQuiz}
                     />
                 )}
 
