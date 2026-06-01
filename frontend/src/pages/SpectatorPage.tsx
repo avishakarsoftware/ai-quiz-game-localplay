@@ -14,7 +14,7 @@ import Avatar from '../components/Avatar';
 import DrawingCanvas from '../components/DrawingCanvas';
 import GameImage from '../components/media/GameImage';
 import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
-import { BingoCalledList } from '../components/BingoBoard';
+import { BingoCalledList, BingoCallOverlay } from '../components/BingoBoard';
 import { mediaUrl } from '../utils/media';
 import { apiUrl } from '../utils/api';
 import { returnToHostApp } from '../utils/hostAppReturn';
@@ -103,7 +103,7 @@ export default function SpectatorPage() {
     const [housieCalled, setHousieCalled] = useState<Array<{ value: number | string; display: string }>>([]);
     const [housieLatest, setHousieLatest] = useState<{ value: number | string; display: string } | null>(null);
     const [housieWinners, setHousieWinners] = useState<HousieWinner[]>([]);
-    const [housieCallFlash, setHousieCallFlash] = useState<{ display: string; key: number } | null>(null);
+    const [housieCallFlash, setHousieCallFlash] = useState<{ item: { value?: number | string; display: string; kind?: string; image_url?: string; alt_text?: string }; key: number } | null>(null);
     const [housieAnnouncement, setHousieAnnouncement] = useState<{ text: string; key: number } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectDelayRef = useRef(2000);
@@ -275,7 +275,7 @@ export default function SpectatorPage() {
                 setGameType(msg.game_type || 'housie');
                 setHousieCalled(msg.called_items || []);
                 setHousieLatest(msg.item || null);
-                setHousieCallFlash({ display: String(msg.item?.display || ''), key: Date.now() });
+                setHousieCallFlash({ item: { ...msg.item, display: String(msg.item?.display || '') }, key: Date.now() });
                 setGameState('BINGO_CALLING');
                 soundManager.play('timerTick');
             }
@@ -636,7 +636,9 @@ export default function SpectatorPage() {
 
                     {gameState === 'BINGO_CALLING' && (
                         <div className="flex-1 flex flex-col justify-center animate-in">
-                            {housieCallFlash && <div key={housieCallFlash.key} className="housie-call-overlay">{housieCallFlash.display}</div>}
+                            {housieCallFlash && (gameType === 'bingo'
+                                ? <BingoCallOverlay key={housieCallFlash.key} item={housieCallFlash.item} />
+                                : <div key={housieCallFlash.key} className="housie-call-overlay">{housieCallFlash.item.display}</div>)}
                             {housieAnnouncement && (
                                 <div key={housieAnnouncement.key} className="housie-win-overlay">
                                     <div className="housie-confetti" aria-hidden="true">{Array.from({ length: 26 }, (_, index) => <i key={index} />)}</div>

@@ -20,7 +20,7 @@ import HousieSetupScreen from '../components/organizer/HousieSetupScreen';
 import BingoPromptScreen from '../components/organizer/BingoPromptScreen';
 import BingoSetupScreen from '../components/organizer/BingoSetupScreen';
 import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
-import { BingoCalledList } from '../components/BingoBoard';
+import { BingoCalledList, BingoCallOverlay } from '../components/BingoBoard';
 import ImageGenerationScreen from '../components/organizer/ImageGenerationScreen';
 import LobbyScreen from '../components/organizer/LobbyScreen';
 import GameQuestionScreen from '../components/organizer/GameQuestionScreen';
@@ -112,7 +112,7 @@ export default function OrganizerPage() {
     const [housieCalled, setHousieCalled] = useState<Array<{ value: number | string; display: string }>>([]);
     const [housieLatest, setHousieLatest] = useState<{ value: number | string; display: string } | null>(null);
     const [housieWinners, setHousieWinners] = useState<HousieWinner[]>([]);
-    const [housieCallFlash, setHousieCallFlash] = useState<{ display: string; key: number } | null>(null);
+    const [housieCallFlash, setHousieCallFlash] = useState<{ item: { value?: number | string; display: string; kind?: string; image_url?: string; alt_text?: string }; key: number } | null>(null);
     const [housieAnnouncement, setHousieAnnouncement] = useState<{ text: string; key: number } | null>(null);
     const [bingoTitle, setBingoTitle] = useState('Bingo');
     const [bingoDeck, setBingoDeck] = useState<BingoDeckItem[]>(starterBingoDeck);
@@ -325,7 +325,8 @@ export default function OrganizerPage() {
             else setGameType('housie');
             setHousieCalled(msg.called_items as Array<{ value: number | string; display: string }> || []);
             setHousieLatest(msg.item as { value: number | string; display: string });
-            setHousieCallFlash({ display: String((msg.item as { display?: string })?.display || ''), key: Date.now() });
+            const callItem = msg.item as { value?: number | string; display?: string; kind?: string; image_url?: string; alt_text?: string };
+            setHousieCallFlash({ item: { ...callItem, display: String(callItem?.display || '') }, key: Date.now() });
             setState('BINGO_CALLING');
             soundManager.play('correct');
         }
@@ -1506,7 +1507,9 @@ export default function OrganizerPage() {
 
                 {state === 'BINGO_CALLING' && (
                     <div className="housie-caller-screen container-responsive safe-top safe-bottom animate-in">
-                        {housieCallFlash && <div key={housieCallFlash.key} className="housie-call-overlay">{housieCallFlash.display}</div>}
+                        {housieCallFlash && (gameType === 'bingo'
+                            ? <BingoCallOverlay key={housieCallFlash.key} item={housieCallFlash.item} />
+                            : <div key={housieCallFlash.key} className="housie-call-overlay">{housieCallFlash.item.display}</div>)}
                         {housieAnnouncement && (
                             <div key={housieAnnouncement.key} className="housie-win-overlay">
                                 <div className="housie-confetti" aria-hidden="true">{Array.from({ length: 18 }, (_, index) => <i key={index} />)}</div>

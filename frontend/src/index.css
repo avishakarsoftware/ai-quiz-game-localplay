@@ -2323,6 +2323,57 @@ body {
     z-index: -1;
 }
 
+.bingo-call-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    pointer-events: none;
+    animation: housie-call-pop 1.6s ease both;
+}
+
+.bingo-call-card {
+    width: min(88vw, 560px);
+    min-height: 180px;
+    display: grid;
+    place-items: center;
+    gap: 12px;
+    padding: clamp(22px, 6vw, 42px);
+    border: 1px solid rgba(var(--accent-primary-rgb), 0.55);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--paper) 94%, transparent);
+    box-shadow: var(--shadow), var(--glow-accent);
+    color: var(--ink);
+    text-align: center;
+}
+
+.bingo-call-card p {
+    margin: 0;
+    color: var(--ink-mute);
+    font-size: 0.78rem;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.bingo-call-card strong {
+    display: block;
+    max-width: 100%;
+    color: var(--ink);
+    font-size: clamp(1.9rem, 8vw, 4.4rem);
+    font-weight: 1000;
+    line-height: 1.02;
+    overflow-wrap: anywhere;
+    hyphens: auto;
+}
+
+.bingo-call-card .game-image {
+    width: min(100%, 260px);
+    max-height: 180px;
+}
+
 .housie-win-overlay {
     position: fixed;
     inset: 0;
@@ -2421,6 +2472,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
     .housie-call-overlay,
+    .bingo-call-overlay,
     .housie-win-overlay,
     .housie-confetti i {
         animation-duration: 0.01ms;

@@ -2,6 +2,14 @@ import GameImage from './media/GameImage';
 import { mediaUrl } from '../utils/media';
 import type { HousieCell, HousiePattern, HousieTicket, HousieWinner } from '../types';
 
+type BingoDisplayItem = {
+    value?: number | string;
+    display: string;
+    kind?: string;
+    image_url?: string;
+    alt_text?: string;
+};
+
 function cellKey(cell: HousieCell): string {
     return String(cell.id || cell.item_id || cell.value);
 }
@@ -54,7 +62,21 @@ export function BingoCardGrid({
     );
 }
 
-export function BingoCalledList({ items }: { items: Array<{ value: number | string; display: string; kind?: string; image_url?: string; alt_text?: string }> }) {
+export function BingoCallOverlay({ item }: { item: BingoDisplayItem }) {
+    return (
+        <div className="bingo-call-overlay">
+            <div className="bingo-call-card">
+                <p>Called</p>
+                {item.kind === 'image' && item.image_url && (
+                    <GameImage src={mediaUrl(item.image_url)} alt={item.alt_text || item.display} mode="thumbnail" />
+                )}
+                <strong>{item.display}</strong>
+            </div>
+        </div>
+    );
+}
+
+export function BingoCalledList({ items }: { items: BingoDisplayItem[] }) {
     if (!items.length) return <p className="housie-empty-copy">No calls yet.</p>;
     return (
         <div className="bingo-called-list">
