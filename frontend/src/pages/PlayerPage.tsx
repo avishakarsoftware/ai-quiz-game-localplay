@@ -404,18 +404,21 @@ export default function PlayerPage() {
                 setGameType('musical_chairs');
             }
             if (msg.type === 'BLUFF_SYNC') {
+                setError('');
                 setGameType('bluff');
                 setBluffState(msg.bluff as BluffState);
                 setSelectedBluffCards(new Set());
                 setState('BLUFF');
             }
             if (msg.type === 'TT_SYNC') {
+                setError('');
                 setGameType('two_truths');
                 setTwoTruthsState(msg.two_truths as TwoTruthsState);
                 setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
                 setState('TWO_TRUTHS');
             }
             if (msg.type === 'STORY_SYNC') {
+                setError('');
                 setGameType('story_chain');
                 setStoryChainState(msg.story_chain as StoryChainState);
                 setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
@@ -1006,36 +1009,45 @@ export default function PlayerPage() {
                 )}
 
                 {state === 'BLUFF' && (
-                    <BluffTable
-                        state={bluffState}
-                        viewerName={nickname}
-                        controls="player"
-                        selectedCardIds={selectedBluffCards}
-                        onToggleCard={toggleBluffCard}
-                        onPlay={playBluffCards}
-                        onPass={passBluffTurn}
-                        onChallenge={challengeBluff}
-                        onContinue={continueBluff}
-                    />
+                    <>
+                        {error && <div className="status-pill status-error animate-shake player-runtime-error">{error}</div>}
+                        <BluffTable
+                            state={bluffState}
+                            viewerName={nickname}
+                            controls="player"
+                            selectedCardIds={selectedBluffCards}
+                            onToggleCard={toggleBluffCard}
+                            onPlay={playBluffCards}
+                            onPass={passBluffTurn}
+                            onChallenge={challengeBluff}
+                            onContinue={continueBluff}
+                        />
+                    </>
                 )}
 
                 {state === 'TWO_TRUTHS' && (
-                    <TwoTruthsGame
-                        state={twoTruthsState}
-                        viewerName={nickname}
-                        controls="player"
-                        onSubmitStatements={submitTwoTruths}
-                        onVote={voteTwoTruths}
-                    />
+                    <>
+                        {error && <div className="status-pill status-error animate-shake player-runtime-error">{error}</div>}
+                        <TwoTruthsGame
+                            state={twoTruthsState}
+                            viewerName={nickname}
+                            controls="player"
+                            onSubmitStatements={submitTwoTruths}
+                            onVote={voteTwoTruths}
+                        />
+                    </>
                 )}
 
                 {state === 'STORY_CHAIN' && (
-                    <StoryChainGame
-                        state={storyChainState}
-                        viewerName={nickname}
-                        controls="player"
-                        onSubmitSentence={submitStorySentence}
-                    />
+                    <>
+                        {error && <div className="status-pill status-error animate-shake player-runtime-error">{error}</div>}
+                        <StoryChainGame
+                            state={storyChainState}
+                            viewerName={nickname}
+                            controls="player"
+                            onSubmitSentence={submitStorySentence}
+                        />
+                    </>
                 )}
 
                 {/* QUESTION */}

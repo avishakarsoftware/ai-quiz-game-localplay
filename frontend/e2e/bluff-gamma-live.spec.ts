@@ -46,6 +46,26 @@ test.describe('Bluff gamma live flow', () => {
         await expect(playerPage.locator('.bluff-card').first()).toBeVisible();
         await expectNoHorizontalOverflow(playerPage);
       }
+
+      const activePlayer = await (async () => {
+        await expect.poll(async () => {
+          for (const [index, player] of players.entries()) {
+            if (await player.page.getByRole('button', { name: 'Pass' }).isEnabled().catch(() => false)) return index;
+          }
+          return -1;
+        }, { timeout: 20_000 }).not.toBe(-1);
+        for (const player of players) {
+          if (await player.page.getByRole('button', { name: 'Pass' }).isEnabled().catch(() => false)) return player;
+        }
+        throw new Error('No active Bluff player found');
+      })();
+      await activePlayer.page.locator('.bluff-hand .bluff-card').first().click();
+      await activePlayer.page.getByRole('button', { name: /Play 1/ }).click();
+
+      await expect(page.getByText(/claims 1/)).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Continue', exact: true }).click();
+      await expect(page.getByText(/'s turn · claim/)).toBeVisible({ timeout: 20_000 });
     } finally {
       await Promise.all(players.map(({ context }) => context.close()));
     }
