@@ -271,7 +271,18 @@
 .two-truths-form {
     display: grid;
     gap: 12px;
-    margin-bottom: 16px;
+    margin-bottom: 10px;
+}
+
+.two-truths-submit-hint {
+    margin: 0 0 12px;
+    color: var(--text-tertiary);
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.two-truths-submit-hint.ready {
+    color: var(--accent-success);
 }
 
 .two-truths-statement-input {

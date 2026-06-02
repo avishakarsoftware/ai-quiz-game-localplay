@@ -12,6 +12,7 @@ PHASE_PODIUM = "PODIUM"
 POINTS_CORRECT_GUESS = 500
 POINTS_FOOLED_VOTER = 250
 POINTS_FOOLED_EVERYONE_BONUS = 500
+MIN_STATEMENT_CHARS = 3
 
 
 def _clean_text(value: Any, max_chars: int = 180) -> str:
@@ -56,8 +57,8 @@ def validate_submission(raw_statements: list[dict[str, Any]], max_chars: int = 1
     lie_count = 0
     for index, item in enumerate(raw_statements):
         text = _clean_text(item.get("text") if isinstance(item, dict) else "", max_chars)
-        if len(text) < 10:
-            raise ValueError("Each statement needs at least 10 characters")
+        if len(text) < MIN_STATEMENT_CHARS:
+            raise ValueError(f"Each statement needs at least {MIN_STATEMENT_CHARS} characters")
         normalized = _norm(text)
         if normalized in seen:
             raise ValueError("Statements must be unique")

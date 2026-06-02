@@ -13,6 +13,7 @@ interface TwoTruthsGameProps {
 }
 
 const DEFAULT_ROWS = ['', '', ''];
+const MIN_STATEMENT_CHARS = 3;
 
 function statementLetter(index: number): string {
     return String.fromCharCode(65 + index);
@@ -65,7 +66,16 @@ export default function TwoTruthsGame({
     const canVote = isPlayer && state.phase === 'TT_VOTING' && !isAuthor && onVote;
     const lieId = state.round_result?.lie_statement_id || '';
     const nextLabel = state.phase === 'TT_SUBMISSION' ? 'Start Reveals' : state.phase === 'TT_VOTING' ? 'Reveal Lie' : 'Next Player';
-    const validSubmission = texts.every((text) => text.trim().length >= 10) && new Set(texts.map((text) => text.trim().toLowerCase())).size === 3;
+    const trimmedTexts = texts.map((text) => text.trim());
+    const filledCount = trimmedTexts.filter((text) => text.length >= MIN_STATEMENT_CHARS).length;
+    const uniqueCount = new Set(trimmedTexts.map((text) => text.toLowerCase()).filter(Boolean)).size;
+    const hasDuplicateStatements = uniqueCount < trimmedTexts.filter(Boolean).length;
+    const validSubmission = filledCount === 3 && !hasDuplicateStatements;
+    const submissionHint = filledCount < 3
+        ? `Write all three statements (${MIN_STATEMENT_CHARS}+ characters each).`
+        : hasDuplicateStatements
+            ? 'Make each statement different.'
+            : 'Pick one lie, then submit.';
 
     const submit = () => {
         if (!canSubmit || !validSubmission) return;
@@ -111,6 +121,7 @@ export default function TwoTruthsGame({
                                     </label>
                                 ))}
                             </div>
+                            <p className={`two-truths-submit-hint ${validSubmission ? 'ready' : ''}`}>{submissionHint}</p>
                             <button className="btn btn-primary btn-glow" onClick={submit} disabled={!validSubmission || !canSubmit}>
                                 {hasSubmitted ? 'Update Statements' : 'Submit Statements'}
                             </button>

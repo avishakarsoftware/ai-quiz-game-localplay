@@ -129,7 +129,7 @@ Validation:
 - Recommended players: 4-30.
 - Submission time: 60-600 seconds.
 - Vote time: 10-90 seconds.
-- Statement length: 10-180 chars.
+- Statement length: 3-180 chars. The UI should explain this minimum instead of silently disabling submit.
 
 ## Content Model
 
@@ -182,6 +182,7 @@ Public reveal payload must not include `is_lie` until result.
 Player requirements:
 
 - Exactly three non-empty statements.
+- Each statement must be at least 3 characters.
 - Exactly one lie selected.
 - Statements must be unique after normalization.
 - Author can edit until reveal starts.

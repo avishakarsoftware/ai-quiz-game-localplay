@@ -49,6 +49,16 @@ def test_validate_submission_requires_three_unique_statements_and_one_lie():
         ])
 
 
+def test_validate_submission_accepts_short_party_statements():
+    statements = validate_submission([
+        {"text": "Hehe", "is_lie": False},
+        {"text": "Motu", "is_lie": False},
+        {"text": "Pakalu", "is_lie": True},
+    ])
+
+    assert [item["text"] for item in statements] == ["Hehe", "Motu", "Pakalu"]
+
+
 def test_flow_hides_answers_until_result_and_scores_votes():
     state = create_initial_state(["Avi", "Ruchi", "Maya"], validate_config({}), seed=1)
     state = submit_statements(state, "Avi", sample_submission(lie_index=1), now=1)
