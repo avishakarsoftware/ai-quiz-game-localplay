@@ -98,6 +98,31 @@ class TestHealthEndpoints:
         assert room.quiz["starter_prompt"] == "A suitcase started singing."
         assert room.time_limit == 45
 
+    def test_create_common_ground_room(self):
+        res = client.post(
+            "/room/create",
+            json={
+                "game_type": "common_ground",
+                "common_ground_config": {
+                    "game_title": "Common Ground",
+                    "team_size": 2,
+                    "rounds": 3,
+                    "vote_category": "funniest",
+                },
+            },
+            headers=AUTH_HEADERS,
+        )
+
+        assert res.status_code == 200, res.text
+        body = res.json()
+        room = main.socket_manager.rooms[body["room_code"]]
+        assert room.game_type == "common_ground"
+        assert room.quiz["game_title"] == "Common Ground"
+        assert room.quiz["team_size"] == 2
+        assert room.quiz["rounds"] == 3
+        assert room.quiz["vote_category"] == "funniest"
+        assert room.time_limit == 30
+
     def test_catalog_includes_baby_bingo_preset_on_bingo_runtime(self):
         res = client.get("/catalog")
 
@@ -110,6 +135,8 @@ class TestHealthEndpoints:
         assert games["two_truths"]["config_schema"]["players"]["min"] == config.MIN_TWO_TRUTHS_PLAYERS
         assert games["story_chain"]["runtime_type"] == "story_chain"
         assert games["story_chain"]["config_schema"]["players"]["min"] == config.MIN_STORY_CHAIN_PLAYERS
+        assert games["common_ground"]["runtime_type"] == "common_ground"
+        assert games["common_ground"]["config_schema"]["players"]["min"] == config.MIN_COMMON_GROUND_PLAYERS
 
 
 class TestFrontendStaticServing:
@@ -277,7 +304,7 @@ class TestQuizModes:
 
         assert res.status_code == 200
         assert captured["mode"] == "rebus"
-        assert "answer_index" not in res.json()["quiz"]["questions"][0]
+        assert res.json()["quiz"]["questions"][0]["answer_index"] == 0
 
     def test_generate_charge_is_deferred_until_room_create(self, monkeypatch):
         charges = {"generate": 0}

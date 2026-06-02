@@ -67,7 +67,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -266,6 +266,71 @@ export interface StoryChainState {
     scores: Record<string, number>;
     is_active?: boolean;
     visible_context?: string[];
+}
+
+export interface CommonGroundTeam {
+    id: string;
+    name: string;
+    player_ids: string[];
+}
+
+export interface CommonGroundPrompt {
+    id: string;
+    text: string;
+    category?: string;
+}
+
+export interface CommonGroundSubmission {
+    id: string;
+    team_id: string;
+    team_name: string;
+    submitted_by: string;
+    created_at?: number | null;
+    updated_at?: number | null;
+    has_submission: boolean;
+    vote_count: number;
+    text?: string;
+}
+
+export interface CommonGroundState {
+    phase: 'COMMON_DISCUSSION' | 'COMMON_REVEAL' | 'COMMON_VOTING' | 'COMMON_ROUND_RESULT' | 'PODIUM' | string;
+    config: {
+        game_title?: string;
+        mode?: string;
+        team_size?: number;
+        rounds?: number;
+        discussion_time_seconds?: number;
+        vote_time_seconds?: number;
+        voting_enabled?: boolean;
+        vote_category?: string;
+        theme?: string;
+    };
+    players: PlayerInfo[];
+    teams: CommonGroundTeam[];
+    round_number: number;
+    total_rounds: number;
+    prompt: CommonGroundPrompt;
+    deadline?: number | null;
+    submissions: CommonGroundSubmission[];
+    votes_count: number;
+    scores: Record<string, number>;
+    round_results: Array<{
+        round_number: number;
+        prompt: CommonGroundPrompt;
+        round_scores: Record<string, number>;
+        scores: Record<string, number>;
+        submissions: CommonGroundSubmission[];
+    }>;
+    my_team_id?: string;
+    my_vote?: string;
+    my_submission?: {
+        id: string;
+        team_id: string;
+        text: string;
+        submitted_by: string;
+        created_at: number;
+        updated_at: number;
+    } | null;
 }
 
 export interface HousieCell {

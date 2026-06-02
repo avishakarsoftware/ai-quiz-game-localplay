@@ -2,7 +2,7 @@ import { type GameType, type QuizVariantGameType } from './types';
 
 export interface GameModeConfig {
     id: GameType;
-    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain';
+    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground';
     icon: string;
     title: string;
     description: string;
@@ -145,6 +145,13 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         title: 'Story Chain',
         description: 'Take turns adding sentences, then reveal the final story',
     },
+    {
+        id: 'common_ground',
+        runtimeType: 'common_ground',
+        icon: '🤝',
+        title: 'Common Ground',
+        description: 'Teams discover shared facts, reveal them, and vote for favorites',
+    },
 ];
 
 export const QUIZ_VARIANT_IDS: QuizVariantGameType[] = [
@@ -169,6 +176,6 @@ export function isQuizRuntimeGame(gameType: GameType): boolean {
     return getGameModeConfig(gameType).runtimeType === 'quiz';
 }
 
-export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' {
+export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' {
     return getGameModeConfig(gameType).runtimeType;
 }

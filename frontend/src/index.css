@@ -5558,6 +5558,181 @@ body {
     margin-top: auto;
 }
 
+.common-ground-shell {
+    max-width: 940px;
+}
+
+.common-ground-hero {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    margin-bottom: 24px;
+    text-align: left;
+}
+
+.common-ground-teams,
+.common-ground-submissions,
+.common-ground-scoreboard {
+    display: grid;
+    gap: 12px;
+}
+
+.common-ground-teams {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    margin: 18px 0;
+}
+
+.common-ground-team,
+.common-ground-panel,
+.common-ground-submission,
+.common-ground-scoreboard > div {
+    background: rgba(31, 17, 52, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    box-shadow: var(--shadow-card);
+}
+
+.common-ground-team {
+    padding: 16px;
+}
+
+.common-ground-team.mine {
+    border-color: rgba(89, 255, 222, 0.45);
+}
+
+.common-ground-team.ready {
+    background: rgba(42, 54, 48, 0.78);
+}
+
+.common-ground-team > div:first-child {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+}
+
+.common-ground-team strong,
+.common-ground-team small,
+.common-ground-scoreboard strong,
+.common-ground-scoreboard small {
+    display: block;
+}
+
+.common-ground-team small,
+.common-ground-submission small,
+.common-ground-submission span,
+.common-ground-scoreboard small {
+    color: var(--text-tertiary);
+    font-weight: 700;
+}
+
+.common-ground-members {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.common-ground-members span {
+    padding: 8px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--text-secondary);
+    font-weight: 800;
+}
+
+.common-ground-panel {
+    padding: 22px;
+    margin: 18px 0;
+}
+
+.common-ground-panel h2 {
+    margin: 0 0 14px;
+    font-size: clamp(1.25rem, 2.5vw, 1.8rem);
+}
+
+.common-ground-panel textarea {
+    width: 100%;
+    min-height: 132px;
+    resize: vertical;
+    padding: 18px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(18, 7, 32, 0.86);
+    color: var(--text-primary);
+    font-size: 1.15rem;
+    font-weight: 700;
+}
+
+.common-ground-panel-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    align-items: center;
+    margin-top: 14px;
+}
+
+.common-ground-submissions {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    margin: 18px 0;
+}
+
+.common-ground-submission {
+    min-height: 150px;
+    padding: 18px;
+    text-align: left;
+    color: var(--text-primary);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.common-ground-submission:disabled {
+    opacity: 1;
+}
+
+.common-ground-submission.selected {
+    border-color: var(--accent-primary);
+    box-shadow: var(--shadow-glow);
+}
+
+.common-ground-submission strong {
+    font-size: 1.1rem;
+    line-height: 1.35;
+}
+
+.common-ground-scoreboard {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    margin-top: 18px;
+}
+
+.common-ground-scoreboard > div {
+    padding: 14px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
+    align-items: center;
+}
+
+.common-ground-scoreboard span {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--accent-primary);
+    color: var(--text-inverse);
+    font-weight: 900;
+}
+
+.common-ground-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 22px;
+}
+
 @media (max-width: 640px) {
     .story-chain-hero {
         grid-template-columns: 1fr;
@@ -5567,6 +5742,20 @@ body {
 
     .story-chain-actions {
         grid-template-columns: 1fr;
+    }
+
+    .common-ground-hero {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .common-ground-panel-footer,
+    .common-ground-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .common-ground-panel-footer {
+        align-items: stretch;
     }
 }
 

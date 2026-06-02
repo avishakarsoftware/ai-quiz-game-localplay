@@ -16,7 +16,23 @@ You are an expert Game Designer. Your goal is to take a user topic and generate 
 Difficulty: {difficulty} - {difficulty_text}
 Game mode: {mode_name}
 {mode_instructions}
-For True/False questions, use exactly 2 options: ["True", "False"] with answer_index 0 or 1.
+{mode_examples}
+Quality rules:
+- Each question must have exactly one correct answer.
+- The answer_index must point to that single correct answer.
+- Distractors must be clearly wrong but plausible; do not include two answers that could both be accepted.
+- Avoid ambiguous wording, subjective judgments, trick wording, and disputed facts.
+- If you cannot make a claim or clue unambiguous, replace it with a safer item.
+- Prefer durable facts and widely accepted answers over very recent, local, or rapidly changing facts.
+- Keep the language party-friendly: short enough to read aloud, but specific enough to be objectively gradable.
+- Before returning JSON, silently verify every question against these rules and fix any item that fails.
+- For True/False questions, use exactly 2 options: ["True", "False"] with answer_index 0 or 1.
+Silent verification checklist before final JSON:
+1. Does the question text match the requested game mode?
+2. Is there exactly one correct option?
+3. Does answer_index point to that option after any ordering choices?
+4. Would a reasonable player argue that another option is also correct? If yes, rewrite the item.
+5. For Fact or Fiction, is the claim fully true or materially false as written, with no hidden caveat?
 You MUST return a JSON object ONLY, with the following structure:
 {{
   "quiz_title": "string",
@@ -54,42 +70,76 @@ QUIZ_MODE_INSTRUCTIONS = {
     "classic": {
         "name": "Classic Quiz",
         "instructions": "Mix question types: most should be multiple choice with 4 options, but include 2-3 True/False questions when useful.",
+        "examples": (
+            'Valid shape example: {"text":"Which planet is known as the Red Planet?",'
+            '"options":["Mars","Venus","Jupiter","Mercury"],"answer_index":0}.'
+        ),
     },
     "rebus": {
         "name": "Rebus Rush",
         "instructions": (
             "Create emoji/symbol rebus clues. The question text should begin with the rebus clue and use minimal explanatory text. "
             "The answer should be the word, phrase, title, place, or concept represented by the clue. "
-            "Prefer 4-option multiple choice. Wrong answers should be plausible misreads."
+            "Use exactly 4 options. Wrong answers should be plausible misreads. The answer_index must point to the one option "
+            "that exactly solves the clue."
+        ),
+        "examples": (
+            'Valid shape example: {"text":"Movie: 🦁👑","options":["The Lion King","Madagascar",'
+            '"Jumanji","The Jungle Book"],"answer_index":0}.'
         ),
     },
     "emoji_charades": {
         "name": "Emoji Charades",
         "instructions": (
             "Create emoji-only or emoji-first clues for recognizable movies, songs, sayings, people, places, events, or phrases. "
-            "Add a tiny category label only when needed for fairness, such as 'Movie:'. Prefer 4-option multiple choice. "
-            "Wrong answers should share genre, era, or theme."
+            "Add a tiny category label only when needed for fairness, such as 'Movie:'. Use exactly 4 options. "
+            "Wrong answers should share genre, era, or theme. The answer_index must point to the one option that exactly "
+            "matches the emoji clue."
+        ),
+        "examples": (
+            'Valid shape example: {"text":"🎬👻🚫","options":["Ghostbusters","The Sixth Sense",'
+            '"Poltergeist","Men in Black"],"answer_index":0}.'
         ),
     },
     "fact_fiction": {
         "name": "Fact or Fiction",
         "instructions": (
-            "Every question must be a crisp true/false claim. Every options array MUST be exactly [\"True\", \"False\"]. "
-            "Mix true and false answers. Avoid ambiguous wording and avoid actionable medical, legal, or financial claims."
+            "Every item must be a crisp declarative claim, not a question. Do not write 'Fact or fiction:', 'True or false:', "
+            "'Which', 'What', 'Who', 'Where', 'When', 'Why', or 'How' question text. Every options array MUST be exactly "
+            "[\"True\", \"False\"]. Set answer_index to 0 only when the entire claim is factually true, and 1 only when the "
+            "claim is materially false. Mix true and false answers. Avoid ambiguous wording, partially-true claims, trick "
+            "wording, and actionable medical, legal, or financial claims. Do not create claims where both True and False could "
+            "be defended depending on context."
+        ),
+        "examples": (
+            'Valid true example: {"text":"Octopuses have three hearts.","options":["True","False"],"answer_index":0}. '
+            'Valid false example: {"text":"The Sahara Desert is the largest desert on Earth by total area.",'
+            '"options":["True","False"],"answer_index":1}.'
         ),
     },
     "timeline": {
         "name": "Timeline Twist",
         "instructions": (
             "Create chronology questions: what came first, what happened last, which year matches, or which event is out of order. "
-            "The time relationship must be clear and verifiable. Prefer 4-option multiple choice with plausible nearby options."
+            "The time relationship must be clear and verifiable. Use exactly 4 options with plausible nearby options. The "
+            "answer_index must point to the only chronologically correct option."
+        ),
+        "examples": (
+            'Valid shape example: {"text":"Which of these happened first?",'
+            '"options":["The moon landing","The first iPhone release","Wikipedia launches","Google is founded"],'
+            '"answer_index":0}.'
         ),
     },
     "odd_one_out": {
         "name": "Odd One Out",
         "instructions": (
             "Create pattern/category questions where three options clearly share a property and one option breaks the rule. "
-            "The grouping rule must be fair and inferable. Prefer 4-option multiple choice."
+            "The grouping rule must be fair and inferable. Use exactly 4 options. The answer_index must point to the one "
+            "option that does NOT belong."
+        ),
+        "examples": (
+            'Valid shape example: {"text":"Which option does NOT belong with the others?",'
+            '"options":["Mercury","Venus","Mars","Pluto"],"answer_index":3}.'
         ),
     },
 }
@@ -114,6 +164,7 @@ def _build_system_prompt(difficulty: str, num_questions: int, mode: str = "class
         difficulty_text=difficulty_text,
         mode_name=mode_info["name"],
         mode_instructions=mode_info["instructions"],
+        mode_examples=mode_info["examples"],
     )
 
 
@@ -218,6 +269,75 @@ def _shuffle_question_options(quiz_data: dict, mode: str = "classic") -> dict:
     return quiz_data
 
 
+def _normalize_fact_fiction_question(q: dict) -> bool:
+    options = q.get("options")
+    if not isinstance(options, list) or len(options) != 2:
+        return False
+    normalized_options = [str(opt).strip().lower() for opt in options]
+    if normalized_options != ["true", "false"]:
+        return False
+    q["options"] = ["True", "False"]
+
+    text = str(q.get("text") or "").strip()
+    lowered = text.lower()
+    disallowed_starts = ("which ", "what ", "who ", "where ", "when ", "why ", "how ")
+    disallowed_phrases = (
+        "fact or fiction",
+        "true or false",
+        "is it true",
+        "is this true",
+        "are these",
+        "which of",
+        "choose whether",
+    )
+    if not text or "?" in text or lowered.startswith(disallowed_starts):
+        return False
+    if any(phrase in lowered for phrase in disallowed_phrases):
+        return False
+    if len(re.findall(r"\b\w+\b", text)) < 5:
+        return False
+    return True
+
+
+def _validate_mode_specific_question(q: dict, mode: str, attempt: int) -> bool:
+    normalized_mode = _normalize_quiz_mode(mode)
+    if normalized_mode == "classic":
+        return True
+    if normalized_mode == "fact_fiction":
+        if not _normalize_fact_fiction_question(q):
+            logger.warning("Attempt %d: Fact/Fiction question %s is not a clean declarative True/False claim", attempt, q.get("id"))
+            return False
+        return True
+
+    if len(q.get("options", [])) != 4:
+        logger.warning("Attempt %d: %s question %s must use exactly 4 options", attempt, normalized_mode, q.get("id"))
+        return False
+
+    text = str(q.get("text") or "").strip()
+    lowered = text.lower()
+    if normalized_mode in {"rebus", "emoji_charades"}:
+        # Keep clue games visually clue-first, with at least one non-ASCII emoji/symbol or a compact category prefix.
+        has_visual_clue = any(ord(char) > 127 for char in text[:24])
+        has_category_prefix = re.match(r"^(movie|song|phrase|place|person|event|book|show)\s*:", lowered) is not None
+        if not has_visual_clue and not has_category_prefix:
+            logger.warning("Attempt %d: %s question %s is not clue-first", attempt, normalized_mode, q.get("id"))
+            return False
+    elif normalized_mode == "timeline":
+        chronology_terms = (
+            "first", "last", "before", "after", "earlier", "later", "year", "date", "order",
+            "chronological", "timeline", "oldest", "newest", "released", "happened",
+        )
+        if not any(term in lowered for term in chronology_terms):
+            logger.warning("Attempt %d: Timeline question %s lacks a chronology cue", attempt, q.get("id"))
+            return False
+    elif normalized_mode == "odd_one_out":
+        odd_terms = ("odd", "does not", "doesn't", "not belong", "breaks", "exception", "unlike", "outlier")
+        if not any(term in lowered for term in odd_terms):
+            logger.warning("Attempt %d: Odd One Out question %s lacks an odd-one-out cue", attempt, q.get("id"))
+            return False
+    return True
+
+
 def _validate_quiz(quiz_data: dict, attempt: int, mode: str = "classic") -> bool:
     if not isinstance(quiz_data, dict):
         logger.warning("Attempt %d: LLM returned non-dict type: %s", attempt, type(quiz_data).__name__)
@@ -239,11 +359,9 @@ def _validate_quiz(quiz_data: dict, attempt: int, mode: str = "classic") -> bool
         if not isinstance(q["answer_index"], int) or not (0 <= q["answer_index"] < len(q["options"])):
             logger.warning("Attempt %d: Question %s has invalid answer_index", attempt, q.get("id"))
             return False
-    if _normalize_quiz_mode(mode) == "fact_fiction":
-        for q in quiz_data["questions"]:
-            if q.get("options") != ["True", "False"]:
-                logger.warning("Attempt %d: Fact/Fiction question %s does not use True/False options", attempt, q.get("id"))
-                return False
+    for q in quiz_data["questions"]:
+        if not _validate_mode_specific_question(q, mode, attempt):
+            return False
     return True
 
 

@@ -37,6 +37,7 @@ from musical_chairs_engine import validate_config as validate_musical_chairs_con
 from bluff_engine import validate_config as validate_bluff_config
 from two_truths_engine import validate_config as validate_two_truths_config
 from story_chain_engine import validate_config as validate_story_chain_config
+from common_ground_engine import validate_config as validate_common_ground_config
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -425,6 +426,7 @@ class RoomCreateRequest(BaseModel):
     bluff_config: dict = {}
     two_truths_config: dict = {}
     story_chain_config: dict = {}
+    common_ground_config: dict = {}
     game_type: str = "quiz"
     time_limit: Optional[int] = None
 
@@ -440,8 +442,8 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain"):
-            raise ValueError('game_type must be "quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", or "story_chain"')
+        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground"):
+            raise ValueError('game_type must be "quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", or "common_ground"')
         return v
 
 
@@ -719,6 +721,37 @@ GAME_CATALOG = [
             "visibility_modes": ["full_context", "last_sentence_only"],
         },
     },
+    {
+        "id": "common_ground",
+        "game_type": "common_ground",
+        "runtime_type": "common_ground",
+        "title": "Common Ground",
+        "description": "Teams find shared facts, reveal them, and vote on the best ones.",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": False,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "team_icebreaker_setup",
+            "supported_media": [],
+        },
+        "config_schema": {
+            "players": {"min": config.MIN_COMMON_GROUND_PLAYERS, "max": config.MAX_PLAYERS_PER_ROOM},
+            "team_size": {"min": 2, "max": 6, "default": 3},
+            "rounds": {"min": 1, "max": 10, "default": 5},
+            "discussion_time_seconds": {"min": 30, "max": 300, "default": 90},
+            "vote_time_seconds": {"min": 10, "max": 90, "default": 30},
+            "vote_categories": ["funniest", "most_surprising", "most_specific"],
+        },
+    },
 ]
 
 
@@ -733,6 +766,8 @@ def _default_time_limit_for_game(game_type: str) -> int:
         return 30
     if game_type == "story_chain":
         return 45
+    if game_type == "common_ground":
+        return 30
     return config.DEFAULT_TIME_LIMIT
 
 
@@ -821,6 +856,8 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
         return str(uuid.uuid4()), validate_two_truths_config({"game_title": title or "Two Truths and a Lie"})
     if game_type == "story_chain":
         return str(uuid.uuid4()), validate_story_chain_config({"game_title": title or "Story Chain"})
+    if game_type == "common_ground":
+        return str(uuid.uuid4()), validate_common_ground_config({"game_title": title or "Common Ground"})
     if game_type == "bingo":
         return str(uuid.uuid4()), default_bingo_game(title or "Bingo")
     if game_type == "housie":
@@ -861,6 +898,8 @@ def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = 
     if game_type == "two_truths":
         return _default_game_content(game_type, title)
     if game_type == "story_chain":
+        return _default_game_content(game_type, title)
+    if game_type == "common_ground":
         return _default_game_content(game_type, title)
     if game_type == "bingo":
         if not config.BINGO_ENABLED:
@@ -1095,7 +1134,7 @@ async def generate_quiz(request: QuizRequest, req: Request):
         cached_id = db.check_idempotency(idem_key, device_id)
         if cached_id:
             if cached_id in quizzes:
-                return {"quiz_id": cached_id, "quiz": _strip_answers(quizzes[cached_id])}
+                return {"quiz_id": cached_id, "quiz": quizzes[cached_id]}
             raise HTTPException(
                 status_code=409,
                 detail="Request was already processed, but the generated quiz is no longer available. Please start a new request.",
@@ -1140,7 +1179,7 @@ async def generate_quiz(request: QuizRequest, req: Request):
     if idem_key:
         db.record_idempotency(idem_key, device_id, quiz_id)
     logger.info("Quiz created: %s ('%s') owner=%s", quiz_id, quiz_data.get("quiz_title", "Untitled"), wallet_id[:8])
-    return {"quiz_id": quiz_id, "quiz": _strip_answers(quiz_data)}
+    return {"quiz_id": quiz_id, "quiz": quiz_data}
 
 
 def _strip_answers(quiz_data: dict) -> dict:
@@ -1247,7 +1286,7 @@ async def materialize_custom_quiz_pack(pack_id: str, req: Request):
     quizzes[quiz_id] = quiz_data
     quiz_timestamps[quiz_id] = time.time()
     content_owners[quiz_id] = wallet_id
-    return {"quiz_id": quiz_id, "quiz": _strip_answers(quiz_data)}
+    return {"quiz_id": quiz_id, "quiz": quiz_data}
 
 
 class QuizUpdateRequest(BaseModel):
@@ -1286,7 +1325,7 @@ async def update_quiz(quiz_id: str, request: QuizUpdateRequest, req: Request):
     quiz_data = _sanitize_quiz(quiz_data)
     quizzes[quiz_id] = quiz_data
     logger.info("Quiz updated: %s ('%s'), %d questions", quiz_id, quiz_data["quiz_title"], len(quiz_data["questions"]))
-    return {"quiz_id": quiz_id, "quiz": _strip_answers(quizzes[quiz_id])}
+    return {"quiz_id": quiz_id, "quiz": quiz_data}
 
 
 @app.delete("/quiz/{quiz_id}/question/{question_id}")
@@ -1305,7 +1344,7 @@ async def delete_question(quiz_id: str, question_id: int, req: Request):
         raise HTTPException(status_code=400, detail="Cannot delete the last question")
     quiz["questions"] = remaining
     logger.info("Question %d deleted from quiz %s", question_id, quiz_id)
-    return {"quiz_id": quiz_id, "quiz": _strip_answers(quiz)}
+    return {"quiz_id": quiz_id, "quiz": quiz}
 
 
 @app.post("/quiz/generate-images")
@@ -3362,6 +3401,9 @@ async def create_room(request: RoomCreateRequest, req: Request):
     elif request.game_type == "story_chain":
         content_id = str(uuid.uuid4())
         game_data = validate_story_chain_config(request.story_chain_config)
+    elif request.game_type == "common_ground":
+        content_id = str(uuid.uuid4())
+        game_data = validate_common_ground_config(request.common_ground_config)
     else:
         content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
     time_limit = request.time_limit if request.time_limit is not None else _default_time_limit_for_game(request.game_type)
@@ -3435,7 +3477,7 @@ async def import_quiz(request: QuizImportRequest, req: Request):
     quiz_timestamps[quiz_id] = time.time()
     content_owners[quiz_id] = wallet_id
     logger.info("Quiz imported: %s ('%s') owner=%s", quiz_id, quiz_data.get("quiz_title", "Untitled"), wallet_id[:8])
-    return {"quiz_id": quiz_id, "quiz": _strip_answers(quizzes[quiz_id])}
+    return {"quiz_id": quiz_id, "quiz": quiz_data}
 
 
 # --- MLT (Most Likely To) Endpoints ---

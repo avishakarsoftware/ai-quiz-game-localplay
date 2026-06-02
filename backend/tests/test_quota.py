@@ -138,6 +138,7 @@ class TestQuotaEndpoints:
         assert first.status_code == 200
         assert second.status_code == 200
         assert second.json()["quiz_id"] == first.json()["quiz_id"]
+        assert second.json()["quiz"]["questions"][0]["answer_index"] == 0
         assert mock_gen.await_count == 1
 
     def test_cached_but_evicted_idempotency_does_not_regenerate_or_charge(self):

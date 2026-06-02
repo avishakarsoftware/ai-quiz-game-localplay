@@ -544,15 +544,14 @@ class TestAnswerStrippingAllEndpoints:
         del quizzes[qid]
         del quiz_timestamps[qid]
 
-    def test_import_quiz_strips_answers(self, test_app):
+    def test_import_quiz_keeps_answers_for_private_review(self, test_app):
         quiz_data = {
             "quiz_title": "Imported",
             "questions": [{"id": 1, "text": "Q?", "options": ["A", "B", "C", "D"], "answer_index": 0}],
         }
         res = test_app.post("/quiz/import", json={"quiz": quiz_data})
         assert res.status_code == 200
-        for q in res.json()["quiz"]["questions"]:
-            assert "answer_index" not in q
+        assert res.json()["quiz"]["questions"][0]["answer_index"] == 0
 
 
 class TestContentMutationAuth:

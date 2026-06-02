@@ -133,6 +133,26 @@ def create_story_chain_room():
     return data["room_code"], data["organizer_token"]
 
 
+def create_common_ground_room():
+    res = client.post(
+        "/room/create",
+        json={
+            "game_type": "common_ground",
+            "common_ground_config": {
+                "game_title": "Common Ground",
+                "team_size": 2,
+                "rounds": 1,
+                "discussion_time_seconds": 30,
+                "vote_time_seconds": 10,
+            },
+        },
+        headers={"X-Device-Id": "common-ground-test-wallet"},
+    )
+    assert res.status_code == 200, res.text
+    data = res.json()
+    return data["room_code"], data["organizer_token"]
+
+
 @contextmanager
 def org_connect(room_code, token, client_id="org-1"):
     """Connect as organizer and send first-frame AUTH. Yields the websocket."""
@@ -238,6 +258,42 @@ def recv_story_active_context(ws, max_messages=50):
         if isinstance(payload, dict) and payload.get("is_active") and payload.get("visible_context"):
             return data
     raise TimeoutError("Never received Story Chain active private context")
+
+
+def recv_common_phase(ws, phase, max_messages=50):
+    for i in range(max_messages):
+        try:
+            data = ws.receive_json()
+        except Exception as e:
+            raise TimeoutError(f"Connection closed while waiting for Common Ground phase {phase} (after {i} messages): {e}")
+        payload = data.get("common_ground", {}) if data.get("type") == "COMMON_SYNC" else {}
+        if isinstance(payload, dict) and payload.get("phase") == phase:
+            return data
+    raise TimeoutError(f"Never received Common Ground phase {phase}")
+
+
+def recv_common_private_submission(ws, max_messages=50):
+    for i in range(max_messages):
+        try:
+            data = ws.receive_json()
+        except Exception as e:
+            raise TimeoutError(f"Connection closed while waiting for Common Ground private submission (after {i} messages): {e}")
+        payload = data.get("common_ground", {}) if data.get("type") == "COMMON_SYNC" else {}
+        if isinstance(payload, dict) and payload.get("my_submission"):
+            return data
+    raise TimeoutError("Never received Common Ground private submission")
+
+
+def recv_common_private_vote(ws, submission_id, max_messages=50):
+    for i in range(max_messages):
+        try:
+            data = ws.receive_json()
+        except Exception as e:
+            raise TimeoutError(f"Connection closed while waiting for Common Ground private vote (after {i} messages): {e}")
+        payload = data.get("common_ground", {}) if data.get("type") == "COMMON_SYNC" else {}
+        if isinstance(payload, dict) and payload.get("my_vote") == submission_id:
+            return data
+    raise TimeoutError("Never received Common Ground private vote")
 
 
 class TestBluffWS:
@@ -412,6 +468,69 @@ class TestStoryChainWS:
                 podium = recv_until(org_ws, "PODIUM")
                 assert podium["game_type"] == "story_chain"
                 assert len(podium["story_chain"]["sentences"]) == 3
+            finally:
+                for cm, _ws, _name in players:
+                    cm.__exit__(None, None, None)
+
+
+class TestCommonGroundWS:
+    def test_common_ground_submit_vote_score_and_podium_flow(self):
+        room_code, org_token = create_common_ground_room()
+
+        with org_connect(room_code, org_token) as org_ws:
+            org_ws.receive_json()
+            players = []
+            try:
+                for idx, name in enumerate(["Alice", "Bob", "Cara", "Dee"], start=1):
+                    ws = client.websocket_connect(f"/ws/{room_code}/common-player-{idx}")
+                    player_ws = ws.__enter__()
+                    players.append((ws, player_ws, name))
+                    player_ws.send_json({"type": "JOIN", "nickname": name})
+                    assert player_ws.receive_json()["type"] == "JOINED_ROOM"
+                    recv_until(org_ws, "PLAYER_JOINED")
+
+                org_ws.send_json({"type": "START_GAME"})
+                org_sync = recv_common_phase(org_ws, "COMMON_DISCUSSION")
+                common = org_sync["common_ground"]
+                assert common["config"]["game_title"] == "Common Ground"
+                assert len(common["teams"]) == 2
+                assert common["submissions"][0]["has_submission"] is False
+
+                player_by_name = {name: player_ws for _cm, player_ws, name in players}
+                teams = common["teams"]
+                first_team_player = teams[0]["player_ids"][0]
+                second_team_player = teams[1]["player_ids"][0]
+
+                player_by_name[first_team_player].send_json({"type": "COMMON_SUBMIT_FACT", "text": "We all like beach holidays."})
+                private = recv_common_private_submission(player_by_name[first_team_player])
+                assert private["common_ground"]["my_submission"]["text"] == "We all like beach holidays."
+                progress = recv_common_phase(org_ws, "COMMON_DISCUSSION")
+                assert sum(1 for item in progress["common_ground"]["submissions"] if item["has_submission"]) == 1
+                assert "text" not in progress["common_ground"]["submissions"][0]
+
+                player_by_name[second_team_player].send_json({"type": "COMMON_SUBMIT_FACT", "text": "We all enjoy spicy snacks."})
+                reveal = recv_common_phase(org_ws, "COMMON_REVEAL")
+                assert all(item["has_submission"] and item.get("text") for item in reveal["common_ground"]["submissions"])
+
+                org_ws.send_json({"type": "COMMON_START_VOTING"})
+                voting = recv_common_phase(org_ws, "COMMON_VOTING")
+                second_submission_id = next(
+                    item["id"]
+                    for item in voting["common_ground"]["submissions"]
+                    if item["team_id"] == teams[1]["id"]
+                )
+                player_by_name[first_team_player].send_json({"type": "COMMON_VOTE", "submission_id": second_submission_id})
+                voted = recv_common_private_vote(player_by_name[first_team_player], second_submission_id)
+                assert voted["common_ground"]["my_vote"] == second_submission_id
+
+                org_ws.send_json({"type": "COMMON_SCORE_ROUND"})
+                result = recv_common_phase(org_ws, "COMMON_ROUND_RESULT")
+                assert result["common_ground"]["scores"][teams[1]["id"]] > result["common_ground"]["scores"][teams[0]["id"]]
+
+                org_ws.send_json({"type": "COMMON_NEXT_ROUND"})
+                podium = recv_until(org_ws, "PODIUM")
+                assert podium["game_type"] == "common_ground"
+                assert podium["common_ground"]["phase"] == "PODIUM"
             finally:
                 for cm, _ws, _name in players:
                     cm.__exit__(None, None, None)

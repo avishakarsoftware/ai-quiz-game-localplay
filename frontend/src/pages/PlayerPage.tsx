@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { WS_URL } from '../config';
-import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -22,8 +22,9 @@ import MusicalChairsPlayer from '../components/player/MusicalChairsPlayer';
 import BluffTable from '../components/BluffTable';
 import TwoTruthsGame from '../components/TwoTruthsGame';
 import StoryChainGame from '../components/StoryChainGame';
+import CommonGroundGame from '../components/CommonGroundGame';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
 interface PlayerQuestion {
     id: number;
@@ -141,6 +142,7 @@ export default function PlayerPage() {
     const [selectedBluffCards, setSelectedBluffCards] = useState<Set<string>>(new Set());
     const [twoTruthsState, setTwoTruthsState] = useState<TwoTruthsState | null>(null);
     const [storyChainState, setStoryChainState] = useState<StoryChainState | null>(null);
+    const [commonGroundState, setCommonGroundState] = useState<CommonGroundState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const submittedRef = useRef(false);
@@ -271,6 +273,10 @@ export default function PlayerPage() {
                     setGameType('story_chain');
                     setStoryChainState(msg.story_chain as StoryChainState);
                     setState('STORY_CHAIN');
+                } else if (msg.game_type === 'common_ground' && msg.common_ground) {
+                    setGameType('common_ground');
+                    setCommonGroundState(msg.common_ground as CommonGroundState);
+                    setState('COMMON_GROUND');
                 } else if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
                         setGameType('drawing');
@@ -334,6 +340,9 @@ export default function PlayerPage() {
                 } else if (msg.game_type === 'story_chain') {
                     setGameType('story_chain');
                     setState('STORY_CHAIN');
+                } else if (msg.game_type === 'common_ground') {
+                    setGameType('common_ground');
+                    setState('COMMON_GROUND');
                 }
                 else setState('INTRO');
             }
@@ -423,6 +432,13 @@ export default function PlayerPage() {
                 setStoryChainState(msg.story_chain as StoryChainState);
                 setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
                 setState('STORY_CHAIN');
+            }
+            if (msg.type === 'COMMON_SYNC') {
+                setError('');
+                setGameType('common_ground');
+                setCommonGroundState(msg.common_ground as CommonGroundState);
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+                setState('COMMON_GROUND');
             }
             if (msg.type === 'QUESTION') {
                 if (msg.game_type === 'drawing') {
@@ -591,6 +607,10 @@ export default function PlayerPage() {
                 setGuessLog([]);
                 setDrawingRoundPrompt('');
                 setMusicalChairsState(null);
+                setBluffState(null);
+                setTwoTruthsState(null);
+                setStoryChainState(null);
+                setCommonGroundState(null);
                 setMcGrabbed(false);
                 setMcEliminated(false);
                 setMcReactionMs(null);
@@ -737,6 +757,14 @@ export default function PlayerPage() {
     const submitStorySentence = (text: string) => {
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'STORY_SUBMIT_SENTENCE', text }));
+    };
+    const submitCommonFact = (text: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'COMMON_SUBMIT_FACT', text }));
+    };
+    const voteCommonGround = (submissionId: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'COMMON_VOTE', submission_id: submissionId }));
     };
 
     const activatePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
@@ -1046,6 +1074,19 @@ export default function PlayerPage() {
                             viewerName={nickname}
                             controls="player"
                             onSubmitSentence={submitStorySentence}
+                        />
+                    </>
+                )}
+
+                {state === 'COMMON_GROUND' && (
+                    <>
+                        {error && <div className="status-pill status-error animate-shake player-runtime-error">{error}</div>}
+                        <CommonGroundGame
+                            state={commonGroundState}
+                            viewerName={nickname}
+                            controls="player"
+                            onSubmitFact={submitCommonFact}
+                            onVote={voteCommonGround}
                         />
                     </>
                 )}

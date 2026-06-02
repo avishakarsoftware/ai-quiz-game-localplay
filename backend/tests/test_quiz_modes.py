@@ -12,6 +12,9 @@ def test_fact_fiction_prompt_requires_true_false_options():
 
     assert "Fact or Fiction" in prompt
     assert '["True", "False"]' in prompt
+    assert "declarative claim" in prompt
+    assert "both True and False could" in prompt
+    assert "silently verify every question" in prompt
 
 
 def test_fact_fiction_validation_rejects_multiple_choice_options():
@@ -25,11 +28,35 @@ def test_fact_fiction_validation_rejects_multiple_choice_options():
     assert _validate_quiz(quiz, attempt=1, mode="fact_fiction") is False
 
 
+def test_fact_fiction_validation_rejects_question_wording():
+    quiz = {
+        "quiz_title": "Bad Fact/Fiction",
+        "questions": [
+            {"id": 1, "text": "True or false: whales are mammals?", "options": ["True", "False"], "answer_index": 0},
+        ],
+    }
+
+    assert _validate_quiz(quiz, attempt=1, mode="fact_fiction") is False
+
+
+def test_fact_fiction_validation_normalizes_true_false_casing():
+    quiz = {
+        "quiz_title": "Fact or Fiction",
+        "questions": [
+            {"id": 1, "text": "Blue whales are mammals that breathe air.", "options": [" true ", " false "], "answer_index": 0},
+        ],
+    }
+
+    assert _validate_quiz(quiz, attempt=1, mode="fact_fiction") is True
+    assert quiz["questions"][0]["options"] == ["True", "False"]
+
+
 def test_rebus_prompt_contains_rebus_instructions():
     prompt = _build_system_prompt("easy", 5, mode="rebus")
 
     assert "Rebus Rush" in prompt
     assert "emoji/symbol rebus clues" in prompt
+    assert "Use exactly 4 options" in prompt
 
 
 def test_shuffle_question_options_preserves_correct_answer(monkeypatch):
@@ -79,6 +106,28 @@ def test_shuffle_question_options_keeps_true_false_order(monkeypatch):
     question = shuffled["questions"][0]
     assert question["options"] == ["True", "False"]
     assert question["answer_index"] == 0
+
+
+def test_timeline_validation_rejects_non_chronology_question():
+    quiz = {
+        "quiz_title": "Timeline Twist",
+        "questions": [
+            {"id": 1, "text": "Which animal is a mammal?", "options": ["Whale", "Shark", "Tuna", "Salmon"], "answer_index": 0},
+        ],
+    }
+
+    assert _validate_quiz(quiz, attempt=1, mode="timeline") is False
+
+
+def test_odd_one_out_validation_requires_odd_one_out_cue():
+    quiz = {
+        "quiz_title": "Odd One Out",
+        "questions": [
+            {"id": 1, "text": "Choose the best animal.", "options": ["Cat", "Dog", "Tiger", "Oak"], "answer_index": 3},
+        ],
+    }
+
+    assert _validate_quiz(quiz, attempt=1, mode="odd_one_out") is False
 
 
 def test_shuffle_question_options_leaves_two_option_classic_questions_alone(monkeypatch):

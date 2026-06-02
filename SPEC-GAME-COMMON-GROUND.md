@@ -13,17 +13,18 @@ Backend engine: common_ground_engine.py
 Frontend display name: Common Ground
 ```
 
-## Implementation-Ready MVP Scope
+## Implemented MVP Scope
 
-Status: implementation-ready.
+Status: implemented for standalone LocalPlay.
 
 - Standalone LocalPlay first.
-- Host chooses team size, number of rounds, timer, and optional theme.
+- Host creates a default Common Ground room from the game picker.
+- Server validates team size, number of rounds, timers, vote category, and prompt list.
 - Server creates small teams from connected players.
-- Each round gives all teams the same prompt category or open challenge.
-- Teams discuss in person and submit shared facts that are true for every team member.
+- Each round gives all teams the same safe prompt.
+- Teams discuss in person and submit one shared fact that is true for every team member.
 - Spectator/TV shows timer, teams, submission status, and reveal.
-- Optional voting phase lets players vote for funniest, most surprising, or most specific shared fact.
+- Optional voting phase lets players vote for funniest, most surprising, or most specific shared fact. MVP defaults to `most_surprising`.
 - Final ranking uses submitted facts plus voting bonuses.
 
 ## Goals
@@ -140,7 +141,7 @@ Validation:
 - Rounds: 1-10.
 - Discussion time: 30-300 seconds.
 - Vote time: 10-90 seconds.
-- Facts per round: 1-5.
+- Facts per round: 1 in the implemented MVP.
 
 ## Team Assignment
 
@@ -240,20 +241,26 @@ Client to server:
 
 ```json
 { "type": "COMMON_SUBMIT_FACT", "text": "We have all lived near the ocean" }
-{ "type": "COMMON_EDIT_FACT", "submission_id": "s1", "text": "We have all lived near water" }
 { "type": "COMMON_VOTE", "submission_id": "s2" }
+{ "type": "COMMON_START_REVEAL" }
+{ "type": "COMMON_START_VOTING" }
+{ "type": "COMMON_SCORE_ROUND" }
 { "type": "COMMON_NEXT_ROUND" }
 ```
 
 Server to clients:
 
 ```json
-{ "type": "COMMON_SYNC", "state": {} }
-{ "type": "COMMON_TEAMS_ASSIGNED", "teams": [] }
-{ "type": "COMMON_ROUND_STARTED", "round": {} }
-{ "type": "COMMON_TEAM_SUBMITTED", "team_id": "team_1" }
-{ "type": "COMMON_REVEAL", "submissions": [] }
-{ "type": "COMMON_ROUND_RESULT", "scores": [] }
+{
+  "type": "COMMON_SYNC",
+  "game_type": "common_ground",
+  "common_ground": {
+    "phase": "COMMON_DISCUSSION",
+    "teams": [],
+    "submissions": [],
+    "scores": {}
+  }
+}
 ```
 
 Visibility:
@@ -325,18 +332,15 @@ For large groups, only one editor should be active at a time:
 
 Setup:
 
-- Team size.
-- Rounds.
-- Timer.
-- Prompt mode/theme.
-- Voting on/off and vote category.
-- Manual prompt editor or AI generate.
+- MVP uses default standalone setup from the game picker: team size 3, 5 rounds, 90 second discussion timer, 30 second voting timer, voting on, `most_surprising`.
+- The backend already validates custom config values for future setup UI.
 
 In-game:
 
 - Start/next round.
-- Extend timer.
 - Skip to reveal.
+- Start voting.
+- Score round.
 - End game.
 
 ## Backend Implementation
@@ -351,26 +355,32 @@ backend/tests/test_common_ground_engine.py
 Pure helpers:
 
 ```py
-def validate_common_ground_setup(raw: dict) -> dict: ...
+def validate_config(raw: dict | None) -> dict: ...
 
 def assign_teams(player_ids: list[str], team_size: int, seed: str | None = None) -> list[dict]: ...
 
-def start_round(state: dict, now: float) -> dict: ...
+def create_initial_state(player_ids: list[str], config: dict, now: float | None = None, seed: str | int | None = None) -> dict: ...
 
-def submit_fact(state: dict, player_id: str, text: str, now: float) -> tuple[dict, dict]: ...
+def submit_fact(state: dict, player_id: str, text: str, now: float | None = None) -> dict: ...
 
-def submit_vote(state: dict, player_id: str, submission_id: str) -> tuple[dict, dict]: ...
+def start_reveal(state: dict, now: float | None = None) -> dict: ...
 
-def score_round(state: dict) -> dict: ...
+def start_voting(state: dict, now: float | None = None) -> dict: ...
 
-def build_public_sync(state: dict) -> dict: ...
+def submit_vote(state: dict, player_id: str, submission_id: str) -> dict: ...
 
-def build_player_sync(state: dict, player_id: str) -> dict: ...
+def score_round(state: dict, now: float | None = None) -> dict: ...
+
+def next_round(state: dict, now: float | None = None) -> dict: ...
+
+def public_sync(state: dict, players: list[dict[str, str]] | None = None) -> dict: ...
+
+def private_sync(state: dict, player_id: str, players: list[dict[str, str]] | None = None) -> dict: ...
 ```
 
 ## AI Generation
 
-Prompt generation can reuse the existing AI pattern:
+AI prompt generation is not part of the implemented MVP. Future prompt generation can reuse the existing AI pattern:
 
 ```json
 {
@@ -424,12 +434,13 @@ Backend tests:
 - Setup validation clamps team size, rounds, timers, and facts per round.
 - Team assignment avoids teams of 1 when possible.
 - Team assignment is deterministic with seed.
-- Only team members can edit their team's submission.
+- Team members can submit or update their team's submission during discussion.
 - Submissions are hidden from other teams before reveal.
 - Players cannot vote for their own team.
 - Duplicate votes update or reject according to chosen rule.
 - Round scoring handles votes and bonuses.
 - Public sync hides private submission text before reveal.
+- WebSocket flow covers start, team assignment, submission, reveal, voting, scoring, and podium.
 
 Frontend tests:
 
@@ -456,7 +467,7 @@ Playwright:
 - Optional voting works and excludes own team.
 - Scores and final team podium are deterministic.
 - Spectator view is useful throughout discussion, reveal, voting, and results.
-- Prompt generation avoids sensitive personal disclosure.
+- Built-in prompts avoid sensitive personal disclosure.
 
 ## Future Work
 

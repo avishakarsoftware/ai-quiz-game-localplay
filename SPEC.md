@@ -18,6 +18,7 @@ The platform currently supports:
 - `bluff`: standalone card-room MVP with server-dealt private hands, redacted public table state, face-down claims, challenges, and spectator support.
 - `two_truths`: standalone party confession game where players submit two truths and one lie, then the room votes on each author.
 - `story_chain`: standalone sequential creative game where players privately add one sentence each, then the room reveals the final story.
+- `common_ground`: standalone team icebreaker where auto-assigned teams submit shared facts, vote on the best answers, and finish on a team podium.
 - Standalone custom quiz authoring and saved quiz packs.
 - Host-app/party-scoped authoring and game setup through the Revelry Games hub.
 
@@ -54,6 +55,7 @@ Key files:
 - `backend/card_engine.py` and `backend/bluff_engine.py`: reusable playing-card primitives and Bluff/Cheat rules.
 - `backend/two_truths_engine.py`: validation, private/public sync, voting, scoring, and podium helpers for Two Truths and a Lie.
 - `backend/story_chain_engine.py`: setup validation, private turn context, sentence submission, reveal stepping, and scoring helpers for Story Chain.
+- `backend/common_ground_engine.py`: setup validation, team assignment, private/public sync, team submissions, voting, scoring, and podium helpers for Common Ground.
 - `backend/image_engine.py`: optional Stable Diffusion image generation for quiz questions.
 - `backend/auth.py`: Google/Apple sign-in and session handling.
 - `backend/remote_config.py`: remote config for provider/model/operation flags.
@@ -78,6 +80,7 @@ Key files:
 - `frontend/src/components/BluffTable.tsx`: shared Bluff table UI for organizer, player, and spectator views.
 - `frontend/src/components/TwoTruthsGame.tsx`: shared Two Truths and a Lie UI for organizer, player, and spectator views.
 - `frontend/src/components/StoryChainGame.tsx`: shared Story Chain UI for organizer, player, and spectator views.
+- `frontend/src/components/CommonGroundGame.tsx`: shared Common Ground UI for organizer, player, and spectator views.
 - `frontend/src/components/organizer/CustomQuizEditor.tsx`: manual custom quiz authoring.
 - `frontend/src/components/organizer/ReviewScreen.tsx`: quiz review/edit before room creation.
 - `frontend/src/components/organizer/MLTReviewScreen.tsx`: WMLT review/edit before room creation.
@@ -322,7 +325,7 @@ Revelry content callbacks must treat safe `payload.content` metadata as a first-
 
 Bingo-family games are a separate runtime family rather than quiz variants. `SPEC-GAME-BINGO-HOUSIE.md` defines the reusable Bingo/Housie engine. Housie is implemented for standalone LocalPlay and Revelry gamma with server-generated tickets, manual/auto number calling, server-side claim validation, and spectator called-board sync. Configurable standalone Bingo is implemented with text/emoji/number/image-shaped deck items, 5x5 cards, optional free center, template/manual/AI-text setup, and host-reviewed generated items. Baby Bingo / dedicated word / emoji / image / photo Bingo remain later named caller-led rulesets on the same engine. `SPEC-GAME-FIND-SOMEONE-WHO.md` defines a social Bingo-style icebreaker that reuses card layouts and claim patterns but replaces caller draws with real-person matching and optional tap confirmation.
 
-Social icebreakers should be their own lightweight runtime family when they are not caller-led or quiz-shaped. `SPEC-GAME-COMMON-GROUND.md` defines a team-based icebreaker where small groups discover shared facts, submit them, optionally vote on the best answers, and finish with a team podium.
+Social icebreakers should be their own lightweight runtime family when they are not caller-led or quiz-shaped. `SPEC-GAME-COMMON-GROUND.md` defines and now implements the standalone Common Ground flow: automatic team assignment, private team submissions during discussion, reveal, optional voting, round scoring, spectator sync, and final team podium. Revelry exposure remains disabled until a host-app bridge pass is completed.
 `SPEC-GAME-TWO-TRUTHS.md` defines and now implements the standalone classic player-authored Two Truths and a Lie flow: private statement submission, sequential author reveals, lie voting, deception/detection scoring, spectator sync, and a final individual podium. Revelry exposure remains disabled until a host-app bridge pass is completed.
 `SPEC-GAME-PARTY-QUESTS.md` defines a long-running ambient party game where players complete mingling tasks throughout the event, collect tap/QR confirmations from other players, and gather later for a final reveal and podium.
 

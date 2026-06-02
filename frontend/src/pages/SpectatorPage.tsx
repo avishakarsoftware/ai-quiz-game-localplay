@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
@@ -22,6 +22,7 @@ import MusicalChairsVisualizer from '../components/musical-chairs/MusicalChairsV
 import BluffTable from '../components/BluffTable';
 import TwoTruthsGame from '../components/TwoTruthsGame';
 import StoryChainGame from '../components/StoryChainGame';
+import CommonGroundGame from '../components/CommonGroundGame';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
@@ -113,6 +114,7 @@ export default function SpectatorPage() {
     const [bluffState, setBluffState] = useState<BluffState | null>(null);
     const [twoTruthsState, setTwoTruthsState] = useState<TwoTruthsState | null>(null);
     const [storyChainState, setStoryChainState] = useState<StoryChainState | null>(null);
+    const [commonGroundState, setCommonGroundState] = useState<CommonGroundState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -254,6 +256,11 @@ export default function SpectatorPage() {
                     setGameState('STORY_CHAIN');
                     return;
                 }
+                if (msg.game_type === 'common_ground' && msg.common_ground) {
+                    setCommonGroundState(msg.common_ground);
+                    setGameState('COMMON_GROUND');
+                    return;
+                }
                 // Handle mid-question sync
                 if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
@@ -298,6 +305,9 @@ export default function SpectatorPage() {
                 } else if (msg.game_type === 'story_chain') {
                     setGameType('story_chain');
                     setGameState('STORY_CHAIN');
+                } else if (msg.game_type === 'common_ground') {
+                    setGameType('common_ground');
+                    setGameState('COMMON_GROUND');
                 }
                 else setGameState('INTRO');
             }
@@ -348,6 +358,12 @@ export default function SpectatorPage() {
                 setStoryChainState(msg.story_chain || null);
                 setLeaderboard(msg.leaderboard || []);
                 setGameState('STORY_CHAIN');
+            }
+            else if (msg.type === 'COMMON_SYNC') {
+                setGameType('common_ground');
+                setCommonGroundState(msg.common_ground || null);
+                setLeaderboard(msg.leaderboard || []);
+                setGameState('COMMON_GROUND');
             }
             else if (msg.type === 'MC_WINNER') {
                 setGameType('musical_chairs');
@@ -779,6 +795,10 @@ export default function SpectatorPage() {
 
                     {gameState === 'STORY_CHAIN' && (
                         <StoryChainGame state={storyChainState} controls="spectator" />
+                    )}
+
+                    {gameState === 'COMMON_GROUND' && (
+                        <CommonGroundGame state={commonGroundState} controls="spectator" />
                     )}
 
                     {gameState === 'QUESTION' && (question || currentStatement || gameType === 'drawing') && (
