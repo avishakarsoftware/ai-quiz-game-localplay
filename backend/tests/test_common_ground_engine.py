@@ -6,6 +6,7 @@ from common_ground_engine import (
     PHASE_REVEAL,
     PHASE_ROUND_RESULT,
     PHASE_VOTING,
+    add_player_to_team,
     create_initial_state,
     final_standings,
     private_sync,
@@ -106,3 +107,30 @@ def test_next_round_resets_round_inputs_then_podiums_after_final_round():
 
     assert state["phase"] == PHASE_PODIUM
     assert final_standings(state)
+
+
+def test_add_player_to_team_balances_smallest_lowest_scoring_team():
+    state = create_initial_state(["Alice", "Bob", "Cara", "Dee", "Eli"], {"team_size": 3}, now=100, seed=5)
+    sizes_before = {team["id"]: len(team["player_ids"]) for team in state["teams"]}
+    smallest_size = min(sizes_before.values())
+    smallest_ids = {team_id for team_id, size in sizes_before.items() if size == smallest_size}
+
+    state["scores"] = {team["id"]: (200 if team["id"] in smallest_ids else 0) for team in state["teams"]}
+    target_id = sorted(smallest_ids)[0]
+    state["scores"][target_id] = 0
+
+    updated = add_player_to_team(state, "Fara")
+    team = next(team for team in updated["teams"] if "Fara" in team["player_ids"])
+
+    assert team["id"] == target_id
+    assert updated["scores"][target_id] == 0
+
+
+def test_add_player_to_team_does_not_duplicate_reconnects():
+    state = create_initial_state(["Alice", "Bob", "Cara", "Dee"], {"team_size": 2}, now=100, seed=6)
+    team_id = next(team["id"] for team in state["teams"] if "Alice" in team["player_ids"])
+
+    updated = add_player_to_team(state, "Alice")
+
+    assert sum(team["player_ids"].count("Alice") for team in updated["teams"]) == 1
+    assert next(team["id"] for team in updated["teams"] if "Alice" in team["player_ids"]) == team_id

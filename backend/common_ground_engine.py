@@ -116,6 +116,30 @@ def create_initial_state(player_ids: list[str], config: dict, now: float | None 
     }
 
 
+def add_player_to_team(state: dict, player_id: str) -> dict:
+    player_id = str(player_id or "").strip()
+    if not player_id:
+        return state
+    if _team_for_player(state, player_id):
+        return state
+    teams = [dict(team) for team in state.get("teams", [])]
+    scores = dict(state.get("scores", {}))
+    if not teams:
+        teams = [{"id": "team_1", "name": "Team A", "player_ids": []}]
+        scores.setdefault("team_1", 0)
+    target = min(
+        teams,
+        key=lambda team: (
+            len(team.get("player_ids", [])),
+            int(scores.get(team.get("id"), 0)),
+            str(team.get("id", "")),
+        ),
+    )
+    target["player_ids"] = list(target.get("player_ids", [])) + [player_id]
+    scores.setdefault(target["id"], 0)
+    return {**state, "teams": teams, "scores": scores}
+
+
 def _current_prompt(state: dict) -> dict:
     prompts = state.get("config", {}).get("prompts", DEFAULT_PROMPTS)
     index = min(int(state.get("round_index", 0)), len(prompts) - 1)

@@ -119,6 +119,7 @@ export default function PlayerPage() {
     // DrawingGame state
     const [drawingPrompt, setDrawingPrompt] = useState('');
     const [drawingDrawer, setDrawingDrawer] = useState('');
+    const [drawingClue, setDrawingClue] = useState('');
     const [isDrawer, setIsDrawer] = useState(false);
     const [drawingOps, setDrawingOps] = useState<DrawOperation[]>([]);
     const [guess, setGuess] = useState('');
@@ -243,7 +244,13 @@ export default function PlayerPage() {
             }
             if (msg.type === 'JOINED_ROOM') {
                 sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode, nickname, team, avatar, sessionToken: msg.session_token || '' }));
-                setState('LOBBY');
+                if (msg.game_type === 'common_ground' && msg.common_ground) {
+                    setGameType('common_ground');
+                    setCommonGroundState(msg.common_ground as CommonGroundState);
+                    setState('COMMON_GROUND');
+                } else {
+                    setState('LOBBY');
+                }
             }
             if (msg.type === 'RECONNECTED') {
                 const token = (msg.session_token as string) || getSavedSession()?.sessionToken || '';
@@ -283,6 +290,7 @@ export default function PlayerPage() {
                         const promptData = msg.drawing_prompt as { text?: string } | undefined;
                         setDrawingPrompt(promptData?.text || '');
                         setDrawingDrawer(msg.drawer as string || '');
+                        setDrawingClue(msg.drawing_clue as string || '');
                         setIsDrawer(Boolean(msg.is_drawer));
                         setDrawingOps((msg.drawing_ops as DrawOperation[]) || []);
                         setCorrectGuessers((msg.correct_guessers as string[]) || []);
@@ -446,6 +454,7 @@ export default function PlayerPage() {
                     const promptData = msg.drawing_prompt as { text?: string } | undefined;
                     setDrawingPrompt(promptData?.text || '');
                     setDrawingDrawer(msg.drawer as string || '');
+                    setDrawingClue(msg.drawing_clue as string || '');
                     setIsDrawer(Boolean(msg.is_drawer));
                     setDrawingOps((msg.drawing_ops as DrawOperation[]) || []);
                     setCorrectGuessers((msg.correct_guessers as string[]) || []);
@@ -478,6 +487,8 @@ export default function PlayerPage() {
             }
             if (msg.type === 'TIMER') {
                 setTimeRemaining(msg.remaining);
+                if (typeof msg.drawing_clue === 'string') setDrawingClue(msg.drawing_clue);
+                if (typeof msg.drawer === 'string') setDrawingDrawer(msg.drawer);
                 if (msg.remaining <= 5 && msg.remaining > 0) soundManager.play('timerTick');
             }
             if (msg.type === 'ANSWER_RESULT') {
@@ -1125,6 +1136,7 @@ export default function PlayerPage() {
                             ) : (
                                 <>
                                     <p className="text-[--text-tertiary] text-sm">Guess what <strong>{drawingDrawer}</strong> is drawing</p>
+                                    {drawingClue && <div className="drawing-clue" aria-label="Drawing clue">{drawingClue}</div>}
                                     <p className="text-[--accent-success] text-sm">{correctGuessers.length} correct</p>
                                 </>
                             )}

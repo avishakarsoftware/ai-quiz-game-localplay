@@ -49,8 +49,11 @@ function hasAiGeneration(game: GameModeConfig): boolean {
 export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreenProps) {
     const [activeCategory, setActiveCategory] = useState<GameCategory>('all');
     const [searchQuery, setSearchQuery] = useState('');
-    const gameModes = (catalog ? filterGameModesForCatalog(catalog) : GAME_MODE_CONFIGS)
-        .filter((game) => ENABLE_BINGO || !['bingo', 'baby_bingo'].includes(game.id));
+    const gameModes = useMemo(() => {
+        const availableGames = (catalog ? filterGameModesForCatalog(catalog) : GAME_MODE_CONFIGS)
+            .filter((game) => ENABLE_BINGO || !['bingo', 'baby_bingo'].includes(game.id));
+        return [...availableGames].sort((a, b) => a.title.localeCompare(b.title));
+    }, [catalog]);
     const query = searchQuery.trim().toLowerCase();
     const filteredGameModes = useMemo(() => {
         return gameModes.filter((game) => {

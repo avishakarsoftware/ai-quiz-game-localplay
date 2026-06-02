@@ -74,7 +74,9 @@ export default function GameQuestionScreen({
             {isWMLT || isDrawing ? (
                 /* WMLT: show statement */
                 <div className="question-card mb-6 question-enter">
-                    <p className="question-text">{statementText || 'Loading...'}</p>
+                    <p className="question-text" style={{ whiteSpace: isDrawing ? 'pre-line' : undefined }}>
+                        {statementText || 'Loading...'}
+                    </p>
                 </div>
             ) : question ? (
                 /* Quiz: show question + answer options */

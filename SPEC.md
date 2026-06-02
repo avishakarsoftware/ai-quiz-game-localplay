@@ -30,7 +30,7 @@ Launch readiness baseline:
 - Standalone **My Quizzes** is scoped to the current LocalPlay wallet/session and must not show Revelry party-scoped content or images.
 - Host-app launches must hide standalone economy/account/library chrome unless explicitly allowed by the host-app context.
 - All user-facing labels should treat the app as a multi-game surface, not as "Revelry Quiz".
-- The standalone game picker is a catalog, not a long vertical list: show all available games by default, include search, and filter with the product categories **All**, **Quiz/Trivia**, **Creative**, and **Bingo/Housie**. Do not include a generic "Social" category because all LocalPlay games are social by design. Games that support AI-generated setup/content should show a small sparkle marker after the game name.
+- The standalone game picker is a catalog, not a long vertical list: show all available games sorted alphabetically by display name, include search, and filter with the product categories **All**, **Quiz/Trivia**, **Creative**, **Bingo/Housie**, and **Cards**. Do not include a generic "Social" category because all LocalPlay games are social by design. Games that support AI-generated setup/content should show a small sparkle marker after the game name.
 - Backend-served SPA and service worker routing must never allow API routes to be fulfilled by cached app shell HTML.
 - PWA prompts should improve continuity without interrupting gameplay: update prompts are allowed globally, while install and notification prompts are standalone-first and suppressed in Revelry/host-app embedded surfaces.
 
@@ -325,7 +325,7 @@ Revelry content callbacks must treat safe `payload.content` metadata as a first-
 
 Bingo-family games are a separate runtime family rather than quiz variants. `SPEC-GAME-BINGO-HOUSIE.md` defines the reusable Bingo/Housie engine. Housie is implemented for standalone LocalPlay and Revelry gamma with server-generated tickets, manual/auto number calling, server-side claim validation, and spectator called-board sync. Configurable standalone Bingo is implemented with text/emoji/number/image-shaped deck items, 5x5 cards, optional free center, template/manual/AI-text setup, and host-reviewed generated items. Baby Bingo / dedicated word / emoji / image / photo Bingo remain later named caller-led rulesets on the same engine. `SPEC-GAME-FIND-SOMEONE-WHO.md` defines a social Bingo-style icebreaker that reuses card layouts and claim patterns but replaces caller draws with real-person matching and optional tap confirmation.
 
-Social icebreakers should be their own lightweight runtime family when they are not caller-led or quiz-shaped. `SPEC-GAME-COMMON-GROUND.md` defines and now implements the standalone Common Ground flow: automatic team assignment, private team submissions during discussion, reveal, optional voting, round scoring, spectator sync, and final team podium. Revelry exposure remains disabled until a host-app bridge pass is completed.
+Social icebreakers should be their own lightweight runtime family when they are not caller-led or quiz-shaped. `SPEC-GAME-COMMON-GROUND.md` defines and now implements the standalone Common Ground flow: automatic team assignment, mid-party QR joins with token-based reconnects, private team submissions during discussion, reveal, optional voting, round scoring, spectator sync, and final team podium. Revelry exposure remains disabled until a host-app bridge pass is completed.
 `SPEC-GAME-TWO-TRUTHS.md` defines and now implements the standalone classic player-authored Two Truths and a Lie flow: private statement submission, sequential author reveals, lie voting, deception/detection scoring, spectator sync, and a final individual podium. Revelry exposure remains disabled until a host-app bridge pass is completed.
 `SPEC-GAME-CHIT-PULL.md` defines an implementation-ready random chit game where the host manually creates or AI-generates a reviewed deck of questions/actions/funny-face prompts, the server randomly picks a player and chit each turn, and the host marks completed/skipped/redrawn outcomes for scoring and podium.
 `SPEC-GAME-PARTY-QUESTS.md` defines a long-running ambient party game where players complete mingling tasks throughout the event, collect tap/QR confirmations from other players, and gather later for a final reveal and podium.
@@ -993,6 +993,7 @@ Drawing `QUESTION` payload includes:
 
 - `game_type: "drawing"`
 - `drawing_prompt`, with hidden answer fields only for the drawer.
+- `drawing_clue`, a progressive letter clue shown to guessers and spectators.
 - `drawer`
 - `drawing_ops`
 - `question_number`
@@ -1006,9 +1007,11 @@ The drawer sends `DRAW_OP` messages. The backend rate-limits draw operations, tr
 
 Guessers send `GUESS` messages. The backend normalizes guesses against prompt text and aliases, confirms accepted guesses, and tracks correct guessers for the round.
 
-### Round End
+### Round End And Advance
 
 Round ends when the timer expires or the organizer advances.
+
+Drawing rooms support host-selected round advance behavior. Auto advance is the default: after `QUESTION_OVER`, the server broadcasts `DRAWING_NEXT_ROUND_PENDING` for a 5-second pause, then starts the next round or final podium. Manual mode leaves the host on the result screen until they tap Next Round.
 
 Server broadcasts Drawing `QUESTION_OVER`:
 

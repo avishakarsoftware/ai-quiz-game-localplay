@@ -81,14 +81,49 @@ Key integration points that need updating:
 4. Server selects the drawer for round 1.
 5. Drawer receives the secret prompt.
 6. Guessers see a guessing input and the live drawing canvas.
-7. Spectator sees the live drawing canvas, timer, and non-secret round metadata.
-8. Drawer draws until time expires or all guessers answer.
-9. Correct guesses are accepted in real time.
-10. Round ends.
-11. Server scores drawer and guessers.
-12. Leaderboard/result screen shows the prompt, correct guessers, and score changes.
-13. Next round selects another drawer.
-14. Final podium works like other games.
+7. Guessers and spectators see a progressive letter clue, not the full prompt.
+8. Spectator sees the live drawing canvas, timer, drawer name, recent guesses, correct guessers, and non-secret round metadata.
+9. Drawer draws until time expires or all guessers answer.
+10. Correct guesses are accepted in real time.
+11. Round ends.
+12. Server scores drawer and guessers.
+13. Leaderboard/result screen shows the prompt, correct guessers, and score changes.
+14. In auto mode, the server waits 5 seconds and starts the next round. In manual mode, the host presses Next Round.
+15. Next round selects another drawer.
+16. Final podium works like other games.
+
+### Round Advance Mode
+
+The host chooses a round advance mode during Drawing Game review:
+
+- `auto` is the default.
+- `manual` is available when the host wants to pause between rounds.
+- Auto mode uses `drawing_auto_advance = true` and `drawing_inter_round_seconds = 5` in room creation.
+- Manual mode uses `drawing_auto_advance = false`.
+- During the 5-second inter-round pause, the server broadcasts `DRAWING_NEXT_ROUND_PENDING`.
+- If the host manually advances during the pause, the pending auto-advance task is cancelled to avoid double-starting a round.
+
+### Progressive Clues
+
+Guessers and spectators must never receive the full prompt text until the round ends. Instead they receive `drawing_clue`.
+
+Clue format:
+
+- Each unrevealed alphanumeric character is shown as `_`.
+- Letters inside a word are separated by a single space.
+- Words are separated visually, for example `cat` -> `_ _ _` and `cold cat` -> `_ _ _ _   _ _ _`.
+- Punctuation can remain visible because it does not reveal the answer materially.
+
+Reveal schedule:
+
+| Elapsed timer | Example for `cold cat` |
+|---:|---|
+| 0-49% | `_ _ _ _   _ _ _` |
+| 50-74% | `c _ _ _   _ _ _` |
+| 75-89% | `c _ _ _   c _ _` |
+| 90%+ | `c _ _ d   c _ t` |
+
+The server computes clues from authoritative timer state and includes the updated `drawing_clue` in `TIMER` payloads so reconnecting clients and spectators stay synchronized.
 
 ### Drawer Rotation
 
@@ -185,6 +220,8 @@ export interface DrawingPrompt {
 export interface DrawingGame {
   game_title: string;
   prompts: DrawingPrompt[];
+  auto_advance?: boolean;
+  inter_round_seconds?: number;
 }
 ```
 
@@ -339,7 +376,7 @@ Reuse the existing room WebSocket:
 
 ### New Messages
 
-#### Server -> Clients: DRAWING_ROUND
+#### Server -> Clients: QUESTION
 
 Sent at the start of each round.
 
@@ -347,16 +384,19 @@ Drawer receives:
 
 ```json
 {
-  "type": "DRAWING_ROUND",
+  "type": "QUESTION",
   "game_type": "drawing",
-  "round_number": 1,
-  "total_rounds": 10,
+  "question_number": 1,
+  "total_questions": 10,
   "time_limit": 60,
   "drawer": "Avi",
   "is_drawer": true,
-  "prompt": {
+  "drawing_clue": "_ _ _ _ _   _ _ _ _",
+  "drawing_prompt": {
     "id": 1,
-    "text": "robot chef"
+    "text": "robot chef",
+    "aliases": ["robot cook"],
+    "difficulty": "medium"
   }
 }
 ```
@@ -365,13 +405,18 @@ Guessers receive:
 
 ```json
 {
-  "type": "DRAWING_ROUND",
+  "type": "QUESTION",
   "game_type": "drawing",
-  "round_number": 1,
-  "total_rounds": 10,
+  "question_number": 1,
+  "total_questions": 10,
   "time_limit": 60,
   "drawer": "Avi",
-  "is_drawer": false
+  "is_drawer": false,
+  "drawing_clue": "_ _ _ _ _   _ _ _ _",
+  "drawing_prompt": {
+    "id": 1,
+    "difficulty": "medium"
+  }
 }
 ```
 
@@ -379,16 +424,32 @@ Spectators receive:
 
 ```json
 {
-  "type": "DRAWING_ROUND",
+  "type": "QUESTION",
   "game_type": "drawing",
-  "round_number": 1,
-  "total_rounds": 10,
+  "question_number": 1,
+  "total_questions": 10,
   "time_limit": 60,
-  "drawer": "Avi"
+  "drawer": "Avi",
+  "drawing_clue": "_ _ _ _ _   _ _ _ _",
+  "drawing_prompt": {
+    "id": 1,
+    "difficulty": "medium"
+  }
 }
 ```
 
-Do not send the prompt to guessers or spectators until the round ends.
+Do not send the prompt text or aliases to guessers or spectators until the round ends.
+
+Timer updates include the current clue:
+
+```json
+{
+  "type": "TIMER",
+  "remaining": 22,
+  "drawer": "Avi",
+  "drawing_clue": "r _ _ _ _   _ _ _ _"
+}
+```
 
 #### Drawer -> Server: DRAW_OP
 
@@ -450,11 +511,11 @@ Server validation:
 - Limit operation size.
 - Rate limit draw ops per connection.
 
-#### Guesser -> Server: SUBMIT_GUESS
+#### Guesser -> Server: GUESS
 
 ```json
 {
-  "type": "SUBMIT_GUESS",
+  "type": "GUESS",
   "guess": "robot cook"
 }
 ```
@@ -494,9 +555,11 @@ For v1, show incorrect guesses only if it feels fun and non-spammy. Add a per-pl
 
 #### Server -> Clients: DRAWING_ROUND_OVER
 
+Legacy name for this spec; the implementation uses `QUESTION_OVER`.
+
 ```json
 {
-  "type": "DRAWING_ROUND_OVER",
+  "type": "QUESTION_OVER",
   "game_type": "drawing",
   "round_number": 1,
   "total_rounds": 10,
@@ -511,6 +574,19 @@ For v1, show incorrect guesses only if it feels fun and non-spammy. Add a per-pl
   ],
   "drawer_points": 700,
   "leaderboard": []
+}
+```
+
+#### Server -> Clients: DRAWING_NEXT_ROUND_PENDING
+
+Sent once per second during auto mode's inter-round pause.
+
+```json
+{
+  "type": "DRAWING_NEXT_ROUND_PENDING",
+  "remaining": 5,
+  "is_final": false,
+  "next_label": "Next round"
 }
 ```
 

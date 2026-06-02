@@ -57,6 +57,7 @@ from story_chain_engine import (
 )
 from common_ground_engine import (
     PHASE_PODIUM as COMMON_PHASE_PODIUM,
+    add_player_to_team as common_add_player_to_team,
     create_initial_state as common_create_initial_state,
     final_standings as common_final_standings,
     next_round as common_next_round,
@@ -137,6 +138,9 @@ class Room:
         self.drawing_ops: List[dict] = []
         self.guess_log: List[dict] = []
         self.draw_op_timestamps: Dict[str, list] = {}
+        self.drawing_auto_advance: bool = bool(game_data.get("auto_advance", True)) if game_type == "drawing" else True
+        self.drawing_inter_round_seconds: int = int(game_data.get("inter_round_seconds") or 5) if game_type == "drawing" else 5
+        self.drawing_auto_task: Optional[asyncio.Task] = None
         # Housie state
         self.housie_deck: List[dict] = []
         self.housie_called: List[dict] = []
@@ -224,6 +228,11 @@ class Room:
         self.drawing_ops = []
         self.guess_log = []
         self.draw_op_timestamps.clear()
+        if self.drawing_auto_task:
+            self.drawing_auto_task.cancel()
+            self.drawing_auto_task = None
+        self.drawing_auto_advance = bool(new_game_data.get("auto_advance", True)) if self.game_type == "drawing" else True
+        self.drawing_inter_round_seconds = int(new_game_data.get("inter_round_seconds") or 5) if self.game_type == "drawing" else 5
         self.housie_deck = []
         self.housie_called = []
         self.housie_tickets = {}
@@ -623,7 +632,8 @@ class SocketManager:
                         sync["statement"] = round_data
                         sync["vote_count"] = len(room.votes)
                     elif room.game_type == "drawing":
-                        sync["drawing_prompt"] = {k: v for k, v in round_data.items() if k != "aliases"}
+                        sync["drawing_prompt"] = self._drawing_public_prompt(round_data)
+                        sync["drawing_clue"] = self._drawing_clue(room, round_data)
                         sync["drawer"] = room.current_drawer
                         sync["drawing_ops"] = room.drawing_ops[-config.MAX_DRAW_OPS_PER_SYNC:]
                         sync["correct_guessers"] = list(room.correct_guessers)
@@ -797,6 +807,7 @@ class SocketManager:
                 sync["voted_count"] = len(room.votes)
             elif room.game_type == "drawing":
                 sync["drawing_prompt"] = round_data
+                sync["drawing_clue"] = self._drawing_clue(room, round_data)
                 sync["drawer"] = room.current_drawer
                 sync["drawing_ops"] = room.drawing_ops[-config.MAX_DRAW_OPS_PER_SYNC:]
                 sync["correct_guessers"] = list(room.correct_guessers)
@@ -969,6 +980,9 @@ class SocketManager:
             elif msg_type == "NEXT_QUESTION":
                 if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground"):
                     return
+                if room.game_type == "drawing" and room.drawing_auto_task:
+                    room.drawing_auto_task.cancel()
+                    room.drawing_auto_task = None
                 if room.state == "QUESTION":
                     await self.end_question(room)
                 elif room.state in ("INTRO", "LEADERBOARD"):
@@ -1081,6 +1095,9 @@ class SocketManager:
                     if room.timer_task:
                         room.timer_task.cancel()
                         room.timer_task = None
+                    if room.game_type == "drawing" and room.drawing_auto_task:
+                        room.drawing_auto_task.cancel()
+                        room.drawing_auto_task = None
                     room.state = "PODIUM"
                     leaderboard = self.get_leaderboard(room)
                     team_leaderboard = self.get_team_leaderboard(room)
@@ -1144,6 +1161,14 @@ class SocketManager:
                                        new_content_id, room.room_code)
                         await self._send_to_client(room, client_id, {"type": "ERROR", "message": "Game content not found. Please generate a new game."})
                         return
+                    if new_game_type == "drawing":
+                        new_game_data = dict(new_game_data)
+                        new_game_data["auto_advance"] = bool(message.get("drawing_auto_advance", True))
+                        try:
+                            inter_round = int(message.get("drawing_inter_round_seconds", 5))
+                        except (TypeError, ValueError):
+                            inter_round = 5
+                        new_game_data["inter_round_seconds"] = max(0, min(30, inter_round))
 
                     # Check content ownership
                     from main import content_owners, pending_generation_charges
@@ -1412,6 +1437,46 @@ class SocketManager:
                         await ws.send_json(state_info)
                     return
 
+                active_common_ground_join = (
+                    room.game_type == "common_ground"
+                    and bool(room.common_state)
+                    and room.state != "LOBBY"
+                    and room.state != COMMON_PHASE_PODIUM
+                )
+
+                if len(room.players) >= config.MAX_PLAYERS_PER_ROOM:
+                    conn = room.connections.get(client_id)
+                    if conn:
+                        await conn.send_json({"type": "ERROR", "message": "Room is full"})
+                        await conn.close()
+                    return
+
+                if active_common_ground_join:
+                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
+                    room.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
+                    player_session_token = secrets.token_urlsafe(16)
+                    room.player_tokens[nickname] = player_session_token
+                    room.common_state = common_add_player_to_team(room.common_state, nickname)
+                    self._sync_common_ground_scores_to_players(room)
+                    ws = room.connections.get(client_id)
+                    if ws:
+                        await ws.send_json({
+                            "type": "JOINED_ROOM",
+                            "room_code": room.room_code,
+                            "session_token": player_session_token,
+                            "state": room.state,
+                            "game_type": "common_ground",
+                            "common_ground": common_private_sync(room.common_state, nickname, players=room.player_public_list()),
+                        })
+                    await room.broadcast({
+                        "type": "PLAYER_JOINED",
+                        "nickname": nickname,
+                        "player_count": len(room.players),
+                        "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()]
+                    })
+                    await self._broadcast_common_ground_sync(room)
+                    return
+
                 # Block new players if room is locked
                 if room.locked:
                     conn = room.connections.get(client_id)
@@ -1429,13 +1494,6 @@ class SocketManager:
                             "question_number": room.current_question_index + 1,
                             "total_questions": room.total_rounds(),
                         })
-                        await conn.close()
-                    return
-
-                if len(room.players) >= config.MAX_PLAYERS_PER_ROOM:
-                    conn = room.connections.get(client_id)
-                    if conn:
-                        await conn.send_json({"type": "ERROR", "message": "Room is full"})
                         await conn.close()
                     return
 
@@ -2740,14 +2798,26 @@ class SocketManager:
 
     def _drawing_player_state(self, room: Room, nickname: str, prompt: Optional[dict]) -> dict:
         is_drawer = nickname == room.current_drawer
+        clue = self._drawing_clue(room, prompt)
         return {
             "drawing_prompt": prompt if is_drawer else ({k: v for k, v in (prompt or {}).items() if k not in ("text", "aliases")}),
+            "drawing_clue": clue,
             "drawer": room.current_drawer,
             "is_drawer": is_drawer,
             "drawing_ops": room.drawing_ops[-config.MAX_DRAW_OPS_PER_SYNC:],
             "correct_guessers": list(room.correct_guessers),
             "guess_log": room.guess_log[-10:],
         }
+
+    def _drawing_clue(self, room: Room, prompt: Optional[dict] = None) -> str:
+        prompt = prompt or room.current_round_data() or {}
+        elapsed = max(0.0, time.time() - room.question_start_time) if room.question_start_time else 0.0
+        ratio = elapsed / max(1, room.time_limit)
+        from drawing_engine import clue_for_prompt
+        return clue_for_prompt(str(prompt.get("text") or ""), ratio)
+
+    def _drawing_public_prompt(self, prompt: Optional[dict]) -> dict:
+        return {k: v for k, v in (prompt or {}).items() if k not in ("text", "aliases")}
 
     def _ensure_drawer_order(self, room: Room):
         current = room.player_nicknames()
@@ -2765,6 +2835,8 @@ class SocketManager:
         return room.drawer_order[room.current_question_index % len(room.drawer_order)]
 
     async def _broadcast_drawing_question(self, room: Room, prompt: dict, is_bonus: bool):
+        public_prompt = self._drawing_public_prompt(prompt)
+        clue = self._drawing_clue(room, prompt)
         base = {
             "type": "QUESTION",
             "question_number": room.current_question_index + 1,
@@ -2773,6 +2845,7 @@ class SocketManager:
             "is_bonus": is_bonus,
             "game_type": "drawing",
             "drawer": room.current_drawer,
+            "drawing_clue": clue,
             "correct_guessers": [],
             "drawing_ops": [],
             "guess_log": [],
@@ -2783,7 +2856,7 @@ class SocketManager:
             nickname = room.players[client_id]["nickname"]
             payload = dict(base)
             payload["is_drawer"] = nickname == room.current_drawer
-            payload["drawing_prompt"] = prompt if payload["is_drawer"] else {"id": prompt.get("id"), "difficulty": prompt.get("difficulty")}
+            payload["drawing_prompt"] = prompt if payload["is_drawer"] else public_prompt
             try:
                 await ws.send_json(payload)
             except Exception:
@@ -2798,7 +2871,7 @@ class SocketManager:
             try:
                 await ws.send_json({
                     **base,
-                    "drawing_prompt": {"id": prompt.get("id"), "difficulty": prompt.get("difficulty")},
+                    "drawing_prompt": public_prompt,
                     "is_drawer": False,
                 })
             except Exception:
@@ -3168,6 +3241,13 @@ class SocketManager:
         logger.info("Room %s bonus questions: %s", room.room_code, room.bonus_questions)
 
     async def start_question(self, room: Room):
+        if (
+            room.game_type == "drawing"
+            and room.drawing_auto_task
+            and room.drawing_auto_task is not asyncio.current_task()
+        ):
+            room.drawing_auto_task.cancel()
+            room.drawing_auto_task = None
         if room.timer_task:
             room.timer_task.cancel()
 
@@ -3270,7 +3350,11 @@ class SocketManager:
         """Timer that ends the question after time_limit seconds."""
         try:
             for remaining in range(room.time_limit, -1, -1):
-                await room.broadcast({"type": "TIMER", "remaining": remaining})
+                payload = {"type": "TIMER", "remaining": remaining}
+                if room.game_type == "drawing" and room.state == "QUESTION":
+                    payload["drawing_clue"] = self._drawing_clue(room)
+                    payload["drawer"] = room.current_drawer
+                await room.broadcast(payload)
                 if remaining > 0:
                     await asyncio.sleep(1)
 
@@ -3339,6 +3423,32 @@ class SocketManager:
             "previous_leaderboard": room.previous_leaderboard,
             "is_final": is_final,
         })
+        if room.drawing_auto_task:
+            room.drawing_auto_task.cancel()
+            room.drawing_auto_task = None
+        if room.drawing_auto_advance:
+            room.drawing_auto_task = asyncio.create_task(self._drawing_auto_advance_after_pause(room, is_final))
+
+    async def _drawing_auto_advance_after_pause(self, room: Room, is_final: bool):
+        delay = max(0, min(30, int(room.drawing_inter_round_seconds or 5)))
+        try:
+            for remaining in range(delay, 0, -1):
+                if room.state != "LEADERBOARD" or room.game_type != "drawing":
+                    return
+                await room.broadcast({
+                    "type": "DRAWING_NEXT_ROUND_PENDING",
+                    "remaining": remaining,
+                    "is_final": is_final,
+                    "next_label": "Final results" if is_final else "Next round",
+                })
+                await asyncio.sleep(1)
+            if room.state == "LEADERBOARD" and room.game_type == "drawing":
+                await self.start_question(room)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if room.drawing_auto_task is asyncio.current_task():
+                room.drawing_auto_task = None
 
     async def _end_wmlt_round(self, room: Room):
         """Handle end-of-round scoring and results for Who's Most Likely To."""

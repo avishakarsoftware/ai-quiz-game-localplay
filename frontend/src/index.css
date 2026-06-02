@@ -2409,8 +2409,63 @@ body {
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 46, 122, 0.06)), var(--paper);
 }
 
+.drawing-advance-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 46, 122, 0.06)), var(--paper);
+}
+
+.segmented-pill {
+    display: inline-grid;
+    grid-template-columns: repeat(2, minmax(74px, 1fr));
+    gap: 6px;
+    padding: 5px;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.18);
+}
+
+.segmented-pill button {
+    min-height: 42px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink-mute);
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.segmented-pill button.active {
+    background: var(--accent-primary);
+    color: #08030d;
+}
+
+.drawing-clue {
+    display: inline-block;
+    max-width: 100%;
+    margin-top: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: clamp(1rem, 2.7vw, 1.4rem);
+    font-weight: 800;
+    line-height: 1.5;
+    letter-spacing: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 @media (max-width: 520px) {
-    .mlt-vote-toggle-row {
+    .mlt-vote-toggle-row,
+    .drawing-advance-row {
         align-items: stretch;
         flex-direction: column;
     }

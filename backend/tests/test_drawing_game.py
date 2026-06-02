@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from drawing_engine import is_correct_guess, normalize_guess, _sanitize_drawing_game, _validate_drawing_game
+from drawing_engine import clue_for_prompt, is_correct_guess, normalize_guess, _sanitize_drawing_game, _validate_drawing_game
 from socket_manager import Room, SocketManager
 
 
@@ -44,6 +44,14 @@ def test_is_correct_guess_uses_aliases_without_fuzzy_matching():
     assert not is_correct_guess("robot chief", prompt)
 
 
+def test_clue_for_prompt_progressively_reveals_letters():
+    assert clue_for_prompt("cat", 0) == "_ _ _"
+    assert clue_for_prompt("cold cat", 0) == "_ _ _ _   _ _ _"
+    assert clue_for_prompt("cold cat", 0.50) == "c _ _ _   _ _ _"
+    assert clue_for_prompt("cold cat", 0.75) == "c _ _ _   c _ _"
+    assert clue_for_prompt("cold cat", 0.90) == "c _ _ d   c _ t"
+
+
 def test_sanitize_and_validate_drawing_game():
     raw = {
         "game_title": "<b>Sketch</b>",
@@ -72,6 +80,7 @@ async def test_drawing_round_sends_secret_prompt_only_to_drawer():
 
     assert drawer_msg["drawing_prompt"]["text"] == "robot chef"
     assert "text" not in guesser_msg["drawing_prompt"]
+    assert guesser_msg["drawing_clue"] == "_ _ _ _ _   _ _ _ _"
     room.timer_task.cancel()
     await asyncio.sleep(0)
 
@@ -92,3 +101,40 @@ async def test_drawing_guess_scores_guesser_and_drawer():
     assert "Bob" in room.correct_guessers
     assert room.players["p2"]["score"] > 0
     assert room.players["p1"]["score"] >= 200
+
+
+@pytest.mark.asyncio
+async def test_drawing_manual_mode_does_not_schedule_auto_advance():
+    manager = SocketManager()
+    game = make_drawing_game()
+    game["auto_advance"] = False
+    room = Room("DRAW03", game, time_limit=30, game_type="drawing")
+    add_player(room, "p1", "Alice")
+    add_player(room, "p2", "Bob")
+    room.current_question_index = 0
+    room.state = "LEADERBOARD"
+    room.current_drawer = "Alice"
+
+    await manager._end_drawing_round(room)
+
+    assert room.drawing_auto_task is None
+
+
+@pytest.mark.asyncio
+async def test_drawing_auto_mode_schedules_inter_round_pause():
+    manager = SocketManager()
+    game = make_drawing_game()
+    game["auto_advance"] = True
+    game["inter_round_seconds"] = 5
+    room = Room("DRAW04", game, time_limit=30, game_type="drawing")
+    add_player(room, "p1", "Alice")
+    add_player(room, "p2", "Bob")
+    room.current_question_index = 0
+    room.state = "LEADERBOARD"
+    room.current_drawer = "Alice"
+
+    await manager._end_drawing_round(room)
+
+    assert room.drawing_auto_task is not None
+    room.drawing_auto_task.cancel()
+    await asyncio.sleep(0)

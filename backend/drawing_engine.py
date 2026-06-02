@@ -153,6 +153,34 @@ def is_correct_guess(guess: str, prompt: dict) -> bool:
     return bool(normalized_guess) and normalized_guess in {normalize_guess(str(v)) for v in target_values}
 
 
+def clue_for_prompt(prompt_text: str, elapsed_ratio: float = 0.0) -> str:
+    """Build a progressive letter clue without exposing the full drawing prompt."""
+    ratio = max(0.0, min(1.0, float(elapsed_ratio or 0.0)))
+    words = re.findall(r"[A-Za-z0-9]+|[^A-Za-z0-9\s]+|\s+", str(prompt_text or ""))
+    reveal_first_global = ratio >= 0.50
+    reveal_first_each_word = ratio >= 0.75
+    reveal_first_last_each_word = ratio >= 0.90
+    first_word_revealed = False
+    output: list[str] = []
+    for token in words:
+        if token.isspace():
+            output.append("   ")
+            continue
+        if not re.search(r"[A-Za-z0-9]", token):
+            output.append(token)
+            continue
+        letters = list(token)
+        revealed = ["_"] * len(letters)
+        should_reveal_first = reveal_first_each_word or (reveal_first_global and not first_word_revealed)
+        if should_reveal_first and letters:
+            revealed[0] = letters[0]
+        if reveal_first_last_each_word and len(letters) > 1:
+            revealed[-1] = letters[-1]
+        first_word_revealed = True
+        output.append(" ".join(revealed))
+    return "".join(output).strip()
+
+
 async def _generate_ollama(prompt: str, difficulty: str, num_prompts: int, model_override: Optional[str] = None) -> Optional[dict]:
     payload = {
         "model": model_override or config.OLLAMA_MODEL,

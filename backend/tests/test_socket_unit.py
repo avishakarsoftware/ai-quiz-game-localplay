@@ -844,6 +844,38 @@ class TestJoinValidation:
         assert err is not None
         assert "full" in err["message"].lower()
 
+    @pytest.mark.asyncio
+    async def test_common_ground_allows_new_player_join_during_active_game(self):
+        room = Room("COM001", {
+            "game_title": "Common Ground",
+            "team_size": 2,
+            "rounds": 2,
+            "discussion_time_seconds": 90,
+            "vote_time_seconds": 30,
+            "voting_enabled": True,
+        }, game_type="common_ground")
+        sm = SocketManager()
+        for index, name in enumerate(["Alice", "Bob", "Cara", "Dee"], start=1):
+            add_player(room, f"p{index}", name)
+        sm._start_common_ground_game(room)
+        room.locked = True
+
+        ws = MockWebSocket()
+        room.connections["late"] = ws
+        await sm.handle_message(room, "late", {
+            "type": "JOIN",
+            "nickname": "Fara",
+            "avatar": "🦊",
+        }, is_organizer=False)
+
+        joined = ws.last("JOINED_ROOM")
+        assert joined is not None
+        assert joined["game_type"] == "common_ground"
+        assert joined["common_ground"]["my_team_id"]
+        assert "late" in room.players
+        assert any("Fara" in team["player_ids"] for team in room.common_state["teams"])
+        assert ws.last("ERROR") is None
+
 
 # ===========================================================================
 # Spectator sync

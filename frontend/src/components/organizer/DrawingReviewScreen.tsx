@@ -4,12 +4,14 @@ interface DrawingReviewScreenProps {
     game: DrawingGame;
     timeLimit: number;
     setTimeLimit: (value: number) => void;
+    autoAdvance: boolean;
+    setAutoAdvance: (value: boolean) => void;
     onCreateRoom: () => void;
     onUpdateGame: (game: DrawingGame) => void;
     onBack: () => void;
 }
 
-export default function DrawingReviewScreen({ game, timeLimit, setTimeLimit, onCreateRoom, onUpdateGame, onBack }: DrawingReviewScreenProps) {
+export default function DrawingReviewScreen({ game, timeLimit, setTimeLimit, autoAdvance, setAutoAdvance, onCreateRoom, onUpdateGame, onBack }: DrawingReviewScreenProps) {
     const updatePrompt = (id: number, text: string) => {
         onUpdateGame({
             ...game,
@@ -43,6 +45,18 @@ export default function DrawingReviewScreen({ game, timeLimit, setTimeLimit, onC
                                 {value}s
                             </button>
                         ))}
+                    </div>
+                    <div className="drawing-advance-row">
+                        <div>
+                            <p className="font-semibold">Round advance</p>
+                            <p className="text-[--text-tertiary] text-sm">
+                                {autoAdvance ? 'Pause 5s, then start the next round' : 'Host starts each next round manually'}
+                            </p>
+                        </div>
+                        <div className="segmented-pill" role="group" aria-label="Drawing round advance">
+                            <button type="button" className={autoAdvance ? 'active' : ''} onClick={() => setAutoAdvance(true)}>Auto</button>
+                            <button type="button" className={!autoAdvance ? 'active' : ''} onClick={() => setAutoAdvance(false)}>Manual</button>
+                        </div>
                     </div>
                 </div>
 

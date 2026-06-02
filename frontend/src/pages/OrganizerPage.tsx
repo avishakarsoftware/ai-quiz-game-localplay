@@ -130,6 +130,10 @@ export default function OrganizerPage() {
     const [showVotes, setShowVotes] = useState(true);
     const [wmltRoundResult, setWmltRoundResult] = useState<{ winner: string; winners: string[]; round_podium: { nickname: string; avatar: string; vote_count: number; voters: string[] }[]; unanimous: boolean; show_votes: boolean; statement: string } | null>(null);
     const [drawingRoundResult, setDrawingRoundResult] = useState<{ prompt: string; drawer: string; correct_guessers: string[] } | null>(null);
+    const [drawingAutoAdvance, setDrawingAutoAdvance] = useState(true);
+    const [drawingNextRoundCountdown, setDrawingNextRoundCountdown] = useState<number | null>(null);
+    const [drawingActiveDrawer, setDrawingActiveDrawer] = useState('');
+    const [drawingClue, setDrawingClue] = useState('');
     const [housieTitle, setHousieTitle] = useState('Housie');
     const [housiePatterns, setHousiePatterns] = useState(['quick_5', 'four_corners', 'top_row', 'middle_row', 'bottom_row', 'full_house']);
     const [housiePlayMode, setHousiePlayMode] = useState<'beginner' | 'pro'>('beginner');
@@ -331,11 +335,21 @@ export default function OrganizerPage() {
             }
             if (msg.game_type === 'drawing') {
                 setGameType('drawing');
+                setDrawingActiveDrawer(msg.drawer as string || '');
+                setDrawingClue(msg.drawing_clue as string || '');
+                setDrawingNextRoundCountdown(null);
                 setAnsweredCount(0);
             }
             setState('QUESTION');
         }
-        else if (msg.type === 'TIMER') setTimeRemaining(msg.remaining as number);
+        else if (msg.type === 'TIMER') {
+            setTimeRemaining(msg.remaining as number);
+            if (typeof msg.drawing_clue === 'string') setDrawingClue(msg.drawing_clue);
+            if (typeof msg.drawer === 'string') setDrawingActiveDrawer(msg.drawer);
+        }
+        else if (msg.type === 'DRAWING_NEXT_ROUND_PENDING') {
+            setDrawingNextRoundCountdown(msg.remaining as number);
+        }
         else if (msg.type === 'ANSWER_COUNT') setAnsweredCount(msg.answered as number);
         else if (msg.type === 'VOTE_COUNT') setAnsweredCount(msg.voted as number);
         else if (msg.type === 'QUESTION_OVER') {
@@ -1131,6 +1145,8 @@ export default function OrganizerPage() {
                     content_id: selectedContentId,
                     time_limit: effectiveTimeLimit,
                     game_type: runtimeGameType(effectiveGameType),
+                    drawing_auto_advance: drawingAutoAdvance,
+                    drawing_inter_round_seconds: 5,
                 }));
                 return;
             }
@@ -1146,6 +1162,8 @@ export default function OrganizerPage() {
                 body.mlt_id = selectedContentId;
             } else if (effectiveGameType === 'drawing') {
                 body.drawing_id = selectedContentId;
+                body.drawing_auto_advance = drawingAutoAdvance;
+                body.drawing_inter_round_seconds = 5;
             } else if (effectiveGameType === 'housie') {
                 body.housie_id = selectedContentId;
             } else if (effectiveGameType === 'bingo') {
@@ -1686,6 +1704,8 @@ export default function OrganizerPage() {
                         game={drawingGame}
                         timeLimit={timeLimit}
                         setTimeLimit={setTimeLimit}
+                        autoAdvance={drawingAutoAdvance}
+                        setAutoAdvance={setDrawingAutoAdvance}
                         onCreateRoom={createRoom}
                         onUpdateGame={updateDrawingGame}
                         onBack={() => setState('DRAWING_PROMPT')}
@@ -1791,7 +1811,10 @@ export default function OrganizerPage() {
                             onNextQuestion={nextQuestion}
                             onEndQuiz={endQuiz}
                             gameType="drawing"
-                            statementText="Drawing round in progress"
+                            statementText={[
+                                drawingActiveDrawer ? `Drawer: ${drawingActiveDrawer}` : 'Drawing round in progress',
+                                drawingClue ? `Clue: ${drawingClue}` : '',
+                            ].filter(Boolean).join('\n')}
                         />
                     ) : currentQ ? (
                         <GameQuestionScreen
@@ -1884,6 +1907,11 @@ export default function OrganizerPage() {
                                         ? `${drawingRoundResult.correct_guessers.join(', ')} guessed it`
                                         : 'No correct guesses this round'}
                                 </p>
+                                {drawingNextRoundCountdown !== null && (
+                                    <p className="text-[--accent-primary] font-bold mt-4">
+                                        {currentQuestion >= totalQuestions ? 'Final results' : 'Next round'} in {drawingNextRoundCountdown}s
+                                    </p>
+                                )}
                             </div>
                             <div className="pb-4 space-y-2">
                                 <button onClick={nextQuestion} className="btn btn-primary btn-glow w-full">

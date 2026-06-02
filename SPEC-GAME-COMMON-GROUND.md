@@ -154,6 +154,29 @@ Rules:
 - Keep teams stable for the full game in MVP.
 - Future mode can reshuffle teams every round.
 
+### Mid-Party Joins and Reconnects
+
+Common Ground is intended for parties where a QR code may stay visible on a poster or TV. Unlike short quiz rounds, new guests can join while Common Ground is already active.
+
+Identity rules:
+
+- A valid room-scoped `session_token` means the browser/device is reconnecting an existing player.
+- Reconnects restore the same nickname, avatar, score, and Common Ground team.
+- A scan without a valid prior token is treated as a new player.
+- Nickname alone is not enough to merge identities. If the nickname is already active and the token does not match, reject the join as `Nickname is taken`.
+
+Late-join team assignment:
+
+- Active Common Ground rooms allow new players even though the room is locked for most other game types.
+- New players are assigned to the smallest existing team.
+- If multiple teams are tied, assign to the lowest-scoring tied team.
+- If still tied, use deterministic team-id ordering.
+- Team submissions are not invalidated when a new player joins.
+- During discussion, the late player can immediately help/edit their team's current answer.
+- During reveal/result, the late player sees the current phase and waits for the next available action.
+- During voting, the late player may vote if voting is still open, but still cannot vote for their own team's submission.
+- All players, organizer, and spectator receive a refreshed `COMMON_SYNC` after the join.
+
 Example:
 
 ```json

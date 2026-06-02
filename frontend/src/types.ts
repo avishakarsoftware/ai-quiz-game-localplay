@@ -89,6 +89,8 @@ export interface DrawingPrompt {
 export interface DrawingGame {
     game_title: string;
     prompts: DrawingPrompt[];
+    auto_advance?: boolean;
+    inter_round_seconds?: number;
 }
 
 export interface HousiePattern {

@@ -101,6 +101,7 @@ export default function SpectatorPage() {
         return () => { cancelled = true; };
     }, [searchParams]);
     const [drawingDrawer, setDrawingDrawer] = useState('');
+    const [drawingClue, setDrawingClue] = useState('');
     const [drawingOps, setDrawingOps] = useState<DrawOperation[]>([]);
     const [correctGuessers, setCorrectGuessers] = useState<string[]>([]);
     const [guessLog, setGuessLog] = useState<{ nickname: string; guess: string; correct?: boolean }[]>([]);
@@ -265,6 +266,7 @@ export default function SpectatorPage() {
                 if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
                         setDrawingDrawer(msg.drawer || '');
+                        setDrawingClue(msg.drawing_clue || '');
                         setDrawingOps(msg.drawing_ops || []);
                         setCorrectGuessers(msg.correct_guessers || []);
                         setGuessLog(msg.guess_log || []);
@@ -380,6 +382,7 @@ export default function SpectatorPage() {
                     setVotePlayers(msg.players || []);
                 } else if (msg.game_type === 'drawing') {
                     setDrawingDrawer(msg.drawer || '');
+                    setDrawingClue(msg.drawing_clue || '');
                     setDrawingOps(msg.drawing_ops || []);
                     setCorrectGuessers(msg.correct_guessers || []);
                     setGuessLog(msg.guess_log || []);
@@ -389,7 +392,11 @@ export default function SpectatorPage() {
                 if (msg.is_bonus) setShowBonusSplash(true);
                 setGameState('QUESTION');
             }
-            else if (msg.type === 'TIMER') setTimeRemaining(msg.remaining);
+            else if (msg.type === 'TIMER') {
+                setTimeRemaining(msg.remaining);
+                if (typeof msg.drawing_clue === 'string') setDrawingClue(msg.drawing_clue);
+                if (typeof msg.drawer === 'string') setDrawingDrawer(msg.drawer);
+            }
             else if (msg.type === 'DRAW_OP') {
                 const op = msg.op as DrawOperation;
                 if (op.kind === 'clear') setDrawingOps([]);
@@ -835,6 +842,7 @@ export default function SpectatorPage() {
                                     <div className="text-center mb-4">
                                         <p className="text-[--text-tertiary] text-xl">Drawing now</p>
                                         <h2 className="text-4xl font-extrabold">{drawingDrawer}</h2>
+                                        {drawingClue && <div className="drawing-clue" aria-label="Drawing clue">{drawingClue}</div>}
                                         <p className="text-[--accent-success] text-lg mt-2">{correctGuessers.length} correct guess{correctGuessers.length === 1 ? '' : 'es'}</p>
                                     </div>
                                     <DrawingCanvas ops={drawingOps} height={Math.min(560, Math.max(380, window.innerHeight * 0.58))} />

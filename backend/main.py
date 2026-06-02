@@ -420,6 +420,8 @@ class RoomCreateRequest(BaseModel):
     quiz_id: str = ""      # For quiz game
     mlt_id: str = ""       # For MLT game
     drawing_id: str = ""   # For DrawingGame
+    drawing_auto_advance: bool = True
+    drawing_inter_round_seconds: int = 5
     housie_id: str = ""    # For Housie
     bingo_id: str = ""     # For custom Bingo
     musical_chairs_config: dict = {}
@@ -437,6 +439,13 @@ class RoomCreateRequest(BaseModel):
             return v
         if v < 5 or v > 60:
             raise ValueError('Time limit must be between 5 and 60 seconds')
+        return v
+
+    @field_validator('drawing_inter_round_seconds')
+    @classmethod
+    def validate_drawing_inter_round_seconds(cls, v: int) -> int:
+        if v < 0 or v > 30:
+            raise ValueError('Drawing inter-round pause must be between 0 and 30 seconds')
         return v
 
     @field_validator('game_type')
@@ -3406,6 +3415,10 @@ async def create_room(request: RoomCreateRequest, req: Request):
         game_data = validate_common_ground_config(request.common_ground_config)
     else:
         content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
+    if request.game_type == "drawing":
+        game_data = dict(game_data)
+        game_data["auto_advance"] = bool(request.drawing_auto_advance)
+        game_data["inter_round_seconds"] = int(request.drawing_inter_round_seconds)
     time_limit = request.time_limit if request.time_limit is not None else _default_time_limit_for_game(request.game_type)
     wallet_id = tokens.get_wallet_id(req)
     if not wallet_id:
