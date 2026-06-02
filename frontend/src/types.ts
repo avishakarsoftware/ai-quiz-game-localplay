@@ -97,6 +97,7 @@ export interface HousiePattern {
     id: string;
     label: string;
     description?: string;
+    terminal?: boolean;
 }
 
 export interface HousieGame {

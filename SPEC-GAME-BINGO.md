@@ -299,7 +299,7 @@ Later:
 - `postage_stamp`
 - custom pattern templates
 
-Only one winner per pattern in MVP, matching Housie. Multi-winner-per-pattern can be added later if product needs a more casual group style.
+Non-terminal patterns award to the first valid server claim. Terminal patterns such as Blackout keep a final claim window open after the first valid terminal claim on the latest call; other players can still claim the same terminal pattern if their board also completed on that same call. Claim buttons should display the prize and claimant names rather than a generic "Claimed" label.
 
 ## Image Bingo Phase
 
@@ -464,7 +464,7 @@ Frontend tests:
 - Setup supports image upload/remove/label states.
 - Setup can load a Baby Bingo template once preset cards are added.
 - Player card marks cells without layout shift.
-- Claim buttons disable after awarded claims.
+- Claim buttons show awarded claimants; non-terminal awarded claims disable, while terminal claims can remain available during the final claim window.
 
 ## Rollout
 

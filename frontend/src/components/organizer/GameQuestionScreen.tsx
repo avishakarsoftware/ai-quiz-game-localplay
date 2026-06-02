@@ -1,5 +1,6 @@
 import { type Question, type GameType, ANSWER_STYLES } from '../../types';
 import GameImage from '../media/GameImage';
+import { hasEmoji, isEmojiForwardGame } from '../../utils/emoji';
 
 interface GameQuestionScreenProps {
     question?: Question;
@@ -29,6 +30,7 @@ export default function GameQuestionScreen({
 
     const isWMLT = gameType === 'wmlt';
     const isDrawing = gameType === 'drawing';
+    const isEmojiGame = isEmojiForwardGame(gameType);
     const progressLabel = isWMLT ? 'voted' : isDrawing ? 'guessed' : 'answered';
     const roundLabel = isWMLT || isDrawing ? 'Round' : 'Q';
 
@@ -83,7 +85,7 @@ export default function GameQuestionScreen({
                 <>
                     <div className={`question-card mb-6 question-enter ${imageUrl ? 'has-image' : ''}`}>
                         {imageUrl && <GameImage src={imageUrl} alt={question.text} mode="question" />}
-                        <p className="question-text">{question.text}</p>
+                        <p className={`question-text ${isEmojiGame || hasEmoji(question.text) ? 'emoji-question-text' : ''}`}>{question.text}</p>
                     </div>
 
                     <div className={question.options.length === 2 ? 'answer-grid-tf' : 'answer-grid'}>
@@ -91,7 +93,7 @@ export default function GameQuestionScreen({
                             <div key={i} className={`answer-btn answer-stagger ${ANSWER_STYLES[i].className}`}
                                 style={{ animationDelay: `${0.2 + i * 0.08}s` }}>
                                 <span className="answer-label">{String.fromCharCode(65 + i)}</span>
-                                <span>{opt}</span>
+                                <span className={hasEmoji(opt) ? 'emoji-answer-text' : ''}>{opt}</span>
                             </div>
                         ))}
                     </div>

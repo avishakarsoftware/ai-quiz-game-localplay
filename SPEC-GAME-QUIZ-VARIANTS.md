@@ -71,6 +71,7 @@ Options: Seahorse, Water Polo, Beach Ride, Ocean Pony
 - Host subtitle: "Decode emoji and symbol clues before the room catches on."
 - Prompt placeholder: "Theme, category, or vibe: movies, travel, 90s hits..."
 - Generate button: "Generate Rebus"
+- Emoji-heavy clues and emoji answer choices should render larger than normal quiz text on organizer, player, and spectator screens so the clue is readable at party distance.
 
 ## Game 2: Emoji Charades
 
@@ -99,6 +100,7 @@ Options: Titanic, Frozen, The Perfect Storm, Ice Age
 - Host subtitle: "Guess movies, songs, sayings, and places from emoji clues."
 - Prompt placeholder: "Movies, pop songs, vacation spots, office inside jokes..."
 - Generate button: "Generate Emoji Rounds"
+- Emoji-only clues should be visually dominant on organizer, player, and spectator screens; avoid shrinking them to normal sentence-sized quiz text.
 
 ## Game 3: Fact or Fiction
 

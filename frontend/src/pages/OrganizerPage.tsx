@@ -144,6 +144,7 @@ export default function OrganizerPage() {
     const [housieCalled, setHousieCalled] = useState<Array<{ value: number | string; display: string }>>([]);
     const [housieLatest, setHousieLatest] = useState<{ value: number | string; display: string } | null>(null);
     const [housieCanUndoLastCall, setHousieCanUndoLastCall] = useState(false);
+    const [housieTerminalClaimPending, setHousieTerminalClaimPending] = useState(false);
     const [housieWinners, setHousieWinners] = useState<HousieWinner[]>([]);
     const [housieCallFlash, setHousieCallFlash] = useState<{ item: { value?: number | string; display: string; kind?: string; image_url?: string; alt_text?: string }; key: number } | null>(null);
     const [housieAnnouncement, setHousieAnnouncement] = useState<{ text: string; key: number } | null>(null);
@@ -387,12 +388,13 @@ export default function OrganizerPage() {
             soundManager.play('fanfare');
         }
         else if (msg.type === 'BINGO_SYNC') {
-            const bingo = msg.bingo as { called_items?: Array<{ value: number | string; display: string; kind?: string; image_url?: string; alt_text?: string }>; latest_item?: { value: number | string; display: string; kind?: string; image_url?: string; alt_text?: string } | null; can_undo_last_call?: boolean; patterns?: HousiePattern[]; winners?: HousieWinner[]; play_mode?: 'beginner' | 'pro'; caller_mode?: 'manual' | 'auto'; auto_status?: 'running' | 'paused' | 'stopped'; auto_interval_seconds?: number; auto_pause_on_claim?: boolean } | undefined;
+            const bingo = msg.bingo as { called_items?: Array<{ value: number | string; display: string; kind?: string; image_url?: string; alt_text?: string }>; latest_item?: { value: number | string; display: string; kind?: string; image_url?: string; alt_text?: string } | null; can_undo_last_call?: boolean; terminal_claim_pending?: boolean; patterns?: HousiePattern[]; winners?: HousieWinner[]; play_mode?: 'beginner' | 'pro'; caller_mode?: 'manual' | 'auto'; auto_status?: 'running' | 'paused' | 'stopped'; auto_interval_seconds?: number; auto_pause_on_claim?: boolean } | undefined;
             if (msg.game_type === 'bingo') setGameType('bingo');
             else setGameType('housie');
             setHousieCalled(bingo?.called_items || []);
             setHousieLatest(bingo?.latest_item || null);
             setHousieCanUndoLastCall(Boolean(bingo?.can_undo_last_call));
+            setHousieTerminalClaimPending(Boolean(bingo?.terminal_claim_pending));
             setHousieWinners(bingo?.winners || []);
             if (bingo?.play_mode) setHousiePlayMode(bingo.play_mode);
             if (bingo?.caller_mode) setHousieCallerMode(bingo.caller_mode);
@@ -407,6 +409,7 @@ export default function OrganizerPage() {
             setHousieCalled(msg.called_items as Array<{ value: number | string; display: string }> || []);
             setHousieLatest(msg.item as { value: number | string; display: string });
             setHousieCanUndoLastCall(Boolean(msg.can_undo_last_call));
+            setHousieTerminalClaimPending(false);
             const callItem = msg.item as { value?: number | string; display?: string; kind?: string; image_url?: string; alt_text?: string };
             setHousieCallFlash({ item: { ...callItem, display: String(callItem?.display || '') }, key: Date.now() });
             setState('BINGO_CALLING');
@@ -421,6 +424,7 @@ export default function OrganizerPage() {
             setHousieWinners(msg.winners as HousieWinner[] || []);
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setHousieCanUndoLastCall(Boolean(msg.can_undo_last_call));
+            setHousieTerminalClaimPending(Boolean(msg.terminal_claim_pending));
             const winner = msg.winner as HousieWinner | undefined;
             if (winner) setHousieAnnouncement({ text: `${winner.nickname} won ${winner.label}${winner.winning_number ? ` on ${winner.winning_number}` : ''}`, key: Date.now() });
             soundManager.play('fanfare');
@@ -428,6 +432,7 @@ export default function OrganizerPage() {
         else if (msg.type === 'BINGO_COMPLETE') {
             setHousieWinners(msg.winners as HousieWinner[] || []);
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+            setHousieTerminalClaimPending(false);
         }
         else if (msg.type === 'MC_SYNC' || msg.type === 'MC_ROUND_START' || msg.type === 'MC_MUSIC_STOP' || msg.type === 'MC_GRAB_COUNT' || msg.type === 'MC_ROUND_OVER') {
             setGameType('musical_chairs');
@@ -1850,21 +1855,23 @@ export default function OrganizerPage() {
                             <span>
                                 {gameType === 'bingo'
                                     ? `${housieCalled.length} items called · Custom board · Manual`
-                                    : `${housieCalled.length} of 90 numbers called · ${housiePlayMode === 'pro' ? 'Pro' : 'Beginner'} · ${housieCallerMode === 'auto' ? `Auto ${housieAutoStatus}` : 'Manual'}`}
+                                    : housieTerminalClaimPending
+                                        ? `${housieCalled.length} of 90 numbers called · Final claims open`
+                                        : `${housieCalled.length} of 90 numbers called · ${housiePlayMode === 'pro' ? 'Pro' : 'Beginner'} · ${housieCallerMode === 'auto' ? `Auto ${housieAutoStatus}` : 'Manual'}`}
                             </span>
                         </div>
                         <div className="housie-runtime-panel housie-call-controls">
                             <div>
                                 <p className="housie-muted-copy">Caller controls</p>
-                                <h2>{housieCallerMode === 'auto' ? `Auto every ${housieAutoInterval}s` : 'Manual calling'}</h2>
+                                <h2>{housieTerminalClaimPending ? 'Final claims open' : housieCallerMode === 'auto' ? `Auto every ${housieAutoInterval}s` : 'Manual calling'}</h2>
                             </div>
                             <div className="housie-caller-actions">
                                 <button onClick={undoHousieCall} disabled={!housieCanUndoLastCall} className="btn btn-secondary">Undo</button>
-                                <button onClick={callHousieNumber} className="btn btn-primary btn-glow">Call Next</button>
+                                <button onClick={callHousieNumber} disabled={housieTerminalClaimPending} className="btn btn-primary btn-glow">Call Next</button>
                                 {housieCallerMode === 'auto' && housieAutoStatus === 'running' ? (
                                     <button onClick={pauseHousieAuto} className="btn btn-secondary">Pause Auto</button>
                                 ) : (
-                                    <button onClick={() => setHousieCallerModeRuntime('auto')} className="btn btn-secondary">Start Auto</button>
+                                    <button onClick={() => setHousieCallerModeRuntime('auto')} disabled={housieTerminalClaimPending} className="btn btn-secondary">Start Auto</button>
                                 )}
                                 {housieCallerMode === 'auto' && housieAutoStatus === 'paused' && (
                                     <button onClick={resumeHousieAuto} className="btn btn-secondary">Resume</button>

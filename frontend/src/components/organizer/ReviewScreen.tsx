@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { type Quiz, type Question, ANSWER_STYLES } from '../../types';
 import { useSwipeBack } from '../../utils/useSwipeBack';
 import { mediaUrl } from '../../utils/media';
+import { hasEmoji } from '../../utils/emoji';
 import GameImage from '../media/GameImage';
 
 interface ReviewScreenProps {
@@ -284,7 +285,7 @@ export default function ReviewScreen({
                                                 mode="question"
                                             />
                                         )}
-                                        <h2>{selectedQuestion.text}</h2>
+                                        <h2 className={hasEmoji(selectedQuestion.text) ? 'emoji-question-text' : ''}>{selectedQuestion.text}</h2>
                                         <div className="review-answer-grid">
                                             {selectedQuestion.options.map((opt, j) => {
                                                 const isCorrect = showAnswers && j === selectedQuestion.answer_index;
@@ -295,7 +296,7 @@ export default function ReviewScreen({
                                                         className={`answer-option review-option ${style.className} ${isCorrect ? 'review-option-correct' : ''} ${showAnswers && !isCorrect ? 'review-option-muted' : ''}`}
                                                     >
                                                         <span className="answer-label">{String.fromCharCode(65 + j)}</span>
-                                                        <span className="review-option-text">{opt}</span>
+                                                        <span className={`review-option-text ${hasEmoji(opt) ? 'emoji-answer-text' : ''}`}>{opt}</span>
                                                         {isCorrect && <span className="review-correct-badge">Correct</span>}
                                                     </div>
                                                 );

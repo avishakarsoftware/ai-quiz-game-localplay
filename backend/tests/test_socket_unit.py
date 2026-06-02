@@ -1467,7 +1467,80 @@ class TestHousieAutoPauseOnClaim:
         rejected = player_ws.last("BINGO_CLAIM_REJECTED")
         assert rejected is not None
         assert rejected["reason"] == "not_complete"
+        assert rejected["message"] == "Quick 5 is not complete yet. Keep playing!"
         assert room.housie_auto_status == "running"
+
+
+class TestHousieFinalClaimWindow:
+    @pytest.mark.asyncio
+    async def test_final_call_keeps_claim_window_open(self):
+        room = make_housie_room()
+        sm = SocketManager()
+        add_player(room, "p1", "Alice")
+        sm._start_housie_round(room)
+        last_item = room.housie_deck[-1]
+        room.housie_deck = [last_item]
+        room.housie_auto_status = "running"
+
+        await sm._housie_call_next(room)
+
+        assert room.state == "BINGO_CALLING"
+        assert room.housie_deck == []
+        assert room.housie_auto_status == "stopped"
+        assert room.connections["p1"].last("BINGO_COMPLETE") is None
+
+    @pytest.mark.asyncio
+    async def test_terminal_claim_stops_calls_but_allows_same_call_ties(self):
+        room = make_housie_room()
+        sm = SocketManager()
+        add_player(room, "p1", "Alice")
+        add_player(room, "p2", "Bob")
+        sm._start_housie_round(room)
+        alice_ticket = room.housie_tickets["Alice"]
+        room.housie_tickets["Bob"] = alice_ticket
+        room.housie_called = [
+            {"kind": "number", "value": number, "display": str(number), "sort_value": number}
+            for number in ticket_numbers(alice_ticket)
+        ]
+        room.housie_deck = [{"kind": "number", "value": 91, "display": "91", "sort_value": 91}]
+        room.housie_auto_status = "running"
+
+        await sm._handle_housie_claim(room, "p1", {"pattern_id": "full_house"})
+
+        assert room.state == "BINGO_CALLING"
+        assert room.housie_auto_status == "stopped"
+        assert sm._housie_public_state(room)["terminal_claim_pending"] is True
+        assert room.connections["p1"].last("BINGO_COMPLETE") is None
+
+        await sm._housie_call_next(room)
+
+        assert room.housie_deck == [{"kind": "number", "value": 91, "display": "91", "sort_value": 91}]
+
+        await sm._handle_housie_claim(room, "p2", {"pattern_id": "full_house"})
+
+        winners = [winner for winner in room.housie_winners if winner["pattern_id"] == "full_house"]
+        assert [winner["nickname"] for winner in winners] == ["Alice", "Bob"]
+        assert room.connections["p2"].last("BINGO_CLAIM_ACCEPTED") is not None
+
+    @pytest.mark.asyncio
+    async def test_same_player_cannot_claim_terminal_twice_on_same_call(self):
+        room = make_housie_room()
+        sm = SocketManager()
+        add_player(room, "p1", "Alice")
+        sm._start_housie_round(room)
+        ticket = room.housie_tickets["Alice"]
+        room.housie_called = [
+            {"kind": "number", "value": number, "display": str(number), "sort_value": number}
+            for number in ticket_numbers(ticket)
+        ]
+
+        await sm._handle_housie_claim(room, "p1", {"pattern_id": "full_house"})
+        await sm._handle_housie_claim(room, "p1", {"pattern_id": "full_house"})
+
+        rejected = room.connections["p1"].last("BINGO_CLAIM_REJECTED")
+        assert rejected is not None
+        assert rejected["reason"] == "already_claimed_by_you"
+        assert rejected["message"] == "You already claimed Full House for this call."
 
 
 class TestHousieUndo:

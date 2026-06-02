@@ -31,6 +31,10 @@ Standalone Housie and configurable Bingo are implemented on the Bingo-family run
 - Players receive server-generated tickets, mark cells locally, submit prize claims, and see accepted claims.
 - Spectator/TV receives current called numbers, latest number, and winners through `SPECTATOR_SYNC` / `BINGO_*` messages.
 - Housie claim validation enforces the Tambola last-number rule: the prize must first become true on the latest called number.
+- Terminal prizes such as Full House/Blackout open a final claim window instead of completing the room immediately. The caller stops, no more calls are allowed, and multiple valid terminal claims from different players on that same latest call can be accepted before the host ends the game.
+- Exhausting the call deck also stops the caller and keeps the room in `BINGO_CALLING` so players can still claim prizes from the final call. The host explicitly ends the game after the claim window is done.
+- Claim buttons show awarded state as `{Prize} claimed by {player}` or `{Prize} claimed by {player, player}`. Non-terminal awarded prizes are disabled; terminal prizes remain claimable during the final window for other players.
+- Claim rejection messages must be player-friendly sentences, not raw validation reason codes.
 - Bingo setup supports template/manual/AI-text deck creation in standalone LocalPlay. The MVP supports text, emoji, number, and image-shaped deck items in the schema; image deck items require media-backed `asset_id`, `public_url`, `display`, and `alt_text` before they can be saved/started.
 - Bingo AI generation is a host-reviewed setup helper: the host gives a theme/prompt, LocalPlay generates editable deck items, and the deck is not live until the host reviews and saves/starts.
 - Housie is available in the Revelry gamma party hub as a party-scoped setup with default prizes: Quick 5, Four Corners, Top Row, Middle Row, Bottom Row, and Full House. Housie uses `generated_content` with `content_type = housie` in gamma Supabase.
@@ -390,16 +394,16 @@ Prize configuration should be room-level:
 }
 ```
 
-A `terminal` prize ends the game when its `max_winners` count is reached. If `max_winners` is 1, the game ends on the first Full House claim. If `max_winners` is greater than 1, claims are accepted until the count is reached, then the game ends.
+A `terminal` prize opens a final claim window. The first valid terminal claim stops further calling and pauses/stops the auto-caller, but the game remains in `BINGO_CALLING` so other players can submit valid terminal claims completed by that same latest call. The host explicitly ends the game after the final claim window.
 
-If all 90 numbers are called before any terminal prize is awarded, the game should auto-complete. The result summary records the state at that point with any prizes awarded so far.
+If all 90 numbers are called before any terminal prize is awarded, the caller stops and the room remains open for claims from the final call. The host ends the game after players have had a chance to claim.
 
 If simultaneous claims occur for the same pattern after the same call, the room should support tie behavior:
 
-- v1 default: first valid claim received by the server wins.
-- Future option: all valid claims after the same call share the prize.
+- v1 default for non-terminal prizes: first valid claim received by the server wins.
+- v1 terminal behavior: all valid terminal claims completed by the same latest call share the terminal prize window.
 
-This should be explicitly visible in host settings later. For v1, keep it simple and deterministic.
+This should be explicitly visible in host settings later. For v1, keep non-terminal prizes simple and deterministic.
 
 ## Claim Validation
 
@@ -1771,8 +1775,8 @@ Backend WebSocket tests:
 - Pro mode sync/rendering does not reveal called-but-unmarked cells on player tickets.
 - Accepted claim broadcasts to organizer, player, and spectator.
 - Rejected claim only notifies the claiming player plus optional organizer log.
-- Full House terminal claim completes the game and writes safe history.
-- Auto-caller can start, pause, resume, switch back to manual, and stop on terminal completion.
+- Full House terminal claim opens the final claim window without writing terminal history until the host ends the game.
+- Auto-caller can start, pause, resume, switch back to manual, and stop on final terminal claims or deck exhaustion.
 - Auto-caller pauses when organizer disconnects.
 - Generic Bingo rooms generate one card per player from the saved setup.
 - Generic Bingo call deck includes setup items without repeating calls.
@@ -1783,7 +1787,7 @@ Frontend unit tests:
 
 - Housie ticket component renders empty and filled cells with accessible labels.
 - Marking a called cell toggles marked state.
-- Claim buttons show available patterns and disabled/awarded states.
+- Claim buttons show available patterns and awarded states such as `{Prize} claimed by {player}`.
 - Organizer caller screen disables undo when server says undo is blocked.
 - Spectator screen renders latest call, called board, and winner announcements.
 - Latest-call overlay appears on `BINGO_CALL` and clears after the animation.
@@ -1804,7 +1808,7 @@ Playwright tests:
 - Player claim flow shows accepted/rejected feedback.
 - Late/stale claims are rejected after another number has been called.
 - Pro mode requires manual ticket marking and does not highlight called-but-unmarked ticket cells.
-- Auto-caller can run several calls, pause, resume, and stop after Full House.
+- Auto-caller can run several calls, pause, resume, and stop after a terminal Full House claim while leaving claims open.
 - Spectator/TV view can connect before and after calls begin.
 - Mobile viewport ticket remains usable without horizontal overflow.
 - Standalone host creates a Word Bingo setup from manual items, starts a room, and players receive cards.
@@ -1954,7 +1958,7 @@ Bingo-family expansion is implementation-ready when:
 ## Open Questions
 
 - Should LocalPlay support a "free" or decorative cell in any future Bingo-family display, or should every visible cell always be part of the game board?
-- Should ties after the same call share a prize or should first valid server claim win?
+- Should future non-terminal Bingo patterns allow same-call shared prizes, or should shared prizes remain limited to terminal final-window claims?
 - Should players be allowed multiple tickets in v1?
 - Should host be able to manually approve/reject claims, or should server validation be authoritative?
 - Should the spectator screen reveal the full called board only, or also show near-claims to create drama?

@@ -17,6 +17,7 @@ import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
 import { BingoCalledList, BingoCallOverlay } from '../components/BingoBoard';
 import { mediaUrl } from '../utils/media';
 import { apiUrl } from '../utils/api';
+import { hasEmoji, isEmojiForwardGame } from '../utils/emoji';
 import { returnToHostApp } from '../utils/hostAppReturn';
 import MusicalChairsVisualizer from '../components/musical-chairs/MusicalChairsVisualizer';
 import BluffTable from '../components/BluffTable';
@@ -893,13 +894,23 @@ export default function SpectatorPage() {
                                         {question.image_url && (
                                             <GameImage src={mediaUrl(question.image_url)} alt={question.text} mode="tv" />
                                         )}
-                                        <p className="question-text" style={{ fontSize: '32px', fontWeight: 700 }}>{question.text}</p>
+                                        <p
+                                            className={`question-text ${isEmojiForwardGame(gameType) || hasEmoji(question.text) ? 'emoji-question-text' : ''}`}
+                                            style={{ fontSize: isEmojiForwardGame(gameType) || hasEmoji(question.text) ? undefined : '32px', fontWeight: 700 }}
+                                        >
+                                            {question.text}
+                                        </p>
                                     </div>
                                     <div className={question.options.length === 2 ? 'answer-grid-tf' : 'answer-grid'} style={{ gap: '16px' }}>
                                         {question.options.map((opt, i) => (
                                             <div key={i} className={`answer-btn ${ANSWER_STYLES[i].className}`} style={{ height: 100, fontSize: 20, overflow: 'hidden' }}>
                                                 <span className="answer-label">{String.fromCharCode(65 + i)}</span>
-                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt}</span>
+                                                <span
+                                                    className={hasEmoji(opt) ? 'emoji-answer-text' : ''}
+                                                    style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                                >
+                                                    {opt}
+                                                </span>
                                             </div>
                                         ))}
                                     </div>

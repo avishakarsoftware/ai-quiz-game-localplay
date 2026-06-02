@@ -1051,6 +1051,7 @@ Classic bingo, housie/tambola, and baby bingo are adjacent to quiz authoring but
 - Host/caller advances draws one at a time, with optional auto-caller mode.
 - Players mark called cells locally; server validates claims against the draw history.
 - Housie claim validation must require the prize to have become true on the latest called number; stale claims after later calls are rejected.
+- Terminal Housie/Bingo prizes must not complete the room immediately. First valid terminal claim stops the caller and opens a final claim window so other players can submit valid same-call terminal claims; deck exhaustion also stops calling while leaving claims open until the host ends the game.
 - Creator setup should support Beginner and Pro modes. Beginner keeps assisted ticket hints; Pro hides called-number assistance on player tickets and requires players to mark manually.
 - Winning patterns should be configurable: one line, two lines, four corners, early five, full house, baby-gift row, etc.
 - Spectator view should show the latest call, call history, current claims, winners, large latest-call animation, and winner/confetti announcements.

@@ -17,6 +17,7 @@ import { HousieClaimButtons, HousieTicketGrid, HousieWinners } from '../componen
 import { BingoCallOverlay, BingoCardGrid, BingoCalledList, BingoClaimButtons } from '../components/BingoBoard';
 import { mediaUrl } from '../utils/media';
 import { apiUrl } from '../utils/api';
+import { hasEmoji, isEmojiForwardGame } from '../utils/emoji';
 import { returnToHostApp } from '../utils/hostAppReturn';
 import MusicalChairsPlayer from '../components/player/MusicalChairsPlayer';
 import BluffTable from '../components/BluffTable';
@@ -1271,7 +1272,7 @@ export default function PlayerPage() {
                             {currentQuestion.image_url && (
                                 <GameImage src={mediaUrl(currentQuestion.image_url)} alt={currentQuestion.text} mode="question" />
                             )}
-                            <p className="question-text">{currentQuestion.text}</p>
+                            <p className={`question-text ${isEmojiForwardGame(gameType) || hasEmoji(currentQuestion.text) ? 'emoji-question-text' : ''}`}>{currentQuestion.text}</p>
                         </div>
 
                         {/* Power-ups */}
@@ -1300,7 +1301,12 @@ export default function PlayerPage() {
                                     style={{ animationDelay: `${0.15 + i * 0.08}s` }}
                                 >
                                     <span className="answer-label">{String.fromCharCode(65 + i)}</span>
-                                    <span className="min-w-0" style={{ fontSize: opt.length > 50 ? 13 : opt.length > 30 ? 14 : 16 }}>{opt}</span>
+                                    <span
+                                        className={`min-w-0 ${hasEmoji(opt) ? 'emoji-answer-text' : ''}`}
+                                        style={{ fontSize: hasEmoji(opt) ? undefined : opt.length > 50 ? 13 : opt.length > 30 ? 14 : 16 }}
+                                    >
+                                        {opt}
+                                    </span>
                                 </button>
                             ))}
                         </div>

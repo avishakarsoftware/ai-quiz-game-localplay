@@ -1776,7 +1776,31 @@ class SocketManager:
         last_call_index = len(room.housie_called)
         return not any(w.get("called_count", 0) >= last_call_index for w in room.housie_winners)
 
+    def _housie_terminal_claim_winners(self, room: Room) -> list[dict]:
+        terminal_pattern_ids = {
+            pattern["id"]
+            for pattern in self._housie_patterns(room)
+            if pattern.get("terminal", pattern.get("id") == "full_house")
+        }
+        return [winner for winner in room.housie_winners if winner.get("pattern_id") in terminal_pattern_ids]
+
+    def _housie_terminal_claim_pending(self, room: Room) -> bool:
+        return room.state == "BINGO_CALLING" and bool(self._housie_terminal_claim_winners(room))
+
+    def _housie_claim_rejection_message(self, reason: str, pattern_label: str = "that prize") -> str:
+        messages = {
+            "unknown_pattern": "That prize is not available in this game.",
+            "already_awarded": f"{pattern_label} has already been claimed.",
+            "already_claimed_by_you": f"You already claimed {pattern_label} for this call.",
+            "not_complete": f"{pattern_label} is not complete yet. Keep playing!",
+            "no_calls_yet": "No numbers have been called yet.",
+            "latest_number_not_in_pattern": f"{pattern_label} must be completed by the latest call.",
+            "stale_claim": f"{pattern_label} was completed before the latest call, so it cannot be claimed now.",
+        }
+        return messages.get(reason, f"{pattern_label} cannot be claimed yet.")
+
     def _housie_public_state(self, room: Room) -> dict:
+        terminal_winners = self._housie_terminal_claim_winners(room)
         return {
             "game_title": room.game_title(),
             "state": room.state,
@@ -1796,6 +1820,8 @@ class SocketManager:
             "claim_requires_latest_call": bool(room.quiz.get("claim_requires_latest_call", room.game_type == "housie")),
             "layout": room.quiz.get("layout", "housie_3x9_15" if room.game_type == "housie" else "bingo_5x5_free"),
             "free_center": bool(room.quiz.get("free_center", False)),
+            "terminal_claim_pending": bool(terminal_winners) and room.state == "BINGO_CALLING",
+            "terminal_claim_called_count": terminal_winners[0].get("called_count") if terminal_winners else None,
         }
 
     def _housie_player_state(self, room: Room, nickname: str) -> dict:
@@ -2647,7 +2673,7 @@ class SocketManager:
 
     async def _housie_call_next(self, room: Room, from_auto: bool = False):
         async with room.lock:
-            if room.state != "BINGO_CALLING" or not room.housie_deck:
+            if room.state != "BINGO_CALLING" or not room.housie_deck or self._housie_terminal_claim_pending(room):
                 return
             item = room.housie_deck.pop(0)
             room.housie_called.append(item)
@@ -2670,7 +2696,7 @@ class SocketManager:
                 room.housie_auto_task = None
             room.housie_auto_status = "stopped"
             room.housie_next_auto_call_at = None
-            await self._complete_housie(room)
+            await self._broadcast_housie_auto_status(room)
 
     async def _housie_undo_last_call(self, room: Room):
         should_pause_auto = False
@@ -2694,15 +2720,36 @@ class SocketManager:
             return
         pattern_id = str(message.get("pattern_id") or "").strip()
         if pattern_id not in {pattern["id"] for pattern in self._housie_patterns(room)}:
-            await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "pattern_id": pattern_id, "reason": "unknown_pattern", "message": "Unknown prize"})
+            await self._send_to_client(room, client_id, {
+                "type": "BINGO_CLAIM_REJECTED",
+                "pattern_id": pattern_id,
+                "reason": "unknown_pattern",
+                "message": self._housie_claim_rejection_message("unknown_pattern"),
+            })
             return
+        pattern = next((p for p in self._housie_patterns(room) if p["id"] == pattern_id), {"label": pattern_id})
+        is_terminal = pattern.get("terminal", pattern_id == "full_house")
+        nickname = room.players[client_id]["nickname"]
+        terminal_winners = [winner for winner in room.housie_winners if winner.get("pattern_id") == pattern_id]
         if pattern_id in room.housie_claimed_patterns:
-            await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "pattern_id": pattern_id, "reason": "already_awarded", "message": "That prize has already been awarded"})
-            return
+            same_latest_terminal_window = (
+                is_terminal
+                and bool(terminal_winners)
+                and terminal_winners[0].get("called_count") == len(room.housie_called)
+            )
+            already_claimed_by_player = any(winner.get("nickname") == nickname for winner in terminal_winners)
+            if not same_latest_terminal_window or already_claimed_by_player:
+                reason = "already_claimed_by_you" if already_claimed_by_player else "already_awarded"
+                await self._send_to_client(room, client_id, {
+                    "type": "BINGO_CLAIM_REJECTED",
+                    "pattern_id": pattern_id,
+                    "reason": reason,
+                    "message": self._housie_claim_rejection_message(reason, pattern.get("label", pattern_id)),
+                })
+                return
         auto_paused_for_claim = room.housie_auto_status == "running" and room.housie_auto_pause_on_claim
         if auto_paused_for_claim:
             await self._set_housie_auto_status(room, "paused")
-        nickname = room.players[client_id]["nickname"]
         ticket = room.housie_tickets.get(nickname)
         if room.game_type == "bingo":
             valid, reason, winning_values = validate_bingo_claim(
@@ -2715,11 +2762,15 @@ class SocketManager:
             valid, reason = validate_claim(ticket or {}, room.housie_called, pattern_id, require_latest=True)
             winning_values = []
         if not valid:
-            await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "pattern_id": pattern_id, "reason": reason, "message": reason})
+            await self._send_to_client(room, client_id, {
+                "type": "BINGO_CLAIM_REJECTED",
+                "pattern_id": pattern_id,
+                "reason": reason,
+                "message": self._housie_claim_rejection_message(reason, pattern.get("label", pattern_id)),
+            })
             if auto_paused_for_claim:
                 await self._set_housie_auto_status(room, "running")
             return
-        pattern = next((p for p in self._housie_patterns(room) if p["id"] == pattern_id), {"label": pattern_id})
         latest_item = room.housie_called[-1] if room.housie_called else {}
         winner = {
             "pattern_id": pattern_id,
@@ -2730,14 +2781,23 @@ class SocketManager:
             "winning_values": winning_values,
         }
         async with room.lock:
-            if pattern_id in room.housie_claimed_patterns:
+            winners_for_pattern = [existing for existing in room.housie_winners if existing.get("pattern_id") == pattern_id]
+            same_latest_terminal_window = (
+                is_terminal
+                and bool(winners_for_pattern)
+                and winners_for_pattern[0].get("called_count") == len(room.housie_called)
+            )
+            already_claimed_by_player = any(existing.get("nickname") == nickname for existing in winners_for_pattern)
+            if pattern_id in room.housie_claimed_patterns and (not same_latest_terminal_window or already_claimed_by_player):
                 duplicate_claim = True
+                duplicate_reason = "already_claimed_by_you" if already_claimed_by_player else "already_awarded"
             else:
                 duplicate_claim = False
+                duplicate_reason = ""
                 room.housie_claimed_patterns.add(pattern_id)
                 room.housie_winners.append(winner)
                 room.housie_claim_log.append(winner)
-                if pattern_id == "full_house":
+                if is_terminal:
                     room.players[client_id]["score"] += 1000
                 else:
                     room.players[client_id]["score"] += 250
@@ -2745,7 +2805,12 @@ class SocketManager:
         if duplicate_claim:
             if auto_paused_for_claim:
                 await self._set_housie_auto_status(room, "running")
-            await self._send_to_client(room, client_id, {"type": "BINGO_CLAIM_REJECTED", "pattern_id": pattern_id, "reason": "already_awarded", "message": "That prize has already been awarded"})
+            await self._send_to_client(room, client_id, {
+                "type": "BINGO_CLAIM_REJECTED",
+                "pattern_id": pattern_id,
+                "reason": duplicate_reason,
+                "message": self._housie_claim_rejection_message(duplicate_reason, pattern.get("label", pattern_id)),
+            })
             return
         await room.broadcast({
             "type": "BINGO_CLAIM_ACCEPTED",
@@ -2754,12 +2819,12 @@ class SocketManager:
             "winners": room.housie_winners,
             "leaderboard": self.get_leaderboard(room),
             "can_undo_last_call": self._housie_can_undo_last_call(room),
+            "terminal_claim_pending": is_terminal,
             "announce": True,
         })
-        is_terminal = pattern.get("terminal", pattern_id == "full_house")
         if is_terminal:
             await self._set_housie_auto_status(room, "stopped")
-            await self._complete_housie(room)
+            await self._broadcast_housie_sync(room)
         elif auto_paused_for_claim:
             await self._set_housie_auto_status(room, "running")
 

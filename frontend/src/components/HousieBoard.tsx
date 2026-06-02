@@ -107,21 +107,26 @@ export function HousieClaimButtons({
     winners: HousieWinner[];
     onClaim: (patternId: string) => void;
 }) {
-    const claimed = new Set(winners.map((winner) => winner.pattern_id));
     return (
         <div className="housie-claim-grid">
-            {patterns.map((pattern) => (
-                <button
-                    key={pattern.id}
-                    type="button"
-                    disabled={claimed.has(pattern.id)}
-                    onClick={() => onClaim(pattern.id)}
-                    className="housie-claim-button"
-                    title={pattern.description}
-                >
-                    {claimed.has(pattern.id) ? 'Claimed' : pattern.label}
-                </button>
-            ))}
+            {patterns.map((pattern) => {
+                const patternWinners = winners.filter((winner) => winner.pattern_id === pattern.id);
+                const claimedBy = patternWinners.map((winner) => winner.nickname).join(', ');
+                const isTerminal = Boolean(pattern.terminal || pattern.id === 'full_house' || pattern.id === 'blackout');
+                const isClaimed = patternWinners.length > 0;
+                return (
+                    <button
+                        key={pattern.id}
+                        type="button"
+                        disabled={isClaimed && !isTerminal}
+                        onClick={() => onClaim(pattern.id)}
+                        className="housie-claim-button"
+                        title={pattern.description}
+                    >
+                        {isClaimed ? `${pattern.label} claimed by ${claimedBy}` : pattern.label}
+                    </button>
+                );
+            })}
         </div>
     );
 }
