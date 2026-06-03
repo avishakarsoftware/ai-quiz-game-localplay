@@ -7,6 +7,7 @@ def test_validate_config_clamps_and_sanitizes_values():
         "gameplay_mode": "physical",
         "music_mode": "external",
         "music_style": "unknown",
+        "music_track_id": " jazzy-lounge ",
         "min_music_seconds": 1,
         "max_music_seconds": 2,
         "grab_window_seconds": 99,
@@ -18,11 +19,21 @@ def test_validate_config_clamps_and_sanitizes_values():
     assert config["gameplay_mode"] == "physical"
     assert config["music_mode"] == "external"
     assert config["music_style"] == "upbeat"
+    assert config["music_track_id"] == "jazzy-lounge"
     assert config["min_music_seconds"] == 5
     assert config["max_music_seconds"] == 6
     assert config["grab_window_seconds"] == 10
     assert config["eliminations_per_round"] == 1
     assert config["auto_stop"] is False
+
+
+def test_validate_config_defaults_track_to_style():
+    config = validate_config({
+        "music_style": "tropical",
+    })
+
+    assert config["music_style"] == "tropical"
+    assert config["music_track_id"] == "tropical-island"
 
 
 def test_total_rounds_leaves_one_winner():

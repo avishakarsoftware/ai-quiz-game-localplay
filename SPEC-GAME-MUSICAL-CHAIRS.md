@@ -16,7 +16,7 @@ Frontend display name: Musical Chairs
 
 Status: implementation-ready for standalone LocalPlay first.
 
-The current MVP intentionally ships two gameplay modes before the full audio layer:
+The current MVP ships two gameplay modes plus a hosted-audio built-in music player:
 
 - `musical_chairs` is a first-class standalone game type and appears in the standalone catalog.
 - Room creation is setup-only. It does not use AI generation and does not require content authoring.
@@ -32,7 +32,7 @@ The current MVP intentionally ships two gameplay modes before the full audio lay
   - `MC_REVEAL`: slowest/no-tap player is eliminated.
   - `PODIUM`: winner is crowned.
 - Organizer controls: start round, stop music manually, end game.
-- Built-in mode currently means server-randomized stop timing plus visual rhythm. Full procedural Web Audio is a later phase.
+- Built-in mode streams a selected short loop from IONOS media storage, starts it from the host's Start Round tap, and stops it when the server stop cue arrives.
 - External mode lets the host use their own playlist and manually stop the round.
 - In physical mode, player devices show instructions and do not offer a tap target; in digital mode, player devices show a large grab button only during `MC_GRAB`.
 - Spectator/TV shows the visualizer, active players, chairs remaining, and reveal state.
@@ -50,7 +50,7 @@ MVP acceptance criteria:
 ## Goals
 
 - Add `musical_chairs` as a first-class `GameType`.
-- Provide an MVP built-in visual rhythm and randomized stop timer now; add Web Audio procedural generation later without changing the room protocol.
+- Provide built-in hosted music loops and randomized stop timing without increasing the web/native app bundle size.
 - Support an external music mode where the host plays their own music and the app handles timing/game logic only.
 - Elimination-based rounds: N players, N-1 chairs, last to tap is out.
 - Support organizer, player, and spectator surfaces.
@@ -60,7 +60,7 @@ MVP acceptance criteria:
 ## Non-Goals
 
 - No Spotify, Apple Music, or YouTube integration in v1.
-- No bundled audio files or licensed music clips in v1.
+- No bundled audio files in v1; built-in tracks live on IONOS media storage and are streamed by URL.
 - No AI-generated music in v1.
 - No team mode in v1.
 - No custom music upload in v1.
@@ -69,34 +69,38 @@ MVP acceptance criteria:
 
 ## Music Source Strategy
 
-Music is the core of Musical Chairs. The spec proposes a two-mode approach.
+Music is the core of Musical Chairs. The MVP uses a two-mode approach.
 
 ### Mode 1: Built-In Music (Default)
 
-Use the **Web Audio API** to procedurally generate music directly in the browser. This is the intended default once the full audio layer lands because:
+Use short hosted loop files selected from the Musical Chairs setup screen. This is the default because:
 
 - Zero licensing cost or legal risk.
-- Zero storage — no audio files to bundle, host, or CDN-serve.
-- Works offline and in PWA installs.
-- Runs on all modern browsers including iOS Safari.
-- Music can vary each round (tempo, key, style) for variety.
-- Tempo/intensity can escalate as players are eliminated for drama.
+- Zero app bundle growth: files are not packaged into the Vite build or native shell.
+- Runs on all modern browsers including iOS Safari after a host tap.
+- The track list can be updated independently of app deployments.
+- Style categories remain simple for hosts: upbeat, jazzy, suspense, retro, tropical.
 
 Implementation approach:
 
-- Use `AudioContext` with oscillators, gain nodes, and timing to create simple looping melodies.
-- Ship 3-5 procedural "styles" (upbeat, jazzy, suspenseful, retro, tropical) as parameterized generator functions, not audio files.
-- Each style is a function that takes `AudioContext`, `tempo`, and `intensity` and schedules note patterns.
-- The organizer/spectator page owns the `AudioContext`. Player phones do NOT play music — the music comes from the host device or TV, just like real musical chairs.
-- Music fades out over 200-400ms when the stop signal fires, rather than cutting abruptly.
-- A visual waveform/beat visualizer on the spectator/TV screen adds atmosphere.
+- Track manifest lives in `frontend/src/audio/musicalChairsTracks.ts`.
+- Files live at `https://media.revelryapp.me/apps/localplay/music/{track_id}.wav`.
+- The organizer/host page owns playback via an HTML audio element. Player phones do NOT play music.
+- The selected `music_track_id` is stored in the room config and included in `MC_SYNC` so reconnecting hosts keep the same selection.
+- The selected `music_track_id` is the starting track for the game. Each new round rotates to the next loop in the selected style so the music does not repeat the exact same loop every round.
+- Music starts from the same user gesture as Start Round to satisfy mobile autoplay policies.
+- Music stops immediately when the server transitions out of `MC_MUSIC` or when the host presses Stop Music.
+- A visual rhythm/stop cue remains required because audio alone is not accessible.
 
-Current MVP behavior:
+Current MVP track set:
 
-- Built-in mode runs the server-randomized music/stop window and shows the visual stop cue.
-- Full procedural Web Audio music generation is deferred. The setup copy should make clear that full in-app music is coming next.
+- Upbeat: Confetti Pop, Bounce Around, Neon Hop, Sprinkles.
+- Jazzy: Lounge Shuffle, Tiny Swing, Walking Bass, Piano Wink.
+- Suspense: Tiptoe Tension, Clock Chase, Pulse Runner, Sting Loop.
+- Retro: Arcade Glow, Wave Runner, Pixel Steps, Cassette Dash.
+- Tropical: Island Steps, Sun Parade, Breeze Bounce, Mango Walk.
 
-Fallback if Web Audio is unavailable (very rare): the organizer sees a visual-only pulsing animation and a manual "STOP" button, effectively degrading to external music mode.
+Fallback if hosted audio cannot play: the organizer sees the visual-only pulsing animation and can continue in practice as external music mode.
 
 ### Mode 2: External Music (Host's Own Music)
 
@@ -119,6 +123,7 @@ Setup option:
   "gameplay_mode": "physical" | "digital",
   "music_mode": "builtin" | "external",
   "music_style": "upbeat" | "jazzy" | "suspenseful" | "retro" | "tropical",
+  "music_track_id": "upbeat-confetti",
   "auto_stop": true
 }
 ```
@@ -130,11 +135,11 @@ When `music_mode` is `external`, the server still controls round timing and rand
 Bundled clips were considered and rejected for v1:
 
 - Licensing: royalty-free music libraries have varying terms; some restrict commercial use, redistribution, or require attribution in ways that conflict with app store distribution.
-- Storage: even short loops add up across styles. IONOS CDN could serve them, but it is unnecessary overhead when Web Audio works.
+- Storage: even short loops add up across styles. IONOS media hosting keeps the app bundle small.
 - Staleness: a fixed set of clips gets repetitive. Procedural generation can vary every round.
 - Offline: bundled files in the service worker cache would bloat the PWA install.
 
-Bundled high-quality audio loops remain a future option if procedural music quality proves insufficient, but Web Audio synth quality is adequate for a party game where the music is a tension-building mechanism, not a listening experience.
+Bundled high-quality audio loops remain a future option only if offline Musical Chairs becomes important.
 
 ### Why Not Streaming Services
 
@@ -211,8 +216,9 @@ Musical Chairs does not require LLM-generated content. The "content" is the game
   "game_title": "Musical Chairs",
   "music_mode": "builtin",
   "music_style": "upbeat",
-  "min_music_seconds": 5,
-  "max_music_seconds": 20,
+  "music_track_id": "upbeat-confetti",
+  "min_music_seconds": 60,
+  "max_music_seconds": 300,
   "grab_window_seconds": 5,
   "eliminations_per_round": 1,
   "auto_stop": true,
@@ -235,6 +241,7 @@ export interface MusicalChairsConfig {
   game_title: string;
   music_mode: 'builtin' | 'external';
   music_style: 'upbeat' | 'jazzy' | 'suspenseful' | 'retro' | 'tropical';
+  music_track_id?: string;
   min_music_seconds: number;
   max_music_seconds: number;
   grab_window_seconds: number;
@@ -260,6 +267,7 @@ room.game_type = "musical_chairs"
 room.quiz = musical_chairs_config  # reuse generic content field
 room.mc_music_mode = "builtin"
 room.mc_music_style = "upbeat"
+room.mc_music_track_id = "upbeat-confetti"
 room.mc_active_players: list[str] = []      # players still in the game
 room.mc_eliminated_players: list[str] = []  # elimination order
 room.mc_round_number: int = 0
@@ -291,8 +299,9 @@ Musical Chairs does not need a generation endpoint since there is no LLM content
   "musical_chairs_config": {
     "music_mode": "builtin",
     "music_style": "upbeat",
-    "min_music_seconds": 5,
-    "max_music_seconds": 20,
+    "music_track_id": "upbeat-confetti",
+    "min_music_seconds": 60,
+    "max_music_seconds": 300,
     "grab_window_seconds": 5,
     "eliminations_per_round": 1,
     "auto_stop": true,
@@ -305,11 +314,12 @@ The backend validates config bounds and stores it. No content id is needed since
 
 Validation:
 
-- `min_music_seconds` clamped to 3-30.
-- `max_music_seconds` clamped to `min_music_seconds`+1 to 60.
+- `min_music_seconds` clamped to 5-600.
+- `max_music_seconds` clamped to `min_music_seconds`+1 to 900.
 - `grab_window_seconds` clamped to 2-10.
 - `eliminations_per_round` clamped to 1 to `floor(active_players / 2)`.
 - `music_style` must be a known style.
+- `music_track_id` is optional and sanitized; if missing, the backend chooses the default track for the selected style.
 - `music_mode` must be `builtin` or `external`.
 
 ### Spark Economy
@@ -546,12 +556,12 @@ The spectator screen is the most important surface for Musical Chairs. It should
 
 `frontend/src/components/musical-chairs/MusicVisualizer.tsx`
 
-A visual component that responds to the Web Audio API analyser node:
+A visual component that responds to Musical Chairs phase/intensity:
 
-- Frequency bars, circular waveform, or particle system.
-- Syncs to the actual audio output.
+- Circular player/chair visualizer with pulse energy.
+- Syncs to the current phase and rough intensity.
 - Intensity parameter controls visual energy.
-- Falls back to a CSS pulsing animation if Web Audio is unavailable.
+- Does not require audio analysis in the hosted-track MVP.
 
 `frontend/src/components/musical-chairs/GrabButton.tsx`
 
@@ -561,65 +571,48 @@ A visual component that responds to the Web Audio API analyser node:
 - Disabled after first tap.
 - Accessible: large, high contrast, screen reader label.
 
-## Web Audio Implementation
+## Hosted Audio Implementation
 
 ### Architecture
 
 ```text
 frontend/src/audio/
-  musicEngine.ts        — AudioContext lifecycle, master gain, analyser node
-  proceduralStyles.ts   — Style generator functions
-  styles/
-    upbeat.ts           — Major key, 120-140 BPM
-    jazzy.ts            — Swing rhythm, 7th chords, 90-110 BPM
-    suspenseful.ts      — Minor key, building tension, 100-130 BPM
-    retro.ts            — 8-bit / chiptune style, 130-150 BPM
-    tropical.ts         — Steel drum / marimba feel, 110-130 BPM
+  musicalChairsTracks.ts — hosted IONOS track manifest
+
+scripts/
+  generate-musical-chairs-loops.mjs — local generator for the 20 MVP loop files
+
+IONOS:
+  ~/revelryapp/media/apps/localplay/music/
+  https://media.revelryapp.me/apps/localplay/music/
 ```
 
-### Music Engine Contract
+### Music Player Contract
 
 ```ts
-interface MusicEngine {
-  start(style: MusicStyle, intensity: number): void;
-  stop(fadeMs?: number): void;
-  setIntensity(intensity: number): void;
-  getAnalyserNode(): AnalyserNode | null;
-  isPlaying(): boolean;
-  dispose(): void;
-}
-
-type MusicStyle = 'upbeat' | 'jazzy' | 'suspenseful' | 'retro' | 'tropical';
-```
-
-### Procedural Style Contract
-
-Each style module exports a function:
-
-```ts
-type StyleGenerator = (
-  ctx: AudioContext,
-  destination: AudioNode,
-  tempo: number,
-  intensity: number,
-) => {
-  start: () => void;
-  stop: () => void;
-  setIntensity: (intensity: number) => void;
+type MusicalChairsTrack = {
+  id: string;
+  title: string;
+  style: MusicalChairsMusicStyle;
+  bpm: number;
+  url: string;
 };
 ```
 
-### Implementation Notes
+Playback rules:
 
-- Create `AudioContext` on user gesture (first tap/click). iOS Safari requires this.
-- Use `OscillatorNode` for melodic voices (sine, square, triangle, sawtooth).
-- Use noise buffer + `BiquadFilterNode` for percussion.
-- Schedule notes with `AudioContext.currentTime` for precise timing.
-- Use `GainNode` envelopes for note attack/decay.
-- Connect an `AnalyserNode` for the visualizer.
-- Intensity parameter (0.0-1.0) controls: number of active voices, filter frequency, volume dynamics, tempo variation.
-- Fade out on stop: ramp master `GainNode` to 0 over 200-400ms.
-- Music only plays on the organizer and spectator pages. Player phones are silent.
+- Use one looping `HTMLAudioElement` on the organizer host screen.
+- Start playback only inside or immediately after the Start Round user gesture.
+- Stop playback on `MC_STOP_MUSIC`, `MC_PHYSICAL_ELIMINATION`, `MC_GRAB`, `MC_REVEAL`, `PODIUM`, unmount, or track change.
+- If `audio.play()` is blocked, keep the game usable and show copy telling the host to tap Start Round again.
+- Do not preload all tracks; only preload the selected track.
+
+### Browser Audio Considerations
+
+- Browser audio must start from a user gesture. The organizer "Start Round" tap satisfies this requirement.
+- If playback is blocked or interrupted by backgrounding, the game continues with visual cues and the next Start Round tap retries audio.
+- Silent/mute switch behavior varies by device and browser. Keep visible rhythm/stop cues as the source of truth.
+- Player phones stay silent; the host/organizer device or TV supplies the room audio.
 
 ### iOS Safari Considerations
 

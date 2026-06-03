@@ -357,6 +357,7 @@ class Room:
             "gameplay_mode": self.mc_config.get("gameplay_mode", "digital"),
             "music_mode": self.mc_config.get("music_mode", "builtin"),
             "music_style": self.mc_config.get("music_style", "upbeat"),
+            "music_track_id": self.mc_config.get("music_track_id"),
             "grab_window_seconds": self.mc_config.get("grab_window_seconds", 5),
             "intensity": intensity_for_round(self.mc_round_number or 1, self.mc_total_rounds or 1, bool(self.mc_config.get("intensity_ramp", True))),
         }

@@ -60,6 +60,7 @@ curl -sS -i https://gamesapi-gamma.revelryapp.me/health
   media/         → media.revelryapp.me
     apps/
       localplay/ → LocalPlay uploaded/generated game images
+        music/   → hosted Musical Chairs loop files
 ```
 
 ## Credentials & Access
@@ -387,6 +388,36 @@ ssh u69414981@home420463025.1and1-data.host "mkdir -p ~/revelryapp/games"
 scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/
 rsync -avz dist/.htaccess u69414981@home420463025.1and1-data.host:~/revelryapp/games/.htaccess
 ```
+
+### 7a. Optional: deploy Musical Chairs hosted music
+
+Built-in Musical Chairs streams short loop files from IONOS media storage so the web/native app bundle stays small. The canonical public base is:
+
+```text
+https://media.revelryapp.me/apps/localplay/music/
+~/revelryapp/media/apps/localplay/music/
+```
+
+Generate the current 20 MVP loops locally:
+
+```bash
+node scripts/generate-musical-chairs-loops.mjs /private/tmp/localplay-musical-chairs-audio
+```
+
+Upload:
+
+```bash
+ssh u69414981@home420463025.1and1-data.host "mkdir -p ~/revelryapp/media/apps/localplay/music"
+rsync -avz /private/tmp/localplay-musical-chairs-audio/ u69414981@home420463025.1and1-data.host:~/revelryapp/media/apps/localplay/music/
+```
+
+Verify one file:
+
+```bash
+curl -sSI https://media.revelryapp.me/apps/localplay/music/upbeat-confetti.wav
+```
+
+The frontend manifest lives in `frontend/src/audio/musicalChairsTracks.ts`. Set `VITE_MUSICAL_CHAIRS_MUSIC_BASE_URL` only if the media base changes; otherwise it defaults to the IONOS URL above.
 
 ---
 

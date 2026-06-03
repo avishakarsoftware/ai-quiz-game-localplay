@@ -9,6 +9,13 @@ from typing import Dict, Iterable, List, Optional
 MUSIC_STYLES = ("upbeat", "jazzy", "suspenseful", "retro", "tropical")
 MUSIC_MODES = ("builtin", "external")
 GAMEPLAY_MODES = ("digital", "physical")
+DEFAULT_TRACK_BY_STYLE = {
+    "upbeat": "upbeat-confetti",
+    "jazzy": "jazzy-lounge",
+    "suspenseful": "suspense-tiptoe",
+    "retro": "retro-arcade",
+    "tropical": "tropical-island",
+}
 
 
 @dataclass(frozen=True)
@@ -17,6 +24,7 @@ class MusicalChairsConfig:
     gameplay_mode: str = "physical"
     music_mode: str = "builtin"
     music_style: str = "upbeat"
+    music_track_id: str = "upbeat-confetti"
     min_music_seconds: int = 60
     max_music_seconds: int = 300
     grab_window_seconds: float = 5.0
@@ -30,6 +38,7 @@ class MusicalChairsConfig:
             "gameplay_mode": self.gameplay_mode,
             "music_mode": self.music_mode,
             "music_style": self.music_style,
+            "music_track_id": self.music_track_id,
             "min_music_seconds": self.min_music_seconds,
             "max_music_seconds": self.max_music_seconds,
             "grab_window_seconds": self.grab_window_seconds,
@@ -55,6 +64,9 @@ def validate_config(raw: Optional[dict]) -> dict:
     music_style = str(raw.get("music_style") or "upbeat").strip().lower()
     if music_style not in MUSIC_STYLES:
         music_style = "upbeat"
+    music_track_id = str(raw.get("music_track_id") or "").strip().lower()[:80]
+    if not music_track_id:
+        music_track_id = DEFAULT_TRACK_BY_STYLE[music_style]
 
     try:
         min_music = int(raw.get("min_music_seconds", 60))
@@ -85,6 +97,7 @@ def validate_config(raw: Optional[dict]) -> dict:
         gameplay_mode=gameplay_mode,
         music_mode=music_mode,
         music_style=music_style,
+        music_track_id=music_track_id,
         min_music_seconds=min_music,
         max_music_seconds=max_music,
         grab_window_seconds=grab_window,

@@ -20,6 +20,7 @@ const state: MusicalChairsState = {
     gameplay_mode: 'digital',
     music_mode: 'builtin',
     music_style: 'upbeat',
+    music_track_id: 'upbeat-confetti',
     grab_window_seconds: 5,
     intensity: 0.55,
 };
@@ -39,6 +40,7 @@ describe('Musical Chairs', () => {
         expect(screen.getByRole('heading', { name: 'Musical Chairs' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Built-in' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'External' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Confetti Pop/ })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Physical chairs' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Phone tap' })).toBeInTheDocument();
 

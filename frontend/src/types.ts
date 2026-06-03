@@ -140,6 +140,7 @@ export interface MusicalChairsConfig {
     gameplay_mode: MusicalChairsGameplayMode;
     music_mode: MusicalChairsMusicMode;
     music_style: MusicalChairsMusicStyle;
+    music_track_id?: string;
     min_music_seconds: number;
     max_music_seconds: number;
     grab_window_seconds: number;
@@ -165,6 +166,7 @@ export interface MusicalChairsState {
     gameplay_mode: MusicalChairsGameplayMode;
     music_mode: MusicalChairsMusicMode;
     music_style: MusicalChairsMusicStyle;
+    music_track_id?: string;
     grab_window_seconds: number;
     intensity: number;
 }

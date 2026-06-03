@@ -4408,6 +4408,7 @@ body {
 
 .mc-segment-grid,
 .mc-style-grid,
+.mc-track-grid,
 .mc-range-row {
     display: grid;
     gap: 10px;
@@ -4422,6 +4423,10 @@ body {
     grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.mc-track-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .mc-range-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -4433,6 +4438,22 @@ body {
     font-size: clamp(1rem, 3vw, 1.2rem);
     white-space: normal;
     line-height: 1.12;
+}
+
+.mc-track-option {
+    min-height: 64px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    display: grid;
+    gap: 3px;
+    align-content: center;
+    line-height: 1.08;
+}
+
+.mc-track-option small {
+    color: currentColor;
+    opacity: 0.72;
+    font-size: 0.78rem;
 }
 
 .mc-range-row label {
@@ -4573,7 +4594,8 @@ body {
 
 @media (max-width: 640px) {
     .mc-segment-grid.two,
-    .mc-style-grid {
+    .mc-style-grid,
+    .mc-track-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 

@@ -1,4 +1,5 @@
 import { type MusicalChairsConfig, type MusicalChairsGameplayMode, type MusicalChairsMusicMode, type MusicalChairsMusicStyle } from '../../types';
+import { defaultMusicalChairsTrackId, tracksForMusicalChairsStyle } from '../../audio/musicalChairsTracks';
 
 const STYLES: Array<{ id: MusicalChairsMusicStyle; label: string }> = [
     { id: 'upbeat', label: 'Upbeat' },
@@ -13,6 +14,7 @@ export const defaultMusicalChairsConfig: MusicalChairsConfig = {
     gameplay_mode: 'physical',
     music_mode: 'builtin',
     music_style: 'upbeat',
+    music_track_id: defaultMusicalChairsTrackId('upbeat'),
     min_music_seconds: 60,
     max_music_seconds: 300,
     grab_window_seconds: 5,
@@ -34,6 +36,8 @@ export default function MusicalChairsSetupScreen({
 }) {
     const update = (patch: Partial<MusicalChairsConfig>) => setConfig({ ...config, ...patch });
     const setMode = (mode: MusicalChairsMusicMode) => update({ music_mode: mode });
+    const selectedTracks = tracksForMusicalChairsStyle(config.music_style);
+    const selectedTrackId = config.music_track_id || defaultMusicalChairsTrackId(config.music_style);
     const minMusicMinutes = Math.max(1, Math.round(config.min_music_seconds / 60));
     const maxMusicMinutes = Math.max(minMusicMinutes + 1, Math.round(config.max_music_seconds / 60));
     const setMinMusicMinutes = (minutes: number) => {
@@ -91,7 +95,7 @@ export default function MusicalChairsSetupScreen({
                         </div>
                         <p className="text-xs text-[--text-tertiary]">
                             {config.music_mode === 'builtin'
-                                ? 'LocalPlay runs the round timer and stop cue. Full in-app music is coming next.'
+                                ? 'LocalPlay streams the selected loop and stops it at a random time.'
                                 : 'Use your own speaker or playlist; LocalPlay only gives the random stop cue and tracks who is out.'}
                         </p>
                     </div>
@@ -101,8 +105,22 @@ export default function MusicalChairsSetupScreen({
                             <p className="font-medium">Style</p>
                             <div className="mc-style-grid">
                                 {STYLES.map((style) => (
-                                    <button key={style.id} type="button" onClick={() => update({ music_style: style.id })} className={`btn mc-setup-option ${config.music_style === style.id ? 'btn-primary' : 'btn-secondary'}`}>
+                                    <button key={style.id} type="button" onClick={() => update({ music_style: style.id, music_track_id: defaultMusicalChairsTrackId(style.id) })} className={`btn mc-setup-option ${config.music_style === style.id ? 'btn-primary' : 'btn-secondary'}`}>
                                         {style.label}
+                                    </button>
+                                ))}
+                            </div>
+                            <p className="font-medium mt-2">Track</p>
+                            <div className="mc-track-grid">
+                                {selectedTracks.map((track) => (
+                                    <button
+                                        key={track.id}
+                                        type="button"
+                                        onClick={() => update({ music_track_id: track.id })}
+                                        className={`btn mc-track-option ${selectedTrackId === track.id ? 'btn-primary' : 'btn-secondary'}`}
+                                    >
+                                        <span>{track.title}</span>
+                                        <small>{track.bpm} bpm</small>
                                     </button>
                                 ))}
                             </div>
