@@ -2856,6 +2856,8 @@ body {
     color: inherit;
     font: inherit;
     cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .housie-ticket-cell button:disabled {
@@ -2880,6 +2882,9 @@ body {
     line-height: 1.1;
     overflow-wrap: anywhere;
     text-wrap: balance;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .housie-claim-button:disabled {
@@ -2931,6 +2936,20 @@ body {
     line-height: 1;
     text-shadow: 0 16px 56px rgba(0, 0, 0, 0.45);
     animation: housie-call-pop 1.6s ease both;
+}
+
+.housie-call-overlay,
+.housie-call-overlay *,
+.housie-call-overlay::before,
+.bingo-call-overlay,
+.bingo-call-overlay *,
+.bingo-call-overlay::before,
+.housie-win-overlay,
+.housie-win-overlay *,
+.housie-win-overlay::before,
+.housie-confetti,
+.housie-confetti * {
+    pointer-events: none;
 }
 
 .housie-call-overlay::before {

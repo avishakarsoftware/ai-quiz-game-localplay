@@ -1866,18 +1866,18 @@ export default function OrganizerPage() {
                                 <h2>{housieTerminalClaimPending ? 'Final claims open' : housieCallerMode === 'auto' ? `Auto every ${housieAutoInterval}s` : 'Manual calling'}</h2>
                             </div>
                             <div className="housie-caller-actions">
-                                <button onClick={undoHousieCall} disabled={!housieCanUndoLastCall} className="btn btn-secondary">Undo</button>
-                                <button onClick={callHousieNumber} disabled={housieTerminalClaimPending} className="btn btn-primary btn-glow">Call Next</button>
+                                <button type="button" onClick={undoHousieCall} disabled={!housieCanUndoLastCall} className="btn btn-secondary">Undo</button>
+                                <button type="button" onClick={callHousieNumber} disabled={housieTerminalClaimPending} className="btn btn-primary btn-glow">Call Next</button>
                                 {housieCallerMode === 'auto' && housieAutoStatus === 'running' ? (
-                                    <button onClick={pauseHousieAuto} className="btn btn-secondary">Pause Auto</button>
+                                    <button type="button" onClick={pauseHousieAuto} className="btn btn-secondary">Pause Auto</button>
                                 ) : (
-                                    <button onClick={() => setHousieCallerModeRuntime('auto')} disabled={housieTerminalClaimPending} className="btn btn-secondary">Start Auto</button>
+                                    <button type="button" onClick={() => setHousieCallerModeRuntime('auto')} disabled={housieTerminalClaimPending} className="btn btn-secondary">Start Auto</button>
                                 )}
                                 {housieCallerMode === 'auto' && housieAutoStatus === 'paused' && (
-                                    <button onClick={resumeHousieAuto} className="btn btn-secondary">Resume</button>
+                                    <button type="button" onClick={resumeHousieAuto} className="btn btn-secondary">Resume</button>
                                 )}
                                 {housieCallerMode === 'auto' && (
-                                    <button onClick={() => setHousieCallerModeRuntime('manual')} className="btn btn-secondary">Manual</button>
+                                    <button type="button" onClick={() => setHousieCallerModeRuntime('manual')} className="btn btn-secondary">Manual</button>
                                 )}
                             </div>
                         </div>
@@ -1896,7 +1896,7 @@ export default function OrganizerPage() {
                             <HousieWinners winners={housieWinners} />
                         </div>
                         <div className="housie-caller-actions">
-                            <button onClick={endQuiz} className="btn btn-secondary">End Game</button>
+                            <button type="button" onClick={endQuiz} className="btn btn-secondary">End Game</button>
                         </div>
                     </div>
                 )}
