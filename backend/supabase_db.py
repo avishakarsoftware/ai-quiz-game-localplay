@@ -741,7 +741,7 @@ def list_host_app_catalog_flags(environment: str, host_app: str) -> list[dict]:
 
 
 def upsert_host_app_catalog_flag(environment: str, host_app: str, game_id: str, flag: dict) -> dict:
-    now = _now()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     row = {
         "id": flag.get("id") or uuid.uuid4().hex,
         "environment": environment,

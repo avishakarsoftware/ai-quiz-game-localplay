@@ -1222,17 +1222,17 @@ curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sess
 
 ### Production readiness status
 
-- Deployed the current LocalPlay bridge/backend-served SPA to production on 2026-05-25 with `./scripts/deploy-gcp.sh --with-frontend`.
+- Deployed the current LocalPlay bridge/backend-served SPA to production on 2026-06-02 with `./scripts/deploy-gcp.sh --with-frontend`, promoting the gamma-tested Revelry catalog picker, Musical Chairs quick-start bridge, hosted music loops, and recent UX/gameplay fixes.
 - Production env includes `REVELRY_INTEGRATION_SECRET`, `PUBLIC_BASE_URL=https://gamesapi.revelryapp.me`, `REVELRY_CALLBACK_URL=https://api.revelryapp.me/api/games/localplay/callback`, and `REVELRY_CALLBACK_SECRET=`. Keep `REVELRY_CALLBACK_SECRET` empty unless doing a deliberate rotation/compatibility window.
 - Production env keeps AI image generation disabled with `IMAGE_GENERATION_PROVIDER=none`.
 - Production media uploads are enabled through IONOS with `MEDIA_PUBLIC_BASE_URL=https://media.revelryapp.me/apps/localplay`, `MEDIA_UPLOAD_URL=https://media.revelryapp.me/apps/localplay/upload.php`, `MEDIA_PATH_PREFIX=prod`, and a `MEDIA_UPLOAD_SECRET` matching `~/revelryapp/media/apps/localplay/.upload_secret`.
 - Applied the targeted production Supabase parity migration on 2026-05-25: `games_quiz_packs`, `games_quiz_questions`, `games_media_assets`, `games_game_sessions`, and the refreshed `games_generated_content_content_type_check` allowing `quiz`, `mlt`, and `drawing`.
-- Post-migration consistency check scoped to LocalPlay tables/RPCs (`games_` vs `games_gamma_`) returned no diffs across tables, columns/defaults, constraints, indexes, RLS, policies, and RPC signatures. The shared Supabase project also contains unrelated `pp_*` tables; those are not LocalPlay/Revelry bridge migrations and should not be modified by LocalPlay deploy work.
-- Pending for the remote Revelry game-availability policy slice: apply the rendered Supabase schema that creates `{prefix}host_app_catalog_flags` before enabling production remote flags. Production fails closed for host-app policy when `LOCALPLAY_ENV=production` and no policy rows exist, so seed bridge-ready games such as `quiz`, `drawing`, and `wmlt` before deploying that policy behavior to prod traffic. Operators can seed or change flags through the admin endpoints `GET/POST /admin/host-app-catalog-flags` once the schema exists.
-- Production smoke passed on 2026-05-25 for `/health`, `GET /catalog?host_app=revelry`, authenticated party-games link minting, unauthenticated bridge rejection, `/media/status`, and authenticated Revelry authoring `POST /media/upload-url`.
+- Post-migration consistency check scoped to LocalPlay tables/RPCs (`games_` vs `games_gamma_`) returned no diffs across tables, columns/defaults, constraints, indexes, RLS, policies, and RPC signatures as of 2026-05-25. The shared Supabase project also contains unrelated `pp_*` tables; those are not LocalPlay/Revelry bridge migrations and should not be modified by LocalPlay deploy work.
+- Applied the rendered production Supabase schema on 2026-06-02 to create `games_host_app_catalog_flags`, then seeded production Revelry policy rows with `status = "live"` for `quiz`, `wmlt`, `drawing`, and quick-start-only `musical_chairs`. Housie remains unpromoted in production until the production generated-content constraint is explicitly expanded to include `housie` and a prod Housie save/start smoke passes.
+- Production smoke passed on 2026-06-02 for `/health`, `GET /catalog?host_app=revelry` returning live games, `/media/status`, and the backend-served frontend Playwright smoke on desktop/mobile.
 - `/media/status` should report `upload_available=true`, `generation_available=false`, and `storage_backend=ionos` in production. This is the intended state for custom quiz photo uploads with AI image generation disabled.
 - Added the same shared secret to GCP Secret Manager secret `revelry-prod-localplay-integration-secret` on 2026-05-25; version `1` is enabled. Do not print or copy this value into docs.
-- Remaining production enablement now lives on the Revelry side: mount `revelry-prod-localplay-integration-secret:latest` as `LOCALPLAY_INTEGRATION_SECRET`, redeploy Revelry prod, then smoke a real prod party Games tab and callback handling.
+- Remaining production validation should smoke a real Revelry prod party Games tab, LocalPlay launch, and callback/result handling with the production `LOCALPLAY_INTEGRATION_SECRET`.
 
 ### Enabling Revelry games
 
