@@ -14,13 +14,13 @@ Frontend display name: Musical Chairs
 
 ## Implementation-Ready MVP Scope
 
-Status: implementation-ready for standalone LocalPlay first.
+Status: standalone implemented; Revelry gamma support is deployed on the LocalPlay side.
 
 The current MVP ships two gameplay modes plus a hosted-audio built-in music player:
 
 - `musical_chairs` is a first-class standalone game type and appears in the standalone catalog.
 - Room creation is setup-only. It does not use AI generation and does not require content authoring.
-- Revelry/host-app launch is explicitly deferred; host-app catalog responses should keep this game hidden until the bridge contract is added and tested.
+- Revelry/host-app launch is gamma-ready and deployed on the LocalPlay side. The static catalog marks Musical Chairs as `host_app_supported` for Revelry, with `can_quick_start = true`, `can_create_content = false`, and `supports_ai_generation = false`. Production exposure still depends on remote host-app catalog policy.
 - Minimum start requirement is 3 connected players.
 - `physical` gameplay mode is the default: LocalPlay starts the round, stops at a random time, players scramble for real chairs, and the host chooses who is out.
 - `digital` gameplay mode keeps the phone-tap race: LocalPlay opens a grab window after the stop signal and eliminates the slowest/no-tap player automatically.
@@ -64,7 +64,7 @@ MVP acceptance criteria:
 - No AI-generated music in v1.
 - No team mode in v1.
 - No custom music upload in v1.
-- No Revelry/host-app launch until standalone is tested.
+- No saved/custom Musical Chairs authoring in v1. Revelry uses quick start with the default hosted-track setup.
 - No autoscaled Cloud Run support in v1.
 
 ## Music Source Strategy
@@ -853,13 +853,14 @@ Standalone Musical Chairs `Play Again` sends `RESET_ROOM`. Room code and connect
 - Add player round UI with grab button.
 - Add spectator surface.
 
-### Phase 3: Web Audio Music Engine
+### Phase 3: Hosted Music Engine
 
-- Future phase: implement `musicEngine.ts` with AudioContext lifecycle.
-- Implement at least 2 procedural styles (upbeat, suspenseful).
-- Add music visualizer component.
-- Wire music start/stop to WebSocket events.
-- Test on iOS Safari.
+- Add hosted track manifest and host-side audio playback. Done.
+- Generate/upload 20 loop files to IONOS media storage. Done.
+- Rotate loops by round within the selected style. Done.
+- Add music visualizer component. Done.
+- Wire music start/stop to WebSocket state. Done.
+- Test on mobile browsers and Revelry gamma surfaces.
 
 ### Phase 4: Polish
 
@@ -874,8 +875,8 @@ Standalone Musical Chairs `Play Again` sends `RESET_ROOM`. Room code and connect
 
 ### Phase 5: Catalog Enablement
 
-- Enable in standalone catalog after testing.
-- Keep disabled in host-app catalog until Revelry integration is tested.
+- Enable in standalone catalog after testing. Done.
+- Enable static host-app catalog support for Revelry gamma after quick-start, launch-token, organizer/player/spectator, hosted-audio, replacement, and result smoke coverage. LocalPlay static support is done; remote policy controls gamma/prod exposure.
 
 ## Future: AI Camera Elimination Mode
 
@@ -933,4 +934,5 @@ Musical Chairs v1 is launch-ready when:
 - Reconnect works for active and eliminated players.
 - Existing quiz, WMLT, Drawing, and Housie tests still pass.
 - Backend has unit tests for engine logic and WebSocket flows.
+- Revelry gamma party hub shows Musical Chairs under Creative, quick-starts a host-app-managed room, preserves host-app chrome/return context, and keeps production exposure gated by remote catalog policy.
 - Frontend has tests for grab button behavior and state transitions.

@@ -136,6 +136,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="AI Quiz Game Backend", lifespan=lifespan)
 REVELRY_PARTY_GAME_TYPES = ("quiz", "wmlt", "drawing", "housie")
 REVELRY_PARTY_GAME_TYPES_ERROR = 'game_type must be "quiz", "wmlt", "drawing", or "housie"'
+REVELRY_PARTY_GAME_START_TYPES = (*REVELRY_PARTY_GAME_TYPES, "musical_chairs")
+REVELRY_PARTY_GAME_START_TYPES_ERROR = 'game_type must be "quiz", "wmlt", "drawing", "housie", or "musical_chairs"'
 
 
 def get_local_ip():
@@ -625,8 +627,8 @@ GAME_CATALOG = [
         "title": "Musical Chairs",
         "description": "Music plays, then stops. Race to grab a chair. Last one standing wins.",
         "launchable": True,
-        "host_app_supported": False,
-        "supported_host_apps": [],
+        "host_app_supported": True,
+        "supported_host_apps": ["revelry"],
         "supports_custom_content": False,
         "supports_images": False,
         "can_create_content": False,
@@ -640,7 +642,12 @@ GAME_CATALOG = [
             "kind": "musical_chairs_setup",
             "music_modes": ["builtin", "external"],
             "music_styles": ["upbeat", "jazzy", "suspenseful", "retro", "tropical"],
+            "music_tracks": ["hosted_ionos"],
             "supported_media": [],
+        },
+        "config_schema": {
+            "players": {"min": config.MIN_MUSICAL_CHAIRS_PLAYERS, "max": config.MAX_PLAYERS_PER_ROOM},
+            "music_window_seconds": {"min": 60, "max": 300, "default_min": 60, "default_max": 300},
         },
     },
     {
@@ -1794,8 +1801,8 @@ class RevelryPartyGameStartRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value not in REVELRY_PARTY_GAME_TYPES:
-            raise ValueError(REVELRY_PARTY_GAME_TYPES_ERROR)
+        if value not in REVELRY_PARTY_GAME_START_TYPES:
+            raise ValueError(REVELRY_PARTY_GAME_START_TYPES_ERROR)
         return value
 
 
