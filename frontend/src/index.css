@@ -5070,6 +5070,20 @@ body {
     color: var(--ink-mute);
 }
 
+.party-hub__catalog-tools {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.party-hub__search {
+    max-width: none;
+}
+
+.party-hub__category-tabs {
+    padding-bottom: 4px;
+}
+
 .party-hub__grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -5148,6 +5162,14 @@ body {
 .party-hub__error {
     padding: 18px;
     color: var(--ink-mute);
+}
+
+.party-hub__filtered-empty {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
 }
 
 .party-hub__guest-empty {

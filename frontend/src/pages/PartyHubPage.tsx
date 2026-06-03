@@ -1,3 +1,4 @@
+import { Search } from 'lucide-react';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { API_URL } from '../config';
 import { getGameModeConfig } from '../gameModes';
@@ -90,6 +91,42 @@ type SetupDraft = {
 };
 
 const PROMPT_COUNT_OPTIONS = [5, 8, 10, 15, 20];
+type PartyHubGameCategory = 'all' | 'quiz' | 'creative' | 'bingo_housie' | 'cards';
+
+const PARTY_HUB_CATEGORY_OPTIONS: Array<{ id: PartyHubGameCategory; label: string }> = [
+    { id: 'all', label: 'All' },
+    { id: 'quiz', label: 'Quiz/Trivia' },
+    { id: 'creative', label: 'Creative' },
+    { id: 'bingo_housie', label: 'Bingo/Housie' },
+    { id: 'cards', label: 'Cards' },
+];
+
+const PARTY_HUB_CATEGORY_BY_ID: Record<string, PartyHubGameCategory> = {
+    quiz: 'quiz',
+    rebus: 'quiz',
+    emoji_charades: 'quiz',
+    fact_fiction: 'quiz',
+    timeline: 'quiz',
+    odd_one_out: 'quiz',
+    wmlt: 'creative',
+    drawing: 'creative',
+    musical_chairs: 'creative',
+    two_truths: 'creative',
+    story_chain: 'creative',
+    common_ground: 'creative',
+    housie: 'bingo_housie',
+    bingo: 'bingo_housie',
+    baby_bingo: 'bingo_housie',
+    bluff: 'cards',
+};
+
+function gameSortTitle(game: { title?: string; game_type?: string; id?: string }) {
+    return (game.title || game.game_type || game.id || '').toLowerCase();
+}
+
+function categoryForCatalogGame(game: CatalogGame): PartyHubGameCategory {
+    return PARTY_HUB_CATEGORY_BY_ID[game.id] || PARTY_HUB_CATEGORY_BY_ID[game.game_type || ''] || 'creative';
+}
 
 function hasCapability(context: LaunchContext | null, capability: string): boolean {
     return Boolean(context?.capabilities?.includes(capability) || context?.capabilities?.includes('manage_games'));
@@ -257,6 +294,8 @@ export default function PartyHubPage() {
     const [error, setError] = useState('');
     const [openingSessionScope, setOpeningSessionScope] = useState('');
     const [replacementPrompt, setReplacementPrompt] = useState<ReplacementPrompt | null>(null);
+    const [catalogCategory, setCatalogCategory] = useState<PartyHubGameCategory>('all');
+    const [catalogSearch, setCatalogSearch] = useState('');
     const autoStartRef = useRef('');
     const setupSectionRef = useRef<HTMLElement | null>(null);
     const savedGamesSectionRef = useRef<HTMLElement | null>(null);
@@ -296,12 +335,33 @@ export default function PartyHubPage() {
     const canDelete = hasCapability(launchContext, 'manage_games');
     const canManageGames = canStart || canEdit || canDelete;
 
-    const preparedContent = useMemo(() => workspace?.prepared_content || [], [workspace]);
-    const activeSession = workspace?.active_session || null;
-    const catalogGames = useMemo(
-        () => (workspace?.catalog || []).filter((game) => game.launchable !== false),
+    const preparedContent = useMemo(
+        () => [...(workspace?.prepared_content || [])].sort((a, b) => gameSortTitle(a).localeCompare(gameSortTitle(b))),
         [workspace],
     );
+    const activeSession = workspace?.active_session || null;
+    const catalogGames = useMemo(
+        () => [...(workspace?.catalog || [])]
+            .filter((game) => game.launchable !== false)
+            .sort((a, b) => gameSortTitle(a).localeCompare(gameSortTitle(b))),
+        [workspace],
+    );
+    const filteredCatalogGames = useMemo(() => {
+        const query = catalogSearch.trim().toLowerCase();
+        return catalogGames.filter((game) => {
+            if (catalogCategory !== 'all' && categoryForCatalogGame(game) !== catalogCategory) return false;
+            if (!query) return true;
+            const mode = getGameModeConfig(game.id as Parameters<typeof getGameModeConfig>[0]);
+            return [
+                game.title,
+                game.description,
+                mode.title,
+                mode.description,
+                game.game_type,
+                game.runtime_type,
+            ].filter(Boolean).join(' ').toLowerCase().includes(query);
+        });
+    }, [catalogCategory, catalogGames, catalogSearch]);
 
     useEffect(() => {
         if (setupScrollNonce === 0) return;
@@ -711,11 +771,43 @@ export default function PartyHubPage() {
                             <p>Pick what this party plays next.</p>
                         </div>
                     </div>
+                    <div className="party-hub__catalog-tools" role="search">
+                        <label className="game-search party-hub__search">
+                            <Search size={18} aria-hidden="true" />
+                            <span className="sr-only">Search games</span>
+                            <input
+                                type="search"
+                                value={catalogSearch}
+                                onChange={(event) => setCatalogSearch(event.target.value)}
+                                placeholder="Search games"
+                            />
+                        </label>
+                        <div className="game-category-tabs party-hub__category-tabs" aria-label="Filter games by category">
+                            {PARTY_HUB_CATEGORY_OPTIONS.map((category) => (
+                                <button
+                                    key={category.id}
+                                    type="button"
+                                    className={`game-category-tab ${catalogCategory === category.id ? 'active' : ''}`}
+                                    onClick={() => setCatalogCategory(category.id)}
+                                    aria-pressed={catalogCategory === category.id}
+                                >
+                                    {category.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                     {catalogGames.length === 0 ? (
                         <div className="party-hub__empty">No games are available for this party yet.</div>
+                    ) : filteredCatalogGames.length === 0 ? (
+                        <div className="party-hub__empty party-hub__filtered-empty">
+                            <span>No games match that search.</span>
+                            <button type="button" className="party-hub__secondary" onClick={() => { setCatalogSearch(''); setCatalogCategory('all'); }}>
+                                Clear search
+                            </button>
+                        </div>
                     ) : (
                         <div className="party-hub__grid party-hub__grid--catalog">
-                            {catalogGames.map((game) => {
+                            {filteredCatalogGames.map((game) => {
                                 const mode = getGameModeConfig(game.id as Parameters<typeof getGameModeConfig>[0]);
                                 const canCreate = Boolean(canEdit && (game.can_create_content || game.embedded_authoring_supported));
                                 const canQuickStart = Boolean(canStart && game.can_quick_start);
