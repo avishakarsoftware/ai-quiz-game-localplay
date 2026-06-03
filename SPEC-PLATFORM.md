@@ -150,6 +150,14 @@ Catalog metadata should power:
 - Future recommendations by party type.
 - Feature flags and rollout controls.
 
+Catalog presentation rules:
+
+- Standalone LocalPlay and host-app catalog surfaces should sort visible games alphabetically by display title by default.
+- Game selection should support a search box that matches title, description, runtime, and category keywords.
+- Game selection should support category filters. Current UI categories are `All`, `Quiz/Trivia`, `Creative`, `Bingo/Housie`, and `Cards`.
+- If a search/category filter has no matches, show a friendly empty state and a clear/reset action.
+- Host-app surfaces may use host-app-specific cards and actions, but should keep the same sorting/search/filter behavior as standalone whenever the underlying catalog is the same.
+
 ### Game Session
 
 A game session is the durable product object representing one launched game experience.
