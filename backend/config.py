@@ -109,7 +109,7 @@ MC_MAX_MUSIC_SECONDS = 60
 MC_MIN_GRAB_WINDOW = 2
 MC_MAX_GRAB_WINDOW = 10
 MAX_GAME_HISTORY = 1000
-BINGO_ENABLED = os.getenv("ENABLE_BINGO", "true" if ENVIRONMENT in ("local", "gamma") else "false").lower() == "true"
+BINGO_ENABLED = os.getenv("ENABLE_BINGO", "true").lower() == "true"
 
 # --- Streak bonus ---
 STREAK_THRESHOLDS = {3: 1.5, 5: 2.0}  # streak_count -> multiplier

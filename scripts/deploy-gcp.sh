@@ -276,7 +276,7 @@ if [[ "$SKIP_BUILD" != "true" ]]; then
             cd "$FRONTEND_DIR"
             VITE_BASE_PATH=/ \
                 VITE_API_URL= \
-                VITE_ENABLE_BINGO=$([[ "$ENVIRONMENT" == "gamma" ]] && echo true || echo false) \
+                VITE_ENABLE_BINGO="${VITE_ENABLE_BINGO:-true}" \
                 VITE_CAST_APP_ID="${VITE_CAST_APP_ID:-1BC9ACD8}" \
                 VITE_GOOGLE_CLIENT_ID="${VITE_GOOGLE_CLIENT_ID:-$GOOGLE_WEB_CLIENT_ID}" \
                 VITE_APPLE_CLIENT_ID="${VITE_APPLE_CLIENT_ID:-$APPLE_WEB_CLIENT_ID}" \

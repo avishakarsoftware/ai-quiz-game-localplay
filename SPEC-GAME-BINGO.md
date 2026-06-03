@@ -20,7 +20,7 @@ The first implementation is **gamma-only**.
 
 Rules:
 
-- Do not expose Bingo in production catalog, production frontend, or Revelry production.
+- Standalone Bingo and Baby Bingo are enabled in production LocalPlay. Revelry/host-app exposure remains separate and must stay disabled until the Bingo bridge contract, production schema constraint, policy rows, and production save/start smoke are deliberately promoted.
 - Any database/schema changes required for Bingo must be applied only to gamma objects, such as `games_gamma_*`.
 - Production `games_*` schema and production runtime behavior must remain untouched unless a later explicit production rollout is requested.
 - Prefer reusing existing gamma media tables and generated-content structures before adding new schema.
@@ -109,7 +109,7 @@ Backend room creation should use `game_type = "bingo"` for MVP. Presets can pass
 
 Implemented preset behavior:
 
-- `baby_bingo` appears as its own standalone catalog card when Bingo is enabled.
+- `baby_bingo` appears as its own standalone catalog card; Bingo-family games are enabled by default in local, gamma, and production standalone LocalPlay, with `ENABLE_BINGO=false` / `VITE_ENABLE_BINGO=false` reserved as explicit kill switches.
 - Selecting Baby Bingo opens the Bingo setup screen with title `Baby Bingo`, free center enabled, casual claim rules, and a ready-made 25-item baby shower deck.
 - Starting the preset still creates a normal `bingo` setup and room; no new backend runtime type is introduced.
 - Baby Bingo remains disabled for Revelry/host-app mode until the generic Bingo bridge contract is deliberately enabled.

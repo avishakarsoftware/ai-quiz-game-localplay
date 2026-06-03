@@ -7,11 +7,8 @@ const WS_URL = explicitApiUrl
   ? explicitApiUrl.replace(/^http/, 'ws')
   : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
 const API_HOST = explicitApiUrl ? new URL(explicitApiUrl).hostname : window.location.hostname;
-const ENABLE_BINGO =
-  import.meta.env.VITE_ENABLE_BINGO === 'true'
-  || API_HOST === 'localhost'
-  || API_HOST === '127.0.0.1'
-  || API_HOST.includes('gamma');
+const bingoFlag = import.meta.env.VITE_ENABLE_BINGO;
+const ENABLE_BINGO = bingoFlag ? bingoFlag === 'true' : true;
 const SHOW_PROVIDER_SELECTOR =
   import.meta.env.DEV
   || window.location.hostname.includes('gamma')
