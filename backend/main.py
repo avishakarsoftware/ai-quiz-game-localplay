@@ -38,6 +38,7 @@ from bluff_engine import validate_config as validate_bluff_config
 from two_truths_engine import validate_config as validate_two_truths_config
 from story_chain_engine import validate_config as validate_story_chain_config
 from common_ground_engine import validate_config as validate_common_ground_config
+from who_am_i_engine import validate_config as validate_who_am_i_config
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -431,6 +432,7 @@ class RoomCreateRequest(BaseModel):
     two_truths_config: dict = {}
     story_chain_config: dict = {}
     common_ground_config: dict = {}
+    who_am_i_config: dict = {}
     game_type: str = "quiz"
     time_limit: Optional[int] = None
 
@@ -453,8 +455,8 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground"):
-            raise ValueError('game_type must be "quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", or "common_ground"')
+        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "who_am_i"):
+            raise ValueError('game_type must be "quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", or "who_am_i"')
         return v
 
 
@@ -768,6 +770,36 @@ GAME_CATALOG = [
             "vote_categories": ["funniest", "most_surprising", "most_specific"],
         },
     },
+    {
+        "id": "who_am_i",
+        "game_type": "who_am_i",
+        "runtime_type": "who_am_i",
+        "title": "Who Am I?",
+        "description": "Reveal clues while everyone races to guess the mystery person, place, or thing.",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": False,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "clue_guessing_setup",
+            "supported_media": [],
+        },
+        "config_schema": {
+            "players": {"min": config.MIN_WHO_AM_I_PLAYERS, "max": config.MAX_PLAYERS_PER_ROOM},
+            "rounds": {"min": 3, "max": 25, "default": 5},
+            "clues_per_round": {"min": 3, "max": 6, "default": 5},
+            "points_by_clue": [500, 400, 300, 200, 100],
+            "max_guesses_per_clue": {"min": 1, "max": 5, "default": 2},
+        },
+    },
 ]
 
 
@@ -784,6 +816,8 @@ def _default_time_limit_for_game(game_type: str) -> int:
         return 45
     if game_type == "common_ground":
         return 30
+    if game_type == "who_am_i":
+        return 25
     return config.DEFAULT_TIME_LIMIT
 
 
@@ -874,6 +908,8 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
         return str(uuid.uuid4()), validate_story_chain_config({"game_title": title or "Story Chain"})
     if game_type == "common_ground":
         return str(uuid.uuid4()), validate_common_ground_config({"game_title": title or "Common Ground"})
+    if game_type == "who_am_i":
+        return str(uuid.uuid4()), validate_who_am_i_config({"game_title": title or "Who Am I?"})
     if game_type == "bingo":
         return str(uuid.uuid4()), default_bingo_game(title or "Bingo")
     if game_type == "housie":
@@ -916,6 +952,8 @@ def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = 
     if game_type == "story_chain":
         return _default_game_content(game_type, title)
     if game_type == "common_ground":
+        return _default_game_content(game_type, title)
+    if game_type == "who_am_i":
         return _default_game_content(game_type, title)
     if game_type == "bingo":
         if not config.BINGO_ENABLED:
@@ -3420,6 +3458,9 @@ async def create_room(request: RoomCreateRequest, req: Request):
     elif request.game_type == "common_ground":
         content_id = str(uuid.uuid4())
         game_data = validate_common_ground_config(request.common_ground_config)
+    elif request.game_type == "who_am_i":
+        content_id = str(uuid.uuid4())
+        game_data = validate_who_am_i_config(request.who_am_i_config)
     else:
         content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
     if request.game_type == "drawing":

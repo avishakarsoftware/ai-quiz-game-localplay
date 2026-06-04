@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type WhoAmIState, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
@@ -24,6 +24,7 @@ import BluffTable from '../components/BluffTable';
 import TwoTruthsGame from '../components/TwoTruthsGame';
 import StoryChainGame from '../components/StoryChainGame';
 import CommonGroundGame from '../components/CommonGroundGame';
+import WhoAmIGame from '../components/WhoAmIGame';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
@@ -117,6 +118,7 @@ export default function SpectatorPage() {
     const [twoTruthsState, setTwoTruthsState] = useState<TwoTruthsState | null>(null);
     const [storyChainState, setStoryChainState] = useState<StoryChainState | null>(null);
     const [commonGroundState, setCommonGroundState] = useState<CommonGroundState | null>(null);
+    const [whoAmIState, setWhoAmIState] = useState<WhoAmIState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -263,6 +265,11 @@ export default function SpectatorPage() {
                     setGameState('COMMON_GROUND');
                     return;
                 }
+                if (msg.game_type === 'who_am_i' && msg.who_am_i) {
+                    setWhoAmIState(msg.who_am_i);
+                    setGameState('WHO_AM_I');
+                    return;
+                }
                 // Handle mid-question sync
                 if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
@@ -311,6 +318,9 @@ export default function SpectatorPage() {
                 } else if (msg.game_type === 'common_ground') {
                     setGameType('common_ground');
                     setGameState('COMMON_GROUND');
+                } else if (msg.game_type === 'who_am_i') {
+                    setGameType('who_am_i');
+                    setGameState('WHO_AM_I');
                 }
                 else setGameState('INTRO');
             }
@@ -367,6 +377,12 @@ export default function SpectatorPage() {
                 setCommonGroundState(msg.common_ground || null);
                 setLeaderboard(msg.leaderboard || []);
                 setGameState('COMMON_GROUND');
+            }
+            else if (msg.type === 'WHOAMI_SYNC') {
+                setGameType('who_am_i');
+                setWhoAmIState(msg.who_am_i || null);
+                setLeaderboard(msg.leaderboard || []);
+                setGameState('WHO_AM_I');
             }
             else if (msg.type === 'MC_WINNER') {
                 setGameType('musical_chairs');
@@ -807,6 +823,10 @@ export default function SpectatorPage() {
 
                     {gameState === 'COMMON_GROUND' && (
                         <CommonGroundGame state={commonGroundState} controls="spectator" />
+                    )}
+
+                    {gameState === 'WHO_AM_I' && (
+                        <WhoAmIGame state={whoAmIState} controls="spectator" />
                     )}
 
                     {gameState === 'QUESTION' && (question || currentStatement || gameType === 'drawing') && (

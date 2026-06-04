@@ -67,7 +67,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'who_am_i' | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -336,6 +336,44 @@ export interface CommonGroundState {
         created_at: number;
         updated_at: number;
     } | null;
+}
+
+export interface WhoAmIClue {
+    index: number;
+    text: string;
+    revealed: boolean;
+}
+
+export interface WhoAmIGuess {
+    guess: string;
+    clue_index: number;
+    correct: boolean;
+    points: number;
+    created_at?: number;
+}
+
+export interface WhoAmIState {
+    phase: 'WHOAMI_ROUND' | 'WHOAMI_REVEAL' | 'PODIUM' | string;
+    config: {
+        game_title?: string;
+        clue_count?: number;
+        points_by_clue?: number[];
+        max_guesses_per_clue?: number;
+    };
+    players: PlayerInfo[];
+    round_number: number;
+    total_rounds: number;
+    clue_index: number;
+    clues: WhoAmIClue[];
+    answer?: string | null;
+    category?: string;
+    scores: Record<string, number>;
+    correct_players: string[];
+    guesses_count: number;
+    round_revealed: boolean;
+    deadline?: number | null;
+    my_guesses?: WhoAmIGuess[];
+    my_correct?: boolean;
 }
 
 export interface HousieCell {

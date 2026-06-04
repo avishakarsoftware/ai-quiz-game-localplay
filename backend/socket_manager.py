@@ -70,6 +70,18 @@ from common_ground_engine import (
     submit_vote as common_submit_vote,
     validate_config as validate_common_ground_config,
 )
+from who_am_i_engine import (
+    PHASE_PODIUM as WHOAMI_PHASE_PODIUM,
+    create_initial_state as whoami_create_initial_state,
+    final_standings as whoami_final_standings,
+    next_clue as whoami_next_clue,
+    next_round as whoami_next_round,
+    private_sync as whoami_private_sync,
+    public_sync as whoami_public_sync,
+    reveal_answer as whoami_reveal_answer,
+    submit_guess as whoami_submit_guess,
+    validate_config as validate_who_am_i_config,
+)
 from bingo_engine import (
     BINGO_PATTERN_ORDER,
     create_bingo_call_deck,
@@ -179,6 +191,9 @@ class Room:
         # Common Ground state
         self.common_config = validate_common_ground_config(game_data) if game_type == "common_ground" else {}
         self.common_state: dict = {}
+        # Who Am I? state
+        self.who_am_i_config = validate_who_am_i_config(game_data) if game_type == "who_am_i" else {}
+        self.who_am_i_state: dict = {}
 
     def reset_for_new_game(self, new_game_data: dict, new_time_limit: int,
                            game_type: Optional[str] = None,
@@ -271,6 +286,8 @@ class Room:
         self.story_state = {}
         self.common_config = validate_common_ground_config(new_game_data) if self.game_type == "common_ground" else {}
         self.common_state = {}
+        self.who_am_i_config = validate_who_am_i_config(new_game_data) if self.game_type == "who_am_i" else {}
+        self.who_am_i_state = {}
 
         for nickname in self.power_ups:
             self.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
@@ -302,6 +319,8 @@ class Room:
             return len(self.story_state.get("turn_order", [])) or len(self.players)
         if self.game_type == "common_ground":
             return int(self.common_state.get("config", {}).get("rounds", 0)) or int(self.common_config.get("rounds", 5) or 5)
+        if self.game_type == "who_am_i":
+            return len(self.who_am_i_state.get("config", {}).get("rounds", [])) or len(self.who_am_i_config.get("rounds", [])) or 5
         return len(self.quiz.get("questions", []))
 
     def current_round_data(self) -> Optional[dict]:
@@ -327,6 +346,8 @@ class Room:
             return story_public_sync(self.story_state, players=self.player_public_list()) if self.story_state else None
         if self.game_type == "common_ground":
             return common_public_sync(self.common_state, players=self.player_public_list()) if self.common_state else None
+        if self.game_type == "who_am_i":
+            return whoami_public_sync(self.who_am_i_state, players=self.player_public_list()) if self.who_am_i_state else None
         return self.quiz["questions"][idx]
 
     def game_title(self) -> str:
@@ -657,6 +678,8 @@ class SocketManager:
                     sync["story_chain"] = story_public_sync(room.story_state, players=room.player_public_list())
                 if room.game_type == "common_ground" and room.common_state:
                     sync["common_ground"] = common_public_sync(room.common_state, players=room.player_public_list())
+                if room.game_type == "who_am_i" and room.who_am_i_state:
+                    sync["who_am_i"] = whoami_public_sync(room.who_am_i_state, players=room.player_public_list())
                 await websocket.send_json(sync)
                 while True:
                     try:
@@ -833,6 +856,8 @@ class SocketManager:
             sync["story_chain"] = story_public_sync(room.story_state, players=room.player_public_list())
         if room.game_type == "common_ground" and room.common_state:
             sync["common_ground"] = common_public_sync(room.common_state, players=room.player_public_list())
+        if room.game_type == "who_am_i" and room.who_am_i_state:
+            sync["who_am_i"] = whoami_public_sync(room.who_am_i_state, players=room.player_public_list())
 
         if room.organizer:
             await room.organizer.send_json(sync)
@@ -931,6 +956,14 @@ class SocketManager:
                                 "message": f"Common Ground needs at least {config.MIN_COMMON_GROUND_PLAYERS} players to start",
                             })
                             return
+                    elif room.game_type == "who_am_i":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_WHO_AM_I_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Who Am I? needs at least {config.MIN_WHO_AM_I_PLAYERS} players to start",
+                            })
+                            return
                     if room.billing_mode == "host_app_managed":
                         spent = True
                     else:
@@ -974,12 +1007,16 @@ class SocketManager:
                         self._start_common_ground_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": "common_ground"})
                         await self._broadcast_common_ground_sync(room)
+                    elif room.game_type == "who_am_i":
+                        self._start_who_am_i_game(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": "who_am_i"})
+                        await self._broadcast_who_am_i_sync(room)
                     else:
                         room.state = "INTRO"
                         await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
-                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground"):
+                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "who_am_i"):
                     return
                 if room.game_type == "drawing" and room.drawing_auto_task:
                     room.drawing_auto_task.cancel()
@@ -1061,6 +1098,15 @@ class SocketManager:
             elif msg_type == "COMMON_NEXT_ROUND" and room.game_type == "common_ground":
                 await self._common_next_round(room)
 
+            elif msg_type == "WHOAMI_NEXT_CLUE" and room.game_type == "who_am_i":
+                await self._who_am_i_next_clue(room)
+
+            elif msg_type == "WHOAMI_REVEAL_ANSWER" and room.game_type == "who_am_i":
+                await self._who_am_i_reveal_answer(room)
+
+            elif msg_type == "WHOAMI_NEXT_ROUND" and room.game_type == "who_am_i":
+                await self._who_am_i_next_round(room)
+
             elif msg_type == "SET_TIME_LIMIT":
                 if room.state in ("LOBBY", "LEADERBOARD", "PODIUM"):
                     new_limit = message.get("time_limit", 15)
@@ -1088,6 +1134,9 @@ class SocketManager:
                     return
                 if room.game_type == "common_ground":
                     await self._common_complete_game(room)
+                    return
+                if room.game_type == "who_am_i":
+                    await self._who_am_i_complete_game(room)
                     return
                 if room.game_type in ("housie", "bingo") and room.state == "BINGO_CALLING":
                     await self._complete_housie(room)
@@ -1126,7 +1175,7 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground") else room.game_type
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "who_am_i") else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
 
                     # Validate time_limit
@@ -1154,6 +1203,8 @@ class SocketManager:
                         new_game_data = validate_story_chain_config({})
                     elif new_game_type == "common_ground":
                         new_game_data = validate_common_ground_config({})
+                    elif new_game_type == "who_am_i":
+                        new_game_data = validate_who_am_i_config({})
                     else:
                         new_game_data = quizzes.get(new_content_id)
 
@@ -1317,6 +1368,8 @@ class SocketManager:
                             state_info["story_chain"] = story_private_sync(room.story_state, nickname, players=room.player_public_list())
                         elif room.game_type == "common_ground" and room.common_state:
                             state_info["common_ground"] = common_private_sync(room.common_state, nickname, players=room.player_public_list())
+                        elif room.game_type == "who_am_i" and room.who_am_i_state:
+                            state_info["who_am_i"] = whoami_private_sync(room.who_am_i_state, nickname, players=room.player_public_list())
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1409,6 +1462,8 @@ class SocketManager:
                             state_info["story_chain"] = story_private_sync(room.story_state, player_data["nickname"], players=room.player_public_list())
                         elif room.game_type == "common_ground" and room.common_state:
                             state_info["common_ground"] = common_private_sync(room.common_state, player_data["nickname"], players=room.player_public_list())
+                        elif room.game_type == "who_am_i" and room.who_am_i_state:
+                            state_info["who_am_i"] = whoami_private_sync(room.who_am_i_state, player_data["nickname"], players=room.player_public_list())
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1600,8 +1655,11 @@ class SocketManager:
             elif msg_type == "COMMON_VOTE" and room.game_type == "common_ground":
                 await self._common_vote(room, client_id, message)
 
+            elif msg_type == "WHOAMI_SUBMIT_GUESS" and room.game_type == "who_am_i":
+                await self._who_am_i_submit_guess(room, client_id, message)
+
             elif msg_type == "ANSWER":
-                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground"):
+                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "who_am_i"):
                     return  # Other games use their own input messages
                 if client_id not in room.players:
                     return
@@ -2410,6 +2468,148 @@ class SocketManager:
         except Exception:
             logger.warning("Could not save Common Ground history for room %s", room.room_code)
 
+    def _start_who_am_i_game(self, room: Room):
+        room.who_am_i_config = validate_who_am_i_config(room.quiz)
+        room.who_am_i_state = whoami_create_initial_state(
+            [p["nickname"] for p in room.players.values() if p.get("nickname")],
+            room.who_am_i_config,
+            now=time.time(),
+        )
+        room.current_question_index = 0
+        self._sync_who_am_i_phase_to_room(room)
+        self._sync_who_am_i_scores_to_players(room)
+
+    def _sync_who_am_i_phase_to_room(self, room: Room):
+        if room.who_am_i_state:
+            room.state = str(room.who_am_i_state.get("phase") or "WHOAMI_ROUND")
+            room.current_question_index = int(room.who_am_i_state.get("round_index", 0) or 0)
+
+    def _sync_who_am_i_scores_to_players(self, room: Room):
+        scores = room.who_am_i_state.get("scores", {}) if room.who_am_i_state else {}
+        for pdata in room.players.values():
+            nickname = pdata.get("nickname")
+            pdata["score"] = int(scores.get(nickname, 0) or 0)
+
+    async def _broadcast_who_am_i_sync(self, room: Room):
+        if not room.who_am_i_state:
+            return
+        players = room.player_public_list()
+        public = {
+            "type": "WHOAMI_SYNC",
+            "game_type": "who_am_i",
+            "who_am_i": whoami_public_sync(room.who_am_i_state, players=players),
+            "player_count": len(room.players),
+            "players": players,
+            "leaderboard": self.get_leaderboard(room),
+        }
+        for client_id, ws in list(room.connections.items()):
+            if client_id in room.players:
+                nickname = room.players[client_id]["nickname"]
+                payload = dict(public)
+                payload["who_am_i"] = whoami_private_sync(room.who_am_i_state, nickname, players=players)
+                try:
+                    await ws.send_json(payload)
+                except Exception:
+                    room._remove_connection(client_id)
+        await room.emit_pending_player_event()
+        await room.send_to_organizer(public)
+        for ws in list(room.spectators.values()):
+            try:
+                await ws.send_json(public)
+            except Exception:
+                pass
+
+    async def _who_am_i_submit_guess(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players or not room.who_am_i_state:
+            return
+        nickname = room.players[client_id]["nickname"]
+        try:
+            async with room.lock:
+                room.who_am_i_state, result = whoami_submit_guess(
+                    room.who_am_i_state,
+                    nickname,
+                    str(message.get("guess") or ""),
+                    now=time.time(),
+                )
+                self._sync_who_am_i_scores_to_players(room)
+                self._sync_who_am_i_phase_to_room(room)
+                room.answer_log.append({
+                    "kind": "who_am_i_guess",
+                    "nickname": nickname,
+                    "round": room.who_am_i_state.get("round_index", 0) + 1,
+                    "correct": bool(result.get("correct")),
+                })
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._send_to_client(room, client_id, {"type": "WHOAMI_GUESS_RESULT", **result})
+        await self._broadcast_who_am_i_sync(room)
+
+    async def _who_am_i_next_clue(self, room: Room):
+        if not room.who_am_i_state:
+            return
+        try:
+            async with room.lock:
+                room.who_am_i_state = whoami_next_clue(room.who_am_i_state, now=time.time())
+                self._sync_who_am_i_phase_to_room(room)
+        except ValueError:
+            return
+        await self._broadcast_who_am_i_sync(room)
+
+    async def _who_am_i_reveal_answer(self, room: Room):
+        if not room.who_am_i_state:
+            return
+        try:
+            async with room.lock:
+                room.who_am_i_state = whoami_reveal_answer(room.who_am_i_state, now=time.time())
+                self._sync_who_am_i_phase_to_room(room)
+        except ValueError:
+            return
+        await self._broadcast_who_am_i_sync(room)
+
+    async def _who_am_i_next_round(self, room: Room):
+        if not room.who_am_i_state:
+            return
+        became_podium = False
+        try:
+            async with room.lock:
+                room.who_am_i_state = whoami_next_round(room.who_am_i_state, now=time.time())
+                became_podium = room.who_am_i_state.get("phase") == WHOAMI_PHASE_PODIUM
+                if not became_podium:
+                    self._sync_who_am_i_phase_to_room(room)
+        except ValueError:
+            return
+        if became_podium:
+            await self._who_am_i_complete_game(room)
+            return
+        await self._broadcast_who_am_i_sync(room)
+
+    async def _who_am_i_complete_game(self, room: Room):
+        if room.state == "PODIUM":
+            return
+        if room.who_am_i_state:
+            room.who_am_i_state["phase"] = WHOAMI_PHASE_PODIUM
+        self._sync_who_am_i_scores_to_players(room)
+        room.state = "PODIUM"
+        leaderboard = self.get_leaderboard(room)
+        await room.broadcast({
+            "type": "PODIUM",
+            "game_type": "who_am_i",
+            "leaderboard": leaderboard,
+            "team_leaderboard": [],
+            "who_am_i": whoami_public_sync(room.who_am_i_state, players=room.player_public_list()) if room.who_am_i_state else {},
+        })
+        try:
+            from main import game_history
+            summary = self.get_game_summary(room)
+            summary["who_am_i_standings"] = whoami_final_standings(room.who_am_i_state) if room.who_am_i_state else []
+            game_history.append(summary)
+            if len(game_history) > config.MAX_GAME_HISTORY:
+                del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+            self._mark_game_session_complete(room, summary)
+        except Exception:
+            logger.warning("Could not save Who Am I? history for room %s", room.room_code)
+
     def _start_musical_chairs_game(self, room: Room):
         room.mc_config = validate_musical_chairs_config(room.quiz)
         room.mc_active_players = sorted([p["nickname"] for p in room.players.values()])
@@ -3100,6 +3300,10 @@ class SocketManager:
             summary["total_rounds"] = len(room.answer_log)
             summary["winners"] = room.bluff_state.get("winners", [])
             summary["pile_count"] = len(room.bluff_state.get("pile", []))
+        if room.game_type == "who_am_i" and room.who_am_i_state:
+            summary["total_questions"] = len(room.who_am_i_state.get("config", {}).get("rounds", []))
+            summary["total_rounds"] = summary["total_questions"]
+            summary["winners"] = whoami_final_standings(room.who_am_i_state)[:3]
         return summary
 
     def _callback_event_type(self, event_type: str) -> str:

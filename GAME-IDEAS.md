@@ -10,6 +10,7 @@ Brainstormed concepts for future Revelry Games. When a concept is ready for impl
 - **Bingo / Housie** — specced, standalone implemented (`SPEC-GAME-BINGO-HOUSIE.md`)
 - **Mafia** — draft spec (`SPEC-GAME-MAFIA.md`)
 - **Musical Chairs** — draft spec (`SPEC-GAME-MUSICAL-CHAIRS.md`)
+- **Who Am I?** — implementation-ready spec (`SPEC-GAME-WHO-AM-I.md`)
 
 ## Photo Games (2026-05-25)
 

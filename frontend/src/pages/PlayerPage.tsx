@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { WS_URL } from '../config';
-import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type WhoAmIState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -24,8 +24,9 @@ import BluffTable from '../components/BluffTable';
 import TwoTruthsGame from '../components/TwoTruthsGame';
 import StoryChainGame from '../components/StoryChainGame';
 import CommonGroundGame from '../components/CommonGroundGame';
+import WhoAmIGame from '../components/WhoAmIGame';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'WHO_AM_I' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
 interface PlayerQuestion {
     id: number;
@@ -145,6 +146,7 @@ export default function PlayerPage() {
     const [twoTruthsState, setTwoTruthsState] = useState<TwoTruthsState | null>(null);
     const [storyChainState, setStoryChainState] = useState<StoryChainState | null>(null);
     const [commonGroundState, setCommonGroundState] = useState<CommonGroundState | null>(null);
+    const [whoAmIState, setWhoAmIState] = useState<WhoAmIState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const submittedRef = useRef(false);
@@ -249,6 +251,10 @@ export default function PlayerPage() {
                     setGameType('common_ground');
                     setCommonGroundState(msg.common_ground as CommonGroundState);
                     setState('COMMON_GROUND');
+                } else if (msg.game_type === 'who_am_i' && msg.who_am_i) {
+                    setGameType('who_am_i');
+                    setWhoAmIState(msg.who_am_i as WhoAmIState);
+                    setState('WHO_AM_I');
                 } else {
                     setState('LOBBY');
                 }
@@ -285,6 +291,10 @@ export default function PlayerPage() {
                     setGameType('common_ground');
                     setCommonGroundState(msg.common_ground as CommonGroundState);
                     setState('COMMON_GROUND');
+                } else if (msg.game_type === 'who_am_i' && msg.who_am_i) {
+                    setGameType('who_am_i');
+                    setWhoAmIState(msg.who_am_i as WhoAmIState);
+                    setState('WHO_AM_I');
                 } else if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
                         setGameType('drawing');
@@ -352,6 +362,9 @@ export default function PlayerPage() {
                 } else if (msg.game_type === 'common_ground') {
                     setGameType('common_ground');
                     setState('COMMON_GROUND');
+                } else if (msg.game_type === 'who_am_i') {
+                    setGameType('who_am_i');
+                    setState('WHO_AM_I');
                 }
                 else setState('INTRO');
             }
@@ -448,6 +461,13 @@ export default function PlayerPage() {
                 setCommonGroundState(msg.common_ground as CommonGroundState);
                 setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
                 setState('COMMON_GROUND');
+            }
+            if (msg.type === 'WHOAMI_SYNC') {
+                setError('');
+                setGameType('who_am_i');
+                setWhoAmIState(msg.who_am_i as WhoAmIState);
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+                setState('WHO_AM_I');
             }
             if (msg.type === 'QUESTION') {
                 if (msg.game_type === 'drawing') {
@@ -778,6 +798,10 @@ export default function PlayerPage() {
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'COMMON_VOTE', submission_id: submissionId }));
     };
+    const submitWhoAmIGuess = (guess: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'WHOAMI_SUBMIT_GUESS', guess }));
+    };
 
     const activatePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
         soundManager.hapticsSelect();
@@ -1099,6 +1123,18 @@ export default function PlayerPage() {
                             controls="player"
                             onSubmitFact={submitCommonFact}
                             onVote={voteCommonGround}
+                        />
+                    </>
+                )}
+
+                {state === 'WHO_AM_I' && (
+                    <>
+                        {error && <div className="status-pill status-error animate-shake player-runtime-error">{error}</div>}
+                        <WhoAmIGame
+                            state={whoAmIState}
+                            viewerName={nickname}
+                            controls="player"
+                            onSubmitGuess={submitWhoAmIGuess}
                         />
                     </>
                 )}

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState } from '../types';
+import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type WhoAmIState } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending, saveOrganizerSession, getSavedOrganizerSession, clearOrganizerSession } from '../utils/storage';
@@ -25,6 +25,7 @@ import BluffTable from '../components/BluffTable';
 import TwoTruthsGame from '../components/TwoTruthsGame';
 import StoryChainGame from '../components/StoryChainGame';
 import CommonGroundGame from '../components/CommonGroundGame';
+import WhoAmIGame from '../components/WhoAmIGame';
 import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
 import { BingoCalledList, BingoCallOverlay } from '../components/BingoBoard';
 import ImageGenerationScreen from '../components/organizer/ImageGenerationScreen';
@@ -39,7 +40,7 @@ import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'WHO_AM_I' | 'LEADERBOARD' | 'PODIUM';
 
 function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'housie' || type === 'bingo' || type === 'baby_bingo') return 15;
@@ -48,6 +49,7 @@ function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'two_truths') return 30;
     if (type === 'story_chain') return 45;
     if (type === 'common_ground') return 30;
+    if (type === 'who_am_i') return 25;
     return type === 'drawing' ? 30 : 15;
 }
 
@@ -159,6 +161,7 @@ export default function OrganizerPage() {
     const [twoTruthsState, setTwoTruthsState] = useState<TwoTruthsState | null>(null);
     const [storyChainState, setStoryChainState] = useState<StoryChainState | null>(null);
     const [commonGroundState, setCommonGroundState] = useState<CommonGroundState | null>(null);
+    const [whoAmIState, setWhoAmIState] = useState<WhoAmIState | null>(null);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean; returnToHostApp?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -465,6 +468,12 @@ export default function OrganizerPage() {
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('COMMON_GROUND');
         }
+        else if (msg.type === 'WHOAMI_SYNC') {
+            setGameType('who_am_i');
+            setWhoAmIState(msg.who_am_i as WhoAmIState);
+            setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+            setState('WHO_AM_I');
+        }
         else if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED') {
             setPlayerCount(msg.player_count as number);
             setPlayers(msg.players as PlayerInfo[] || []);
@@ -487,6 +496,7 @@ export default function OrganizerPage() {
             setTwoTruthsState(null);
             setStoryChainState(null);
             setCommonGroundState(null);
+            setWhoAmIState(null);
             setAnsweredCount(0);
             setLiveQuestion(null);
             setCurrentStatement('');
@@ -521,6 +531,7 @@ export default function OrganizerPage() {
             if (msg.two_truths) setTwoTruthsState(msg.two_truths as TwoTruthsState);
             if (msg.story_chain) setStoryChainState(msg.story_chain as StoryChainState);
             if (msg.common_ground) setCommonGroundState(msg.common_ground as CommonGroundState);
+            if (msg.who_am_i) setWhoAmIState(msg.who_am_i as WhoAmIState);
             if (msg.quiz) {
                 const quizData = msg.quiz as Record<string, unknown>;
                 if (quizData.questions) {
@@ -641,6 +652,10 @@ export default function OrganizerPage() {
         else if (type === 'common_ground') {
             setCommonGroundState(null);
             void createRoom(undefined, 'common_ground', defaultTimeLimitForGame('common_ground'));
+        }
+        else if (type === 'who_am_i') {
+            setWhoAmIState(null);
+            void createRoom(undefined, 'who_am_i', defaultTimeLimitForGame('who_am_i'));
         }
         else if (type === 'quiz') {
             setPrompt(randomQuizTopic(prompt));
@@ -1198,6 +1213,8 @@ export default function OrganizerPage() {
                     voting_enabled: true,
                     vote_category: 'most_surprising',
                 };
+            } else if (effectiveGameType === 'who_am_i') {
+                body.who_am_i_config = { game_title: 'Who Am I?' };
             } else if (isQuizRuntimeGame(effectiveGameType)) {
                 body.quiz_id = selectedContentId;
             }
@@ -1340,7 +1357,7 @@ export default function OrganizerPage() {
             wsRef.current?.send(JSON.stringify({ type: 'SET_SHOW_VOTES', show_votes: showVotes }));
         }
         wsRef.current?.send(JSON.stringify({ type: 'START_GAME' }));
-        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'musical_chairs' && gameType !== 'bluff' && gameType !== 'two_truths' && gameType !== 'story_chain' && gameType !== 'common_ground') {
+        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'musical_chairs' && gameType !== 'bluff' && gameType !== 'two_truths' && gameType !== 'story_chain' && gameType !== 'common_ground' && gameType !== 'who_am_i') {
             wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
         }
     };
@@ -1367,6 +1384,9 @@ export default function OrganizerPage() {
     const startCommonVoting = () => wsRef.current?.send(JSON.stringify({ type: 'COMMON_START_VOTING' }));
     const scoreCommonRound = () => wsRef.current?.send(JSON.stringify({ type: 'COMMON_SCORE_ROUND' }));
     const nextCommonRound = () => wsRef.current?.send(JSON.stringify({ type: 'COMMON_NEXT_ROUND' }));
+    const nextWhoAmIClue = () => wsRef.current?.send(JSON.stringify({ type: 'WHOAMI_NEXT_CLUE' }));
+    const revealWhoAmIAnswer = () => wsRef.current?.send(JSON.stringify({ type: 'WHOAMI_REVEAL_ANSWER' }));
+    const nextWhoAmIRound = () => wsRef.current?.send(JSON.stringify({ type: 'WHOAMI_NEXT_ROUND' }));
 
     const playAgain = () => {
         setCurrentQuestion(0);
@@ -1783,6 +1803,17 @@ export default function OrganizerPage() {
                         onStartVoting={startCommonVoting}
                         onScoreRound={scoreCommonRound}
                         onNextRound={nextCommonRound}
+                        onEndGame={endQuiz}
+                    />
+                )}
+
+                {state === 'WHO_AM_I' && (
+                    <WhoAmIGame
+                        state={whoAmIState}
+                        controls="host"
+                        onNextClue={nextWhoAmIClue}
+                        onRevealAnswer={revealWhoAmIAnswer}
+                        onNextRound={nextWhoAmIRound}
                         onEndGame={endQuiz}
                     />
                 )}

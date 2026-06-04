@@ -5725,7 +5725,8 @@ body {
     margin-top: auto;
 }
 
-.common-ground-shell {
+.common-ground-shell,
+.who-am-i-shell {
     max-width: 940px;
 }
 
@@ -5898,6 +5899,99 @@ body {
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 12px;
     margin-top: 22px;
+}
+
+.who-am-i-clues {
+    display: grid;
+    gap: 10px;
+    margin: 18px 0;
+}
+
+.who-am-i-clue {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 14px 16px;
+    border-radius: 8px;
+    background: rgba(31, 17, 52, 0.58);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-tertiary);
+}
+
+.who-am-i-clue.revealed {
+    background: rgba(31, 17, 52, 0.86);
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.16);
+}
+
+.who-am-i-clue span {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    background: rgba(255, 255, 255, 0.08);
+    font-weight: 900;
+}
+
+.who-am-i-clue.revealed span {
+    background: var(--accent-primary);
+    color: var(--text-inverse);
+}
+
+.who-am-i-guess-input {
+    width: 100%;
+    min-height: 58px;
+    padding: 0 18px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(18, 7, 32, 0.86);
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 800;
+}
+
+.who-am-i-guess-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.who-am-i-guess-list span {
+    padding: 8px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--text-secondary);
+    font-weight: 800;
+}
+
+.who-am-i-guess-list span.correct {
+    background: rgba(89, 255, 222, 0.14);
+    color: #59ffde;
+}
+
+.who-am-i-answer {
+    display: grid;
+    gap: 6px;
+    margin: 18px 0;
+    padding: 22px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(255, 47, 125, 0.24), rgba(89, 255, 222, 0.12));
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: var(--shadow-card);
+}
+
+.who-am-i-answer small,
+.who-am-i-answer span {
+    color: var(--text-secondary);
+    font-weight: 800;
+}
+
+.who-am-i-answer strong {
+    font-size: clamp(1.8rem, 4vw, 3rem);
+    line-height: 1.05;
 }
 
 @media (max-width: 640px) {
