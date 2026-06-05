@@ -1,7 +1,7 @@
 import { Wand2 } from 'lucide-react';
 import SignInNudge from '../SignInNudge';
 import { useTokenBalance } from '../../hooks/useTokenBalance';
-import { type AIProvider } from './PromptScreen';
+import { randomQuizTopic, type AIProvider } from './PromptScreen';
 import { SHOW_PROVIDER_SELECTOR } from '../../config';
 
 const ITEM_COUNTS = [24, 30, 40, 50];
@@ -39,6 +39,7 @@ export default function BingoPromptScreen({
     onBack: () => void;
 }) {
     const { tokenStatus } = useTokenBalance();
+    const shuffleTopic = () => setPrompt(randomQuizTopic(prompt));
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
@@ -53,13 +54,24 @@ export default function BingoPromptScreen({
                 </div>
 
                 <div className="space-y-4">
-                    <textarea
-                        value={prompt}
-                        onChange={(event) => setPrompt(event.target.value.slice(0, 140))}
-                        placeholder="Baby shower, office holiday party, wedding reception..."
-                        className="input-field input-large"
-                        maxLength={140}
-                    />
+                    <div className="prompt-input-wrapper" style={{ position: 'relative' }}>
+                        <textarea
+                            value={prompt}
+                            onChange={(event) => setPrompt(event.target.value.slice(0, 140))}
+                            placeholder="Baby shower, office holiday party, wedding reception..."
+                            className="input-field input-large"
+                            maxLength={140}
+                        />
+                        <button
+                            type="button"
+                            onClick={shuffleTopic}
+                            className="shuffle-btn"
+                            aria-label="Suggest a random topic"
+                            title="Suggest a random topic"
+                        >
+                            🎲
+                        </button>
+                    </div>
 
                     {SHOW_PROVIDER_SELECTOR && providers.length > 0 && (
                         <div>

@@ -84,6 +84,7 @@ export default function QuizVariantPromptScreen({
                             type="button"
                             onClick={shuffleTopic}
                             className="shuffle-btn"
+                            aria-label="Suggest a random topic"
                             title="Suggest a random topic"
                         >
                             🎲

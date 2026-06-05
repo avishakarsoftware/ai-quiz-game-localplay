@@ -30,7 +30,7 @@ frontend.
 
 ## Playwright UX Tests
 
-The Playwright suite starts the local Vite dev server automatically. Current coverage includes the DrawingGame organizer prompt screen and quiz-variant prompt screens on desktop and mobile, with assertions for aligned controls, no horizontal page overflow, no overlap with fixed menu/spark controls, variant generation `mode` payloads, and visual snapshots for DrawingGame.
+The Playwright suite starts the local Vite dev server automatically unless `PLAYWRIGHT_BASE_URL` points at gamma/prod. Current coverage includes the DrawingGame organizer prompt screen, quiz-variant prompt screens, and a prompt UX audit across AI-backed setup screens on desktop and mobile, with assertions for visible random-topic dice controls, aligned controls, no horizontal page overflow, no overlap with fixed menu/spark controls, variant generation `mode` payloads, and visual snapshots for DrawingGame.
 
 The gamma smoke skips the local dev server and points Playwright at the deployed backend-served SPA:
 

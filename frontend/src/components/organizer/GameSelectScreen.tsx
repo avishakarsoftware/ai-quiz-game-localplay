@@ -112,6 +112,7 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
                             key={game.id}
                             onClick={() => onSelect(game.id)}
                             className="game-select-card"
+                            data-testid={`game-card-${game.id}`}
                         >
                             <span className="game-select-icon">{game.icon}</span>
                             <div className="game-select-info">

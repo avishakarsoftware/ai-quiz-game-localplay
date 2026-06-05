@@ -115,6 +115,7 @@ export default function MLTPromptScreen({
                             type="button"
                             onClick={shuffleTheme}
                             className="shuffle-btn"
+                            aria-label="Suggest a random theme"
                             title="Suggest a random theme"
                         >
                             🎲

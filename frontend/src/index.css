@@ -2312,6 +2312,8 @@ body {
 
 .prompt-input-wrapper .input-field {
     border-radius: 7px;
+    padding-right: 68px;
+    padding-bottom: 56px;
 }
 
 .prompt-input-wrapper:focus-within {
@@ -4204,28 +4206,29 @@ body {
 /* Shuffle topic button */
 .shuffle-btn {
     position: absolute;
-    bottom: 10px;
-    right: 10px;
-    width: 36px;
-    height: 36px;
+    bottom: 12px;
+    right: 12px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
-    border: none;
-    background: var(--paper);
-    border: 1px solid var(--rule);
+    background: linear-gradient(135deg, rgba(248, 235, 217, 0.98), rgba(255, 46, 122, 0.25));
+    border: 1px solid rgba(248, 235, 217, 0.55);
     color: var(--ink);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.15rem;
-    transition: transform 0.2s ease, background 0.2s ease;
-    opacity: 0.7;
+    font-size: 1.25rem;
+    transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+    opacity: 1;
+    z-index: 2;
+    box-shadow: 0 10px 24px rgba(255, 46, 122, 0.22);
 }
 
 .shuffle-btn:hover {
-    opacity: 1;
     background: var(--paper-2);
     transform: rotate(90deg) scale(1.1);
+    box-shadow: 0 14px 30px rgba(255, 46, 122, 0.32);
 }
 
 .shuffle-btn:active {

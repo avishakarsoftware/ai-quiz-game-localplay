@@ -1054,7 +1054,7 @@ Organizer states:
 Game select:
 
 - Host chooses from `frontend/src/gameModes.ts`.
-- The standalone picker renders a responsive searchable catalog. Category filters are **All**, **Quiz/Trivia**, **Creative**, and **Bingo/Housie**; games with AI setup/generation are visually marked with a sparkle after the title.
+- The standalone picker renders a responsive searchable catalog. Category filters are **All**, **Quiz/Trivia**, **Creative**, **Bingo/Housie**, and **Cards**; games with AI setup/generation are visually marked with a sparkle after the title. Game cards expose stable test ids in the form `game-card-{game_id}` so Playwright can audit setup and player flows without brittle text matching.
 - Quiz and quiz variants go through quiz prompt/review or custom quiz authoring.
 - WMLT goes to `MLT_PROMPT` and `MLT_REVIEW`.
 - Drawing goes to `DRAWING_PROMPT` and `DRAWING_REVIEW`.
@@ -1069,7 +1069,8 @@ Generation:
 - Drawing calls `/drawing/generate`.
 - Successful generation moves to review.
 - Provider-picking UI is a local/gamma diagnostic affordance only. Production standalone and production backend-served surfaces must hide raw provider selectors such as "Google AI"; production still uses the configured backend/default provider and remote config.
-- AI Quiz, quiz variants, and Drawing prompt screens must include a consistent back control positioned with the header/icon area so hosts can return to the game catalog without using the global menu.
+- AI Quiz, quiz variants, WMLT, Bingo, Drawing, Who Am I, and Chit Pull prompt screens must include a visible random-topic/theme dice control with an accessible label and a mobile-friendly tap target. The textarea must reserve space for that control so typed prompt text does not sit underneath it.
+- AI Quiz, quiz variants, and Drawing-style prompt screens must include a consistent back control positioned with the header/icon area so hosts can return to the game catalog without using the global menu.
 - AI-generated setup screens must keep visible vertical separation between count selectors and the final generate action. The primary action should not visually attach to the last selector row.
 - `402`, `429`, and `503` are surfaced in an error modal.
 - In host-app party hub mode, prompt-list setup games such as WMLT and Drawing may call `/integrations/revelry/party-games/prompts/generate` with a party-scoped token. Generated prompts populate the editable setup form and are not persisted until the host saves the setup.

@@ -1,6 +1,6 @@
 import { type CSSProperties } from 'react';
 import { type ReactNode } from 'react';
-import { type AIProvider } from './PromptScreen';
+import { randomQuizTopic, type AIProvider } from './PromptScreen';
 import { SHOW_PROVIDER_SELECTOR } from '../../config';
 
 interface DrawingPromptScreenProps {
@@ -63,6 +63,7 @@ export default function DrawingPromptScreen({
         whiteSpace: 'nowrap',
         boxShadow: active ? '0 12px 28px rgba(255, 45, 125, 0.28)' : undefined,
     });
+    const shuffleTopic = () => setPrompt(randomQuizTopic(prompt));
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
@@ -81,14 +82,25 @@ export default function DrawingPromptScreen({
                 </div>
 
                 <div className="space-y-5" style={{ width: '100%' }}>
-                    <textarea
-                        value={prompt}
-                        onChange={(event) => setPrompt(event.target.value)}
-                        placeholder={placeholder}
-                        maxLength={140}
-                        className="input-field"
-                        style={{ minHeight: 140, resize: 'vertical', width: '100%' }}
-                    />
+                    <div className="prompt-input-wrapper" style={{ position: 'relative' }}>
+                        <textarea
+                            value={prompt}
+                            onChange={(event) => setPrompt(event.target.value.slice(0, 140))}
+                            placeholder={placeholder}
+                            maxLength={140}
+                            className="input-field"
+                            style={{ minHeight: 140, resize: 'vertical', width: '100%' }}
+                        />
+                        <button
+                            type="button"
+                            onClick={shuffleTopic}
+                            className="shuffle-btn"
+                            aria-label="Suggest a random topic"
+                            title="Suggest a random topic"
+                        >
+                            🎲
+                        </button>
+                    </div>
 
                     <div>
                         <p className="text-[--text-tertiary] text-sm font-semibold mb-2">Difficulty</p>
