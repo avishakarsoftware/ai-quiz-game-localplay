@@ -40,7 +40,7 @@ test.describe('prompt UX audit', () => {
     test.skip(!String(process.env.PLAYWRIGHT_BASE_URL || '').includes('gamma'), 'real room join audit runs on gamma');
 
     await page.goto('/');
-    await page.getByTestId('game-card-housie').click();
+    await page.getByTestId('game-card-story_chain').click();
     const roomCode = (await page.locator('.room-code').textContent({ timeout: 20_000 }))?.trim();
     expect(roomCode).toMatch(/^[A-Z0-9]{6}$/);
 
