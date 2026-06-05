@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { WS_URL } from '../config';
-import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type WhoAmIState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type WhoAmIState, type ChitPullState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -25,8 +25,9 @@ import TwoTruthsGame from '../components/TwoTruthsGame';
 import StoryChainGame from '../components/StoryChainGame';
 import CommonGroundGame from '../components/CommonGroundGame';
 import WhoAmIGame from '../components/WhoAmIGame';
+import ChitPullGame from '../components/ChitPullGame';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'WHO_AM_I' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'WHO_AM_I' | 'CHIT_PULL' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
 interface PlayerQuestion {
     id: number;
@@ -147,6 +148,7 @@ export default function PlayerPage() {
     const [storyChainState, setStoryChainState] = useState<StoryChainState | null>(null);
     const [commonGroundState, setCommonGroundState] = useState<CommonGroundState | null>(null);
     const [whoAmIState, setWhoAmIState] = useState<WhoAmIState | null>(null);
+    const [chitPullState, setChitPullState] = useState<ChitPullState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const submittedRef = useRef(false);
@@ -255,6 +257,10 @@ export default function PlayerPage() {
                     setGameType('who_am_i');
                     setWhoAmIState(msg.who_am_i as WhoAmIState);
                     setState('WHO_AM_I');
+                } else if (msg.game_type === 'chit_pull' && msg.chit_pull) {
+                    setGameType('chit_pull');
+                    setChitPullState(msg.chit_pull as ChitPullState);
+                    setState('CHIT_PULL');
                 } else {
                     setState('LOBBY');
                 }
@@ -295,6 +301,10 @@ export default function PlayerPage() {
                     setGameType('who_am_i');
                     setWhoAmIState(msg.who_am_i as WhoAmIState);
                     setState('WHO_AM_I');
+                } else if (msg.game_type === 'chit_pull' && msg.chit_pull) {
+                    setGameType('chit_pull');
+                    setChitPullState(msg.chit_pull as ChitPullState);
+                    setState('CHIT_PULL');
                 } else if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
                         setGameType('drawing');
@@ -365,6 +375,9 @@ export default function PlayerPage() {
                 } else if (msg.game_type === 'who_am_i') {
                     setGameType('who_am_i');
                     setState('WHO_AM_I');
+                } else if (msg.game_type === 'chit_pull') {
+                    setGameType('chit_pull');
+                    setState('CHIT_PULL');
                 }
                 else setState('INTRO');
             }
@@ -468,6 +481,13 @@ export default function PlayerPage() {
                 setWhoAmIState(msg.who_am_i as WhoAmIState);
                 setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
                 setState('WHO_AM_I');
+            }
+            if (msg.type === 'CHIT_SYNC') {
+                setError('');
+                setGameType('chit_pull');
+                setChitPullState(msg.chit_pull as ChitPullState);
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+                setState('CHIT_PULL');
             }
             if (msg.type === 'QUESTION') {
                 if (msg.game_type === 'drawing') {
@@ -643,6 +663,8 @@ export default function PlayerPage() {
                 setTwoTruthsState(null);
                 setStoryChainState(null);
                 setCommonGroundState(null);
+                setWhoAmIState(null);
+                setChitPullState(null);
                 setMcGrabbed(false);
                 setMcEliminated(false);
                 setMcReactionMs(null);
@@ -1135,6 +1157,17 @@ export default function PlayerPage() {
                             viewerName={nickname}
                             controls="player"
                             onSubmitGuess={submitWhoAmIGuess}
+                        />
+                    </>
+                )}
+
+                {state === 'CHIT_PULL' && (
+                    <>
+                        {error && <div className="status-pill status-error animate-shake player-runtime-error">{error}</div>}
+                        <ChitPullGame
+                            state={chitPullState}
+                            viewerName={nickname}
+                            controls="player"
                         />
                     </>
                 )}

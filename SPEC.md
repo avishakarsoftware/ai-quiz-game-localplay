@@ -19,7 +19,8 @@ The platform currently supports:
 - `two_truths`: standalone party confession game where players submit two truths and one lie, then the room votes on each author.
 - `story_chain`: standalone sequential creative game where players privately add one sentence each, then the room reveals the final story.
 - `common_ground`: standalone team icebreaker where auto-assigned teams submit shared facts, vote on the best answers, and finish on a team podium.
-- `who_am_i`: implementation-ready clue-ladder guessing game spec where clues reveal progressively and players submit free-text guesses.
+- `who_am_i`: standalone clue-ladder guessing game where clues reveal progressively and players submit free-text guesses.
+- `chit_pull`: standalone random-chit party game where the server picks a player and prompt, then the host marks completed/skipped/redrawn outcomes.
 - Standalone custom quiz authoring and saved quiz packs.
 - Host-app/party-scoped authoring and game setup through the Revelry Games hub.
 
@@ -57,7 +58,8 @@ Key files:
 - `backend/two_truths_engine.py`: validation, private/public sync, voting, scoring, and podium helpers for Two Truths and a Lie.
 - `backend/story_chain_engine.py`: setup validation, private turn context, sentence submission, reveal stepping, and scoring helpers for Story Chain.
 - `backend/common_ground_engine.py`: setup validation, team assignment, private/public sync, team submissions, voting, scoring, and podium helpers for Common Ground.
-- `backend/who_am_i_engine.py`: planned clue-ladder setup validation, guess normalization/matching, private/public sync, and scoring helpers for Who Am I.
+- `backend/who_am_i_engine.py`: clue-ladder setup validation, guess normalization/matching, private/public sync, and scoring helpers for Who Am I.
+- `backend/chit_pull_engine.py`: random player/chit selection, safe deck sanitization, redraw handling, scoring, public sync, and podium helpers for Chit Pull.
 - `backend/image_engine.py`: optional Stable Diffusion image generation for quiz questions.
 - `backend/auth.py`: Google/Apple sign-in and session handling.
 - `backend/remote_config.py`: remote config for provider/model/operation flags.
@@ -83,7 +85,8 @@ Key files:
 - `frontend/src/components/TwoTruthsGame.tsx`: shared Two Truths and a Lie UI for organizer, player, and spectator views.
 - `frontend/src/components/StoryChainGame.tsx`: shared Story Chain UI for organizer, player, and spectator views.
 - `frontend/src/components/CommonGroundGame.tsx`: shared Common Ground UI for organizer, player, and spectator views.
-- `frontend/src/components/WhoAmIGame.tsx`: planned shared Who Am I clue/guess UI for organizer, player, and spectator views.
+- `frontend/src/components/WhoAmIGame.tsx`: shared Who Am I clue/guess UI for organizer, player, and spectator views.
+- `frontend/src/components/ChitPullGame.tsx`: shared Chit Pull selected-player/chit, standings, and host-control UI for organizer, player, and spectator views.
 - `frontend/src/components/organizer/CustomQuizEditor.tsx`: manual custom quiz authoring.
 - `frontend/src/components/organizer/ReviewScreen.tsx`: quiz review/edit before room creation.
 - `frontend/src/components/organizer/MLTReviewScreen.tsx`: WMLT review/edit before room creation.

@@ -123,6 +123,36 @@ class TestHealthEndpoints:
         assert room.quiz["vote_category"] == "funniest"
         assert room.time_limit == 30
 
+    def test_create_who_am_i_room(self):
+        res = client.post(
+            "/room/create",
+            json={"game_type": "who_am_i", "who_am_i_config": {"game_title": "Guess Me", "round_count": 3}},
+            headers=AUTH_HEADERS,
+        )
+
+        assert res.status_code == 200, res.text
+        body = res.json()
+        room = main.socket_manager.rooms[body["room_code"]]
+        assert room.game_type == "who_am_i"
+        assert room.quiz["game_title"] == "Guess Me"
+        assert len(room.quiz["rounds"]) == 3
+        assert room.time_limit == 25
+
+    def test_create_chit_pull_room(self):
+        res = client.post(
+            "/room/create",
+            json={"game_type": "chit_pull", "chit_pull_config": {"game_title": "Party Chits", "rounds": 5}},
+            headers=AUTH_HEADERS,
+        )
+
+        assert res.status_code == 200, res.text
+        body = res.json()
+        room = main.socket_manager.rooms[body["room_code"]]
+        assert room.game_type == "chit_pull"
+        assert room.quiz["game_title"] == "Party Chits"
+        assert room.quiz["rounds"] == 5
+        assert room.time_limit == 30
+
     def test_catalog_includes_baby_bingo_preset_on_bingo_runtime(self):
         res = client.get("/catalog")
 
@@ -137,6 +167,11 @@ class TestHealthEndpoints:
         assert games["story_chain"]["config_schema"]["players"]["min"] == config.MIN_STORY_CHAIN_PLAYERS
         assert games["common_ground"]["runtime_type"] == "common_ground"
         assert games["common_ground"]["config_schema"]["players"]["min"] == config.MIN_COMMON_GROUND_PLAYERS
+        assert games["who_am_i"]["runtime_type"] == "who_am_i"
+        assert games["who_am_i"]["supports_ai_generation"] is True
+        assert games["chit_pull"]["runtime_type"] == "chit_pull"
+        assert games["chit_pull"]["config_schema"]["players"]["min"] == config.MIN_CHIT_PULL_PLAYERS
+        assert games["chit_pull"]["supports_ai_generation"] is True
 
 
 class TestFrontendStaticServing:

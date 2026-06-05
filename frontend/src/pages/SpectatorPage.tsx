@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type WhoAmIState, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type WhoAmIState, type ChitPullState, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
@@ -25,6 +25,7 @@ import TwoTruthsGame from '../components/TwoTruthsGame';
 import StoryChainGame from '../components/StoryChainGame';
 import CommonGroundGame from '../components/CommonGroundGame';
 import WhoAmIGame from '../components/WhoAmIGame';
+import ChitPullGame from '../components/ChitPullGame';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
@@ -119,6 +120,7 @@ export default function SpectatorPage() {
     const [storyChainState, setStoryChainState] = useState<StoryChainState | null>(null);
     const [commonGroundState, setCommonGroundState] = useState<CommonGroundState | null>(null);
     const [whoAmIState, setWhoAmIState] = useState<WhoAmIState | null>(null);
+    const [chitPullState, setChitPullState] = useState<ChitPullState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -270,6 +272,11 @@ export default function SpectatorPage() {
                     setGameState('WHO_AM_I');
                     return;
                 }
+                if (msg.game_type === 'chit_pull' && msg.chit_pull) {
+                    setChitPullState(msg.chit_pull);
+                    setGameState('CHIT_PULL');
+                    return;
+                }
                 // Handle mid-question sync
                 if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
@@ -321,6 +328,9 @@ export default function SpectatorPage() {
                 } else if (msg.game_type === 'who_am_i') {
                     setGameType('who_am_i');
                     setGameState('WHO_AM_I');
+                } else if (msg.game_type === 'chit_pull') {
+                    setGameType('chit_pull');
+                    setGameState('CHIT_PULL');
                 }
                 else setGameState('INTRO');
             }
@@ -383,6 +393,12 @@ export default function SpectatorPage() {
                 setWhoAmIState(msg.who_am_i || null);
                 setLeaderboard(msg.leaderboard || []);
                 setGameState('WHO_AM_I');
+            }
+            else if (msg.type === 'CHIT_SYNC') {
+                setGameType('chit_pull');
+                setChitPullState(msg.chit_pull || null);
+                setLeaderboard(msg.leaderboard || []);
+                setGameState('CHIT_PULL');
             }
             else if (msg.type === 'MC_WINNER') {
                 setGameType('musical_chairs');
@@ -486,6 +502,12 @@ export default function SpectatorPage() {
                 setHousieLatest(null);
                 setHousieWinners([]);
                 setMusicalChairsState(null);
+                setBluffState(null);
+                setTwoTruthsState(null);
+                setStoryChainState(null);
+                setCommonGroundState(null);
+                setWhoAmIState(null);
+                setChitPullState(null);
                 if (msg.game_type) setGameType(msg.game_type);
                 setGameState('LOBBY');
             }
@@ -827,6 +849,10 @@ export default function SpectatorPage() {
 
                     {gameState === 'WHO_AM_I' && (
                         <WhoAmIGame state={whoAmIState} controls="spectator" />
+                    )}
+
+                    {gameState === 'CHIT_PULL' && (
+                        <ChitPullGame state={chitPullState} controls="spectator" />
                     )}
 
                     {gameState === 'QUESTION' && (question || currentStatement || gameType === 'drawing') && (

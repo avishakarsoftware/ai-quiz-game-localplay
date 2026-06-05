@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type WhoAmIState } from '../types';
+import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type WhoAmIState, type WhoAmIGameContent, type ChitPullCategory, type ChitPullGameContent, type ChitPullSafeLevel, type ChitPullState } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending, saveOrganizerSession, getSavedOrganizerSession, clearOrganizerSession } from '../utils/storage';
@@ -12,6 +12,10 @@ import QuizVariantPromptScreen from '../components/organizer/QuizVariantPromptSc
 import CustomQuizEditor from '../components/organizer/CustomQuizEditor';
 import MLTPromptScreen from '../components/organizer/MLTPromptScreen';
 import DrawingPromptScreen from '../components/organizer/DrawingPromptScreen';
+import WhoAmIPromptScreen from '../components/organizer/WhoAmIPromptScreen';
+import WhoAmIReviewScreen from '../components/organizer/WhoAmIReviewScreen';
+import ChitPullPromptScreen from '../components/organizer/ChitPullPromptScreen';
+import ChitPullReviewScreen from '../components/organizer/ChitPullReviewScreen';
 import LoadingScreen, { PREPARING_MESSAGES } from '../components/organizer/LoadingScreen';
 import ReviewScreen from '../components/organizer/ReviewScreen';
 import MLTReviewScreen from '../components/organizer/MLTReviewScreen';
@@ -26,6 +30,7 @@ import TwoTruthsGame from '../components/TwoTruthsGame';
 import StoryChainGame from '../components/StoryChainGame';
 import CommonGroundGame from '../components/CommonGroundGame';
 import WhoAmIGame from '../components/WhoAmIGame';
+import ChitPullGame from '../components/ChitPullGame';
 import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
 import { BingoCalledList, BingoCallOverlay } from '../components/BingoBoard';
 import ImageGenerationScreen from '../components/organizer/ImageGenerationScreen';
@@ -40,7 +45,7 @@ import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'WHO_AM_I' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'WHO_AM_I_PROMPT' | 'WHO_AM_I_REVIEW' | 'CHIT_PULL_PROMPT' | 'CHIT_PULL_REVIEW' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'WHO_AM_I' | 'CHIT_PULL' | 'LEADERBOARD' | 'PODIUM';
 
 function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'housie' || type === 'bingo' || type === 'baby_bingo') return 15;
@@ -50,6 +55,7 @@ function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'story_chain') return 45;
     if (type === 'common_ground') return 30;
     if (type === 'who_am_i') return 25;
+    if (type === 'chit_pull') return 30;
     return type === 'drawing' ? 30 : 15;
 }
 
@@ -162,6 +168,10 @@ export default function OrganizerPage() {
     const [storyChainState, setStoryChainState] = useState<StoryChainState | null>(null);
     const [commonGroundState, setCommonGroundState] = useState<CommonGroundState | null>(null);
     const [whoAmIState, setWhoAmIState] = useState<WhoAmIState | null>(null);
+    const [whoAmIGame, setWhoAmIGame] = useState<WhoAmIGameContent | null>(null);
+    const [chitPullGame, setChitPullGame] = useState<ChitPullGameContent | null>(null);
+    const [chitPullState, setChitPullState] = useState<ChitPullState | null>(null);
+    const [chitPullSafeLevel, setChitPullSafeLevel] = useState<ChitPullSafeLevel>('family');
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean; returnToHostApp?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -217,6 +227,10 @@ export default function OrganizerPage() {
                 'QUIZ_LIBRARY',
                 'MLT_PROMPT',
                 'DRAWING_PROMPT',
+                'WHO_AM_I_PROMPT',
+                'WHO_AM_I_REVIEW',
+                'CHIT_PULL_PROMPT',
+                'CHIT_PULL_REVIEW',
                 'HOUSIE_SETUP',
                 'BINGO_PROMPT',
                 'BINGO_SETUP',
@@ -227,7 +241,7 @@ export default function OrganizerPage() {
                 'DRAWING_REVIEW',
                 'GENERATING_IMAGES',
             ];
-            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN'];
+            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'WHO_AM_I', 'CHIT_PULL'];
             if (homeSafeStates.includes(stateRef.current)) {
                 flowEpochRef.current += 1;
                 clearOrganizerSession();
@@ -240,6 +254,11 @@ export default function OrganizerPage() {
                 setHousieWinners([]);
                 setTwoTruthsState(null);
                 setStoryChainState(null);
+                setCommonGroundState(null);
+                setWhoAmIState(null);
+                setWhoAmIGame(null);
+                setChitPullState(null);
+                setChitPullGame(null);
                 setEditingPackId(undefined);
                 setContentId('');
                 setQuestionImages({});
@@ -263,6 +282,11 @@ export default function OrganizerPage() {
                 setHousieWinners([]);
                 setTwoTruthsState(null);
                 setStoryChainState(null);
+                setCommonGroundState(null);
+                setWhoAmIState(null);
+                setWhoAmIGame(null);
+                setChitPullState(null);
+                setChitPullGame(null);
                 setEditingPackId(undefined);
                 setContentId('');
                 setQuestionImages({});
@@ -474,6 +498,12 @@ export default function OrganizerPage() {
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('WHO_AM_I');
         }
+        else if (msg.type === 'CHIT_SYNC') {
+            setGameType('chit_pull');
+            setChitPullState(msg.chit_pull as ChitPullState);
+            setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+            setState('CHIT_PULL');
+        }
         else if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED') {
             setPlayerCount(msg.player_count as number);
             setPlayers(msg.players as PlayerInfo[] || []);
@@ -497,6 +527,7 @@ export default function OrganizerPage() {
             setStoryChainState(null);
             setCommonGroundState(null);
             setWhoAmIState(null);
+            setChitPullState(null);
             setAnsweredCount(0);
             setLiveQuestion(null);
             setCurrentStatement('');
@@ -532,6 +563,7 @@ export default function OrganizerPage() {
             if (msg.story_chain) setStoryChainState(msg.story_chain as StoryChainState);
             if (msg.common_ground) setCommonGroundState(msg.common_ground as CommonGroundState);
             if (msg.who_am_i) setWhoAmIState(msg.who_am_i as WhoAmIState);
+            if (msg.chit_pull) setChitPullState(msg.chit_pull as ChitPullState);
             if (msg.quiz) {
                 const quizData = msg.quiz as Record<string, unknown>;
                 if (quizData.questions) {
@@ -573,6 +605,10 @@ export default function OrganizerPage() {
                 setState('STORY_CHAIN');
             } else if (String(msg.state || '').startsWith('COMMON_')) {
                 setState('COMMON_GROUND');
+            } else if (String(msg.state || '').startsWith('CHIT_')) {
+                setState('CHIT_PULL');
+            } else if (String(msg.state || '').startsWith('WHOAMI_')) {
+                setState('WHO_AM_I');
             }
         }
         else if (msg.type === 'ERROR') {
@@ -655,7 +691,19 @@ export default function OrganizerPage() {
         }
         else if (type === 'who_am_i') {
             setWhoAmIState(null);
-            void createRoom(undefined, 'who_am_i', defaultTimeLimitForGame('who_am_i'));
+            setWhoAmIGame(null);
+            setPrompt(randomQuizTopic(prompt));
+            setNumQuestions(10);
+            setState('WHO_AM_I_PROMPT');
+        }
+        else if (type === 'chit_pull') {
+            setChitPullState(null);
+            setChitPullGame(null);
+            setChitPullSafeLevel('family');
+            setPrompt('birthday party, silly but clean');
+            setDifficulty('medium');
+            setNumQuestions(20);
+            setState('CHIT_PULL_PROMPT');
         }
         else if (type === 'quiz') {
             setPrompt(randomQuizTopic(prompt));
@@ -949,6 +997,136 @@ export default function OrganizerPage() {
         }
     };
 
+    const starterWhoAmIGame = (): WhoAmIGameContent => ({
+        game_title: 'Who Am I?',
+        clues_per_round: 5,
+        round_count: 3,
+        rounds: [
+            { id: 'round_1', answer: 'Taylor Swift', aliases: ['Taylor'], category: 'Musician', difficulty: 'easy', clues: ['I started in country music.', 'My albums are known as eras.', 'My lucky number is 13.', 'Fans call themselves Swifties.', 'I released Midnights.'] },
+            { id: 'round_2', answer: 'Spider-Man', aliases: ['Peter Parker', 'Spiderman'], category: 'Character', difficulty: 'easy', clues: ['I live in New York City.', 'I am known for quick jokes.', 'My uncle taught me about responsibility.', 'I climb walls.', 'I swing using webs.'] },
+            { id: 'round_3', answer: 'The Eiffel Tower', aliases: ['Eiffel Tower'], category: 'Landmark', difficulty: 'easy', clues: ['I was built for a world fair.', 'I am made mostly of iron.', 'I stand near the Seine.', 'I am in Paris.', 'Visitors climb me for the view.'] },
+        ],
+    });
+
+    const starterChitPullGame = (): ChitPullGameContent => ({
+        game_title: 'Chit Pull',
+        rounds: 10,
+        turn_time_seconds: 30,
+        safe_level: chitPullSafeLevel,
+        chits: [
+            'Make the face you make when someone says there is cake.',
+            'Tell the room your most useless talent.',
+            'Do your best slow-motion celebration.',
+            'Ask someone nearby for a two-word movie review.',
+            'Say one food you could eat every week.',
+            'Make your most dramatic villain face.',
+            'Invent a silly award for someone in the room.',
+            'Give the party a five-second news headline.',
+            'Do a tiny victory dance from your chair.',
+            'Name a fictional character you would invite here.',
+        ].map((text, index) => ({ id: `chit_${index + 1}`, text, category: (index % 2 === 0 ? 'funny_face' : 'question') as ChitPullCategory, safe_level: chitPullSafeLevel })),
+    });
+
+    const generateWhoAmI = async () => {
+        if (remoteConfig.operations.kill_generate) {
+            setErrorModal({ title: 'Temporarily Unavailable', message: 'Game generation is temporarily disabled. Please try again later.' });
+            return;
+        }
+        setLoadingCopy({ title: 'Generating Clues' });
+        setState('LOADING');
+        try {
+            const res = await fetch(apiUrl('/who-am-i/generate'), {
+                method: 'POST',
+                headers: apiHeaders({ 'X-Idempotency-Key': generateIdempotencyKey() }),
+                body: JSON.stringify({ prompt, difficulty, num_rounds: numQuestions, clues_per_round: 5, provider }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Failed to generate clue rounds' }));
+                setErrorModal({ title: res.status === 402 ? 'Not Enough Sparks' : 'Generation Failed', message: err.detail || 'Failed to generate clue rounds.', upgradeAvailable: !hostAppMode && res.status === 402 });
+                setState('WHO_AM_I_PROMPT');
+                return;
+            }
+            const data = await res.json();
+            setWhoAmIGame(data.game);
+            setContentId(data.who_am_i_id);
+            setTotalQuestions(data.game?.rounds?.length || numQuestions);
+            window.dispatchEvent(new CustomEvent('refresh-sparks'));
+            setState('WHO_AM_I_REVIEW');
+        } catch {
+            setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
+            setState('WHO_AM_I_PROMPT');
+        }
+    };
+
+    const importWhoAmI = async (game: WhoAmIGameContent) => {
+        const res = await fetch(apiUrl('/who-am-i/import'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify(game) });
+        if (!res.ok) throw new Error('who_am_i_import_failed');
+        const data = await res.json();
+        setContentId(data.who_am_i_id);
+        setWhoAmIGame(data.game);
+        setTotalQuestions(data.game?.rounds?.length || game.rounds.length);
+        return data.who_am_i_id as string;
+    };
+
+    const updateWhoAmIGame = async (updated: WhoAmIGameContent) => {
+        setWhoAmIGame(updated);
+        setTotalQuestions(updated.rounds.length);
+        if (!contentId) return;
+        try {
+            await fetch(apiUrl(`/who-am-i/${contentId}`), { method: 'PUT', headers: apiHeaders(), body: JSON.stringify(updated) });
+        } catch { /* keep local edits */ }
+    };
+
+    const generateChitPull = async () => {
+        if (remoteConfig.operations.kill_generate) {
+            setErrorModal({ title: 'Temporarily Unavailable', message: 'Game generation is temporarily disabled. Please try again later.' });
+            return;
+        }
+        setLoadingCopy({ title: 'Generating Chits' });
+        setState('LOADING');
+        try {
+            const res = await fetch(apiUrl('/chit-pull/generate'), {
+                method: 'POST',
+                headers: apiHeaders({ 'X-Idempotency-Key': generateIdempotencyKey() }),
+                body: JSON.stringify({ prompt, difficulty, num_chits: numQuestions, safe_level: chitPullSafeLevel, provider }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Failed to generate chits' }));
+                setErrorModal({ title: res.status === 402 ? 'Not Enough Sparks' : 'Generation Failed', message: err.detail || 'Failed to generate chits.', upgradeAvailable: !hostAppMode && res.status === 402 });
+                setState('CHIT_PULL_PROMPT');
+                return;
+            }
+            const data = await res.json();
+            setChitPullGame(data.game);
+            setContentId(data.chit_pull_id);
+            setTotalQuestions(data.game?.rounds || numQuestions);
+            window.dispatchEvent(new CustomEvent('refresh-sparks'));
+            setState('CHIT_PULL_REVIEW');
+        } catch {
+            setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
+            setState('CHIT_PULL_PROMPT');
+        }
+    };
+
+    const importChitPull = async (game: ChitPullGameContent) => {
+        const res = await fetch(apiUrl('/chit-pull/import'), { method: 'POST', headers: apiHeaders(), body: JSON.stringify(game) });
+        if (!res.ok) throw new Error('chit_pull_import_failed');
+        const data = await res.json();
+        setContentId(data.chit_pull_id);
+        setChitPullGame(data.game);
+        setTotalQuestions(data.game?.rounds || game.rounds);
+        return data.chit_pull_id as string;
+    };
+
+    const updateChitPullGame = async (updated: ChitPullGameContent) => {
+        setChitPullGame(updated);
+        setTotalQuestions(updated.rounds);
+        if (!contentId) return;
+        try {
+            await fetch(apiUrl(`/chit-pull/${contentId}`), { method: 'PUT', headers: apiHeaders(), body: JSON.stringify(updated) });
+        } catch { /* keep local edits */ }
+    };
+
     const generateImagesForQuiz = async (quizId: string, sourceQuiz: Quiz): Promise<Quiz> => {
         const questions = [...sourceQuiz.questions];
         setImageProgress(0);
@@ -1075,7 +1253,7 @@ export default function OrganizerPage() {
         ws.onclose = () => {
             wsRef.current = null;
             if (!mountedRef.current) return;
-            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'LEADERBOARD', 'PODIUM'];
+            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'WHO_AM_I', 'CHIT_PULL', 'LEADERBOARD', 'PODIUM'];
             if (roomCodeRef.current && activeStates.includes(stateRef.current)) {
                 if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                 reconnectTimerRef.current = setTimeout(() => connectWsRef.current(roomCodeRef.current), 2000);
@@ -1214,7 +1392,11 @@ export default function OrganizerPage() {
                     vote_category: 'most_surprising',
                 };
             } else if (effectiveGameType === 'who_am_i') {
-                body.who_am_i_config = { game_title: 'Who Am I?' };
+                if (selectedContentId) body.who_am_i_id = selectedContentId;
+                else body.who_am_i_config = { game_title: 'Who Am I?' };
+            } else if (effectiveGameType === 'chit_pull') {
+                if (selectedContentId) body.chit_pull_id = selectedContentId;
+                else body.chit_pull_config = { game_title: 'Chit Pull' };
             } else if (isQuizRuntimeGame(effectiveGameType)) {
                 body.quiz_id = selectedContentId;
             }
@@ -1357,7 +1539,7 @@ export default function OrganizerPage() {
             wsRef.current?.send(JSON.stringify({ type: 'SET_SHOW_VOTES', show_votes: showVotes }));
         }
         wsRef.current?.send(JSON.stringify({ type: 'START_GAME' }));
-        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'musical_chairs' && gameType !== 'bluff' && gameType !== 'two_truths' && gameType !== 'story_chain' && gameType !== 'common_ground' && gameType !== 'who_am_i') {
+        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'musical_chairs' && gameType !== 'bluff' && gameType !== 'two_truths' && gameType !== 'story_chain' && gameType !== 'common_ground' && gameType !== 'who_am_i' && gameType !== 'chit_pull') {
             wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
         }
     };
@@ -1387,6 +1569,33 @@ export default function OrganizerPage() {
     const nextWhoAmIClue = () => wsRef.current?.send(JSON.stringify({ type: 'WHOAMI_NEXT_CLUE' }));
     const revealWhoAmIAnswer = () => wsRef.current?.send(JSON.stringify({ type: 'WHOAMI_REVEAL_ANSWER' }));
     const nextWhoAmIRound = () => wsRef.current?.send(JSON.stringify({ type: 'WHOAMI_NEXT_ROUND' }));
+    const pullNextChit = () => wsRef.current?.send(JSON.stringify({ type: 'CHIT_NEXT' }));
+    const completeChit = (bonus = false) => wsRef.current?.send(JSON.stringify({ type: 'CHIT_COMPLETE', bonus }));
+    const skipChit = () => wsRef.current?.send(JSON.stringify({ type: 'CHIT_SKIP' }));
+    const redrawChitPlayer = () => wsRef.current?.send(JSON.stringify({ type: 'CHIT_REDRAW_PLAYER' }));
+    const redrawChit = () => wsRef.current?.send(JSON.stringify({ type: 'CHIT_REDRAW_CHIT' }));
+
+    const createWhoAmIAndRoom = async () => {
+        try {
+            const game = whoAmIGame || starterWhoAmIGame();
+            const nextContentId = contentId || await importWhoAmI(game);
+            setGameType('who_am_i');
+            await createRoom(nextContentId, 'who_am_i', defaultTimeLimitForGame('who_am_i'));
+        } catch {
+            setErrorModal({ title: 'Who Am I?', message: 'Could not prepare this clue pack.' });
+        }
+    };
+
+    const createChitPullAndRoom = async () => {
+        try {
+            const game = chitPullGame || starterChitPullGame();
+            const nextContentId = contentId || await importChitPull(game);
+            setGameType('chit_pull');
+            await createRoom(nextContentId, 'chit_pull', defaultTimeLimitForGame('chit_pull'));
+        } catch {
+            setErrorModal({ title: 'Chit Pull', message: 'Could not prepare this chit deck.' });
+        }
+    };
 
     const playAgain = () => {
         setCurrentQuestion(0);
@@ -1401,6 +1610,9 @@ export default function OrganizerPage() {
         setHousieLatest(null);
         setHousieCanUndoLastCall(false);
         setHousieWinners([]);
+        setCommonGroundState(null);
+        setWhoAmIState(null);
+        setChitPullState(null);
         if (contentId && roomCode && wsRef.current?.readyState === WebSocket.OPEN) {
             createRoom(contentId);
             return;
@@ -1421,6 +1633,11 @@ export default function OrganizerPage() {
         setHousieLatest(null);
         setHousieCanUndoLastCall(false);
         setHousieWinners([]);
+        setCommonGroundState(null);
+        setWhoAmIState(null);
+        setWhoAmIGame(null);
+        setChitPullState(null);
+        setChitPullGame(null);
         if (hostAppMode) {
             returnToHostApp();
         } else {
@@ -1625,6 +1842,76 @@ export default function OrganizerPage() {
                     />
                 )}
 
+                {state === 'WHO_AM_I_PROMPT' && (
+                    <WhoAmIPromptScreen
+                        prompt={prompt}
+                        setPrompt={setPrompt}
+                        difficulty={difficulty}
+                        setDifficulty={setDifficulty}
+                        numRounds={numQuestions}
+                        setNumRounds={setNumQuestions}
+                        provider={provider}
+                        setProvider={setProvider}
+                        providers={providers}
+                        onGenerate={generateWhoAmI}
+                        onCreateCustom={() => {
+                            setContentId('');
+                            setWhoAmIGame(starterWhoAmIGame());
+                            setState('WHO_AM_I_REVIEW');
+                        }}
+                        onQuickStart={() => {
+                            setContentId('');
+                            void createRoom(undefined, 'who_am_i', defaultTimeLimitForGame('who_am_i'));
+                        }}
+                        onBack={() => setState('SELECT_GAME')}
+                    />
+                )}
+
+                {state === 'WHO_AM_I_REVIEW' && whoAmIGame && (
+                    <WhoAmIReviewScreen
+                        game={whoAmIGame}
+                        onUpdateGame={updateWhoAmIGame}
+                        onCreateRoom={createWhoAmIAndRoom}
+                        onBack={() => setState('WHO_AM_I_PROMPT')}
+                    />
+                )}
+
+                {state === 'CHIT_PULL_PROMPT' && (
+                    <ChitPullPromptScreen
+                        prompt={prompt}
+                        setPrompt={setPrompt}
+                        difficulty={difficulty}
+                        setDifficulty={setDifficulty}
+                        numChits={numQuestions}
+                        setNumChits={setNumQuestions}
+                        safeLevel={chitPullSafeLevel}
+                        setSafeLevel={setChitPullSafeLevel}
+                        provider={provider}
+                        setProvider={setProvider}
+                        providers={providers}
+                        onGenerate={generateChitPull}
+                        onCreateCustom={() => {
+                            setContentId('');
+                            setChitPullGame(starterChitPullGame());
+                            setState('CHIT_PULL_REVIEW');
+                        }}
+                        onQuickStart={() => {
+                            setContentId('');
+                            void createRoom(undefined, 'chit_pull', defaultTimeLimitForGame('chit_pull'));
+                        }}
+                        onBack={() => setState('SELECT_GAME')}
+                    />
+                )}
+
+                {state === 'CHIT_PULL_REVIEW' && chitPullGame && (
+                    <ChitPullReviewScreen
+                        game={chitPullGame}
+                        onUpdateGame={updateChitPullGame}
+                        onCreateRoom={createChitPullAndRoom}
+                        onBack={() => setState('CHIT_PULL_PROMPT')}
+                    />
+                )}
+
                 {state === 'HOUSIE_SETUP' && (
                     <HousieSetupScreen
                         title={housieTitle}
@@ -1814,6 +2101,19 @@ export default function OrganizerPage() {
                         onNextClue={nextWhoAmIClue}
                         onRevealAnswer={revealWhoAmIAnswer}
                         onNextRound={nextWhoAmIRound}
+                        onEndGame={endQuiz}
+                    />
+                )}
+
+                {state === 'CHIT_PULL' && (
+                    <ChitPullGame
+                        state={chitPullState}
+                        controls="host"
+                        onNext={pullNextChit}
+                        onComplete={completeChit}
+                        onSkip={skipChit}
+                        onRedrawPlayer={redrawChitPlayer}
+                        onRedrawChit={redrawChit}
                         onEndGame={endQuiz}
                     />
                 )}

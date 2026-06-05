@@ -2,7 +2,7 @@ import { type GameType, type QuizVariantGameType } from './types';
 
 export interface GameModeConfig {
     id: GameType;
-    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'who_am_i';
+    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'who_am_i' | 'chit_pull';
     icon: string;
     title: string;
     description: string;
@@ -159,6 +159,13 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         title: 'Who Am I?',
         description: 'Reveal clues while everyone races to guess the mystery answer',
     },
+    {
+        id: 'chit_pull',
+        runtimeType: 'chit_pull',
+        icon: '🎟️',
+        title: 'Chit Pull',
+        description: 'Randomly pick a player and a funny question, action, or mini challenge',
+    },
 ];
 
 export const QUIZ_VARIANT_IDS: QuizVariantGameType[] = [
@@ -183,6 +190,6 @@ export function isQuizRuntimeGame(gameType: GameType): boolean {
     return getGameModeConfig(gameType).runtimeType === 'quiz';
 }
 
-export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'who_am_i' {
+export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'who_am_i' | 'chit_pull' {
     return getGameModeConfig(gameType).runtimeType;
 }

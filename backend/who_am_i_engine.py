@@ -379,7 +379,7 @@ def next_clue(state: dict, now: float | None = None) -> dict:
     return {**state, "current_clue_index": clue_index + 1, "deadline": started_at + int(state.get("config", {}).get("guess_time_seconds", 25))}
 
 
-def reveal_answer(state: dict) -> dict:
+def reveal_answer(state: dict, now: float | None = None) -> dict:
     if state.get("phase") not in {PHASE_ROUND, PHASE_REVEAL}:
         raise ValueError("Cannot reveal the answer now")
     return {**state, "phase": PHASE_REVEAL, "round_revealed": True, "deadline": None}
@@ -410,3 +410,17 @@ def final_standings(state: dict) -> list[dict[str, Any]]:
         {"nickname": player_id, "score": score}
         for player_id, score in sorted(scores.items(), key=lambda item: (-item[1], item[0].lower()))
     ]
+
+
+def sanitize_generated_game(raw: dict) -> dict:
+    if not isinstance(raw, dict):
+        raw = {}
+    return validate_config(raw)
+
+
+def validate_generated_game(raw: dict) -> bool:
+    try:
+        game = sanitize_generated_game(raw)
+    except Exception:
+        return False
+    return len(game.get("rounds", [])) >= 3

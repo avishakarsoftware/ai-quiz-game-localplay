@@ -17,9 +17,19 @@ AI marker: yes
 
 ## Implementation Status
 
-Status: implementation-ready spec.
+Status: implemented MVP in standalone LocalPlay.
 
-This is not implemented yet.
+Implemented in this repo with:
+
+- `backend/who_am_i_engine.py` clue ladder mechanics, guess normalization, scoring, and public/private sync helpers.
+- `/who-am-i/generate`, `/who-am-i/import`, and `/who-am-i/{id}` update routes.
+- Room creation support through `game_type="who_am_i"` and `who_am_i_id` / `who_am_i_config`.
+- WebSocket runtime messages for clue advancement, answer reveal, round advancement, guesses, and sync.
+- Organizer AI prompt, quick start, manual/review editing, and live host controls.
+- Player free-text guess flow and spectator clue/answer display.
+- Backend tests for matching, scoring, clue advancement, and podium flow.
+
+Current exposure is standalone LocalPlay first. Revelry catalog exposure should follow the host-app allowlist/policy rollout after gamma smoke.
 
 ## MVP Scope
 

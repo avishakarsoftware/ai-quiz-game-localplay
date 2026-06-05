@@ -67,7 +67,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'who_am_i' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'who_am_i' | 'chit_pull' | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -374,6 +374,75 @@ export interface WhoAmIState {
     deadline?: number | null;
     my_guesses?: WhoAmIGuess[];
     my_correct?: boolean;
+}
+
+export interface WhoAmIRound {
+    id: string;
+    answer: string;
+    aliases?: string[];
+    category?: string;
+    difficulty?: string;
+    clues: string[];
+}
+
+export interface WhoAmIGameContent {
+    game_title: string;
+    theme?: string;
+    round_count?: number;
+    clues_per_round?: number;
+    rounds: WhoAmIRound[];
+}
+
+export type ChitPullCategory = 'question' | 'action' | 'funny_face' | 'mini_challenge' | 'group';
+export type ChitPullSafeLevel = 'kids' | 'family' | 'work_safe' | 'spicy';
+
+export interface ChitPullChit {
+    id: string;
+    text: string;
+    category: ChitPullCategory;
+    safe_level?: ChitPullSafeLevel;
+}
+
+export interface ChitPullGameContent {
+    game_title: string;
+    rounds: number;
+    turn_time_seconds?: number;
+    safe_level?: ChitPullSafeLevel;
+    chits: ChitPullChit[];
+}
+
+export interface ChitPullState {
+    phase: 'CHIT_READY' | 'CHIT_ACTIVE' | 'CHIT_RESULT' | 'PODIUM' | string;
+    config: {
+        game_title?: string;
+        rounds?: number;
+        turn_time_seconds?: number;
+        chit_count?: number;
+        scoring_enabled?: boolean;
+        completion_points?: number;
+        bonus_points?: number;
+        safe_level?: ChitPullSafeLevel;
+    };
+    players: PlayerInfo[];
+    round_number: number;
+    total_rounds: number;
+    selected_player_id: string;
+    current_chit?: ChitPullChit | null;
+    used_chit_ids: string[];
+    player_turn_counts: Record<string, number>;
+    skips_by_player: Record<string, number>;
+    scores: Record<string, number>;
+    turn_results: Array<{
+        round_number: number;
+        player_id: string;
+        chit_id: string;
+        chit_text?: string;
+        category?: ChitPullCategory;
+        outcome: 'completed' | 'skipped' | string;
+        bonus?: boolean;
+        points_awarded: number;
+    }>;
+    deadline?: number | null;
 }
 
 export interface HousieCell {

@@ -105,6 +105,7 @@ MIN_TWO_TRUTHS_PLAYERS = 3  # Two Truths and a Lie minimum players
 MIN_STORY_CHAIN_PLAYERS = 3  # Story Chain minimum players
 MIN_COMMON_GROUND_PLAYERS = 4  # Common Ground minimum players
 MIN_WHO_AM_I_PLAYERS = 2  # Who Am I minimum players
+MIN_CHIT_PULL_PLAYERS = 3  # Chit Pull minimum players
 MC_MIN_MUSIC_SECONDS = 3
 MC_MAX_MUSIC_SECONDS = 60
 MC_MIN_GRAB_WINDOW = 2

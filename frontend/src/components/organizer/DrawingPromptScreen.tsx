@@ -1,4 +1,5 @@
 import { type CSSProperties } from 'react';
+import { type ReactNode } from 'react';
 import { type AIProvider } from './PromptScreen';
 import { SHOW_PROVIDER_SELECTOR } from '../../config';
 
@@ -14,6 +15,15 @@ interface DrawingPromptScreenProps {
     providers: AIProvider[];
     onGenerate: () => void;
     onBack: () => void;
+    title?: string;
+    icon?: string;
+    subtitle?: string;
+    placeholder?: string;
+    countLabel?: string;
+    countOptions?: number[];
+    generateLabel?: string;
+    secondaryActions?: Array<{ label: string; onClick: () => void }>;
+    extraControls?: ReactNode;
 }
 
 export default function DrawingPromptScreen({
@@ -28,6 +38,15 @@ export default function DrawingPromptScreen({
     providers,
     onGenerate,
     onBack,
+    title = 'Drawing Game',
+    icon = '🎨',
+    subtitle = 'Generate drawable prompts for your group',
+    placeholder = 'Theme, vibe, or topic',
+    countLabel = 'Prompts',
+    countOptions = [5, 8, 10, 15, 20],
+    generateLabel = 'Generate Prompts',
+    secondaryActions = [],
+    extraControls,
 }: DrawingPromptScreenProps) {
     const segmentGrid = (columns: number): CSSProperties => ({
         display: 'grid',
@@ -56,16 +75,16 @@ export default function DrawingPromptScreen({
                     >
                         Back
                     </button>
-                    <div className="hero-icon mb-4">🎨</div>
-                    <h1 className="hero-title">Drawing Game</h1>
-                    <p className="text-[--text-tertiary] mt-2">Generate drawable prompts for your group</p>
+                    <div className="hero-icon mb-4">{icon}</div>
+                    <h1 className="hero-title">{title}</h1>
+                    <p className="text-[--text-tertiary] mt-2">{subtitle}</p>
                 </div>
 
                 <div className="space-y-5" style={{ width: '100%' }}>
                     <textarea
                         value={prompt}
                         onChange={(event) => setPrompt(event.target.value)}
-                        placeholder="Theme, vibe, or topic"
+                        placeholder={placeholder}
                         maxLength={140}
                         className="input-field"
                         style={{ minHeight: 140, resize: 'vertical', width: '100%' }}
@@ -88,10 +107,12 @@ export default function DrawingPromptScreen({
                         </div>
                     </div>
 
+                    {extraControls}
+
                     <div>
-                        <p className="text-[--text-tertiary] text-sm font-semibold mb-2">Prompts</p>
+                        <p className="text-[--text-tertiary] text-sm font-semibold mb-2">{countLabel}</p>
                         <div style={segmentGrid(5)}>
-                            {[5, 8, 10, 15, 20].map((value) => (
+                            {countOptions.map((value) => (
                                 <button
                                     key={value}
                                     type="button"
@@ -121,8 +142,18 @@ export default function DrawingPromptScreen({
                         disabled={!prompt.trim()}
                         className="btn btn-primary btn-glow w-full prompt-primary-action"
                     >
-                        Generate Prompts
+                        {generateLabel}
                     </button>
+                    {secondaryActions.map((action) => (
+                        <button
+                            key={action.label}
+                            type="button"
+                            onClick={action.onClick}
+                            className="btn btn-secondary w-full"
+                        >
+                            {action.label}
+                        </button>
+                    ))}
                 </div>
             </div>
         </div>

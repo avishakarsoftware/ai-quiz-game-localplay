@@ -6,7 +6,7 @@ import { ENABLE_BINGO } from '../../config';
 
 interface GameSelectScreenProps {
     onSelect: (gameType: GameType) => void;
-    catalog?: Array<{ id: string; launchable?: boolean }>;
+    catalog?: Array<{ id: string; launchable?: boolean; supports_ai_generation?: boolean }>;
 }
 
 type GameCategory = 'all' | 'quiz' | 'creative' | 'bingo_housie' | 'cards';
@@ -33,6 +33,7 @@ const GAME_CATEGORY_BY_ID: Partial<Record<GameType, GameCategory>> = {
     story_chain: 'creative',
     common_ground: 'creative',
     who_am_i: 'quiz',
+    chit_pull: 'creative',
     bluff: 'cards',
     housie: 'bingo_housie',
     bingo: 'bingo_housie',
@@ -44,7 +45,7 @@ function getGameCategory(game: GameModeConfig): GameCategory {
 }
 
 function hasAiGeneration(game: GameModeConfig): boolean {
-    return !['housie', 'bingo', 'baby_bingo', 'musical_chairs', 'bluff', 'two_truths', 'story_chain', 'common_ground', 'who_am_i'].includes(game.id);
+    return !['housie', 'bingo', 'baby_bingo', 'musical_chairs', 'bluff', 'two_truths', 'story_chain', 'common_ground'].includes(game.id);
 }
 
 export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreenProps) {
@@ -55,6 +56,7 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
             .filter((game) => ENABLE_BINGO || !['bingo', 'baby_bingo'].includes(game.id));
         return [...availableGames].sort((a, b) => a.title.localeCompare(b.title));
     }, [catalog]);
+    const aiCapable = useMemo(() => new Set((catalog || []).filter((item) => item.supports_ai_generation).map((item) => item.id)), [catalog]);
     const query = searchQuery.trim().toLowerCase();
     const filteredGameModes = useMemo(() => {
         return gameModes.filter((game) => {
@@ -114,7 +116,7 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
                             <span className="game-select-icon">{game.icon}</span>
                             <div className="game-select-info">
                                 <span className="game-select-title">
-                                    {game.title}{hasAiGeneration(game) ? ' ✨' : ''}
+                                    {game.title}{(catalog ? aiCapable.has(game.id) : hasAiGeneration(game)) ? ' ✨' : ''}
                                 </span>
                                 <span className="game-select-desc">{game.description}</span>
                             </div>

@@ -82,6 +82,18 @@ from who_am_i_engine import (
     submit_guess as whoami_submit_guess,
     validate_config as validate_who_am_i_config,
 )
+from chit_pull_engine import (
+    PHASE_PODIUM as CHIT_PULL_PHASE_PODIUM,
+    complete_turn as chit_pull_complete_turn,
+    create_initial_state as chit_pull_create_initial_state,
+    draw_turn as chit_pull_draw_turn,
+    final_standings as chit_pull_final_standings,
+    public_sync as chit_pull_public_sync,
+    redraw_chit as chit_pull_redraw_chit,
+    redraw_player as chit_pull_redraw_player,
+    skip_turn as chit_pull_skip_turn,
+    validate_config as validate_chit_pull_config,
+)
 from bingo_engine import (
     BINGO_PATTERN_ORDER,
     create_bingo_call_deck,
@@ -194,6 +206,9 @@ class Room:
         # Who Am I? state
         self.who_am_i_config = validate_who_am_i_config(game_data) if game_type == "who_am_i" else {}
         self.who_am_i_state: dict = {}
+        # Chit Pull state
+        self.chit_pull_config = validate_chit_pull_config(game_data) if game_type == "chit_pull" else {}
+        self.chit_pull_state: dict = {}
 
     def reset_for_new_game(self, new_game_data: dict, new_time_limit: int,
                            game_type: Optional[str] = None,
@@ -288,6 +303,8 @@ class Room:
         self.common_state = {}
         self.who_am_i_config = validate_who_am_i_config(new_game_data) if self.game_type == "who_am_i" else {}
         self.who_am_i_state = {}
+        self.chit_pull_config = validate_chit_pull_config(new_game_data) if self.game_type == "chit_pull" else {}
+        self.chit_pull_state = {}
 
         for nickname in self.power_ups:
             self.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
@@ -321,6 +338,8 @@ class Room:
             return int(self.common_state.get("config", {}).get("rounds", 0)) or int(self.common_config.get("rounds", 5) or 5)
         if self.game_type == "who_am_i":
             return len(self.who_am_i_state.get("config", {}).get("rounds", [])) or len(self.who_am_i_config.get("rounds", [])) or 5
+        if self.game_type == "chit_pull":
+            return int(self.chit_pull_state.get("config", {}).get("rounds", 0)) or int(self.chit_pull_config.get("rounds", 20) or 20)
         return len(self.quiz.get("questions", []))
 
     def current_round_data(self) -> Optional[dict]:
@@ -348,6 +367,8 @@ class Room:
             return common_public_sync(self.common_state, players=self.player_public_list()) if self.common_state else None
         if self.game_type == "who_am_i":
             return whoami_public_sync(self.who_am_i_state, players=self.player_public_list()) if self.who_am_i_state else None
+        if self.game_type == "chit_pull":
+            return chit_pull_public_sync(self.chit_pull_state, players=self.player_public_list()) if self.chit_pull_state else None
         return self.quiz["questions"][idx]
 
     def game_title(self) -> str:
@@ -680,6 +701,8 @@ class SocketManager:
                     sync["common_ground"] = common_public_sync(room.common_state, players=room.player_public_list())
                 if room.game_type == "who_am_i" and room.who_am_i_state:
                     sync["who_am_i"] = whoami_public_sync(room.who_am_i_state, players=room.player_public_list())
+                if room.game_type == "chit_pull" and room.chit_pull_state:
+                    sync["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
                 await websocket.send_json(sync)
                 while True:
                     try:
@@ -858,6 +881,8 @@ class SocketManager:
             sync["common_ground"] = common_public_sync(room.common_state, players=room.player_public_list())
         if room.game_type == "who_am_i" and room.who_am_i_state:
             sync["who_am_i"] = whoami_public_sync(room.who_am_i_state, players=room.player_public_list())
+        if room.game_type == "chit_pull" and room.chit_pull_state:
+            sync["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
 
         if room.organizer:
             await room.organizer.send_json(sync)
@@ -964,6 +989,14 @@ class SocketManager:
                                 "message": f"Who Am I? needs at least {config.MIN_WHO_AM_I_PLAYERS} players to start",
                             })
                             return
+                    elif room.game_type == "chit_pull":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_CHIT_PULL_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Chit Pull needs at least {config.MIN_CHIT_PULL_PLAYERS} players to start",
+                            })
+                            return
                     if room.billing_mode == "host_app_managed":
                         spent = True
                     else:
@@ -1011,12 +1044,16 @@ class SocketManager:
                         self._start_who_am_i_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": "who_am_i"})
                         await self._broadcast_who_am_i_sync(room)
+                    elif room.game_type == "chit_pull":
+                        self._start_chit_pull_game(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": "chit_pull"})
+                        await self._broadcast_chit_pull_sync(room)
                     else:
                         room.state = "INTRO"
                         await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
-                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "who_am_i"):
+                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "who_am_i", "chit_pull"):
                     return
                 if room.game_type == "drawing" and room.drawing_auto_task:
                     room.drawing_auto_task.cancel()
@@ -1107,6 +1144,21 @@ class SocketManager:
             elif msg_type == "WHOAMI_NEXT_ROUND" and room.game_type == "who_am_i":
                 await self._who_am_i_next_round(room)
 
+            elif msg_type == "CHIT_NEXT" and room.game_type == "chit_pull":
+                await self._chit_pull_next(room)
+
+            elif msg_type == "CHIT_COMPLETE" and room.game_type == "chit_pull":
+                await self._chit_pull_complete(room, bool(message.get("bonus", False)))
+
+            elif msg_type == "CHIT_SKIP" and room.game_type == "chit_pull":
+                await self._chit_pull_skip(room)
+
+            elif msg_type == "CHIT_REDRAW_PLAYER" and room.game_type == "chit_pull":
+                await self._chit_pull_redraw_player(room)
+
+            elif msg_type == "CHIT_REDRAW_CHIT" and room.game_type == "chit_pull":
+                await self._chit_pull_redraw_chit(room)
+
             elif msg_type == "SET_TIME_LIMIT":
                 if room.state in ("LOBBY", "LEADERBOARD", "PODIUM"):
                     new_limit = message.get("time_limit", 15)
@@ -1137,6 +1189,9 @@ class SocketManager:
                     return
                 if room.game_type == "who_am_i":
                     await self._who_am_i_complete_game(room)
+                    return
+                if room.game_type == "chit_pull":
+                    await self._chit_pull_complete_game(room)
                     return
                 if room.game_type in ("housie", "bingo") and room.state == "BINGO_CALLING":
                     await self._complete_housie(room)
@@ -1175,7 +1230,7 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "who_am_i") else room.game_type
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "who_am_i", "chit_pull") else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
 
                     # Validate time_limit
@@ -1204,7 +1259,11 @@ class SocketManager:
                     elif new_game_type == "common_ground":
                         new_game_data = validate_common_ground_config({})
                     elif new_game_type == "who_am_i":
-                        new_game_data = validate_who_am_i_config({})
+                        from main import who_am_i_games
+                        new_game_data = who_am_i_games.get(new_content_id) or validate_who_am_i_config({})
+                    elif new_game_type == "chit_pull":
+                        from main import chit_pull_games
+                        new_game_data = chit_pull_games.get(new_content_id) or validate_chit_pull_config({})
                     else:
                         new_game_data = quizzes.get(new_content_id)
 
@@ -1370,6 +1429,8 @@ class SocketManager:
                             state_info["common_ground"] = common_private_sync(room.common_state, nickname, players=room.player_public_list())
                         elif room.game_type == "who_am_i" and room.who_am_i_state:
                             state_info["who_am_i"] = whoami_private_sync(room.who_am_i_state, nickname, players=room.player_public_list())
+                        elif room.game_type == "chit_pull" and room.chit_pull_state:
+                            state_info["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1464,6 +1525,10 @@ class SocketManager:
                             state_info["common_ground"] = common_private_sync(room.common_state, player_data["nickname"], players=room.player_public_list())
                         elif room.game_type == "who_am_i" and room.who_am_i_state:
                             state_info["who_am_i"] = whoami_private_sync(room.who_am_i_state, player_data["nickname"], players=room.player_public_list())
+                        elif room.game_type == "chit_pull" and room.chit_pull_state:
+                            state_info["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
+                        elif room.game_type == "chit_pull" and room.chit_pull_state:
+                            state_info["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1659,7 +1724,7 @@ class SocketManager:
                 await self._who_am_i_submit_guess(room, client_id, message)
 
             elif msg_type == "ANSWER":
-                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "who_am_i"):
+                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "who_am_i", "chit_pull"):
                     return  # Other games use their own input messages
                 if client_id not in room.players:
                     return
@@ -2482,7 +2547,7 @@ class SocketManager:
     def _sync_who_am_i_phase_to_room(self, room: Room):
         if room.who_am_i_state:
             room.state = str(room.who_am_i_state.get("phase") or "WHOAMI_ROUND")
-            room.current_question_index = int(room.who_am_i_state.get("round_index", 0) or 0)
+            room.current_question_index = int(room.who_am_i_state.get("current_round_index", 0) or 0)
 
     def _sync_who_am_i_scores_to_players(self, room: Room):
         scores = room.who_am_i_state.get("scores", {}) if room.who_am_i_state else {}
@@ -2536,7 +2601,7 @@ class SocketManager:
                 room.answer_log.append({
                     "kind": "who_am_i_guess",
                     "nickname": nickname,
-                    "round": room.who_am_i_state.get("round_index", 0) + 1,
+                    "round": room.who_am_i_state.get("current_round_index", 0) + 1,
                     "correct": bool(result.get("correct")),
                 })
         except ValueError as exc:
@@ -2609,6 +2674,144 @@ class SocketManager:
             self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Who Am I? history for room %s", room.room_code)
+
+    def _start_chit_pull_game(self, room: Room):
+        room.chit_pull_config = validate_chit_pull_config(room.quiz)
+        room.chit_pull_state = chit_pull_create_initial_state(
+            [p["nickname"] for p in room.players.values() if p.get("nickname")],
+            room.chit_pull_config,
+            now=time.time(),
+            seed=secrets.randbits(32),
+        )
+        room.current_question_index = 0
+        self._sync_chit_pull_phase_to_room(room)
+        self._sync_chit_pull_scores_to_players(room)
+
+    def _sync_chit_pull_phase_to_room(self, room: Room):
+        if room.chit_pull_state:
+            room.state = str(room.chit_pull_state.get("phase") or "CHIT_READY")
+            room.current_question_index = int(room.chit_pull_state.get("round_index", 0) or 0)
+
+    def _sync_chit_pull_scores_to_players(self, room: Room):
+        scores = room.chit_pull_state.get("scores", {}) if room.chit_pull_state else {}
+        for pdata in room.players.values():
+            nickname = pdata.get("nickname")
+            pdata["score"] = int(scores.get(nickname, 0) or 0)
+
+    async def _broadcast_chit_pull_sync(self, room: Room):
+        if not room.chit_pull_state:
+            return
+        players = room.player_public_list()
+        public = {
+            "type": "CHIT_SYNC",
+            "game_type": "chit_pull",
+            "chit_pull": chit_pull_public_sync(room.chit_pull_state, players=players),
+            "player_count": len(room.players),
+            "players": players,
+            "leaderboard": self.get_leaderboard(room),
+        }
+        await room.broadcast(public)
+
+    async def _chit_pull_next(self, room: Room):
+        if not room.chit_pull_state:
+            return
+        became_podium = False
+        try:
+            async with room.lock:
+                room.chit_pull_state = chit_pull_draw_turn(room.chit_pull_state, now=time.time())
+                became_podium = room.chit_pull_state.get("phase") == CHIT_PULL_PHASE_PODIUM
+                if not became_podium:
+                    self._sync_chit_pull_phase_to_room(room)
+        except ValueError:
+            return
+        if became_podium:
+            await self._chit_pull_complete_game(room)
+            return
+        await self._broadcast_chit_pull_sync(room)
+
+    async def _chit_pull_complete(self, room: Room, bonus: bool = False):
+        if not room.chit_pull_state:
+            return
+        became_podium = False
+        try:
+            async with room.lock:
+                room.chit_pull_state = chit_pull_complete_turn(room.chit_pull_state, bonus=bonus, now=time.time())
+                became_podium = room.chit_pull_state.get("phase") == CHIT_PULL_PHASE_PODIUM
+                self._sync_chit_pull_scores_to_players(room)
+                if not became_podium:
+                    self._sync_chit_pull_phase_to_room(room)
+        except ValueError:
+            return
+        if became_podium:
+            await self._chit_pull_complete_game(room)
+            return
+        await self._broadcast_chit_pull_sync(room)
+
+    async def _chit_pull_skip(self, room: Room):
+        if not room.chit_pull_state:
+            return
+        became_podium = False
+        try:
+            async with room.lock:
+                room.chit_pull_state = chit_pull_skip_turn(room.chit_pull_state, now=time.time())
+                became_podium = room.chit_pull_state.get("phase") == CHIT_PULL_PHASE_PODIUM
+                self._sync_chit_pull_scores_to_players(room)
+                if not became_podium:
+                    self._sync_chit_pull_phase_to_room(room)
+        except ValueError:
+            return
+        if became_podium:
+            await self._chit_pull_complete_game(room)
+            return
+        await self._broadcast_chit_pull_sync(room)
+
+    async def _chit_pull_redraw_player(self, room: Room):
+        if not room.chit_pull_state:
+            return
+        try:
+            async with room.lock:
+                room.chit_pull_state = chit_pull_redraw_player(room.chit_pull_state, now=time.time())
+                self._sync_chit_pull_phase_to_room(room)
+        except ValueError:
+            return
+        await self._broadcast_chit_pull_sync(room)
+
+    async def _chit_pull_redraw_chit(self, room: Room):
+        if not room.chit_pull_state:
+            return
+        try:
+            async with room.lock:
+                room.chit_pull_state = chit_pull_redraw_chit(room.chit_pull_state, now=time.time())
+                self._sync_chit_pull_phase_to_room(room)
+        except ValueError:
+            return
+        await self._broadcast_chit_pull_sync(room)
+
+    async def _chit_pull_complete_game(self, room: Room):
+        if room.state == "PODIUM":
+            return
+        if room.chit_pull_state:
+            room.chit_pull_state["phase"] = CHIT_PULL_PHASE_PODIUM
+        self._sync_chit_pull_scores_to_players(room)
+        room.state = "PODIUM"
+        leaderboard = self.get_leaderboard(room)
+        await room.broadcast({
+            "type": "PODIUM",
+            "game_type": "chit_pull",
+            "leaderboard": leaderboard,
+            "team_leaderboard": [],
+            "chit_pull": chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list()) if room.chit_pull_state else {},
+        })
+        try:
+            from main import game_history
+            summary = self.get_game_summary(room)
+            summary["chit_pull_standings"] = chit_pull_final_standings(room.chit_pull_state) if room.chit_pull_state else []
+            game_history.append(summary)
+            if len(game_history) > config.MAX_GAME_HISTORY:
+                del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+            self._mark_game_session_complete(room, summary)
+        except Exception:
+            logger.warning("Could not save Chit Pull history for room %s", room.room_code)
 
     def _start_musical_chairs_game(self, room: Room):
         room.mc_config = validate_musical_chairs_config(room.quiz)
@@ -3304,6 +3507,12 @@ class SocketManager:
             summary["total_questions"] = len(room.who_am_i_state.get("config", {}).get("rounds", []))
             summary["total_rounds"] = summary["total_questions"]
             summary["winners"] = whoami_final_standings(room.who_am_i_state)[:3]
+        if room.game_type == "chit_pull" and room.chit_pull_state:
+            summary["total_questions"] = len(room.chit_pull_state.get("turn_results", []))
+            summary["total_rounds"] = summary["total_questions"]
+            summary["winners"] = chit_pull_final_standings(room.chit_pull_state)[:3]
+            summary["completed_count"] = len([item for item in room.chit_pull_state.get("turn_results", []) if item.get("outcome") == "completed"])
+            summary["skipped_count"] = len([item for item in room.chit_pull_state.get("turn_results", []) if item.get("outcome") == "skipped"])
         return summary
 
     def _callback_event_type(self, event_type: str) -> str:

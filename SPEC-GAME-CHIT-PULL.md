@@ -15,9 +15,18 @@ Frontend display name: Chit Pull
 
 ## Implementation Status
 
-Status: implementation-ready spec.
+Status: implemented MVP in standalone LocalPlay.
 
-This is not implemented yet.
+Implemented in this repo with:
+
+- `backend/chit_pull_engine.py` pure mechanics and validation helpers.
+- `/chit-pull/generate`, `/chit-pull/import`, and `/chit-pull/{id}` update routes.
+- Room creation support through `game_type="chit_pull"` and `chit_pull_id` / `chit_pull_config`.
+- WebSocket runtime messages: `CHIT_SYNC`, `CHIT_NEXT`, `CHIT_COMPLETE`, `CHIT_SKIP`, `CHIT_REDRAW_PLAYER`, and `CHIT_REDRAW_CHIT`.
+- Organizer prompt/review/live screens, plus player and spectator live views.
+- Backend and frontend tests for engine behavior and live component rendering.
+
+Current exposure is standalone LocalPlay first. Revelry catalog exposure should follow the host-app allowlist/policy rollout after gamma smoke.
 
 ## MVP Scope
 
@@ -454,7 +463,6 @@ REST endpoints:
 ```text
 POST /chit-pull/generate
 POST /chit-pull/import
-GET /chit-pull/{id}
 PUT /chit-pull/{id}
 ```
 

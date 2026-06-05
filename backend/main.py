@@ -28,7 +28,7 @@ import httpx
 import config
 config.setup_logging()
 
-from quiz_engine import quiz_engine, _sanitize_quiz, _validate_quiz, VALID_QUIZ_MODES, DailyLimitExceeded, AIQuotaExceeded
+from quiz_engine import quiz_engine, _extract_gemini_text, _sanitize_quiz, _validate_quiz, VALID_QUIZ_MODES, DailyLimitExceeded, AIQuotaExceeded
 from mlt_engine import mlt_engine, _sanitize_mlt, _validate_mlt
 from drawing_engine import drawing_engine, _sanitize_drawing_game, _validate_drawing_game
 from housie_engine import DEFAULT_HOUSIE_PATTERNS, default_housie_game, sanitize_patterns
@@ -38,7 +38,8 @@ from bluff_engine import validate_config as validate_bluff_config
 from two_truths_engine import validate_config as validate_two_truths_config
 from story_chain_engine import validate_config as validate_story_chain_config
 from common_ground_engine import validate_config as validate_common_ground_config
-from who_am_i_engine import validate_config as validate_who_am_i_config
+from who_am_i_engine import sanitize_generated_game as sanitize_who_am_i_game, validate_config as validate_who_am_i_config, validate_generated_game as validate_who_am_i_game
+from chit_pull_engine import sanitize_generated_game as sanitize_chit_pull_game, validate_config as validate_chit_pull_config, validate_generated_game as validate_chit_pull_game
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -56,6 +57,7 @@ API_PREFIXES = (
     "/auth",
     "/bingo",
     "/checkout",
+    "/chit-pull",
     "/drawing",
     "/entitlements",
     "/health",
@@ -74,6 +76,7 @@ API_PREFIXES = (
     "/system",
     "/tokens",
     "/webhook",
+    "/who-am-i",
     "/ws",
 )
 
@@ -239,6 +242,14 @@ housie_timestamps: Dict[str, float] = {}  # housie_id -> creation time
 bingo_games: Dict[str, dict] = {}  # bingo_id -> {game_title, deck, patterns, settings}
 bingo_timestamps: Dict[str, float] = {}  # bingo_id -> creation time
 
+# Who Am I storage
+who_am_i_games: Dict[str, dict] = {}  # who_am_i_id -> {game_title, rounds, settings}
+who_am_i_timestamps: Dict[str, float] = {}
+
+# Chit Pull storage
+chit_pull_games: Dict[str, dict] = {}  # chit_pull_id -> {game_title, chits, settings}
+chit_pull_timestamps: Dict[str, float] = {}
+
 # Content ownership: content_id -> wallet_id of creator
 content_owners: Dict[str, str] = {}
 pending_generation_charges: Dict[str, str] = {}  # content_id -> wallet_id to charge when first room is created
@@ -352,6 +363,42 @@ def _evict_old_content():
                 content_owners.pop(bid, None)
                 pending_generation_charges.pop(bid, None)
 
+    # Evict Who Am I clue packs
+    expired_who = [wid for wid, ts in who_am_i_timestamps.items()
+                   if now - ts > config.QUIZ_TTL_SECONDS and wid not in active_content_ids]
+    for wid in expired_who:
+        who_am_i_games.pop(wid, None)
+        who_am_i_timestamps.pop(wid, None)
+        content_owners.pop(wid, None)
+        pending_generation_charges.pop(wid, None)
+    if len(who_am_i_games) >= config.MAX_QUIZZES:
+        for wid in sorted(who_am_i_timestamps, key=who_am_i_timestamps.get):
+            if len(who_am_i_games) < config.MAX_QUIZZES:
+                break
+            if wid not in active_content_ids:
+                who_am_i_games.pop(wid, None)
+                who_am_i_timestamps.pop(wid, None)
+                content_owners.pop(wid, None)
+                pending_generation_charges.pop(wid, None)
+
+    # Evict Chit Pull decks
+    expired_chit = [cid for cid, ts in chit_pull_timestamps.items()
+                    if now - ts > config.QUIZ_TTL_SECONDS and cid not in active_content_ids]
+    for cid in expired_chit:
+        chit_pull_games.pop(cid, None)
+        chit_pull_timestamps.pop(cid, None)
+        content_owners.pop(cid, None)
+        pending_generation_charges.pop(cid, None)
+    if len(chit_pull_games) >= config.MAX_QUIZZES:
+        for cid in sorted(chit_pull_timestamps, key=chit_pull_timestamps.get):
+            if len(chit_pull_games) < config.MAX_QUIZZES:
+                break
+            if cid not in active_content_ids:
+                chit_pull_games.pop(cid, None)
+                chit_pull_timestamps.pop(cid, None)
+                content_owners.pop(cid, None)
+                pending_generation_charges.pop(cid, None)
+
 def generate_room_code() -> str:
     """Generate a unique 6-character room code, checking for collisions."""
     for _ in range(config.MAX_ROOM_CODE_ATTEMPTS):
@@ -433,6 +480,9 @@ class RoomCreateRequest(BaseModel):
     story_chain_config: dict = {}
     common_ground_config: dict = {}
     who_am_i_config: dict = {}
+    who_am_i_id: str = ""
+    chit_pull_config: dict = {}
+    chit_pull_id: str = ""
     game_type: str = "quiz"
     time_limit: Optional[int] = None
 
@@ -455,8 +505,8 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "who_am_i"):
-            raise ValueError('game_type must be "quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", or "who_am_i"')
+        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "who_am_i", "chit_pull"):
+            raise ValueError('game_type must be a supported LocalPlay game type')
         return v
 
 
@@ -779,13 +829,13 @@ GAME_CATALOG = [
         "launchable": True,
         "host_app_supported": False,
         "supported_host_apps": [],
-        "supports_custom_content": False,
+        "supports_custom_content": True,
         "supports_images": False,
-        "can_create_content": False,
-        "can_edit_content": False,
+        "can_create_content": True,
+        "can_edit_content": True,
         "can_quick_start": True,
-        "supports_ai_generation": False,
-        "creation_modes": ["settings"],
+        "supports_ai_generation": True,
+        "creation_modes": ["template", "manual", "ai"],
         "default_content_available": True,
         "embedded_authoring_supported": False,
         "content_schema": {
@@ -798,6 +848,37 @@ GAME_CATALOG = [
             "clues_per_round": {"min": 3, "max": 6, "default": 5},
             "points_by_clue": [500, 400, 300, 200, 100],
             "max_guesses_per_clue": {"min": 1, "max": 5, "default": 2},
+        },
+    },
+    {
+        "id": "chit_pull",
+        "game_type": "chit_pull",
+        "runtime_type": "chit_pull",
+        "title": "Chit Pull",
+        "description": "Randomly pick a player and a funny question, action, or mini challenge.",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": True,
+        "supports_images": False,
+        "can_create_content": True,
+        "can_edit_content": True,
+        "can_quick_start": True,
+        "supports_ai_generation": True,
+        "creation_modes": ["template", "manual", "ai"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "chit_pull_setup",
+            "chit_count": {"min": 5, "max": 200},
+            "categories": ["question", "action", "funny_face", "mini_challenge", "group"],
+            "safe_levels": ["kids", "family", "work_safe", "spicy"],
+            "supported_media": [],
+        },
+        "config_schema": {
+            "players": {"min": config.MIN_CHIT_PULL_PLAYERS, "max": config.MAX_PLAYERS_PER_ROOM},
+            "rounds": {"min": 5, "max": 100, "default": 20},
+            "turn_time_seconds": {"min": 10, "max": 120, "default": 30},
         },
     },
 ]
@@ -818,6 +899,8 @@ def _default_time_limit_for_game(game_type: str) -> int:
         return 30
     if game_type == "who_am_i":
         return 25
+    if game_type == "chit_pull":
+        return 30
     return config.DEFAULT_TIME_LIMIT
 
 
@@ -910,6 +993,8 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
         return str(uuid.uuid4()), validate_common_ground_config({"game_title": title or "Common Ground"})
     if game_type == "who_am_i":
         return str(uuid.uuid4()), validate_who_am_i_config({"game_title": title or "Who Am I?"})
+    if game_type == "chit_pull":
+        return str(uuid.uuid4()), validate_chit_pull_config({"game_title": title or "Chit Pull"})
     if game_type == "bingo":
         return str(uuid.uuid4()), default_bingo_game(title or "Bingo")
     if game_type == "housie":
@@ -954,6 +1039,16 @@ def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = 
     if game_type == "common_ground":
         return _default_game_content(game_type, title)
     if game_type == "who_am_i":
+        if content_id:
+            if content_id not in who_am_i_games:
+                raise HTTPException(status_code=404, detail="Who Am I? game not found")
+            return content_id, who_am_i_games[content_id]
+        return _default_game_content(game_type, title)
+    if game_type == "chit_pull":
+        if content_id:
+            if content_id not in chit_pull_games:
+                raise HTTPException(status_code=404, detail="Chit Pull game not found")
+            return content_id, chit_pull_games[content_id]
         return _default_game_content(game_type, title)
     if game_type == "bingo":
         if not config.BINGO_ENABLED:
@@ -1072,6 +1167,10 @@ def _create_runtime_room(
             raise HTTPException(status_code=422, detail="Bingo game has no prize patterns")
     if game_type == "quiz" and not game_data.get("questions"):
         raise HTTPException(status_code=422, detail="Quiz has no questions")
+    if game_type == "who_am_i" and len(game_data.get("rounds", [])) < 3:
+        raise HTTPException(status_code=422, detail="Who Am I? needs at least 3 clue rounds")
+    if game_type == "chit_pull" and len(game_data.get("chits", [])) < 5:
+        raise HTTPException(status_code=422, detail="Chit Pull needs at least 5 chits")
     if len(socket_manager.rooms) >= config.MAX_ROOMS:
         raise HTTPException(status_code=429, detail="Too many active rooms. Please try again later.")
 
@@ -3441,6 +3540,8 @@ async def create_room(request: RoomCreateRequest, req: Request):
         else request.drawing_id if request.game_type == "drawing"
         else request.housie_id if request.game_type == "housie"
         else request.bingo_id if request.game_type == "bingo"
+        else request.who_am_i_id if request.game_type == "who_am_i"
+        else request.chit_pull_id if request.game_type == "chit_pull"
         else ""
     )
     if request.game_type == "musical_chairs":
@@ -3459,8 +3560,17 @@ async def create_room(request: RoomCreateRequest, req: Request):
         content_id = str(uuid.uuid4())
         game_data = validate_common_ground_config(request.common_ground_config)
     elif request.game_type == "who_am_i":
-        content_id = str(uuid.uuid4())
-        game_data = validate_who_am_i_config(request.who_am_i_config)
+        if content_id:
+            content_id, game_data = _resolve_runtime_content("who_am_i", content_id)
+        else:
+            content_id = str(uuid.uuid4())
+            game_data = validate_who_am_i_config(request.who_am_i_config)
+    elif request.game_type == "chit_pull":
+        if content_id:
+            content_id, game_data = _resolve_runtime_content("chit_pull", content_id)
+        else:
+            content_id = str(uuid.uuid4())
+            game_data = validate_chit_pull_config(request.chit_pull_config)
     else:
         content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
     if request.game_type == "drawing":
@@ -3901,6 +4011,383 @@ async def update_drawing(drawing_id: str, request: DrawingUpdateRequest, req: Re
     drawing_games[drawing_id] = drawing_data
     logger.info("DrawingGame updated: %s ('%s'), %d prompts", drawing_id, drawing_data["game_title"], len(drawing_data["prompts"]))
     return {"drawing_id": drawing_id, "game": drawing_games[drawing_id]}
+
+
+# --- Who Am I / Chit Pull authoring endpoints ---
+
+PROMPT_INJECTION_PATTERNS = [
+    r'ignore\s+(all\s+)?previous\s+instructions',
+    r'ignore\s+(all\s+)?above',
+    r'disregard\s+(all\s+)?previous',
+    r'you\s+are\s+now\s+(?:a|an|in)',
+    r'new\s+instructions?\s*:',
+    r'system\s*:\s*',
+    r'<\s*/?script',
+    r'javascript\s*:',
+]
+
+
+def _sanitize_authoring_prompt(value: str) -> str:
+    value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', value or '')
+    value = re.sub(r'<[^>]+>', '', value).strip()
+    if not value or len(value) > config.MAX_PROMPT_LENGTH:
+        raise ValueError(f'Prompt must be 1-{config.MAX_PROMPT_LENGTH} characters')
+    lower_value = value.lower()
+    for pattern in PROMPT_INJECTION_PATTERNS:
+        if re.search(pattern, lower_value):
+            raise ValueError('Prompt contains disallowed content')
+    return value
+
+
+async def _generate_json_content(provider: str, model_override: str, prompt_text: str) -> Optional[dict]:
+    provider = (provider or "gemini").strip().lower()
+    if provider == "ollama":
+        payload = {
+            "model": model_override or config.OLLAMA_MODEL,
+            "prompt": prompt_text,
+            "stream": False,
+            "format": "json",
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.post(config.OLLAMA_URL, json=payload, timeout=config.OLLAMA_TIMEOUT)
+            response.raise_for_status()
+        result = response.json()
+        return json.loads(result.get("response") or "{}")
+    if provider == "claude":
+        if not config.ANTHROPIC_API_KEY:
+            return None
+        headers = {
+            "x-api-key": config.ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        payload = {
+            "model": model_override or config.ANTHROPIC_MODEL,
+            "max_tokens": 4096,
+            "messages": [{"role": "user", "content": prompt_text}],
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.post("https://api.anthropic.com/v1/messages", json=payload, headers=headers, timeout=60)
+            response.raise_for_status()
+        result = response.json()
+        text = result.get("content", [{}])[0].get("text", "")
+        if text.strip().startswith("```"):
+            text = text.strip().split("\n", 1)[1].rsplit("```", 1)[0]
+        return json.loads(re.search(r"\{.*\}", text, re.DOTALL).group(0) if re.search(r"\{.*\}", text, re.DOTALL) else text)
+    if not config.GEMINI_API_KEY:
+        return None
+    model = model_override or config.GEMINI_MODEL
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    headers = {"x-goog-api-key": config.GEMINI_API_KEY}
+    payload = {
+        "contents": [{"parts": [{"text": prompt_text}]}],
+        "generationConfig": {"temperature": 0.85, "responseMimeType": "application/json"},
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=payload, headers=headers, timeout=60)
+        response.raise_for_status()
+    text = _extract_gemini_text(response.json()) or "{}"
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    return json.loads(match.group(0) if match else text)
+
+
+class WhoAmIGenerateRequest(BaseModel):
+    prompt: str
+    difficulty: str = "medium"
+    num_rounds: int = 10
+    clues_per_round: int = 5
+    provider: str = ""
+
+    @field_validator('prompt')
+    @classmethod
+    def validate_prompt(cls, v: str) -> str:
+        return _sanitize_authoring_prompt(v)
+
+    @field_validator('difficulty')
+    @classmethod
+    def validate_difficulty(cls, v: str) -> str:
+        v = v.lower().strip()
+        if v not in config.VALID_DIFFICULTIES:
+            raise ValueError(f'Difficulty must be one of: {", ".join(config.VALID_DIFFICULTIES)}')
+        return v
+
+    @field_validator('num_rounds')
+    @classmethod
+    def validate_num_rounds(cls, v: int) -> int:
+        if v < 3 or v > 25:
+            raise ValueError('Number of rounds must be 3-25')
+        return v
+
+    @field_validator('clues_per_round')
+    @classmethod
+    def validate_clues_per_round(cls, v: int) -> int:
+        if v < 3 or v > 6:
+            raise ValueError('Clues per round must be 3-6')
+        return v
+
+
+@app.post("/who-am-i/generate")
+async def generate_who_am_i(request: WhoAmIGenerateRequest, req: Request):
+    client_ip = _get_client_ip(req)
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating.")
+    device_id = tokens.get_device_id(req)
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    idem_key = tokens.get_idempotency_key(req)
+    if idem_key:
+        cached_id = db.check_idempotency(idem_key, device_id)
+        if cached_id:
+            if cached_id in who_am_i_games:
+                return {"who_am_i_id": cached_id, "game": who_am_i_games[cached_id]}
+            raise HTTPException(status_code=409, detail="Request was already processed, but the generated game is no longer available. Please start a new request.")
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    tokens.ensure_wallet(wallet_id)
+    if not tokens.can_generate(wallet_id):
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate.")
+    if not _check_llm_budget():
+        raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
+    await remote_config.get_config()
+    provider = request.provider or remote_config.get_provider()
+    model_override = remote_config.get_paid_model() if tokens.use_premium_model(wallet_id) else remote_config.get_free_model()
+    prompt_text = f"""
+You are writing a live party game called Who Am I.
+Generate {request.num_rounds} clue-ladder rounds about the user theme below.
+Difficulty: {request.difficulty}. Clues per round: {request.clues_per_round}.
+
+Rules:
+- Each round has an answer, 1-5 aliases, category, difficulty, and exactly {request.clues_per_round} clues.
+- Clues must go from broad to specific.
+- Never include the answer text inside any clue.
+- Use famous people, fictional characters, landmarks, objects, places, animals, or concepts that a group can reasonably guess.
+- Avoid private individuals, sensitive personal facts, protected-class targeting, explicit sexual content, tragedy, medical/legal/financial advice, and humiliating content.
+- Return JSON only with this structure:
+{{
+  "game_title": "string",
+  "theme": "string",
+  "round_count": {request.num_rounds},
+  "clues_per_round": {request.clues_per_round},
+  "rounds": [
+    {{"id": "round_1", "answer": "string", "aliases": ["string"], "category": "string", "difficulty": "{request.difficulty}", "clues": ["string"]}}
+  ]
+}}
+
+--- BEGIN USER THEME ---
+{request.prompt}
+--- END USER THEME ---
+"""
+    try:
+        raw = await _generate_json_content(provider, model_override, prompt_text)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (403, 429):
+            raise HTTPException(status_code=503, detail="Free tier limit reached. Upgrade for unlimited games.")
+        raise HTTPException(status_code=500, detail="Failed to generate Who Am I")
+    except Exception:
+        logger.exception("Who Am I generation failed")
+        raise HTTPException(status_code=500, detail="Failed to generate Who Am I")
+    game_data = sanitize_who_am_i_game({**(raw or {}), "clues_per_round": request.clues_per_round, "round_count": request.num_rounds, "theme": request.prompt})
+    if not validate_who_am_i_game(game_data):
+        raise HTTPException(status_code=500, detail="Generated clue pack was not playable")
+    _evict_old_content()
+    who_am_i_id = str(uuid.uuid4())
+    who_am_i_games[who_am_i_id] = game_data
+    who_am_i_timestamps[who_am_i_id] = time.time()
+    content_owners[who_am_i_id] = wallet_id
+    pending_generation_charges[who_am_i_id] = wallet_id
+    if idem_key:
+        db.record_idempotency(idem_key, device_id, who_am_i_id)
+    return {"who_am_i_id": who_am_i_id, "game": game_data}
+
+
+class WhoAmIUpdateRequest(BaseModel):
+    game_title: str
+    rounds: list
+    clues_per_round: int = 5
+    round_count: int = 10
+    theme: str = ""
+
+
+@app.post("/who-am-i/import")
+async def import_who_am_i(request: WhoAmIUpdateRequest, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    game_data = sanitize_who_am_i_game(request.model_dump())
+    if not validate_who_am_i_game(game_data):
+        raise HTTPException(status_code=422, detail="Who Am I? needs at least 3 valid rounds")
+    _evict_old_content()
+    who_am_i_id = str(uuid.uuid4())
+    who_am_i_games[who_am_i_id] = game_data
+    who_am_i_timestamps[who_am_i_id] = time.time()
+    content_owners[who_am_i_id] = wallet_id
+    return {"who_am_i_id": who_am_i_id, "game": game_data}
+
+
+@app.put("/who-am-i/{who_am_i_id}")
+async def update_who_am_i(who_am_i_id: str, request: WhoAmIUpdateRequest, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if who_am_i_id not in who_am_i_games:
+        raise HTTPException(status_code=404, detail="Who Am I? game not found")
+    _check_content_owner(who_am_i_id, wallet_id)
+    game_data = sanitize_who_am_i_game(request.model_dump())
+    if not validate_who_am_i_game(game_data):
+        raise HTTPException(status_code=422, detail="Who Am I? needs at least 3 valid rounds")
+    who_am_i_games[who_am_i_id] = game_data
+    return {"who_am_i_id": who_am_i_id, "game": game_data}
+
+
+class ChitPullGenerateRequest(BaseModel):
+    prompt: str
+    difficulty: str = "medium"
+    num_chits: int = 20
+    safe_level: str = "family"
+    provider: str = ""
+
+    @field_validator('prompt')
+    @classmethod
+    def validate_prompt(cls, v: str) -> str:
+        return _sanitize_authoring_prompt(v)
+
+    @field_validator('difficulty')
+    @classmethod
+    def validate_difficulty(cls, v: str) -> str:
+        v = v.lower().strip()
+        if v not in config.VALID_DIFFICULTIES:
+            raise ValueError(f'Difficulty must be one of: {", ".join(config.VALID_DIFFICULTIES)}')
+        return v
+
+    @field_validator('num_chits')
+    @classmethod
+    def validate_num_chits(cls, v: int) -> int:
+        if v < 5 or v > 100:
+            raise ValueError('Number of chits must be 5-100')
+        return v
+
+    @field_validator('safe_level')
+    @classmethod
+    def validate_safe_level(cls, v: str) -> str:
+        v = v.lower().strip().replace(" ", "_")
+        if v not in ("kids", "family", "work_safe", "spicy"):
+            raise ValueError('Safe level must be kids, family, work_safe, or spicy')
+        return v
+
+
+@app.post("/chit-pull/generate")
+async def generate_chit_pull(request: ChitPullGenerateRequest, req: Request):
+    client_ip = _get_client_ip(req)
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating.")
+    device_id = tokens.get_device_id(req)
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    idem_key = tokens.get_idempotency_key(req)
+    if idem_key:
+        cached_id = db.check_idempotency(idem_key, device_id)
+        if cached_id:
+            if cached_id in chit_pull_games:
+                return {"chit_pull_id": cached_id, "game": chit_pull_games[cached_id]}
+            raise HTTPException(status_code=409, detail="Request was already processed, but the generated game is no longer available. Please start a new request.")
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    tokens.ensure_wallet(wallet_id)
+    if not tokens.can_generate(wallet_id):
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate.")
+    if not _check_llm_budget():
+        raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
+    await remote_config.get_config()
+    provider = request.provider or remote_config.get_provider()
+    model_override = remote_config.get_paid_model() if tokens.use_premium_model(wallet_id) else remote_config.get_free_model()
+    prompt_text = f"""
+Generate {request.num_chits} short, performable party chits for a live group game.
+Theme/vibe: bounded user theme below.
+Difficulty: {request.difficulty}. Safety level: {request.safe_level}.
+
+Rules:
+- Every chit must be safe, voluntary, inclusive, and easy to do in person.
+- Mix categories: question, action, funny_face, mini_challenge, group.
+- Keep each chit under 120 characters.
+- Avoid protected-class targeting, private/sensitive disclosure, humiliation, touching, drinking, spending money, leaving the venue, explicit sexual content, or medical/legal/financial topics.
+- For kids/family/work_safe, keep everything clean and broadly comfortable.
+- For spicy, be playful and cheeky but not explicit, coercive, or humiliating.
+- Return JSON only:
+{{
+  "game_title": "string",
+  "safe_level": "{request.safe_level}",
+  "rounds": {min(request.num_chits, 20)},
+  "chits": [
+    {{"id": "chit_1", "text": "string", "category": "question", "safe_level": "{request.safe_level}"}}
+  ]
+}}
+
+--- BEGIN USER THEME ---
+{request.prompt}
+--- END USER THEME ---
+"""
+    try:
+        raw = await _generate_json_content(provider, model_override, prompt_text)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (403, 429):
+            raise HTTPException(status_code=503, detail="Free tier limit reached. Upgrade for unlimited games.")
+        raise HTTPException(status_code=500, detail="Failed to generate Chit Pull")
+    except Exception:
+        logger.exception("Chit Pull generation failed")
+        raise HTTPException(status_code=500, detail="Failed to generate Chit Pull")
+    game_data = sanitize_chit_pull_game({**(raw or {}), "safe_level": request.safe_level, "rounds": min(request.num_chits, 20)})
+    if not validate_chit_pull_game(game_data):
+        raise HTTPException(status_code=500, detail="Generated chit deck was not playable")
+    _evict_old_content()
+    chit_pull_id = str(uuid.uuid4())
+    chit_pull_games[chit_pull_id] = game_data
+    chit_pull_timestamps[chit_pull_id] = time.time()
+    content_owners[chit_pull_id] = wallet_id
+    pending_generation_charges[chit_pull_id] = wallet_id
+    if idem_key:
+        db.record_idempotency(idem_key, device_id, chit_pull_id)
+    return {"chit_pull_id": chit_pull_id, "game": game_data}
+
+
+class ChitPullUpdateRequest(BaseModel):
+    game_title: str
+    rounds: int = 20
+    turn_time_seconds: int = 30
+    safe_level: str = "family"
+    chits: list
+
+
+@app.post("/chit-pull/import")
+async def import_chit_pull(request: ChitPullUpdateRequest, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    game_data = sanitize_chit_pull_game(request.model_dump())
+    if not validate_chit_pull_game(game_data):
+        raise HTTPException(status_code=422, detail="Chit Pull needs at least 5 valid chits")
+    _evict_old_content()
+    chit_pull_id = str(uuid.uuid4())
+    chit_pull_games[chit_pull_id] = game_data
+    chit_pull_timestamps[chit_pull_id] = time.time()
+    content_owners[chit_pull_id] = wallet_id
+    return {"chit_pull_id": chit_pull_id, "game": game_data}
+
+
+@app.put("/chit-pull/{chit_pull_id}")
+async def update_chit_pull(chit_pull_id: str, request: ChitPullUpdateRequest, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if chit_pull_id not in chit_pull_games:
+        raise HTTPException(status_code=404, detail="Chit Pull game not found")
+    _check_content_owner(chit_pull_id, wallet_id)
+    game_data = sanitize_chit_pull_game(request.model_dump())
+    if not validate_chit_pull_game(game_data):
+        raise HTTPException(status_code=422, detail="Chit Pull needs at least 5 valid chits")
+    chit_pull_games[chit_pull_id] = game_data
+    return {"chit_pull_id": chit_pull_id, "game": game_data}
 
 
 @app.delete("/drawing/{drawing_id}/prompt/{prompt_id}")
