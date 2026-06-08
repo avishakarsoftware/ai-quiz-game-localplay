@@ -157,8 +157,11 @@ def smoke(base_url: str, *, skip_generate: bool = False) -> None:
     balance = request("GET", api(base_url, "/tokens/balance"), headers={"X-Device-Id": device_id}, timeout=30)
     check(balance.status == 200, f"/tokens/balance returned {balance.status}: {balance.text}")
     balance_value = balance.body.get("balance") if isinstance(balance.body, dict) else None
-    check(balance_value == 29, f"expected balance 29 after one spend + daily bonus, got {balance_value}")
-    print("ok token balance no double-charge")
+    # AI generation now creates pending content and charges only when the host
+    # turns that content into a playable room. The retry must not double-create
+    # content or double-consume the daily bonus balance.
+    check(balance_value == 30, f"expected balance 30 after pending generation + daily bonus, got {balance_value}")
+    print("ok token balance no double-charge before room start")
 
 
 def main() -> int:
