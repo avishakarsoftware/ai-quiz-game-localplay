@@ -5904,6 +5904,32 @@ body {
     margin-top: 22px;
 }
 
+.chit-pull-scoreboard > div {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+        "rank name"
+        "rank meta";
+    align-items: center;
+}
+
+.chit-pull-scoreboard > div > span {
+    grid-area: rank;
+}
+
+.chit-pull-scoreboard strong {
+    grid-area: name;
+    min-width: 0;
+}
+
+.chit-pull-score-meta {
+    grid-area: meta;
+    display: block;
+    margin-top: 2px;
+    font-size: 0.78rem;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+
 .who-am-i-clues {
     display: grid;
     gap: 10px;

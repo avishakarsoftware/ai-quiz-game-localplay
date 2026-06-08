@@ -96,12 +96,14 @@ export default function ChitPullGame({
                 )}
             </section>
 
-            <div className="common-ground-scoreboard">
+            <div className="common-ground-scoreboard chit-pull-scoreboard">
                 {scoreboard.map((player, index) => (
                     <div key={player.nickname} className={player.nickname === viewerName ? 'mine' : ''}>
                         <span>{index + 1}</span>
                         <strong>{player.avatar} {player.nickname}</strong>
-                        <small>{player.score} · {player.turns} turns</small>
+                        <small className="chit-pull-score-meta">
+                            {player.score} pts · {player.turns} turn{player.turns === 1 ? '' : 's'}
+                        </small>
                     </div>
                 ))}
             </div>

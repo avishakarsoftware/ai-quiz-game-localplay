@@ -1546,6 +1546,15 @@ PREPROD_LIVE=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run 
 
 This is intentionally heavier than the gamma smoke: it creates disposable deterministic content and rooms, opens multiple real browser player contexts, starts each covered game family, performs one meaningful action or turn handoff, and checks host/player UI state. Run it with one worker and treat failures as production-blocking until triaged. Current coverage includes Quiz runtime, Most Likely To, Housie, Bingo/Baby Bingo, Musical Chairs, Bluff, Two Truths and a Lie, Story Chain, Common Ground, Who Am I, and Chit Pull. Drawing is a tracked skipped case until `/drawing/import` exists; do not make this pre-prod suite depend on live AI generation.
 
+For a representative mobile screenshot audit of live states, run:
+
+```bash
+cd frontend
+PREPROD_UX_AUDIT=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-ux
+```
+
+Screenshots default to `/private/tmp/localplay-preprod-ux-audit`; override with `PREPROD_UX_AUDIT_DIR` when saving artifacts for review.
+
 #### Revelry gamma embedded E2E
 
 This is the repeatable gamma-only test for the LocalPlay/Revelry embedded party hub. It is intentionally desktop-only and stateful because it mutates one disposable gamma party.

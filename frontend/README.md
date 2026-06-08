@@ -12,6 +12,7 @@ npm run test:e2e
 npm run test:e2e:gamma
 npm run test:e2e:gamma:revelry
 npm run test:e2e:preprod-live
+npm run test:e2e:preprod-ux
 npm run build
 ```
 
@@ -20,6 +21,7 @@ npm run build
 - `npm run test:e2e:gamma` runs a desktop/mobile Playwright smoke against `https://gamesapi-gamma.revelryapp.me`.
 - `npm run test:e2e:gamma:revelry` runs a gamma-only Revelry embedded party regression for Drawing re-entry and custom Quiz image upload; set `REVELRY_GAMMA_PARTY_GAMES_URL_FILE` to a short-lived gamma party games URL file first.
 - `npm run test:e2e:preprod-live` runs the opt-in heavy live game regression suite. Set `PREPROD_LIVE=1` and `PLAYWRIGHT_BASE_URL` first.
+- `npm run test:e2e:preprod-ux` runs the opt-in live screenshot UX audit. Set `PREPROD_UX_AUDIT=1` and `PLAYWRIGHT_BASE_URL` first.
 - `npm run build` type-checks and builds the production bundle.
 
 ## Media Components
@@ -53,6 +55,14 @@ PREPROD_LIVE=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run 
 ```
 
 Coverage currently includes Quiz runtime, Most Likely To, Housie, Bingo/Baby Bingo, Musical Chairs, Bluff, Two Truths and a Lie, Story Chain, Common Ground, Who Am I, and Chit Pull. Quiz variants share the Quiz runtime and remain covered by prompt/setup audits plus the Quiz live scenario. Drawing is tracked in the suite but skipped until the backend exposes a deterministic `/drawing/import` endpoint; using AI generation here would make the pre-prod suite flaky and token-dependent.
+
+For a lighter visual pass over representative live mobile states, run:
+
+```bash
+PREPROD_UX_AUDIT=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-ux
+```
+
+By default screenshots are written to `/private/tmp/localplay-preprod-ux-audit`; override with `PREPROD_UX_AUDIT_DIR`.
 
 When a deliberate visual change alters a snapshot, refresh baselines with:
 

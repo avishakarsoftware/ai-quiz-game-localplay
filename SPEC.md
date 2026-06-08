@@ -1274,6 +1274,7 @@ Common commands:
 - `make build`: frontend production build.
 - `cd frontend && npm run test:e2e`: Playwright UX/regression coverage for organizer, player, spectator/TV, custom quiz authoring, saved quiz library, and Revelry party hub surfaces.
 - `cd frontend && PREPROD_LIVE=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-live`: opt-in heavy live regression for big production pushes. It creates disposable content/rooms, joins multiple browser player tabs, starts the room, performs one meaningful game action/handoff, and verifies host/player UI state on gamma. It runs with one worker, is desktop-only, and is not part of routine local or CI smoke runs.
+- `cd frontend && PREPROD_UX_AUDIT=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-ux`: opt-in live screenshot audit for representative mobile game states. It writes screenshots to `/private/tmp/localplay-preprod-ux-audit` unless `PREPROD_UX_AUDIT_DIR` is set.
 - `cd frontend && npm test -- --run ...`: targeted Vitest component/unit coverage.
 
 The backend test suite includes API validation, game logic, WebSocket flows, power-ups, reconnection, bonus rounds, team leaderboard, token economy, auth, and thinking-leak defense. The exact count may drift over time.
