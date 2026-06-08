@@ -1535,6 +1535,17 @@ npm run test:e2e:gamma
 
 This points Playwright at `https://gamesapi-gamma.revelryapp.me`, verifies the standalone catalog renders on desktop and mobile, checks `/media/status`, and fails on browser console/page errors.
 
+#### Pre-prod live game regression
+
+Run this before major production deployments that touch room creation, WebSockets, game runtime logic, or shared player/host/spectator surfaces:
+
+```bash
+cd frontend
+PREPROD_LIVE=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-live
+```
+
+This is intentionally heavier than the gamma smoke: it creates disposable deterministic content and rooms, opens multiple real browser player contexts, starts each covered game family, performs one meaningful action or turn handoff, and checks host/player UI state. Run it with one worker and treat failures as production-blocking until triaged. Current coverage includes Quiz runtime, Most Likely To, Housie, Bingo/Baby Bingo, Musical Chairs, Bluff, Two Truths and a Lie, Story Chain, Common Ground, Who Am I, and Chit Pull. Drawing is a tracked skipped case until `/drawing/import` exists; do not make this pre-prod suite depend on live AI generation.
+
 #### Revelry gamma embedded E2E
 
 This is the repeatable gamma-only test for the LocalPlay/Revelry embedded party hub. It is intentionally desktop-only and stateful because it mutates one disposable gamma party.

@@ -1273,6 +1273,7 @@ Common commands:
 - `make lint`: frontend TypeScript type check.
 - `make build`: frontend production build.
 - `cd frontend && npm run test:e2e`: Playwright UX/regression coverage for organizer, player, spectator/TV, custom quiz authoring, saved quiz library, and Revelry party hub surfaces.
+- `cd frontend && PREPROD_LIVE=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-live`: opt-in heavy live regression for big production pushes. It creates disposable content/rooms, joins multiple browser player tabs, starts the room, performs one meaningful game action/handoff, and verifies host/player UI state on gamma. It runs with one worker, is desktop-only, and is not part of routine local or CI smoke runs.
 - `cd frontend && npm test -- --run ...`: targeted Vitest component/unit coverage.
 
 The backend test suite includes API validation, game logic, WebSocket flows, power-ups, reconnection, bonus rounds, team leaderboard, token economy, auth, and thinking-leak defense. The exact count may drift over time.
@@ -1280,6 +1281,7 @@ The backend test suite includes API validation, game logic, WebSocket flows, pow
 Launch-readiness checks should include:
 
 - Desktop and mobile screenshots of the standalone game catalog, menu, each setup/review flow, lobby, player join, and TV/spectator entry.
+- For major production game/runtime changes, run the pre-prod live regression against gamma before promoting. Current deterministic coverage includes Quiz runtime, Most Likely To, Housie, Bingo/Baby Bingo, Musical Chairs, Bluff, Two Truths and a Lie, Story Chain, Common Ground, Who Am I, and Chit Pull. Quiz variants share the Quiz runtime and are separately covered by prompt/setup audits. Drawing is intentionally marked as a tracked gap until a deterministic Drawing import endpoint exists; the suite should not depend on AI generation.
 - Saved quiz library flow: list, start, prepare copy, review, Home return, edit, delete.
 - Host-app flow: party hub, create game, save setup, start saved game, replacement confirmation, lobby, player join, completion, return.
 - Host-app callback mirror flow: save or update party-scoped quiz, WMLT, and Drawing content; verify `content.created` / `content.updated` safe `payload.content` can update the prepared-games mirror even if follow-up metadata fetch fails.
