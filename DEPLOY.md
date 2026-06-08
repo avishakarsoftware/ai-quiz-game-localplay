@@ -1583,6 +1583,15 @@ cd frontend
 REVELRY_GAMMA_PARTY_GAMES_URL_FILE=../gamma_party_games_url.txt npm run test:e2e:gamma:revelry
 ```
 
+For a larger pre-production Revelry check, run the host-app matrix after the standard gamma flow:
+
+```bash
+cd frontend
+PREPROD_REVELRY=1 REVELRY_GAMMA_PARTY_GAMES_URL_FILE=../gamma_party_games_url.txt npm run test:e2e:preprod-revelry
+```
+
+The matrix verifies the embedded Revelry Games hub catalog/search UI, then starts every launchable game returned by the live Revelry catalog. It currently covers deterministic party-scoped content saves for Quiz, Most Likely To, Drawing, and Housie, plus quick-start launch for Musical Chairs. It also mints organizer/player/spectator launch tokens for each session. If a newly exposed Revelry game is missing from the matrix fixture set, the test fails and the harness must be updated before rollout.
+
 The test verifies:
 
 - LocalPlay embedded party hub resolves the Revelry party token.

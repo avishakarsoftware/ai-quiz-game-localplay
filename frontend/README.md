@@ -12,6 +12,7 @@ npm run test:e2e
 npm run test:e2e:gamma
 npm run test:e2e:gamma:revelry
 npm run test:e2e:preprod-live
+npm run test:e2e:preprod-revelry
 npm run test:e2e:preprod-ux
 npm run build
 ```
@@ -21,6 +22,7 @@ npm run build
 - `npm run test:e2e:gamma` runs a desktop/mobile Playwright smoke against `https://gamesapi-gamma.revelryapp.me`.
 - `npm run test:e2e:gamma:revelry` runs a gamma-only Revelry embedded party regression for Drawing re-entry and custom Quiz image upload; set `REVELRY_GAMMA_PARTY_GAMES_URL_FILE` to a short-lived gamma party games URL file first.
 - `npm run test:e2e:preprod-live` runs the opt-in heavy live game regression suite. Set `PREPROD_LIVE=1` and `PLAYWRIGHT_BASE_URL` first.
+- `npm run test:e2e:preprod-revelry` runs the opt-in Revelry party hub matrix. Set `PREPROD_REVELRY=1` and `REVELRY_GAMMA_PARTY_GAMES_URL_FILE` first.
 - `npm run test:e2e:preprod-ux` runs the opt-in live screenshot UX audit. Set `PREPROD_UX_AUDIT=1` and `PLAYWRIGHT_BASE_URL` first.
 - `npm run build` type-checks and builds the production bundle.
 
@@ -47,6 +49,14 @@ The Revelry gamma flow is stateful and desktop-only because it mutates one dispo
 ```bash
 REVELRY_GAMMA_PARTY_GAMES_URL_FILE=/path/to/gamma_party_games_url.txt npm run test:e2e:gamma:revelry
 ```
+
+For big production pushes, run the fuller Revelry party hub matrix against the same disposable gamma party:
+
+```bash
+PREPROD_REVELRY=1 REVELRY_GAMMA_PARTY_GAMES_URL_FILE=/path/to/gamma_party_games_url.txt npm run test:e2e:preprod-revelry
+```
+
+This matrix loads the embedded Revelry Games hub, verifies the searchable/sorted catalog UI, then starts every launchable game returned by the live Revelry catalog. It saves deterministic party-scoped content for Quiz, Most Likely To, Drawing, and Housie, quick-starts Musical Chairs, and verifies organizer/player/spectator launch tokens for each active session. If a newly exposed Revelry game lacks a harness fixture, the test fails so bridge coverage is updated with the rollout.
 
 The pre-production live regression is the heavier browser-driven safety net for big production pushes. It creates disposable rooms/content through the live API, joins real player tabs, starts the game, and verifies one meaningful action or handoff for the deterministic game runtimes. Run it with one worker against gamma unless intentionally validating prod:
 
