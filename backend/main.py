@@ -2649,19 +2649,46 @@ def _create_revelry_session_from_context(
     if active and active.get("status") not in ("lobby", "active", "paused"):
         active = None
     if active and not replacement_confirmed:
+        requested_content_id = str(settings.get("content_id") or "")
+        same_content = (
+            bool(requested_content_id)
+            and active.get("game_id") == requested_content_id
+            and active.get("game_type") == game_type
+        )
         raise HTTPException(
             status_code=409,
             detail={
                 "code": "active_session_exists",
                 "session_id": active["id"],
+                "active_session_id": active["id"],
                 "game_type": active.get("game_type"),
                 "game_title": active.get("game_title"),
+                "active_content_id": active.get("game_id") or "",
+                "requested_content_id": requested_content_id,
+                "active_status": active.get("status"),
+                "active_joinable": bool(active.get("joinable", False)),
+                "active_room_code": active.get("room_code") or "",
+                "same_content": same_content,
+                "action_required": "continue_existing" if same_content else "continue_or_replace",
+                "replace_session_id": active["id"],
                 "message": "An active LocalPlay session already exists for this party.",
             },
         )
     if replacement_confirmed and active:
         if not replace_session_id or replace_session_id != active["id"]:
-            raise HTTPException(status_code=409, detail="replace_session_id must match the active LocalPlay session")
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "replace_session_mismatch",
+                    "session_id": active["id"],
+                    "active_session_id": active["id"],
+                    "active_content_id": active.get("game_id") or "",
+                    "active_status": active.get("status"),
+                    "action_required": "retry_with_active_replace_session_id",
+                    "replace_session_id": active["id"],
+                    "message": "replace_session_id must match the active LocalPlay session",
+                },
+            )
 
     title = context.external_container_title or next((g["title"] for g in GAME_CATALOG if g["game_type"] == game_type), "LocalPlay Game")
     content_id, game_data = _resolve_revelry_runtime_content(context, game_type, str(settings.get("content_id") or ""), title)

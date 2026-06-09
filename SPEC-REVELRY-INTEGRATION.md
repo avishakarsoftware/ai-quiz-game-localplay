@@ -281,11 +281,26 @@ If an active session already exists and replacement is not confirmed, return a s
 
 ```json
 {
-  "error": "active_session_exists",
-  "active_session_id": "lp_existing_session_uuid",
-  "message": "A LocalPlay game is already active for this party."
+  "detail": {
+    "code": "active_session_exists",
+    "session_id": "lp_existing_session_uuid",
+    "active_session_id": "lp_existing_session_uuid",
+    "game_type": "quiz",
+    "game_title": "Christmas Quiz",
+    "active_content_id": "localplay_content_id",
+    "requested_content_id": "localplay_content_id",
+    "active_status": "lobby",
+    "active_joinable": true,
+    "active_room_code": "ABC123",
+    "same_content": true,
+    "action_required": "continue_existing",
+    "replace_session_id": "lp_existing_session_uuid",
+    "message": "An active LocalPlay session already exists for this party."
+  }
 }
 ```
+
+`action_required` is `continue_existing` when the requested `game_type` and `content_id` match the active session. Otherwise it is `continue_or_replace`. To replace, repeat the start/session request with `replacement_confirmed = true` and `replace_session_id` set to the provided value. If a replacement request names the wrong session, LocalPlay returns `409` with `detail.code = "replace_session_mismatch"` and the correct `replace_session_id`.
 
 ### Session Lifecycle
 

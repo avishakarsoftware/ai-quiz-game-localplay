@@ -348,9 +348,26 @@ def test_revelry_session_replacement_requires_confirmation(monkeypatch):
 
     conflict = client.post("/integrations/revelry/sessions", headers=_headers(), json=_create_payload(container_id))
     assert conflict.status_code == 409
-    assert conflict.json()["detail"]["code"] == "active_session_exists"
-    assert conflict.json()["detail"]["game_type"] == "quiz"
-    assert conflict.json()["detail"]["game_title"]
+    conflict_detail = conflict.json()["detail"]
+    assert conflict_detail["code"] == "active_session_exists"
+    assert conflict_detail["session_id"] == first_id
+    assert conflict_detail["active_session_id"] == first_id
+    assert conflict_detail["game_type"] == "quiz"
+    assert conflict_detail["game_title"]
+    assert conflict_detail["active_status"] == "lobby"
+    assert conflict_detail["active_joinable"] is True
+    assert conflict_detail["action_required"] == "continue_or_replace"
+    assert conflict_detail["replace_session_id"] == first_id
+
+    mismatch_payload = _create_payload(container_id)
+    mismatch_payload["replace_session_id"] = "lp_wrong"
+    mismatch_payload["replacement_confirmed"] = True
+    mismatch = client.post("/integrations/revelry/sessions", headers=_headers(), json=mismatch_payload)
+    assert mismatch.status_code == 409
+    mismatch_detail = mismatch.json()["detail"]
+    assert mismatch_detail["code"] == "replace_session_mismatch"
+    assert mismatch_detail["active_session_id"] == first_id
+    assert mismatch_detail["replace_session_id"] == first_id
 
     payload = _create_payload(container_id)
     payload["replace_session_id"] = first_id
@@ -680,6 +697,22 @@ def test_revelry_party_games_link_resolve_and_start_saved_pack(monkeypatch):
     assert launch_context["display"]["guest_join_url"] == "https://app.revelryapp.me/party/1/games/join"
     assert launch_context["display"]["guest_join_label"] == "Scan to join Ava's Birthday"
     assert "/revelry/games?party_games_token=" in launch_context["party_hub_url"]
+
+    duplicate_start = client.post(
+        "/integrations/revelry/party-games/start",
+        json={"party_games_token": token, "content_id": pack["id"], "game_type": "quiz", "time_limit": 20},
+    )
+    assert duplicate_start.status_code == 409
+    duplicate_detail = duplicate_start.json()["detail"]
+    assert duplicate_detail["code"] == "active_session_exists"
+    assert duplicate_detail["session_id"] == start_body["session"]["session_id"]
+    assert duplicate_detail["active_session_id"] == start_body["session"]["session_id"]
+    assert duplicate_detail["active_content_id"] == pack["id"]
+    assert duplicate_detail["requested_content_id"] == pack["id"]
+    assert duplicate_detail["active_status"] == "lobby"
+    assert duplicate_detail["same_content"] is True
+    assert duplicate_detail["action_required"] == "continue_existing"
+    assert duplicate_detail["replace_session_id"] == start_body["session"]["session_id"]
 
 
 def test_revelry_party_games_link_can_mint_start_intent_url(monkeypatch):
