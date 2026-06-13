@@ -1972,9 +1972,9 @@ def _require_revelry_auth(req: Request, handoff_token: str = "") -> dict:
     if hmac.compare_digest(token, secret):
         return {"type": "service", "iss": "local"}
     # Handoff tokens are minted by Revelry for a specific party launch. They must
-    # be addressed to LocalPlay (aud) and issued by Revelry (iss); accepting a
-    # token LocalPlay minted for another purpose (party_games/authoring/launch)
-    # as a partner credential would cross the trust boundary.
+    # be addressed to LocalPlay (aud), issued by Revelry (iss), and carry the
+    # launch credential type; accepting another signed token as a partner
+    # credential would cross the trust boundary.
     try:
         claims = jwt.decode(
             token,
@@ -1987,6 +1987,8 @@ def _require_revelry_auth(req: Request, handoff_token: str = "") -> dict:
         raise HTTPException(status_code=401, detail="Invalid or expired integration credential")
     if claims.get("iss") != "revelry":
         raise HTTPException(status_code=401, detail="Invalid integration issuer")
+    if claims.get("typ") != "localplay_launch":
+        raise HTTPException(status_code=401, detail="Invalid integration token type")
     return claims
 
 

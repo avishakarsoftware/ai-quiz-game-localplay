@@ -1,13 +1,12 @@
 """Hardening tests for the Revelry partner integration contract.
 
 Covers fixes made June 2026:
-- Session/party-link game_type validators accept every launchable runtime type,
-  not just quiz (the dedicated-authoring-route copy/paste leftover).
+- Session/party-link game_type validators accept every Revelry host-app start
+  type, not just quiz (the dedicated-authoring-route copy/paste leftover).
 - _require_revelry_auth only trusts handoff JWTs that are addressed to LocalPlay
-  (aud=localplay) and issued by Revelry (iss=revelry).
+  (aud=localplay), issued by Revelry (iss=revelry), and typed as a launch token.
 - _validate_revelry_return_url normalizes explicit default ports.
 """
-import time
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -67,17 +66,26 @@ def test_party_link_rejects_unknown_game_type():
 
 # --- _require_revelry_auth handoff validation -------------------------------
 
-def _handoff_token(*, iss="revelry", aud="localplay", exp_delta=600, include_aud=True):
+def _handoff_token(
+    *,
+    iss="revelry",
+    aud="localplay",
+    typ="localplay_launch",
+    exp_delta=600,
+    include_aud=True,
+    include_typ=True,
+):
     now = datetime.now(timezone.utc)
     payload = {
         "iss": iss,
-        "typ": "localplay_launch",
         "scope": "player",
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=exp_delta)).timestamp()),
     }
     if include_aud:
         payload["aud"] = aud
+    if include_typ:
+        payload["typ"] = typ
     return jwt.encode(payload, SECRET, algorithm="HS256")
 
 
@@ -116,6 +124,18 @@ def test_auth_rejects_localplay_issued_token_as_partner_credential():
     # partner handoff credential, even though it is signed with the same secret.
     with pytest.raises(HTTPException) as exc:
         _require_revelry_auth(_req(), handoff_token=_handoff_token(iss="localplay"))
+    assert exc.value.status_code == 401
+
+
+def test_auth_rejects_handoff_without_launch_type():
+    with pytest.raises(HTTPException) as exc:
+        _require_revelry_auth(_req(), handoff_token=_handoff_token(include_typ=False))
+    assert exc.value.status_code == 401
+
+
+def test_auth_rejects_handoff_with_wrong_launch_type():
+    with pytest.raises(HTTPException) as exc:
+        _require_revelry_auth(_req(), handoff_token=_handoff_token(typ="party_games"))
     assert exc.value.status_code == 401
 
 
