@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type WhoAmIState, type ChitPullState, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
@@ -24,6 +24,7 @@ import BluffTable from '../components/BluffTable';
 import TwoTruthsGame from '../components/TwoTruthsGame';
 import StoryChainGame from '../components/StoryChainGame';
 import CommonGroundGame from '../components/CommonGroundGame';
+import FindSomeoneGame from '../components/FindSomeoneGame';
 import WhoAmIGame from '../components/WhoAmIGame';
 import ChitPullGame from '../components/ChitPullGame';
 import '../cast.d.ts';
@@ -119,6 +120,7 @@ export default function SpectatorPage() {
     const [twoTruthsState, setTwoTruthsState] = useState<TwoTruthsState | null>(null);
     const [storyChainState, setStoryChainState] = useState<StoryChainState | null>(null);
     const [commonGroundState, setCommonGroundState] = useState<CommonGroundState | null>(null);
+    const [findSomeoneState, setFindSomeoneState] = useState<FindSomeoneState | null>(null);
     const [whoAmIState, setWhoAmIState] = useState<WhoAmIState | null>(null);
     const [chitPullState, setChitPullState] = useState<ChitPullState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -267,6 +269,11 @@ export default function SpectatorPage() {
                     setGameState('COMMON_GROUND');
                     return;
                 }
+                if (msg.game_type === 'find_someone' && msg.find_someone) {
+                    setFindSomeoneState(msg.find_someone);
+                    setGameState('FIND_SOMEONE');
+                    return;
+                }
                 if (msg.game_type === 'who_am_i' && msg.who_am_i) {
                     setWhoAmIState(msg.who_am_i);
                     setGameState('WHO_AM_I');
@@ -325,6 +332,9 @@ export default function SpectatorPage() {
                 } else if (msg.game_type === 'common_ground') {
                     setGameType('common_ground');
                     setGameState('COMMON_GROUND');
+                } else if (msg.game_type === 'find_someone') {
+                    setGameType('find_someone');
+                    setGameState('FIND_SOMEONE');
                 } else if (msg.game_type === 'who_am_i') {
                     setGameType('who_am_i');
                     setGameState('WHO_AM_I');
@@ -387,6 +397,12 @@ export default function SpectatorPage() {
                 setCommonGroundState(msg.common_ground || null);
                 setLeaderboard(msg.leaderboard || []);
                 setGameState('COMMON_GROUND');
+            }
+            else if (msg.type === 'FIND_SYNC') {
+                setGameType('find_someone');
+                setFindSomeoneState(msg.find_someone || null);
+                setLeaderboard(msg.leaderboard || []);
+                setGameState('FIND_SOMEONE');
             }
             else if (msg.type === 'WHOAMI_SYNC') {
                 setGameType('who_am_i');
@@ -468,6 +484,7 @@ export default function SpectatorPage() {
             else if (msg.type === 'PODIUM') {
                 setLeaderboard(msg.leaderboard);
                 setTeamLeaderboard(msg.team_leaderboard || []);
+                if (msg.find_someone) setFindSomeoneState(msg.find_someone);
                 setSuperlatives(msg.superlatives || []);
                 setPodiumReveal(0);
                 setGameState('PODIUM');
@@ -845,6 +862,10 @@ export default function SpectatorPage() {
 
                     {gameState === 'COMMON_GROUND' && (
                         <CommonGroundGame state={commonGroundState} controls="spectator" />
+                    )}
+
+                    {gameState === 'FIND_SOMEONE' && (
+                        <FindSomeoneGame state={findSomeoneState} controls="spectator" />
                     )}
 
                     {gameState === 'WHO_AM_I' && (

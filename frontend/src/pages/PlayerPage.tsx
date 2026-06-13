@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { WS_URL } from '../config';
-import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type WhoAmIState, type ChitPullState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -24,10 +24,11 @@ import BluffTable from '../components/BluffTable';
 import TwoTruthsGame from '../components/TwoTruthsGame';
 import StoryChainGame from '../components/StoryChainGame';
 import CommonGroundGame from '../components/CommonGroundGame';
+import FindSomeoneGame from '../components/FindSomeoneGame';
 import WhoAmIGame from '../components/WhoAmIGame';
 import ChitPullGame from '../components/ChitPullGame';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'WHO_AM_I' | 'CHIT_PULL' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
 interface PlayerQuestion {
     id: number;
@@ -147,6 +148,7 @@ export default function PlayerPage() {
     const [twoTruthsState, setTwoTruthsState] = useState<TwoTruthsState | null>(null);
     const [storyChainState, setStoryChainState] = useState<StoryChainState | null>(null);
     const [commonGroundState, setCommonGroundState] = useState<CommonGroundState | null>(null);
+    const [findSomeoneState, setFindSomeoneState] = useState<FindSomeoneState | null>(null);
     const [whoAmIState, setWhoAmIState] = useState<WhoAmIState | null>(null);
     const [chitPullState, setChitPullState] = useState<ChitPullState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -253,6 +255,10 @@ export default function PlayerPage() {
                     setGameType('common_ground');
                     setCommonGroundState(msg.common_ground as CommonGroundState);
                     setState('COMMON_GROUND');
+                } else if (msg.game_type === 'find_someone' && msg.find_someone) {
+                    setGameType('find_someone');
+                    setFindSomeoneState(msg.find_someone as FindSomeoneState);
+                    setState('FIND_SOMEONE');
                 } else if (msg.game_type === 'who_am_i' && msg.who_am_i) {
                     setGameType('who_am_i');
                     setWhoAmIState(msg.who_am_i as WhoAmIState);
@@ -297,6 +303,10 @@ export default function PlayerPage() {
                     setGameType('common_ground');
                     setCommonGroundState(msg.common_ground as CommonGroundState);
                     setState('COMMON_GROUND');
+                } else if (msg.game_type === 'find_someone' && msg.find_someone) {
+                    setGameType('find_someone');
+                    setFindSomeoneState(msg.find_someone as FindSomeoneState);
+                    setState('FIND_SOMEONE');
                 } else if (msg.game_type === 'who_am_i' && msg.who_am_i) {
                     setGameType('who_am_i');
                     setWhoAmIState(msg.who_am_i as WhoAmIState);
@@ -372,6 +382,9 @@ export default function PlayerPage() {
                 } else if (msg.game_type === 'common_ground') {
                     setGameType('common_ground');
                     setState('COMMON_GROUND');
+                } else if (msg.game_type === 'find_someone') {
+                    setGameType('find_someone');
+                    setState('FIND_SOMEONE');
                 } else if (msg.game_type === 'who_am_i') {
                     setGameType('who_am_i');
                     setState('WHO_AM_I');
@@ -474,6 +487,13 @@ export default function PlayerPage() {
                 setCommonGroundState(msg.common_ground as CommonGroundState);
                 setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
                 setState('COMMON_GROUND');
+            }
+            if (msg.type === 'FIND_SYNC') {
+                setError('');
+                setGameType('find_someone');
+                setFindSomeoneState(msg.find_someone as FindSomeoneState);
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+                setState('FIND_SOMEONE');
             }
             if (msg.type === 'WHOAMI_SYNC') {
                 setError('');
@@ -608,6 +628,7 @@ export default function PlayerPage() {
                 const lb = msg.leaderboard as LeaderboardEntry[];
                 const rank = lb.findIndex((p) => p.nickname === nickname) + 1;
                 track('player_game_finished', { room_code: roomCode, nickname, rank, total_players: lb.length });
+                if (msg.find_someone) setFindSomeoneState(msg.find_someone as FindSomeoneState);
                 setLeaderboard(msg.leaderboard); setTeamLeaderboard(msg.team_leaderboard || []); setSuperlatives(msg.superlatives || []); setState('PODIUM'); soundManager.play('fanfare');
             }
             if (msg.type === 'ORGANIZER_DISCONNECTED') {
@@ -819,6 +840,18 @@ export default function PlayerPage() {
     const voteCommonGround = (submissionId: string) => {
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'COMMON_VOTE', submission_id: submissionId }));
+    };
+    const markFindSomeoneCell = (promptId: string, matchedPlayerId: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'FIND_MARK_CELL', prompt_id: promptId, matched_player_id: matchedPlayerId }));
+    };
+    const confirmFindSomeoneMatch = (requestId: string, accepted: boolean) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'FIND_CONFIRM_MATCH', request_id: requestId, accepted }));
+    };
+    const claimFindSomeonePattern = (patternId: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'FIND_CLAIM_PATTERN', pattern_id: patternId }));
     };
     const submitWhoAmIGuess = (guess: string) => {
         soundManager.hapticsSelect();
@@ -1145,6 +1178,20 @@ export default function PlayerPage() {
                             controls="player"
                             onSubmitFact={submitCommonFact}
                             onVote={voteCommonGround}
+                        />
+                    </>
+                )}
+
+                {state === 'FIND_SOMEONE' && (
+                    <>
+                        {error && <div className="status-pill status-error animate-shake player-runtime-error">{error}</div>}
+                        <FindSomeoneGame
+                            state={findSomeoneState}
+                            viewerName={nickname}
+                            controls="player"
+                            onMarkCell={markFindSomeoneCell}
+                            onConfirmMatch={confirmFindSomeoneMatch}
+                            onClaimPattern={claimFindSomeonePattern}
                         />
                     </>
                 )}

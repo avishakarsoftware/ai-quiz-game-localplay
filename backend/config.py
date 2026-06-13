@@ -104,6 +104,7 @@ MIN_BLUFF_PLAYERS = 3  # Bluff minimum players
 MIN_TWO_TRUTHS_PLAYERS = 3  # Two Truths and a Lie minimum players
 MIN_STORY_CHAIN_PLAYERS = 3  # Story Chain minimum players
 MIN_COMMON_GROUND_PLAYERS = 4  # Common Ground minimum players
+MIN_FIND_SOMEONE_PLAYERS = 1  # Find Someone Who can auto-start when the first checked-in guest joins
 MIN_WHO_AM_I_PLAYERS = 2  # Who Am I minimum players
 MIN_CHIT_PULL_PLAYERS = 3  # Chit Pull minimum players
 MC_MIN_MUSIC_SECONDS = 3

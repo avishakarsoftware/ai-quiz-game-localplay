@@ -67,7 +67,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'who_am_i' | 'chit_pull' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -336,6 +336,66 @@ export interface CommonGroundState {
         created_at: number;
         updated_at: number;
     } | null;
+}
+
+export interface FindSomeoneCell {
+    prompt_id: string;
+    display: string;
+    row: number;
+    column: number;
+    marked: boolean;
+    matched_player_id?: string;
+    matched_player_name?: string;
+    confirmation_status?: 'unmarked' | 'pending' | 'confirmed' | 'denied' | string;
+    request_id?: string;
+    free?: boolean;
+}
+
+export interface FindSomeoneClaim {
+    id: string;
+    player_id: string;
+    pattern_id: string;
+    pattern_label: string;
+    accepted_at?: number;
+}
+
+export interface FindSomeoneConfirmation {
+    id: string;
+    requester_id: string;
+    matched_player_id: string;
+    prompt_id: string;
+    display: string;
+    created_at?: number;
+}
+
+export interface FindSomeoneState {
+    phase: 'FIND_ACTIVE' | 'PODIUM' | string;
+    config: {
+        game_title?: string;
+        layout?: 'bingo_5x5_free' | 'bingo_5x5' | 'bingo_4x4' | string;
+        confirmation_mode?: 'tap_confirm' | 'honor' | string;
+        claim_patterns?: Array<{ id: string; label: string; terminal?: boolean }>;
+        round_time_seconds?: number;
+    };
+    players: PlayerInfo[];
+    player_count: number;
+    deadline?: number | null;
+    accepted_claims: FindSomeoneClaim[];
+    claim_log: FindSomeoneClaim[];
+    leaderboard: Array<{
+        player_id: string;
+        rank: number;
+        score: number;
+        claims: number;
+        confirmed_cells: number;
+    }>;
+    my_card?: {
+        card_id: string;
+        player_id: string;
+        cells: FindSomeoneCell[][];
+    } | null;
+    my_pending_confirmations?: FindSomeoneConfirmation[];
+    my_claimed_patterns?: string[];
 }
 
 export interface WhoAmIClue {

@@ -38,6 +38,7 @@ from bluff_engine import validate_config as validate_bluff_config
 from two_truths_engine import validate_config as validate_two_truths_config
 from story_chain_engine import validate_config as validate_story_chain_config
 from common_ground_engine import validate_config as validate_common_ground_config
+from find_someone_engine import validate_config as validate_find_someone_config
 from who_am_i_engine import sanitize_generated_game as sanitize_who_am_i_game, validate_config as validate_who_am_i_config, validate_generated_game as validate_who_am_i_game
 from chit_pull_engine import sanitize_generated_game as sanitize_chit_pull_game, validate_config as validate_chit_pull_config, validate_generated_game as validate_chit_pull_game
 from socket_manager import socket_manager
@@ -479,6 +480,7 @@ class RoomCreateRequest(BaseModel):
     two_truths_config: dict = {}
     story_chain_config: dict = {}
     common_ground_config: dict = {}
+    find_someone_config: dict = {}
     who_am_i_config: dict = {}
     who_am_i_id: str = ""
     chit_pull_config: dict = {}
@@ -505,7 +507,7 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "who_am_i", "chit_pull"):
+        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull"):
             raise ValueError('game_type must be a supported LocalPlay game type')
         return v
 
@@ -821,6 +823,41 @@ GAME_CATALOG = [
         },
     },
     {
+        "id": "find_someone",
+        "game_type": "find_someone",
+        "runtime_type": "find_someone",
+        "title": "Find Someone Who",
+        "description": "A social bingo grid that gets guests talking throughout the party.",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": True,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["template", "settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "checkin_friendly": True,
+        "can_start_with_first_player": True,
+        "supports_late_join": True,
+        "content_schema": {
+            "kind": "social_bingo_setup",
+            "layouts": ["bingo_5x5_free", "bingo_5x5", "bingo_4x4"],
+            "confirmation_modes": ["tap_confirm", "honor"],
+            "patterns": ["first_line", "four_corners", "blackout"],
+            "supported_media": [],
+        },
+        "config_schema": {
+            "players": {"min": config.MIN_FIND_SOMEONE_PLAYERS, "max": config.MAX_PLAYERS_PER_ROOM},
+            "round_time_seconds": {"min": 120, "max": 7200, "default": 900},
+            "checkin_default_supported": True,
+            "auto_start_on_first_checkin_default": True,
+        },
+    },
+    {
         "id": "who_am_i",
         "game_type": "who_am_i",
         "runtime_type": "who_am_i",
@@ -896,6 +933,8 @@ def _default_time_limit_for_game(game_type: str) -> int:
     if game_type == "story_chain":
         return 45
     if game_type == "common_ground":
+        return 30
+    if game_type == "find_someone":
         return 30
     if game_type == "who_am_i":
         return 25
@@ -991,6 +1030,8 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
         return str(uuid.uuid4()), validate_story_chain_config({"game_title": title or "Story Chain"})
     if game_type == "common_ground":
         return str(uuid.uuid4()), validate_common_ground_config({"game_title": title or "Common Ground"})
+    if game_type == "find_someone":
+        return str(uuid.uuid4()), validate_find_someone_config({"game_title": title or "Find Someone Who"})
     if game_type == "who_am_i":
         return str(uuid.uuid4()), validate_who_am_i_config({"game_title": title or "Who Am I?"})
     if game_type == "chit_pull":
@@ -1037,6 +1078,8 @@ def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = 
     if game_type == "story_chain":
         return _default_game_content(game_type, title)
     if game_type == "common_ground":
+        return _default_game_content(game_type, title)
+    if game_type == "find_someone":
         return _default_game_content(game_type, title)
     if game_type == "who_am_i":
         if content_id:
@@ -3606,6 +3649,9 @@ async def create_room(request: RoomCreateRequest, req: Request):
     elif request.game_type == "common_ground":
         content_id = str(uuid.uuid4())
         game_data = validate_common_ground_config(request.common_ground_config)
+    elif request.game_type == "find_someone":
+        content_id = str(uuid.uuid4())
+        game_data = validate_find_someone_config(request.find_someone_config)
     elif request.game_type == "who_am_i":
         if content_id:
             content_id, game_data = _resolve_runtime_content("who_am_i", content_id)

@@ -114,6 +114,7 @@ const PARTY_HUB_CATEGORY_BY_ID: Record<string, PartyHubGameCategory> = {
     two_truths: 'creative',
     story_chain: 'creative',
     common_ground: 'creative',
+    find_someone: 'creative',
     housie: 'bingo_housie',
     bingo: 'bingo_housie',
     baby_bingo: 'bingo_housie',

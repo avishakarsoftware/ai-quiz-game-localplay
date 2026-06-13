@@ -70,6 +70,18 @@ from common_ground_engine import (
     submit_vote as common_submit_vote,
     validate_config as validate_common_ground_config,
 )
+from find_someone_engine import (
+    PHASE_PODIUM as FIND_PHASE_PODIUM,
+    add_player as find_add_player,
+    claim_pattern as find_claim_pattern,
+    confirm_match as find_confirm_match,
+    create_initial_state as find_create_initial_state,
+    final_standings as find_final_standings,
+    mark_cell as find_mark_cell,
+    private_sync as find_private_sync,
+    public_sync as find_public_sync,
+    validate_config as validate_find_someone_config,
+)
 from who_am_i_engine import (
     PHASE_PODIUM as WHOAMI_PHASE_PODIUM,
     create_initial_state as whoami_create_initial_state,
@@ -203,6 +215,9 @@ class Room:
         # Common Ground state
         self.common_config = validate_common_ground_config(game_data) if game_type == "common_ground" else {}
         self.common_state: dict = {}
+        # Find Someone Who state
+        self.find_someone_config = validate_find_someone_config(game_data) if game_type == "find_someone" else {}
+        self.find_someone_state: dict = {}
         # Who Am I? state
         self.who_am_i_config = validate_who_am_i_config(game_data) if game_type == "who_am_i" else {}
         self.who_am_i_state: dict = {}
@@ -301,6 +316,8 @@ class Room:
         self.story_state = {}
         self.common_config = validate_common_ground_config(new_game_data) if self.game_type == "common_ground" else {}
         self.common_state = {}
+        self.find_someone_config = validate_find_someone_config(new_game_data) if self.game_type == "find_someone" else {}
+        self.find_someone_state = {}
         self.who_am_i_config = validate_who_am_i_config(new_game_data) if self.game_type == "who_am_i" else {}
         self.who_am_i_state = {}
         self.chit_pull_config = validate_chit_pull_config(new_game_data) if self.game_type == "chit_pull" else {}
@@ -336,6 +353,8 @@ class Room:
             return len(self.story_state.get("turn_order", [])) or len(self.players)
         if self.game_type == "common_ground":
             return int(self.common_state.get("config", {}).get("rounds", 0)) or int(self.common_config.get("rounds", 5) or 5)
+        if self.game_type == "find_someone":
+            return 1
         if self.game_type == "who_am_i":
             return len(self.who_am_i_state.get("config", {}).get("rounds", [])) or len(self.who_am_i_config.get("rounds", [])) or 5
         if self.game_type == "chit_pull":
@@ -365,6 +384,8 @@ class Room:
             return story_public_sync(self.story_state, players=self.player_public_list()) if self.story_state else None
         if self.game_type == "common_ground":
             return common_public_sync(self.common_state, players=self.player_public_list()) if self.common_state else None
+        if self.game_type == "find_someone":
+            return find_public_sync(self.find_someone_state, players=self.player_public_list()) if self.find_someone_state else None
         if self.game_type == "who_am_i":
             return whoami_public_sync(self.who_am_i_state, players=self.player_public_list()) if self.who_am_i_state else None
         if self.game_type == "chit_pull":
@@ -699,6 +720,8 @@ class SocketManager:
                     sync["story_chain"] = story_public_sync(room.story_state, players=room.player_public_list())
                 if room.game_type == "common_ground" and room.common_state:
                     sync["common_ground"] = common_public_sync(room.common_state, players=room.player_public_list())
+                if room.game_type == "find_someone" and room.find_someone_state:
+                    sync["find_someone"] = find_public_sync(room.find_someone_state, players=room.player_public_list())
                 if room.game_type == "who_am_i" and room.who_am_i_state:
                     sync["who_am_i"] = whoami_public_sync(room.who_am_i_state, players=room.player_public_list())
                 if room.game_type == "chit_pull" and room.chit_pull_state:
@@ -879,6 +902,8 @@ class SocketManager:
             sync["story_chain"] = story_public_sync(room.story_state, players=room.player_public_list())
         if room.game_type == "common_ground" and room.common_state:
             sync["common_ground"] = common_public_sync(room.common_state, players=room.player_public_list())
+        if room.game_type == "find_someone" and room.find_someone_state:
+            sync["find_someone"] = find_public_sync(room.find_someone_state, players=room.player_public_list())
         if room.game_type == "who_am_i" and room.who_am_i_state:
             sync["who_am_i"] = whoami_public_sync(room.who_am_i_state, players=room.player_public_list())
         if room.game_type == "chit_pull" and room.chit_pull_state:
@@ -981,6 +1006,14 @@ class SocketManager:
                                 "message": f"Common Ground needs at least {config.MIN_COMMON_GROUND_PLAYERS} players to start",
                             })
                             return
+                    elif room.game_type == "find_someone":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_FIND_SOMEONE_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": "Find Someone Who starts when at least one guest has joined",
+                            })
+                            return
                     elif room.game_type == "who_am_i":
                         player_count = len([p for p in room.players.values() if p.get("nickname")])
                         if player_count < config.MIN_WHO_AM_I_PLAYERS:
@@ -1040,6 +1073,10 @@ class SocketManager:
                         self._start_common_ground_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": "common_ground"})
                         await self._broadcast_common_ground_sync(room)
+                    elif room.game_type == "find_someone":
+                        self._start_find_someone_game(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": "find_someone"})
+                        await self._broadcast_find_someone_sync(room)
                     elif room.game_type == "who_am_i":
                         self._start_who_am_i_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": "who_am_i"})
@@ -1053,7 +1090,7 @@ class SocketManager:
                         await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
-                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "who_am_i", "chit_pull"):
+                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull"):
                     return
                 if room.game_type == "drawing" and room.drawing_auto_task:
                     room.drawing_auto_task.cancel()
@@ -1187,6 +1224,9 @@ class SocketManager:
                 if room.game_type == "common_ground":
                     await self._common_complete_game(room)
                     return
+                if room.game_type == "find_someone":
+                    await self._find_someone_complete_game(room)
+                    return
                 if room.game_type == "who_am_i":
                     await self._who_am_i_complete_game(room)
                     return
@@ -1230,7 +1270,7 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "who_am_i", "chit_pull") else room.game_type
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull") else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
 
                     # Validate time_limit
@@ -1258,6 +1298,8 @@ class SocketManager:
                         new_game_data = validate_story_chain_config({})
                     elif new_game_type == "common_ground":
                         new_game_data = validate_common_ground_config({})
+                    elif new_game_type == "find_someone":
+                        new_game_data = validate_find_someone_config({})
                     elif new_game_type == "who_am_i":
                         from main import who_am_i_games
                         new_game_data = who_am_i_games.get(new_content_id) or validate_who_am_i_config({})
@@ -1427,6 +1469,8 @@ class SocketManager:
                             state_info["story_chain"] = story_private_sync(room.story_state, nickname, players=room.player_public_list())
                         elif room.game_type == "common_ground" and room.common_state:
                             state_info["common_ground"] = common_private_sync(room.common_state, nickname, players=room.player_public_list())
+                        elif room.game_type == "find_someone" and room.find_someone_state:
+                            state_info["find_someone"] = find_private_sync(room.find_someone_state, nickname, players=room.player_public_list())
                         elif room.game_type == "who_am_i" and room.who_am_i_state:
                             state_info["who_am_i"] = whoami_private_sync(room.who_am_i_state, nickname, players=room.player_public_list())
                         elif room.game_type == "chit_pull" and room.chit_pull_state:
@@ -1523,6 +1567,8 @@ class SocketManager:
                             state_info["story_chain"] = story_private_sync(room.story_state, player_data["nickname"], players=room.player_public_list())
                         elif room.game_type == "common_ground" and room.common_state:
                             state_info["common_ground"] = common_private_sync(room.common_state, player_data["nickname"], players=room.player_public_list())
+                        elif room.game_type == "find_someone" and room.find_someone_state:
+                            state_info["find_someone"] = find_private_sync(room.find_someone_state, player_data["nickname"], players=room.player_public_list())
                         elif room.game_type == "who_am_i" and room.who_am_i_state:
                             state_info["who_am_i"] = whoami_private_sync(room.who_am_i_state, player_data["nickname"], players=room.player_public_list())
                         elif room.game_type == "chit_pull" and room.chit_pull_state:
@@ -1564,6 +1610,12 @@ class SocketManager:
                     and room.state != "LOBBY"
                     and room.state != COMMON_PHASE_PODIUM
                 )
+                active_find_someone_join = (
+                    room.game_type == "find_someone"
+                    and bool(room.find_someone_state)
+                    and room.state != "LOBBY"
+                    and room.state != FIND_PHASE_PODIUM
+                )
 
                 if len(room.players) >= config.MAX_PLAYERS_PER_ROOM:
                     conn = room.connections.get(client_id)
@@ -1596,6 +1648,32 @@ class SocketManager:
                         "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()]
                     })
                     await self._broadcast_common_ground_sync(room)
+                    return
+
+                if active_find_someone_join:
+                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
+                    room.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
+                    player_session_token = secrets.token_urlsafe(16)
+                    room.player_tokens[nickname] = player_session_token
+                    room.find_someone_state = find_add_player(room.find_someone_state, nickname, seed=room.find_someone_state.get("started_at"))
+                    self._sync_find_someone_scores_to_players(room)
+                    ws = room.connections.get(client_id)
+                    if ws:
+                        await ws.send_json({
+                            "type": "JOINED_ROOM",
+                            "room_code": room.room_code,
+                            "session_token": player_session_token,
+                            "state": room.state,
+                            "game_type": "find_someone",
+                            "find_someone": find_private_sync(room.find_someone_state, nickname, players=room.player_public_list()),
+                        })
+                    await room.broadcast({
+                        "type": "PLAYER_JOINED",
+                        "nickname": nickname,
+                        "player_count": len(room.players),
+                        "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()]
+                    })
+                    await self._broadcast_find_someone_sync(room)
                     return
 
                 # Block new players if room is locked
@@ -1720,11 +1798,20 @@ class SocketManager:
             elif msg_type == "COMMON_VOTE" and room.game_type == "common_ground":
                 await self._common_vote(room, client_id, message)
 
+            elif msg_type == "FIND_MARK_CELL" and room.game_type == "find_someone":
+                await self._find_someone_mark_cell(room, client_id, message)
+
+            elif msg_type == "FIND_CONFIRM_MATCH" and room.game_type == "find_someone":
+                await self._find_someone_confirm_match(room, client_id, message)
+
+            elif msg_type == "FIND_CLAIM_PATTERN" and room.game_type == "find_someone":
+                await self._find_someone_claim_pattern(room, client_id, message)
+
             elif msg_type == "WHOAMI_SUBMIT_GUESS" and room.game_type == "who_am_i":
                 await self._who_am_i_submit_guess(room, client_id, message)
 
             elif msg_type == "ANSWER":
-                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "who_am_i", "chit_pull"):
+                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull"):
                     return  # Other games use their own input messages
                 if client_id not in room.players:
                     return
@@ -2532,6 +2619,154 @@ class SocketManager:
             self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Common Ground history for room %s", room.room_code)
+
+    def _start_find_someone_game(self, room: Room):
+        nicknames = [player["nickname"] for player in room.players.values()]
+        room.find_someone_config = validate_find_someone_config(room.quiz)
+        room.find_someone_state = find_create_initial_state(
+            nicknames,
+            room.find_someone_config,
+            now=time.time(),
+            seed=secrets.randbits(32),
+        )
+        room.state = room.find_someone_state["phase"]
+        room.answer_log = []
+        self._sync_find_someone_scores_to_players(room)
+
+    def _sync_find_someone_phase_to_room(self, room: Room):
+        if room.find_someone_state:
+            room.state = room.find_someone_state.get("phase") or room.state
+
+    def _sync_find_someone_scores_to_players(self, room: Room):
+        if not room.find_someone_state:
+            return
+        standings = {row["player_id"]: row for row in find_final_standings(room.find_someone_state)}
+        for player in room.players.values():
+            row = standings.get(player.get("nickname"), {})
+            player["score"] = int(row.get("score", player.get("score", 0)))
+
+    async def _broadcast_find_someone_sync(self, room: Room):
+        if not room.find_someone_state:
+            return
+        players = room.player_public_list()
+        self._sync_find_someone_phase_to_room(room)
+        public = {
+            "type": "FIND_SYNC",
+            "game_type": "find_someone",
+            "find_someone": find_public_sync(room.find_someone_state, players=players),
+            "player_count": len(room.players),
+            "players": players,
+            "leaderboard": self.get_leaderboard(room),
+        }
+        for client_id, ws in list(room.connections.items()):
+            if client_id in room.players:
+                nickname = room.players[client_id]["nickname"]
+                payload = dict(public)
+                payload["find_someone"] = find_private_sync(room.find_someone_state, nickname, players=players)
+                try:
+                    await ws.send_json(payload)
+                except Exception:
+                    room._remove_connection(client_id)
+        await room.emit_pending_player_event()
+        await room.send_to_organizer(public)
+        for ws in list(room.spectators.values()):
+            try:
+                await ws.send_json(public)
+            except Exception:
+                pass
+
+    async def _find_someone_mark_cell(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players or not room.find_someone_state:
+            return
+        nickname = room.players[client_id]["nickname"]
+        try:
+            async with room.lock:
+                room.find_someone_state, _ = find_mark_cell(
+                    room.find_someone_state,
+                    nickname,
+                    str(message.get("prompt_id") or ""),
+                    str(message.get("matched_player_id") or ""),
+                    now=time.time(),
+                )
+                self._sync_find_someone_scores_to_players(room)
+                self._sync_find_someone_phase_to_room(room)
+                room.answer_log.append({"kind": "find_mark", "nickname": nickname})
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._broadcast_find_someone_sync(room)
+
+    async def _find_someone_confirm_match(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players or not room.find_someone_state:
+            return
+        nickname = room.players[client_id]["nickname"]
+        try:
+            async with room.lock:
+                room.find_someone_state = find_confirm_match(
+                    room.find_someone_state,
+                    nickname,
+                    str(message.get("request_id") or ""),
+                    bool(message.get("accepted", False)),
+                    now=time.time(),
+                )
+                self._sync_find_someone_scores_to_players(room)
+                self._sync_find_someone_phase_to_room(room)
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._broadcast_find_someone_sync(room)
+
+    async def _find_someone_claim_pattern(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players or not room.find_someone_state:
+            return
+        nickname = room.players[client_id]["nickname"]
+        became_podium = False
+        try:
+            async with room.lock:
+                room.find_someone_state, claim = find_claim_pattern(
+                    room.find_someone_state,
+                    nickname,
+                    str(message.get("pattern_id") or ""),
+                    now=time.time(),
+                )
+                became_podium = room.find_someone_state.get("phase") == FIND_PHASE_PODIUM
+                self._sync_find_someone_scores_to_players(room)
+                self._sync_find_someone_phase_to_room(room)
+                room.answer_log.append({"kind": "find_claim", "nickname": nickname, "pattern": claim.get("pattern_label")})
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        if became_podium:
+            await self._find_someone_complete_game(room)
+            return
+        await self._broadcast_find_someone_sync(room)
+
+    async def _find_someone_complete_game(self, room: Room):
+        if room.state == "PODIUM":
+            return
+        if room.find_someone_state:
+            room.find_someone_state["phase"] = FIND_PHASE_PODIUM
+            room.find_someone_state["completed_at"] = room.find_someone_state.get("completed_at") or time.time()
+        self._sync_find_someone_scores_to_players(room)
+        room.state = "PODIUM"
+        leaderboard = self.get_leaderboard(room)
+        await room.broadcast({
+            "type": "PODIUM",
+            "game_type": "find_someone",
+            "leaderboard": leaderboard,
+            "team_leaderboard": [],
+            "find_someone": find_public_sync(room.find_someone_state, players=room.player_public_list()) if room.find_someone_state else {},
+        })
+        try:
+            from main import game_history
+            summary = self.get_game_summary(room)
+            summary["find_someone_standings"] = find_final_standings(room.find_someone_state) if room.find_someone_state else []
+            game_history.append(summary)
+            if len(game_history) > config.MAX_GAME_HISTORY:
+                del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+            self._mark_game_session_complete(room, summary)
+        except Exception:
+            logger.warning("Could not save Find Someone Who history for room %s", room.room_code)
 
     def _start_who_am_i_game(self, room: Room):
         room.who_am_i_config = validate_who_am_i_config(room.quiz)
@@ -3513,6 +3748,12 @@ class SocketManager:
             summary["winners"] = chit_pull_final_standings(room.chit_pull_state)[:3]
             summary["completed_count"] = len([item for item in room.chit_pull_state.get("turn_results", []) if item.get("outcome") == "completed"])
             summary["skipped_count"] = len([item for item in room.chit_pull_state.get("turn_results", []) if item.get("outcome") == "skipped"])
+        if room.game_type == "find_someone" and room.find_someone_state:
+            standings = find_final_standings(room.find_someone_state)
+            summary["total_questions"] = sum(row.get("confirmed_cells", 0) for row in standings)
+            summary["total_rounds"] = 1
+            summary["winners"] = standings[:3]
+            summary["claims"] = room.find_someone_state.get("accepted_claims", [])
         return summary
 
     def _callback_event_type(self, event_type: str) -> str:

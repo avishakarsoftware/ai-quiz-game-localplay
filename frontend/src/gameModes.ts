@@ -2,7 +2,7 @@ import { type GameType, type QuizVariantGameType } from './types';
 
 export interface GameModeConfig {
     id: GameType;
-    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'who_am_i' | 'chit_pull';
+    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull';
     icon: string;
     title: string;
     description: string;
@@ -153,6 +153,13 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         description: 'Teams discover shared facts, reveal them, and vote for favorites',
     },
     {
+        id: 'find_someone',
+        runtimeType: 'find_someone',
+        icon: '🔎',
+        title: 'Find Someone Who',
+        description: 'Social bingo that gets guests talking throughout the party',
+    },
+    {
         id: 'who_am_i',
         runtimeType: 'who_am_i',
         icon: '❓',
@@ -190,6 +197,6 @@ export function isQuizRuntimeGame(gameType: GameType): boolean {
     return getGameModeConfig(gameType).runtimeType === 'quiz';
 }
 
-export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'who_am_i' | 'chit_pull' {
+export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' {
     return getGameModeConfig(gameType).runtimeType;
 }

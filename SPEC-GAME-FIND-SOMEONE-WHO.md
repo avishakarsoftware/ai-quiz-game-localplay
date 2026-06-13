@@ -7,18 +7,19 @@ Add **Find Someone Who** as a social icebreaker game where each player gets a Bi
 This is adjacent to Bingo, but it is not caller-led. The "called item" is replaced by real social discovery: players talk to each other, find matches, and optionally collect confirmation from the matched person.
 
 ```text
-GameType: find_someone_who
+GameType: find_someone
 Runtime family: social_bingo
-Backend engine: find_someone_engine.py, reusing bingo_content_engine.py/card helpers where practical
+Backend engine: find_someone_engine.py
 Frontend display name: Find Someone Who
 ```
 
 ## Implementation-Ready MVP Scope
 
-Status: implementation-ready after generic Bingo card rendering and player-mark state are stable.
+Status: implemented for standalone LocalPlay MVP on June 12, 2026. Revelry/check-in exposure is a host-app contract item; LocalPlay advertises the needed catalog capabilities but Revelry owns the event check-in default setting and first-guest trigger.
 
 - Standalone LocalPlay first.
-- Host creates, edits, or AI-generates a list of people-finding prompts.
+- Host can quick-start a safe default prompt pack.
+- Custom/AI-generated prompt authoring remains a follow-up.
 - Server generates a Bingo-style card for each player.
 - Players move around physically and talk to people.
 - To mark a cell, a player selects the prompt and chooses the person they found.
@@ -28,6 +29,7 @@ Status: implementation-ready after generic Bingo card rendering and player-mark 
 - Players claim patterns such as line, corners, blackout.
 - Server validates claims against the player's marked cells and confirmation rules.
 - Spectator/TV shows safe aggregate progress, winners, and fun prompt highlights, not private personal details unless revealed by game rules.
+- Game can start with one checked-in guest and accepts late joins by issuing a fresh card.
 
 ## Goals
 
@@ -83,13 +85,13 @@ Generate only light, voluntary, conversation-friendly prompts. Avoid sensitive p
 
 ```json
 {
-  "game_type": "find_someone_who",
+  "game_type": "find_someone",
   "game_title": "Find Someone Who",
   "layout": "bingo_5x5_free",
   "prompt_count": 40,
   "confirmation_mode": "tap_confirm",
   "claim_patterns": ["first_line", "four_corners", "blackout"],
-  "round_time_seconds": 600,
+  "round_time_seconds": 1800,
   "allow_same_person_multiple_cells": false,
   "allow_self_match": false
 }
@@ -101,13 +103,13 @@ Defaults:
 - `prompt_count`: 40.
 - `confirmation_mode`: `tap_confirm`.
 - `claim_patterns`: first line, four corners, blackout.
-- `round_time_seconds`: 600.
+- `round_time_seconds`: 900 engine default; standalone quick-start uses 1800 for party-friendly play.
 - `allow_same_person_multiple_cells`: false.
 - `allow_self_match`: false.
 
 Validation:
 
-- Minimum players: 3.
+- Minimum players: 1 so the game can auto-start when the first checked-in guest joins.
 - Recommended players: 6-60.
 - `prompt_count` must be enough for the selected layout:
   - 5x5 free center: at least 24.
@@ -169,16 +171,13 @@ Room state:
   "accepted_claims": [],
   "claim_log": [],
   "started_at": 1234567890,
-  "ends_at": 1234568490
+  "deadline": 1234568490
 }
 ```
 
 Phases:
 
-- `FIND_LOBBY`
 - `FIND_ACTIVE`
-- `FIND_REVIEW_CLAIM`
-- `FIND_RESULTS`
 - `PODIUM`
 
 ## Marking a Cell
@@ -205,12 +204,42 @@ Client to server:
 Server to clients:
 
 ```json
-{ "type": "FIND_SYNC", "state": {} }
-{ "type": "FIND_CONFIRMATION_REQUEST", "request": {} }
-{ "type": "FIND_CELL_CONFIRMED", "player_id": "player_1", "prompt_id": "p12" }
-{ "type": "FIND_CLAIM_ACCEPTED", "winner": {} }
-{ "type": "FIND_CLAIM_REJECTED", "reason": "not_complete" }
+{ "type": "FIND_SYNC", "game_type": "find_someone", "find_someone": {} }
+{ "type": "ERROR", "message": "That pattern is not complete yet" }
 ```
+
+`FIND_SYNC` is the canonical sync event. Players receive private fields (`my_card`, `my_pending_confirmations`, `my_claimed_patterns`); host and spectators receive only aggregate/public fields.
+
+## Check-In Default / Revelry Contract
+
+Find Someone Who is intended to be playable as an ambient party check-in game. LocalPlay supports that mode by declaring these catalog capabilities:
+
+```json
+{
+  "checkin_friendly": true,
+  "can_start_with_first_player": true,
+  "supports_late_join": true,
+  "config_schema": {
+    "checkin_default_supported": true,
+    "auto_start_on_first_checkin_default": true
+  }
+}
+```
+
+Ownership boundary:
+
+- Revelry owns the party/event setting: "use Find Someone Who as the default check-in game".
+- Revelry owns the toggle: "start automatically when the first guest checks in"; default should be on.
+- LocalPlay owns room/session creation, first-player start safety, late-join card assignment, duplicate nickname/session-token reconciliation, and public/private game sync.
+- Until Revelry implements the check-in setting and has bridge tests, LocalPlay keeps `host_app_supported = false` for this game and exposes it as standalone only.
+
+Expected check-in launch flow:
+
+1. Host enables Find Someone Who as the event's check-in default in Revelry.
+2. If `auto_start_on_first_checkin = true`, Revelry creates or opens a LocalPlay session when the first guest checks in.
+3. Revelry shows the game QR/link in the event check-in or party hub surface.
+4. Additional guests who scan later join the active LocalPlay room and receive fresh cards.
+5. If a guest scans again on the same browser/device, normal LocalPlay nickname/session-token reconnect rules should recover the same player instead of creating a duplicate.
 
 ## Claim Validation
 
@@ -309,20 +338,22 @@ backend/find_someone_engine.py
 backend/tests/test_find_someone_engine.py
 ```
 
-Pure helpers:
+Implemented pure helpers:
 
 ```py
-def validate_find_someone_setup(raw: dict) -> dict: ...
+def validate_config(raw: dict | None) -> dict: ...
 
-def generate_find_someone_card(setup: dict, player_id: str, seed: str | None = None) -> dict: ...
+def generate_card(player_id: str, config: dict, seed: str | int | None = None) -> list[list[dict]]: ...
 
-def create_confirmation_request(card: dict, prompt_id: str, player_id: str, matched_player_id: str) -> dict: ...
+def create_initial_state(player_ids: list[str], config: dict, now: float | None = None, seed: str | int | None = None) -> dict: ...
 
-def apply_confirmation(card: dict, request: dict, accepted: bool) -> dict: ...
+def add_player(state: dict, player_id: str, seed: str | int | None = None) -> dict: ...
 
-def validate_claim(card: dict, pattern_id: str, setup: dict) -> tuple[bool, str, list[dict]]: ...
+def mark_cell(state: dict, player_id: str, prompt_id: str, matched_player_id: str, now: float | None = None) -> tuple[dict, dict | None]: ...
 
-def summarize_progress(cards_by_player: dict) -> dict: ...
+def confirm_match(state: dict, player_id: str, request_id: str, accepted: bool, now: float | None = None) -> dict: ...
+
+def claim_pattern(state: dict, player_id: str, pattern_id: str, now: float | None = None) -> tuple[dict, dict]: ...
 ```
 
 Reuse where practical:
@@ -334,14 +365,14 @@ Reuse where practical:
 
 ## AI Generation
 
-Endpoint can mirror Bingo text generation:
+Follow-up endpoint can mirror Bingo text generation:
 
 ```json
 {
   "prompt": "company offsite for engineers",
   "difficulty": "work_safe",
   "num_items": 40,
-  "mode": "find_someone_who"
+  "mode": "find_someone"
 }
 ```
 
@@ -373,7 +404,7 @@ Result summary should include:
 
 ```json
 {
-  "game_type": "find_someone_who",
+  "game_type": "find_someone",
   "winner_count": 3,
   "confirmed_match_count": 84,
   "top_players": [

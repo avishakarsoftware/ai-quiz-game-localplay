@@ -644,6 +644,7 @@ Rules:
 - If a quiz variant such as Rebus, Timeline, or Odd One Out should appear in Revelry, it must first be represented in the bridge contract with catalog metadata, accepted `game_type` or mode validation, content/session creation semantics, launch-token handling, status, and result summary support.
 - Games not represented in the bridge contract must be hidden in Revelry-launched host-app mode even if they are available in standalone LocalPlay.
 - Backlog games such as Bingo and Baby Bingo may appear as `planned` if Revelry wants to show coming-soon cards. Housie and Musical Chairs are implemented on the LocalPlay side and may be `gamma`/launchable in Revelry gamma when policy allows them; production remains disabled until explicitly promoted.
+- `find_someone` is implemented in standalone LocalPlay as a check-in-friendly social bingo runtime and advertises `checkin_friendly`, `can_start_with_first_player`, and `supports_late_join` in the LocalPlay catalog. It must remain hidden from `GET /catalog?host_app=revelry` until Revelry implements the host-owned setting to make it the party's default check-in game and the optional auto-start-on-first-check-in trigger. That Revelry setting should default auto-start to on; LocalPlay owns the resulting session runtime, late-join card assignment, and duplicate nickname/session-token reconciliation.
 
 Implementation-ready remote catalog policy:
 
