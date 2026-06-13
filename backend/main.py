@@ -1745,8 +1745,8 @@ class RevelrySessionCreateRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value != "quiz":
-            raise ValueError('Only "quiz" uses the dedicated authoring route')
+        if value not in REVELRY_PARTY_GAME_START_TYPES:
+            raise ValueError(REVELRY_PARTY_GAME_START_TYPES_ERROR)
         return value
 
 
@@ -1790,8 +1790,8 @@ class RevelryPartyGamesLinkRequest(BaseModel):
     @field_validator("game_type")
     @classmethod
     def validate_game_type(cls, value: str) -> str:
-        if value != "quiz":
-            raise ValueError('Only "quiz" uses the dedicated authoring route')
+        if value not in REVELRY_PARTY_GAME_START_TYPES:
+            raise ValueError(REVELRY_PARTY_GAME_START_TYPES_ERROR)
         return value
 
     @field_validator("ttl_seconds")
@@ -1971,13 +1971,23 @@ def _require_revelry_auth(req: Request, handoff_token: str = "") -> dict:
         raise HTTPException(status_code=401, detail="Missing integration credential")
     if hmac.compare_digest(token, secret):
         return {"type": "service", "iss": "local"}
+    # Handoff tokens are minted by Revelry for a specific party launch. They must
+    # be addressed to LocalPlay (aud) and issued by Revelry (iss); accepting a
+    # token LocalPlay minted for another purpose (party_games/authoring/launch)
+    # as a partner credential would cross the trust boundary.
     try:
-        claims = jwt.decode(token, secret, algorithms=["HS256"], options={"require": ["exp"]})
-        if claims.get("iss") not in ("revelry", "localplay"):
-            raise HTTPException(status_code=401, detail="Invalid integration issuer")
-        return claims
+        claims = jwt.decode(
+            token,
+            secret,
+            algorithms=["HS256"],
+            audience="localplay",
+            options={"require": ["exp", "aud"]},
+        )
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid or expired integration credential")
+    if claims.get("iss") != "revelry":
+        raise HTTPException(status_code=401, detail="Invalid integration issuer")
+    return claims
 
 
 def _session_launch_routes(base_url: str, session_id: str) -> dict:
@@ -2226,6 +2236,14 @@ def _validate_revelry_return_url(return_url: str) -> str:
         return return_url
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise HTTPException(status_code=422, detail="Invalid return_url")
+
+    # Normalize origins so an explicit default port (https://host:443) compares
+    # equal to the same host with the port omitted. Without this, a Revelry URL
+    # that happens to carry :443/:80 would be rejected even though it is allowed.
+    def _origin_key(scheme: Optional[str], hostname: Optional[str], port: Optional[int]) -> tuple:
+        effective_port = port if port is not None else {"http": 80, "https": 443}.get(scheme or "")
+        return (scheme, (hostname or "").lower(), effective_port)
+
     allowed = set()
     for origin in config.ALLOWED_ORIGINS.split(","):
         origin = origin.strip()
@@ -2233,15 +2251,15 @@ def _validate_revelry_return_url(return_url: str) -> str:
             continue
         allowed_url = urlparse(origin)
         if allowed_url.scheme in ("http", "https") and allowed_url.netloc:
-            allowed.add((allowed_url.scheme, allowed_url.hostname, allowed_url.port))
+            allowed.add(_origin_key(allowed_url.scheme, allowed_url.hostname, allowed_url.port))
     allowed.update({
-        ("https", "app.revelryapp.me", None),
-        ("https", "api.revelryapp.me", None),
-        ("https", "api-gamma.revelryapp.me", None),
-        ("http", "localhost", 5173),
-        ("http", "127.0.0.1", 5173),
+        _origin_key("https", "app.revelryapp.me", None),
+        _origin_key("https", "api.revelryapp.me", None),
+        _origin_key("https", "api-gamma.revelryapp.me", None),
+        _origin_key("http", "localhost", 5173),
+        _origin_key("http", "127.0.0.1", 5173),
     })
-    if (parsed.scheme, parsed.hostname, parsed.port) not in allowed:
+    if _origin_key(parsed.scheme, parsed.hostname, parsed.port) not in allowed:
         raise HTTPException(status_code=422, detail="return_url is not allowed")
     return return_url
 
