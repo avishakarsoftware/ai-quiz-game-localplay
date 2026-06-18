@@ -107,6 +107,7 @@ MIN_COMMON_GROUND_PLAYERS = 4  # Common Ground minimum players
 MIN_FIND_SOMEONE_PLAYERS = 1  # Find Someone Who can auto-start when the first checked-in guest joins
 MIN_WHO_AM_I_PLAYERS = 2  # Who Am I minimum players
 MIN_CHIT_PULL_PLAYERS = 3  # Chit Pull minimum players
+MIN_MAFIA_PLAYERS = 6  # Mafia minimum players
 MC_MIN_MUSIC_SECONDS = 3
 MC_MAX_MUSIC_SECONDS = 60
 MC_MIN_GRAB_WINDOW = 2

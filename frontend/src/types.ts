@@ -67,7 +67,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -503,6 +503,77 @@ export interface ChitPullState {
         points_awarded: number;
     }>;
     deadline?: number | null;
+}
+
+export type MafiaRole = 'villager' | 'detective' | 'doctor' | 'mafia';
+export type MafiaWinner = 'town' | 'mafia' | null;
+
+export interface MafiaPlayer {
+    nickname: string;
+    avatar?: string;
+    alive: boolean;
+    role?: MafiaRole | null;
+    eliminated_round?: number | null;
+}
+
+export interface MafiaAction {
+    kind: 'mafia_kill' | 'investigate' | 'protect' | 'none' | string;
+    eligible_targets: string[];
+    submitted_target?: string;
+    mafia_teammates?: string[];
+    night_read?: {
+        prompt_id: string;
+        label: string;
+        question: string;
+        eligible_targets: string[];
+        submitted_target?: string;
+    };
+}
+
+export interface MafiaState {
+    phase: 'MAFIA_ROLE_REVEAL' | 'MAFIA_NIGHT' | 'MAFIA_DAY_DISCUSSION' | 'MAFIA_DAY_VOTE' | 'MAFIA_VOTE_RESULT' | 'PODIUM' | string;
+    config: {
+        game_title?: string;
+        theme?: 'classic' | 'werewolf' | 'none' | string;
+        night_timer_seconds?: number;
+        discussion_timer_seconds?: number;
+        vote_timer_seconds?: number;
+        role_reveal_seconds?: number;
+    };
+    round: number;
+    players: MafiaPlayer[];
+    alive_count: number;
+    eliminated_count: number;
+    deadline?: number | null;
+    vote_progress?: { submitted: number; eligible: number };
+    last_night?: {
+        round: number;
+        killed?: string | null;
+        killed_role?: MafiaRole | null;
+        saved?: boolean;
+        narration?: string;
+        night_read_highlights?: Array<{
+            prompt_id: string;
+            label: string;
+            player_id: string;
+            count: number;
+            total: number;
+            tied?: boolean;
+        }>;
+    } | null;
+    last_vote?: {
+        round: number;
+        tally: Record<string, number>;
+        eliminated?: string | null;
+        eliminated_role?: MafiaRole | null;
+        tied?: boolean;
+    } | null;
+    winner?: MafiaWinner;
+    my_role?: MafiaRole;
+    my_action?: MafiaAction;
+    my_vote?: string;
+    my_investigations?: Array<{ round: number; target: string; result: 'town' | 'mafia' | string }>;
+    ghost?: boolean;
 }
 
 export interface HousieCell {

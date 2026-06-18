@@ -41,6 +41,7 @@ from common_ground_engine import validate_config as validate_common_ground_confi
 from find_someone_engine import validate_config as validate_find_someone_config
 from who_am_i_engine import sanitize_generated_game as sanitize_who_am_i_game, validate_config as validate_who_am_i_config, validate_generated_game as validate_who_am_i_game
 from chit_pull_engine import sanitize_generated_game as sanitize_chit_pull_game, validate_config as validate_chit_pull_config, validate_generated_game as validate_chit_pull_game
+from mafia_engine import validate_config as validate_mafia_config
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -485,6 +486,7 @@ class RoomCreateRequest(BaseModel):
     who_am_i_id: str = ""
     chit_pull_config: dict = {}
     chit_pull_id: str = ""
+    mafia_config: dict = {}
     game_type: str = "quiz"
     time_limit: Optional[int] = None
 
@@ -507,7 +509,7 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull"):
+        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia"):
             raise ValueError('game_type must be a supported LocalPlay game type')
         return v
 
@@ -918,6 +920,39 @@ GAME_CATALOG = [
             "turn_time_seconds": {"min": 10, "max": 120, "default": 30},
         },
     },
+    {
+        "id": "mafia",
+        "game_type": "mafia",
+        "runtime_type": "mafia",
+        "engine_family": "mafia",
+        "title": "Mafia",
+        "description": "Secret roles, night kills, and daytime accusations. Find the Mafia before they outnumber you.",
+        "status": "gamma",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": False,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "mafia_setup_v1",
+            "supported_media": [],
+        },
+        "result_summary_schema": "mafia_result_v1",
+        "config_schema": {
+            "players": {"min": config.MIN_MAFIA_PLAYERS, "max": 15},
+            "night_timer_seconds": {"min": 15, "max": 60, "default": 30},
+            "discussion_timer_seconds": {"min": 30, "max": 180, "default": 90},
+            "vote_timer_seconds": {"min": 15, "max": 60, "default": 30},
+            "role_reveal_seconds": {"min": 5, "max": 20, "default": 10},
+        },
+    },
 ]
 
 
@@ -939,6 +974,8 @@ def _default_time_limit_for_game(game_type: str) -> int:
     if game_type == "who_am_i":
         return 25
     if game_type == "chit_pull":
+        return 30
+    if game_type == "mafia":
         return 30
     return config.DEFAULT_TIME_LIMIT
 
@@ -1036,6 +1073,8 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
         return str(uuid.uuid4()), validate_who_am_i_config({"game_title": title or "Who Am I?"})
     if game_type == "chit_pull":
         return str(uuid.uuid4()), validate_chit_pull_config({"game_title": title or "Chit Pull"})
+    if game_type == "mafia":
+        return str(uuid.uuid4()), validate_mafia_config({"game_title": title or "Mafia"})
     if game_type == "bingo":
         return str(uuid.uuid4()), default_bingo_game(title or "Bingo")
     if game_type == "housie":
@@ -1092,6 +1131,8 @@ def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = 
             if content_id not in chit_pull_games:
                 raise HTTPException(status_code=404, detail="Chit Pull game not found")
             return content_id, chit_pull_games[content_id]
+        return _default_game_content(game_type, title)
+    if game_type == "mafia":
         return _default_game_content(game_type, title)
     if game_type == "bingo":
         if not config.BINGO_ENABLED:
@@ -3664,6 +3705,9 @@ async def create_room(request: RoomCreateRequest, req: Request):
         else:
             content_id = str(uuid.uuid4())
             game_data = validate_chit_pull_config(request.chit_pull_config)
+    elif request.game_type == "mafia":
+        content_id = str(uuid.uuid4())
+        game_data = validate_mafia_config(request.mafia_config)
     else:
         content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
     if request.game_type == "drawing":

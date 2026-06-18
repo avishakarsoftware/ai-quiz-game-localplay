@@ -28,6 +28,7 @@ test.describe('Gamma deployment smoke', () => {
     await expect(page.getByRole('button', { name: /Bluff/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Two Truths and a Lie/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Story Chain/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Mafia/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Baby Bingo/ })).toBeVisible();
     await expectNoHorizontalOverflow(page);
 

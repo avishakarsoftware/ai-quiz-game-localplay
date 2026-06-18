@@ -106,6 +106,30 @@ from chit_pull_engine import (
     skip_turn as chit_pull_skip_turn,
     validate_config as validate_chit_pull_config,
 )
+from mafia_engine import (
+    PHASE_DAY_DISCUSSION as MAFIA_PHASE_DAY_DISCUSSION,
+    PHASE_DAY_VOTE as MAFIA_PHASE_DAY_VOTE,
+    PHASE_NIGHT as MAFIA_PHASE_NIGHT,
+    PHASE_PODIUM as MAFIA_PHASE_PODIUM,
+    PHASE_ROLE_REVEAL as MAFIA_PHASE_ROLE_REVEAL,
+    PHASE_VOTE_RESULT as MAFIA_PHASE_VOTE_RESULT,
+    advance_after_role_reveal as mafia_advance_after_role_reveal,
+    advance_after_vote_result as mafia_advance_after_vote_result,
+    all_living_votes_submitted as mafia_all_living_votes_submitted,
+    all_required_night_actions_submitted as mafia_all_required_night_actions_submitted,
+    create_initial_state as mafia_create_initial_state,
+    force_complete as mafia_force_complete,
+    private_sync as mafia_private_sync,
+    public_sync as mafia_public_sync,
+    resolve_night as mafia_resolve_night,
+    resolve_vote as mafia_resolve_vote,
+    result_summary as mafia_result_summary,
+    start_day_vote as mafia_start_day_vote,
+    submit_night_action as mafia_submit_night_action,
+    submit_night_read as mafia_submit_night_read,
+    submit_vote as mafia_submit_vote,
+    validate_config as validate_mafia_config,
+)
 from bingo_engine import (
     BINGO_PATTERN_ORDER,
     create_bingo_call_deck,
@@ -224,6 +248,10 @@ class Room:
         # Chit Pull state
         self.chit_pull_config = validate_chit_pull_config(game_data) if game_type == "chit_pull" else {}
         self.chit_pull_state: dict = {}
+        # Mafia state
+        self.mafia_config = validate_mafia_config(game_data) if game_type == "mafia" else {}
+        self.mafia_state: dict = {}
+        self.mafia_timer_task: Optional[asyncio.Task] = None
 
     def reset_for_new_game(self, new_game_data: dict, new_time_limit: int,
                            game_type: Optional[str] = None,
@@ -322,6 +350,11 @@ class Room:
         self.who_am_i_state = {}
         self.chit_pull_config = validate_chit_pull_config(new_game_data) if self.game_type == "chit_pull" else {}
         self.chit_pull_state = {}
+        if self.mafia_timer_task:
+            self.mafia_timer_task.cancel()
+            self.mafia_timer_task = None
+        self.mafia_config = validate_mafia_config(new_game_data) if self.game_type == "mafia" else {}
+        self.mafia_state = {}
 
         for nickname in self.power_ups:
             self.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
@@ -359,6 +392,8 @@ class Room:
             return len(self.who_am_i_state.get("config", {}).get("rounds", [])) or len(self.who_am_i_config.get("rounds", [])) or 5
         if self.game_type == "chit_pull":
             return int(self.chit_pull_state.get("config", {}).get("rounds", 0)) or int(self.chit_pull_config.get("rounds", 20) or 20)
+        if self.game_type == "mafia":
+            return int(self.mafia_state.get("round", 1) or 1)
         return len(self.quiz.get("questions", []))
 
     def current_round_data(self) -> Optional[dict]:
@@ -390,6 +425,8 @@ class Room:
             return whoami_public_sync(self.who_am_i_state, players=self.player_public_list()) if self.who_am_i_state else None
         if self.game_type == "chit_pull":
             return chit_pull_public_sync(self.chit_pull_state, players=self.player_public_list()) if self.chit_pull_state else None
+        if self.game_type == "mafia":
+            return mafia_public_sync(self.mafia_state, players=self.player_public_list()) if self.mafia_state else None
         return self.quiz["questions"][idx]
 
     def game_title(self) -> str:
@@ -474,6 +511,9 @@ class Room:
         if self.mc_grab_task:
             self.mc_grab_task.cancel()
             self.mc_grab_task = None
+        if self.mafia_timer_task:
+            self.mafia_timer_task.cancel()
+            self.mafia_timer_task = None
         self.housie_auto_status = "stopped"
         self.housie_next_auto_call_at = None
         for ws in list(self.connections.values()):
@@ -726,6 +766,8 @@ class SocketManager:
                     sync["who_am_i"] = whoami_public_sync(room.who_am_i_state, players=room.player_public_list())
                 if room.game_type == "chit_pull" and room.chit_pull_state:
                     sync["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
+                if room.game_type == "mafia" and room.mafia_state:
+                    sync["mafia"] = mafia_public_sync(room.mafia_state, players=room.player_public_list())
                 await websocket.send_json(sync)
                 while True:
                     try:
@@ -908,6 +950,8 @@ class SocketManager:
             sync["who_am_i"] = whoami_public_sync(room.who_am_i_state, players=room.player_public_list())
         if room.game_type == "chit_pull" and room.chit_pull_state:
             sync["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
+        if room.game_type == "mafia" and room.mafia_state:
+            sync["mafia"] = mafia_public_sync(room.mafia_state, players=room.player_public_list())
 
         if room.organizer:
             await room.organizer.send_json(sync)
@@ -1030,6 +1074,14 @@ class SocketManager:
                                 "message": f"Chit Pull needs at least {config.MIN_CHIT_PULL_PLAYERS} players to start",
                             })
                             return
+                    elif room.game_type == "mafia":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_MAFIA_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Mafia needs at least {config.MIN_MAFIA_PLAYERS} players to start",
+                            })
+                            return
                     if room.billing_mode == "host_app_managed":
                         spent = True
                     else:
@@ -1085,12 +1137,16 @@ class SocketManager:
                         self._start_chit_pull_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": "chit_pull"})
                         await self._broadcast_chit_pull_sync(room)
+                    elif room.game_type == "mafia":
+                        self._start_mafia_game(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": "mafia"})
+                        await self._broadcast_mafia_sync(room)
                     else:
                         room.state = "INTRO"
                         await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
-                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull"):
+                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia"):
                     return
                 if room.game_type == "drawing" and room.drawing_auto_task:
                     room.drawing_auto_task.cancel()
@@ -1196,6 +1252,12 @@ class SocketManager:
             elif msg_type == "CHIT_REDRAW_CHIT" and room.game_type == "chit_pull":
                 await self._chit_pull_redraw_chit(room)
 
+            elif msg_type == "MAFIA_SKIP_TIMER" and room.game_type == "mafia":
+                await self._advance_mafia_phase(room, reason="manual")
+
+            elif msg_type == "MAFIA_EXTEND_TIMER" and room.game_type == "mafia":
+                await self._mafia_extend_timer(room)
+
             elif msg_type == "SET_TIME_LIMIT":
                 if room.state in ("LOBBY", "LEADERBOARD", "PODIUM"):
                     new_limit = message.get("time_limit", 15)
@@ -1232,6 +1294,9 @@ class SocketManager:
                     return
                 if room.game_type == "chit_pull":
                     await self._chit_pull_complete_game(room)
+                    return
+                if room.game_type == "mafia":
+                    await self._mafia_complete_game(room)
                     return
                 if room.game_type in ("housie", "bingo") and room.state == "BINGO_CALLING":
                     await self._complete_housie(room)
@@ -1270,7 +1335,7 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull") else room.game_type
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia") else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
 
                     # Validate time_limit
@@ -1306,6 +1371,8 @@ class SocketManager:
                     elif new_game_type == "chit_pull":
                         from main import chit_pull_games
                         new_game_data = chit_pull_games.get(new_content_id) or validate_chit_pull_config({})
+                    elif new_game_type == "mafia":
+                        new_game_data = validate_mafia_config({})
                     else:
                         new_game_data = quizzes.get(new_content_id)
 
@@ -1475,6 +1542,8 @@ class SocketManager:
                             state_info["who_am_i"] = whoami_private_sync(room.who_am_i_state, nickname, players=room.player_public_list())
                         elif room.game_type == "chit_pull" and room.chit_pull_state:
                             state_info["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
+                        elif room.game_type == "mafia" and room.mafia_state:
+                            state_info["mafia"] = mafia_private_sync(room.mafia_state, nickname, players=room.player_public_list())
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1575,6 +1644,8 @@ class SocketManager:
                             state_info["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
                         elif room.game_type == "chit_pull" and room.chit_pull_state:
                             state_info["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
+                        elif room.game_type == "mafia" and room.mafia_state:
+                            state_info["mafia"] = mafia_private_sync(room.mafia_state, player_data["nickname"], players=room.player_public_list())
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1810,8 +1881,17 @@ class SocketManager:
             elif msg_type == "WHOAMI_SUBMIT_GUESS" and room.game_type == "who_am_i":
                 await self._who_am_i_submit_guess(room, client_id, message)
 
+            elif msg_type == "MAFIA_NIGHT_ACTION" and room.game_type == "mafia":
+                await self._mafia_submit_night_action(room, client_id, str(message.get("target") or ""))
+
+            elif msg_type == "MAFIA_NIGHT_READ" and room.game_type == "mafia":
+                await self._mafia_submit_night_read(room, client_id, str(message.get("target") or ""))
+
+            elif msg_type == "MAFIA_VOTE" and room.game_type == "mafia":
+                await self._mafia_submit_vote(room, client_id, str(message.get("target") or ""))
+
             elif msg_type == "ANSWER":
-                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull"):
+                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia"):
                     return  # Other games use their own input messages
                 if client_id not in room.players:
                     return
@@ -3048,6 +3128,195 @@ class SocketManager:
         except Exception:
             logger.warning("Could not save Chit Pull history for room %s", room.room_code)
 
+    def _start_mafia_game(self, room: Room):
+        room.mafia_config = validate_mafia_config(room.quiz)
+        room.mafia_state = mafia_create_initial_state(
+            [p["nickname"] for p in room.players.values() if p.get("nickname")],
+            room.mafia_config,
+            now=time.time(),
+            seed=secrets.randbits(32),
+        )
+        room.current_question_index = 0
+        self._sync_mafia_phase_to_room(room)
+        self._schedule_mafia_timer(room)
+
+    def _sync_mafia_phase_to_room(self, room: Room):
+        if room.mafia_state:
+            room.state = str(room.mafia_state.get("phase") or MAFIA_PHASE_ROLE_REVEAL)
+            room.current_question_index = max(0, int(room.mafia_state.get("round", 1) or 1) - 1)
+
+    def _cancel_mafia_timer(self, room: Room):
+        if room.mafia_timer_task:
+            room.mafia_timer_task.cancel()
+            room.mafia_timer_task = None
+
+    def _schedule_mafia_timer(self, room: Room):
+        self._cancel_mafia_timer(room)
+        if not room.mafia_state or room.mafia_state.get("phase") == MAFIA_PHASE_PODIUM:
+            return
+        deadline = room.mafia_state.get("deadline")
+        if not deadline:
+            return
+        delay = max(0.1, float(deadline) - time.time())
+        room.mafia_timer_task = asyncio.create_task(self._mafia_timer_expired(room.room_code, delay))
+
+    async def _mafia_timer_expired(self, room_code: str, delay: float):
+        try:
+            await asyncio.sleep(delay)
+            room = self.rooms.get(room_code)
+            if room and room.game_type == "mafia" and room.mafia_state:
+                await self._advance_mafia_phase(room, reason="timer")
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Mafia timer failed for room %s", room_code)
+
+    async def _broadcast_mafia_sync(self, room: Room):
+        if not room.mafia_state:
+            return
+        players = room.player_public_list()
+        public = {
+            "type": "MAFIA_SYNC",
+            "game_type": "mafia",
+            "mafia": mafia_public_sync(room.mafia_state, players=players),
+            "player_count": len(room.players),
+            "players": players,
+            "leaderboard": self.get_leaderboard(room),
+        }
+        if room.organizer:
+            await room.send_to_organizer(public)
+        for spec_id, ws in list(room.spectators.items()):
+            try:
+                await ws.send_json(public)
+            except Exception:
+                room._remove_connection(spec_id)
+        for client_id, pdata in list(room.players.items()):
+            ws = room.connections.get(client_id)
+            if not ws:
+                continue
+            payload = dict(public)
+            payload["mafia"] = mafia_private_sync(room.mafia_state, pdata.get("nickname", ""), players=players)
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                room._remove_connection(client_id)
+        await room.emit_pending_player_event()
+
+    async def _advance_mafia_phase(self, room: Room, reason: str = "manual"):
+        if not room.mafia_state:
+            return
+        completed = False
+        try:
+            async with room.lock:
+                self._cancel_mafia_timer(room)
+                phase = room.mafia_state.get("phase")
+                now = time.time()
+                if phase == MAFIA_PHASE_ROLE_REVEAL:
+                    room.mafia_state = mafia_advance_after_role_reveal(room.mafia_state, now=now)
+                elif phase == MAFIA_PHASE_NIGHT:
+                    room.mafia_state = mafia_resolve_night(room.mafia_state, now=now)
+                elif phase == MAFIA_PHASE_DAY_DISCUSSION:
+                    room.mafia_state = mafia_start_day_vote(room.mafia_state, now=now)
+                elif phase == MAFIA_PHASE_DAY_VOTE:
+                    room.mafia_state = mafia_resolve_vote(room.mafia_state, now=now)
+                elif phase == MAFIA_PHASE_VOTE_RESULT:
+                    room.mafia_state = mafia_advance_after_vote_result(room.mafia_state, now=now)
+                self._sync_mafia_phase_to_room(room)
+                completed = room.mafia_state.get("phase") == MAFIA_PHASE_PODIUM
+                if not completed:
+                    self._schedule_mafia_timer(room)
+        except ValueError as exc:
+            logger.info("Mafia phase advance ignored for room %s: %s", room.room_code, exc)
+            return
+        if completed:
+            await self._mafia_complete_game(room)
+            return
+        await self._broadcast_mafia_sync(room)
+
+    async def _mafia_extend_timer(self, room: Room):
+        if not room.mafia_state or room.mafia_state.get("phase") != MAFIA_PHASE_DAY_DISCUSSION:
+            return
+        async with room.lock:
+            room.mafia_state["deadline"] = float(room.mafia_state.get("deadline") or time.time()) + 30
+            self._sync_mafia_phase_to_room(room)
+            self._schedule_mafia_timer(room)
+        await self._broadcast_mafia_sync(room)
+
+    async def _mafia_submit_night_action(self, room: Room, client_id: str, target: str):
+        if client_id not in room.players or not room.mafia_state:
+            return
+        nickname = room.players[client_id].get("nickname", "")
+        try:
+            async with room.lock:
+                room.mafia_state = mafia_submit_night_action(room.mafia_state, nickname, target)
+                should_advance = mafia_all_required_night_actions_submitted(room.mafia_state)
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._send_to_client(room, client_id, {"type": "MAFIA_NIGHT_ACTION_ACK", "target": target})
+        if should_advance:
+            await self._advance_mafia_phase(room, reason="all_actions")
+        else:
+            await self._broadcast_mafia_sync(room)
+
+    async def _mafia_submit_night_read(self, room: Room, client_id: str, target: str):
+        if client_id not in room.players or not room.mafia_state:
+            return
+        nickname = room.players[client_id].get("nickname", "")
+        try:
+            async with room.lock:
+                room.mafia_state = mafia_submit_night_read(room.mafia_state, nickname, target)
+                should_advance = mafia_all_required_night_actions_submitted(room.mafia_state)
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._send_to_client(room, client_id, {"type": "MAFIA_NIGHT_READ_ACK", "target": target})
+        if should_advance:
+            await self._advance_mafia_phase(room, reason="all_night_inputs")
+        else:
+            await self._broadcast_mafia_sync(room)
+
+    async def _mafia_submit_vote(self, room: Room, client_id: str, target: str):
+        if client_id not in room.players or not room.mafia_state:
+            return
+        nickname = room.players[client_id].get("nickname", "")
+        try:
+            async with room.lock:
+                room.mafia_state = mafia_submit_vote(room.mafia_state, nickname, target or "skip")
+                should_advance = mafia_all_living_votes_submitted(room.mafia_state)
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._send_to_client(room, client_id, {"type": "MAFIA_VOTE_ACK", "target": target or "skip"})
+        if should_advance:
+            await self._advance_mafia_phase(room, reason="all_votes")
+        else:
+            await self._broadcast_mafia_sync(room)
+
+    async def _mafia_complete_game(self, room: Room, winner: str | None = None):
+        self._cancel_mafia_timer(room)
+        if room.mafia_state:
+            room.mafia_state = mafia_force_complete(room.mafia_state, winner=winner, now=time.time())
+        room.state = "PODIUM"
+        leaderboard = self.get_leaderboard(room)
+        await room.broadcast({
+            "type": "PODIUM",
+            "game_type": "mafia",
+            "leaderboard": leaderboard,
+            "team_leaderboard": [],
+            "mafia": mafia_public_sync(room.mafia_state, players=room.player_public_list()) if room.mafia_state else {},
+        })
+        try:
+            from main import game_history
+            summary = self.get_game_summary(room)
+            summary["mafia_result"] = mafia_result_summary(room.mafia_state, players=room.player_public_list()) if room.mafia_state else {}
+            game_history.append(summary)
+            if len(game_history) > config.MAX_GAME_HISTORY:
+                del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+            self._mark_game_session_complete(room, summary)
+        except Exception:
+            logger.warning("Could not save Mafia history for room %s", room.room_code)
+
     def _start_musical_chairs_game(self, room: Room):
         room.mc_config = validate_musical_chairs_config(room.quiz)
         room.mc_active_players = sorted([p["nickname"] for p in room.players.values()])
@@ -3754,6 +4023,12 @@ class SocketManager:
             summary["total_rounds"] = 1
             summary["winners"] = standings[:3]
             summary["claims"] = room.find_someone_state.get("accepted_claims", [])
+        if room.game_type == "mafia" and room.mafia_state:
+            mafia_summary = mafia_result_summary(room.mafia_state, players=room.player_public_list())
+            summary["total_questions"] = mafia_summary.get("rounds_played", 1)
+            summary["total_rounds"] = mafia_summary.get("rounds_played", 1)
+            summary["winner"] = mafia_summary.get("winner")
+            summary["mafia_result"] = mafia_summary
         return summary
 
     def _callback_event_type(self, event_type: str) -> str:

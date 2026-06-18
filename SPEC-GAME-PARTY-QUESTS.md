@@ -25,16 +25,20 @@ Find someone who has visited a city you want to visit.
 
 ## Implementation-Ready MVP Scope
 
-Status: implementation-ready after basic player-to-player confirmation primitives are available.
+Status: implementation-ready standalone MVP. It can reuse the player-to-player confirmation shape already introduced by Find Someone Who; pair-code/QR can remain a v1.1 enhancement if tap confirmation is enough for the first implementation.
 
 - Standalone LocalPlay first.
 - Host creates, edits, or AI-generates a quest list.
+- Host can choose Party Quests as a check-in/default party game in host-app contexts later.
+- Host can enable "auto-start when the first guest joins" in host-app contexts later; default should be on for check-in parties.
 - Every player receives a personal quest board/list.
 - Quests are completed by selecting another player and requesting confirmation.
 - Confirmation modes:
   - `tap_confirm`: selected player receives a confirm/deny prompt.
-  - `pair_code`: selected player shows a short code/QR and requester enters/scans it.
+  - `pair_code`: selected player shows a short code/QR and requester enters/scans it. This is implementation-ready but may be deferred behind tap-confirm if needed.
   - `honor`: no confirmation, for very casual parties.
+- Late join is allowed by default during `QUESTS_ACTIVE`; new players receive fresh quest boards with the remaining timer.
+- Re-scans/rejoins should preserve a player when the same browser/device player token is present. Nickname alone is not enough to merge identity.
 - Players can continue normal party activity while quests run.
 - Spectator/TV can show ambient progress or stay quiet until reveal.
 - Host ends the game manually or after a timer.
@@ -124,6 +128,8 @@ Defaults:
 - `max_completions_per_partner`: 2.
 - `reveal_mode`: `host_paced`.
 - `theme`: `party`.
+- `allow_late_join`: true.
+- `auto_start_on_first_checkin`: true when launched from a check-in/default-game host-app flow; false for normal standalone rooms until the host presses Start.
 
 Validation:
 
@@ -133,6 +139,7 @@ Validation:
 - Quests per player: 3-25.
 - Duration: 10-240 minutes.
 - Confirmation mode: `tap_confirm`, `pair_code`, or `honor`.
+- Late join: boolean.
 
 ## Quest Model
 
@@ -163,6 +170,8 @@ export interface PartyQuestGame {
   confirmation_mode: 'tap_confirm' | 'pair_code' | 'honor';
   allow_repeat_partner: boolean;
   max_completions_per_partner: number;
+  allow_late_join: boolean;
+  auto_start_on_first_checkin?: boolean;
 }
 ```
 
@@ -202,6 +211,14 @@ At game start:
 - If quest count is smaller than needed, reuse quests but shuffle order.
 
 Assignment should be deterministic by room seed for tests.
+
+Late-join assignment:
+
+- If `allow_late_join` is true and the game is active, a new player receives a board immediately.
+- The new board is generated from the same quest pool and seed plus the player id so reconnects are stable.
+- Late joiners can score normally, but final standings should show their join time if needed to explain shorter play time.
+- If a player rejoins from the same device/session token, restore their existing board and pending confirmations instead of assigning a second board.
+- If a different person tries to join with an already active nickname and no matching token, reject with "That name is already in use."
 
 ## Completion Flow: Tap Confirm
 
@@ -383,6 +400,18 @@ def build_player_sync(state: dict, player_id: str) -> dict: ...
 def build_public_sync(state: dict) -> dict: ...
 ```
 
+Recommended implementation order:
+
+1. Pure engine with setup validation, deterministic assignment, tap-confirm requests, scoring, and public/private sync.
+2. Room creation/catalog wiring for `game_type = "party_quests"` with default template content.
+3. WebSocket runtime for `QUEST_REQUEST_CONFIRMATION`, `QUEST_CONFIRM`, final call, and game end.
+4. Player UI: quest board, roster picker, incoming confirmation cards, score/progress.
+5. Organizer/spectator UI: ambient progress, extend/end controls, final reveal.
+6. AI generation and manual host editing.
+7. Pair-code/QR mode if tap confirmation proves too interruptive.
+
+MVP can ship with only `tap_confirm` and `honor` if pair-code QR scanning would delay the first playable version. Keep the setup schema compatible with `pair_code` so it can be enabled later without reshaping saved content.
+
 ## WebSocket Events
 
 Client to server:
@@ -448,6 +477,15 @@ Host must review/edit generated quests before starting.
 ## Revelry / Host-App Fit
 
 Party Quests is a strong Revelry fit because it can run for the whole event.
+
+Check-in/default-game contract:
+
+- Revelry or another host app may let the host pick Party Quests as the party's default check-in game.
+- If `auto_start_on_first_checkin` is enabled, the first guest check-in should create/start the LocalPlay room automatically and show the join QR/link on the party surface.
+- Later guests should join the same active room and receive a board immediately.
+- LocalPlay should not create duplicate rooms for the same party/default game while one `QUESTS_ACTIVE` session exists.
+- If the host manually ends and reveals the game, later joins should not restart it unless the host explicitly starts a new round/session.
+- Safe callbacks/results should include aggregate stats and winners only, not a per-person social graph.
 
 Expose only after:
 

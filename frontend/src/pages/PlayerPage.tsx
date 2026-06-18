@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { WS_URL } from '../config';
-import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -27,8 +27,9 @@ import CommonGroundGame from '../components/CommonGroundGame';
 import FindSomeoneGame from '../components/FindSomeoneGame';
 import WhoAmIGame from '../components/WhoAmIGame';
 import ChitPullGame from '../components/ChitPullGame';
+import MafiaGame from '../components/MafiaGame';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
 interface PlayerQuestion {
     id: number;
@@ -151,6 +152,7 @@ export default function PlayerPage() {
     const [findSomeoneState, setFindSomeoneState] = useState<FindSomeoneState | null>(null);
     const [whoAmIState, setWhoAmIState] = useState<WhoAmIState | null>(null);
     const [chitPullState, setChitPullState] = useState<ChitPullState | null>(null);
+    const [mafiaState, setMafiaState] = useState<MafiaState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const submittedRef = useRef(false);
@@ -267,6 +269,10 @@ export default function PlayerPage() {
                     setGameType('chit_pull');
                     setChitPullState(msg.chit_pull as ChitPullState);
                     setState('CHIT_PULL');
+                } else if (msg.game_type === 'mafia' && msg.mafia) {
+                    setGameType('mafia');
+                    setMafiaState(msg.mafia as MafiaState);
+                    setState('MAFIA');
                 } else {
                     setState('LOBBY');
                 }
@@ -315,6 +321,10 @@ export default function PlayerPage() {
                     setGameType('chit_pull');
                     setChitPullState(msg.chit_pull as ChitPullState);
                     setState('CHIT_PULL');
+                } else if (msg.game_type === 'mafia' && msg.mafia) {
+                    setGameType('mafia');
+                    setMafiaState(msg.mafia as MafiaState);
+                    setState('MAFIA');
                 } else if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
                         setGameType('drawing');
@@ -391,6 +401,9 @@ export default function PlayerPage() {
                 } else if (msg.game_type === 'chit_pull') {
                     setGameType('chit_pull');
                     setState('CHIT_PULL');
+                } else if (msg.game_type === 'mafia') {
+                    setGameType('mafia');
+                    setState('MAFIA');
                 }
                 else setState('INTRO');
             }
@@ -508,6 +521,13 @@ export default function PlayerPage() {
                 setChitPullState(msg.chit_pull as ChitPullState);
                 setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
                 setState('CHIT_PULL');
+            }
+            if (msg.type === 'MAFIA_SYNC') {
+                setError('');
+                setGameType('mafia');
+                setMafiaState(msg.mafia as MafiaState);
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+                setState('MAFIA');
             }
             if (msg.type === 'QUESTION') {
                 if (msg.game_type === 'drawing') {
@@ -686,6 +706,7 @@ export default function PlayerPage() {
                 setCommonGroundState(null);
                 setWhoAmIState(null);
                 setChitPullState(null);
+                setMafiaState(null);
                 setMcGrabbed(false);
                 setMcEliminated(false);
                 setMcReactionMs(null);
@@ -856,6 +877,18 @@ export default function PlayerPage() {
     const submitWhoAmIGuess = (guess: string) => {
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'WHOAMI_SUBMIT_GUESS', guess }));
+    };
+    const submitMafiaNightAction = (target: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'MAFIA_NIGHT_ACTION', target }));
+    };
+    const submitMafiaNightRead = (target: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'MAFIA_NIGHT_READ', target }));
+    };
+    const submitMafiaVote = (target: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'MAFIA_VOTE', target }));
     };
 
     const activatePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
@@ -1215,6 +1248,20 @@ export default function PlayerPage() {
                             state={chitPullState}
                             viewerName={nickname}
                             controls="player"
+                        />
+                    </>
+                )}
+
+                {state === 'MAFIA' && (
+                    <>
+                        {error && <div className="status-pill status-error animate-shake player-runtime-error">{error}</div>}
+                        <MafiaGame
+                            state={mafiaState}
+                            viewerName={nickname}
+                            controls="player"
+                            onNightAction={submitMafiaNightAction}
+                            onNightRead={submitMafiaNightRead}
+                            onVote={submitMafiaVote}
                         />
                     </>
                 )}

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type WhoAmIGameContent, type ChitPullCategory, type ChitPullGameContent, type ChitPullSafeLevel, type ChitPullState } from '../types';
+import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type WhoAmIGameContent, type ChitPullCategory, type ChitPullGameContent, type ChitPullSafeLevel, type ChitPullState, type MafiaState } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending, saveOrganizerSession, getSavedOrganizerSession, clearOrganizerSession } from '../utils/storage';
@@ -32,6 +32,7 @@ import CommonGroundGame from '../components/CommonGroundGame';
 import FindSomeoneGame from '../components/FindSomeoneGame';
 import WhoAmIGame from '../components/WhoAmIGame';
 import ChitPullGame from '../components/ChitPullGame';
+import MafiaGame from '../components/MafiaGame';
 import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
 import { BingoCalledList, BingoCallOverlay } from '../components/BingoBoard';
 import ImageGenerationScreen from '../components/organizer/ImageGenerationScreen';
@@ -46,7 +47,7 @@ import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'WHO_AM_I_PROMPT' | 'WHO_AM_I_REVIEW' | 'CHIT_PULL_PROMPT' | 'CHIT_PULL_REVIEW' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'WHO_AM_I_PROMPT' | 'WHO_AM_I_REVIEW' | 'CHIT_PULL_PROMPT' | 'CHIT_PULL_REVIEW' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'LEADERBOARD' | 'PODIUM';
 
 function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'housie' || type === 'bingo' || type === 'baby_bingo') return 15;
@@ -58,6 +59,7 @@ function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'find_someone') return 30;
     if (type === 'who_am_i') return 25;
     if (type === 'chit_pull') return 30;
+    if (type === 'mafia') return 30;
     return type === 'drawing' ? 30 : 15;
 }
 
@@ -175,6 +177,7 @@ export default function OrganizerPage() {
     const [chitPullGame, setChitPullGame] = useState<ChitPullGameContent | null>(null);
     const [chitPullState, setChitPullState] = useState<ChitPullState | null>(null);
     const [chitPullSafeLevel, setChitPullSafeLevel] = useState<ChitPullSafeLevel>('family');
+    const [mafiaState, setMafiaState] = useState<MafiaState | null>(null);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean; returnToHostApp?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -244,7 +247,7 @@ export default function OrganizerPage() {
                 'DRAWING_REVIEW',
                 'GENERATING_IMAGES',
             ];
-            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL'];
+            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA'];
             if (homeSafeStates.includes(stateRef.current)) {
                 flowEpochRef.current += 1;
                 clearOrganizerSession();
@@ -263,6 +266,7 @@ export default function OrganizerPage() {
                 setWhoAmIGame(null);
                 setChitPullState(null);
                 setChitPullGame(null);
+                setMafiaState(null);
                 setEditingPackId(undefined);
                 setContentId('');
                 setQuestionImages({});
@@ -292,6 +296,7 @@ export default function OrganizerPage() {
                 setWhoAmIGame(null);
                 setChitPullState(null);
                 setChitPullGame(null);
+                setMafiaState(null);
                 setEditingPackId(undefined);
                 setContentId('');
                 setQuestionImages({});
@@ -516,6 +521,12 @@ export default function OrganizerPage() {
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('CHIT_PULL');
         }
+        else if (msg.type === 'MAFIA_SYNC') {
+            setGameType('mafia');
+            setMafiaState(msg.mafia as MafiaState);
+            setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+            setState('MAFIA');
+        }
         else if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED') {
             setPlayerCount(msg.player_count as number);
             setPlayers(msg.players as PlayerInfo[] || []);
@@ -541,6 +552,7 @@ export default function OrganizerPage() {
             setFindSomeoneState(null);
             setWhoAmIState(null);
             setChitPullState(null);
+            setMafiaState(null);
             setAnsweredCount(0);
             setLiveQuestion(null);
             setCurrentStatement('');
@@ -578,6 +590,7 @@ export default function OrganizerPage() {
             if (msg.find_someone) setFindSomeoneState(msg.find_someone as FindSomeoneState);
             if (msg.who_am_i) setWhoAmIState(msg.who_am_i as WhoAmIState);
             if (msg.chit_pull) setChitPullState(msg.chit_pull as ChitPullState);
+            if (msg.mafia) setMafiaState(msg.mafia as MafiaState);
             if (msg.quiz) {
                 const quizData = msg.quiz as Record<string, unknown>;
                 if (quizData.questions) {
@@ -724,6 +737,10 @@ export default function OrganizerPage() {
             setDifficulty('medium');
             setNumQuestions(20);
             setState('CHIT_PULL_PROMPT');
+        }
+        else if (type === 'mafia') {
+            setMafiaState(null);
+            void createRoom(undefined, 'mafia', defaultTimeLimitForGame('mafia'));
         }
         else if (type === 'quiz') {
             setPrompt(randomQuizTopic(prompt));
@@ -1273,7 +1290,7 @@ export default function OrganizerPage() {
         ws.onclose = () => {
             wsRef.current = null;
             if (!mountedRef.current) return;
-            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'LEADERBOARD', 'PODIUM'];
+            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'LEADERBOARD', 'PODIUM'];
             if (roomCodeRef.current && activeStates.includes(stateRef.current)) {
                 if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                 reconnectTimerRef.current = setTimeout(() => connectWsRef.current(roomCodeRef.current), 2000);
@@ -1425,6 +1442,8 @@ export default function OrganizerPage() {
             } else if (effectiveGameType === 'chit_pull') {
                 if (selectedContentId) body.chit_pull_id = selectedContentId;
                 else body.chit_pull_config = { game_title: 'Chit Pull' };
+            } else if (effectiveGameType === 'mafia') {
+                body.mafia_config = { game_title: 'Mafia' };
             } else if (isQuizRuntimeGame(effectiveGameType)) {
                 body.quiz_id = selectedContentId;
             }
@@ -1567,7 +1586,7 @@ export default function OrganizerPage() {
             wsRef.current?.send(JSON.stringify({ type: 'SET_SHOW_VOTES', show_votes: showVotes }));
         }
         wsRef.current?.send(JSON.stringify({ type: 'START_GAME' }));
-        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'musical_chairs' && gameType !== 'bluff' && gameType !== 'two_truths' && gameType !== 'story_chain' && gameType !== 'common_ground' && gameType !== 'find_someone' && gameType !== 'who_am_i' && gameType !== 'chit_pull') {
+        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'musical_chairs' && gameType !== 'bluff' && gameType !== 'two_truths' && gameType !== 'story_chain' && gameType !== 'common_ground' && gameType !== 'find_someone' && gameType !== 'who_am_i' && gameType !== 'chit_pull' && gameType !== 'mafia') {
             wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
         }
     };
@@ -1602,6 +1621,8 @@ export default function OrganizerPage() {
     const skipChit = () => wsRef.current?.send(JSON.stringify({ type: 'CHIT_SKIP' }));
     const redrawChitPlayer = () => wsRef.current?.send(JSON.stringify({ type: 'CHIT_REDRAW_PLAYER' }));
     const redrawChit = () => wsRef.current?.send(JSON.stringify({ type: 'CHIT_REDRAW_CHIT' }));
+    const skipMafiaTimer = () => wsRef.current?.send(JSON.stringify({ type: 'MAFIA_SKIP_TIMER' }));
+    const extendMafiaTimer = () => wsRef.current?.send(JSON.stringify({ type: 'MAFIA_EXTEND_TIMER' }));
     const createWhoAmIAndRoom = async () => {
         try {
             const game = whoAmIGame || starterWhoAmIGame();
@@ -1641,6 +1662,7 @@ export default function OrganizerPage() {
         setFindSomeoneState(null);
         setWhoAmIState(null);
         setChitPullState(null);
+        setMafiaState(null);
         if (contentId && roomCode && wsRef.current?.readyState === WebSocket.OPEN) {
             createRoom(contentId);
             return;
@@ -1667,6 +1689,7 @@ export default function OrganizerPage() {
         setWhoAmIGame(null);
         setChitPullState(null);
         setChitPullGame(null);
+        setMafiaState(null);
         if (hostAppMode) {
             returnToHostApp();
         } else {
@@ -2151,6 +2174,16 @@ export default function OrganizerPage() {
                         onSkip={skipChit}
                         onRedrawPlayer={redrawChitPlayer}
                         onRedrawChit={redrawChit}
+                        onEndGame={endQuiz}
+                    />
+                )}
+
+                {state === 'MAFIA' && (
+                    <MafiaGame
+                        state={mafiaState}
+                        controls="host"
+                        onSkipTimer={skipMafiaTimer}
+                        onExtendTimer={extendMafiaTimer}
                         onEndGame={endQuiz}
                     />
                 )}
