@@ -14,7 +14,7 @@ def setup_function():
 def test_local_missing_policy_uses_static_host_app_catalog():
     games = effective_catalog(GAME_CATALOG, host_app="revelry", environment="local")
     game_ids = {game["id"] for game in games}
-    assert {"quiz", "wmlt", "drawing", "housie", "musical_chairs"}.issubset(game_ids)
+    assert {"quiz", "wmlt", "drawing", "housie", "musical_chairs", "party_quests"}.issubset(game_ids)
 
 
 def test_musical_chairs_is_host_app_quick_startable_in_gamma():
@@ -26,6 +26,18 @@ def test_musical_chairs_is_host_app_quick_startable_in_gamma():
     assert musical_chairs["can_quick_start"] is True
     assert musical_chairs["can_create_content"] is False
     assert musical_chairs["supports_ai_generation"] is False
+
+
+def test_party_quests_is_host_app_quick_startable_in_gamma():
+    env = f"test-party-quests-{uuid.uuid4().hex}"
+    games = effective_catalog(GAME_CATALOG, host_app="revelry", environment=env)
+    party_quests = next(game for game in games if game["id"] == "party_quests")
+
+    assert party_quests["launchable"] is True
+    assert party_quests["can_quick_start"] is True
+    assert party_quests["can_create_content"] is False
+    assert party_quests["supports_custom_content"] is True
+    assert party_quests["supports_ai_generation"] is False
 
 
 def test_production_missing_policy_fails_closed():

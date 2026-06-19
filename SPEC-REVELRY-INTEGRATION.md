@@ -1,8 +1,18 @@
 # LocalPlay Revelry Integration Spec
 
-Status: Gamma bridge plus party-scoped quiz authoring, generic WMLT/Drawing/Housie setup-save-start flow, catalog-driven party hub creation, and party hub start flow implemented; production hardening remains. June 12, 2026 integration-hardening pass deployed to `games-backend-gamma`.
+Status: Gamma bridge plus party-scoped quiz authoring, generic WMLT/Drawing/Housie setup-save-start flow, catalog-driven party hub creation, and party hub start flow implemented; production hardening remains. June 18, 2026 added Party Quests as a LocalPlay quick-start host-app-capable catalog game; policy enablement/embedded QA still gates Revelry exposure.
 
-Last updated: 2026-06-12
+Last updated: 2026-06-18
+
+## June 18, 2026 — Party Quests LocalPlay support
+
+LocalPlay now implements `party_quests` as a standalone ambient social runtime and declares it in the static catalog as `host_app_supported=true`, `supported_host_apps=["revelry"]`, `can_quick_start=true`, and `can_create_content=false`.
+
+- Revelry should treat Party Quests as a quick-start/default-content game when LocalPlay host-app catalog policy enables it.
+- Revelry should not assume embedded authoring exists for Party Quests yet; LocalPlay standalone setup supports pack choice/editing, but the first host-app contract is quick start.
+- Session create/start should pass `game_type="party_quests"` with no `content_id`; LocalPlay materializes the default setup and owns gameplay, lobby, player joins, confirmations, reveal, and result summary.
+- Result callbacks/results should use safe aggregate fields only. Do not mirror per-player quest boards or a per-person social graph into Revelry.
+- No Revelry code change is expected if Revelry already renders LocalPlay's catalog-driven quick-start games; rollout is controlled by LocalPlay host-app catalog policy and gamma/prod smoke tests.
 
 ## June 12, 2026 — Integration hardening (deployed to gamma)
 

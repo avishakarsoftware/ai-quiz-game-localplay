@@ -35,6 +35,7 @@ const GAME_CATEGORY_BY_ID: Partial<Record<GameType, GameCategory>> = {
     find_someone: 'creative',
     who_am_i: 'quiz',
     chit_pull: 'creative',
+    party_quests: 'creative',
     mafia: 'cards',
     bluff: 'cards',
     housie: 'bingo_housie',
@@ -47,7 +48,7 @@ function getGameCategory(game: GameModeConfig): GameCategory {
 }
 
 function hasAiGeneration(game: GameModeConfig): boolean {
-    return !['housie', 'bingo', 'baby_bingo', 'musical_chairs', 'bluff', 'two_truths', 'story_chain', 'common_ground', 'find_someone', 'mafia'].includes(game.id);
+    return !['housie', 'bingo', 'baby_bingo', 'musical_chairs', 'bluff', 'two_truths', 'story_chain', 'common_ground', 'find_someone', 'mafia', 'party_quests'].includes(game.id);
 }
 
 export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreenProps) {

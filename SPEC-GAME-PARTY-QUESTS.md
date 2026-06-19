@@ -23,20 +23,23 @@ Meet someone who shares one of your hobbies.
 Find someone who has visited a city you want to visit.
 ```
 
-## Implementation-Ready MVP Scope
+## Current Implementation Status
 
-Status: implementation-ready standalone MVP. It can reuse the player-to-player confirmation shape already introduced by Find Someone Who; pair-code/QR can remain a v1.1 enhancement if tap confirmation is enough for the first implementation.
+Status: LocalPlay MVP implemented on June 18, 2026.
 
-- Standalone LocalPlay first.
-- Host creates, edits, or AI-generates a quest list.
-- Host can choose Party Quests as a check-in/default party game in host-app contexts later.
-- Host can enable "auto-start when the first guest joins" in host-app contexts later; default should be on for check-in parties.
+- Standalone LocalPlay host setup is implemented.
+- Host can choose a curated pack: Mingling, Birthday, Wedding, Work-safe, or Family.
+- Host can edit the quest text list before room creation.
+- Host can choose duration, quests per player, confirmation mode, and late-join support.
+- Revelry/host-app catalog support is implemented as quick-start/default-content capable (`host_app_supported=true`, `can_quick_start=true`).
+- Embedded Revelry custom authoring is deferred; LocalPlay exposes a safe quick-start path first.
+- AI quest generation is deferred; the backend config and safety rules are ready for it.
 - Every player receives a personal quest board/list.
 - Quests are completed by selecting another player and requesting confirmation.
 - Confirmation modes:
   - `tap_confirm`: selected player receives a confirm/deny prompt.
-  - `pair_code`: selected player shows a short code/QR and requester enters/scans it. This is implementation-ready but may be deferred behind tap-confirm if needed.
   - `honor`: no confirmation, for very casual parties.
+  - `pair_code`: schema-reserved only; not exposed in the MVP UI.
 - Late join is allowed by default during `QUESTS_ACTIVE`; new players receive fresh quest boards with the remaining timer.
 - Re-scans/rejoins should preserve a player when the same browser/device player token is present. Nickname alone is not enough to merge identity.
 - Players can continue normal party activity while quests run.
@@ -129,12 +132,12 @@ Defaults:
 - `reveal_mode`: `host_paced`.
 - `theme`: `party`.
 - `allow_late_join`: true.
-- `auto_start_on_first_checkin`: true when launched from a check-in/default-game host-app flow; false for normal standalone rooms until the host presses Start.
+- `auto_start_on_first_checkin`: schema-supported for future check-in/default-game host-app flows; false for normal standalone rooms until the host presses Start.
 
 Validation:
 
-- Minimum players: 4.
-- Recommended players: 8-100.
+- Technical minimum players: 1, so check-in/default-game host-app flows can start when the first guest joins.
+- Recommended players: 4+; best at 8-100.
 - Quest count: 5-120.
 - Quests per player: 3-25.
 - Duration: 10-240 minutes.
@@ -240,16 +243,15 @@ with you. Confirm?
 Client to server:
 
 ```json
-{ "type": "QUEST_REQUEST_CONFIRMATION", "quest_id": "q1", "partner_player_id": "p2" }
-{ "type": "QUEST_CONFIRM", "request_id": "req1", "accepted": true }
+{ "type": "QUESTS_REQUEST_CONFIRMATION", "quest_id": "q1", "partner_player_id": "p2" }
+{ "type": "QUESTS_CONFIRM", "request_id": "req1", "accepted": true }
 ```
 
 Server to clients:
 
 ```json
-{ "type": "QUEST_CONFIRMATION_REQUEST", "request": {} }
-{ "type": "QUEST_COMPLETED", "player_id": "p1", "quest_id": "q1", "points": 100 }
-{ "type": "QUEST_DENIED", "player_id": "p1", "quest_id": "q1" }
+{ "type": "QUESTS_SYNC", "game_type": "party_quests", "party_quests": {} }
+```
 ```
 
 ## Completion Flow: Pair Code / QR
@@ -373,7 +375,7 @@ No manual score editing in MVP.
 
 ## Backend Implementation
 
-Add:
+Implemented files:
 
 ```text
 backend/party_quests_engine.py
@@ -383,32 +385,48 @@ backend/tests/test_party_quests_engine.py
 Pure helpers:
 
 ```py
-def validate_party_quests_setup(raw: dict) -> dict: ...
+def validate_config(raw: dict) -> dict: ...
 
 def assign_quests(player_ids: list[str], quests: list[dict], quests_per_player: int, seed: str | None = None) -> dict: ...
+
+def create_initial_state(config: dict, players: list[dict], *, now: float | None = None, seed: str | None = None) -> dict: ...
+
+def add_player(state: dict, player: dict, *, now: float | None = None) -> tuple[dict, dict]: ...
 
 def create_confirmation_request(state: dict, player_id: str, quest_id: str, partner_player_id: str, now: float) -> tuple[dict, dict]: ...
 
 def apply_confirmation(state: dict, request_id: str, confirmer_id: str, accepted: bool, now: float) -> tuple[dict, dict]: ...
 
-def validate_pair_code(state: dict, player_id: str, quest_id: str, code: str, now: float) -> tuple[dict, dict]: ...
+def start_final_call(state: dict, *, now: float | None = None) -> tuple[dict, dict]: ...
+
+def reveal(state: dict, *, now: float | None = None) -> tuple[dict, dict]: ...
+
+def complete(state: dict, *, now: float | None = None) -> tuple[dict, dict]: ...
 
 def calculate_scores(state: dict) -> dict: ...
 
-def build_player_sync(state: dict, player_id: str) -> dict: ...
+def public_sync(state: dict) -> dict: ...
 
-def build_public_sync(state: dict) -> dict: ...
+def private_sync(state: dict, player_id: str) -> dict: ...
+
+def result_summary(state: dict) -> dict: ...
 ```
 
-Recommended implementation order:
+Implemented:
 
 1. Pure engine with setup validation, deterministic assignment, tap-confirm requests, scoring, and public/private sync.
 2. Room creation/catalog wiring for `game_type = "party_quests"` with default template content.
-3. WebSocket runtime for `QUEST_REQUEST_CONFIRMATION`, `QUEST_CONFIRM`, final call, and game end.
+3. WebSocket runtime for `QUESTS_REQUEST_CONFIRMATION`, `QUESTS_CONFIRM`, final call, reveal, and game end.
 4. Player UI: quest board, roster picker, incoming confirmation cards, score/progress.
-5. Organizer/spectator UI: ambient progress, extend/end controls, final reveal.
-6. AI generation and manual host editing.
-7. Pair-code/QR mode if tap confirmation proves too interruptive.
+5. Organizer/spectator UI: ambient progress, final call, reveal, and end controls.
+6. Backend tests for config, confirmation, denial, late join, private/public sync, and reveal phases.
+
+Deferred:
+
+1. Multi-tab Playwright happy path with host + two players.
+2. Revelry gamma policy enablement and embedded party-hub smoke once product approves exposure.
+3. AI generation and prompt sanitizer UI.
+4. Pair-code/QR mode if tap confirmation proves too interruptive.
 
 MVP can ship with only `tap_confirm` and `honor` if pair-code QR scanning would delay the first playable version. Keep the setup schema compatible with `pair_code` so it can be enabled later without reshaping saved content.
 
@@ -417,20 +435,18 @@ MVP can ship with only `tap_confirm` and `honor` if pair-code QR scanning would 
 Client to server:
 
 ```json
-{ "type": "QUEST_REQUEST_CONFIRMATION", "quest_id": "q1", "partner_player_id": "p2" }
-{ "type": "QUEST_CONFIRM", "request_id": "req1", "accepted": true }
-{ "type": "QUEST_COMPLETE_WITH_CODE", "quest_id": "q1", "code": "8421" }
-{ "type": "QUEST_END_GAME" }
+{ "type": "QUESTS_REQUEST_CONFIRMATION", "quest_id": "q1", "partner_player_id": "p2" }
+{ "type": "QUESTS_CONFIRM", "request_id": "req1", "accepted": true }
+{ "type": "QUESTS_FINAL_CALL" }
+{ "type": "QUESTS_REVEAL" }
+{ "type": "END_QUIZ" }
 ```
 
 Server to clients:
 
 ```json
-{ "type": "QUEST_SYNC", "state": {} }
-{ "type": "QUEST_CONFIRMATION_REQUEST", "request": {} }
-{ "type": "QUEST_COMPLETED", "player_id": "p1", "quest_id": "q1" }
-{ "type": "QUEST_FINAL_CALL", "ends_at": 1234573290 }
-{ "type": "QUEST_REVEAL", "standings": [] }
+{ "type": "QUESTS_SYNC", "game_type": "party_quests", "party_quests": {} }
+{ "type": "PODIUM", "game_type": "party_quests", "party_quests": {} }
 ```
 
 Visibility:

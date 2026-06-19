@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, type PartyQuestsState, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
@@ -28,6 +28,7 @@ import FindSomeoneGame from '../components/FindSomeoneGame';
 import WhoAmIGame from '../components/WhoAmIGame';
 import ChitPullGame from '../components/ChitPullGame';
 import MafiaGame from '../components/MafiaGame';
+import PartyQuestsGame from '../components/PartyQuestsGame';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
@@ -125,6 +126,7 @@ export default function SpectatorPage() {
     const [whoAmIState, setWhoAmIState] = useState<WhoAmIState | null>(null);
     const [chitPullState, setChitPullState] = useState<ChitPullState | null>(null);
     const [mafiaState, setMafiaState] = useState<MafiaState | null>(null);
+    const [partyQuestsState, setPartyQuestsState] = useState<PartyQuestsState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -291,6 +293,11 @@ export default function SpectatorPage() {
                     setGameState('MAFIA');
                     return;
                 }
+                if (msg.game_type === 'party_quests' && msg.party_quests) {
+                    setPartyQuestsState(msg.party_quests);
+                    setGameState('PARTY_QUESTS');
+                    return;
+                }
                 // Handle mid-question sync
                 if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
@@ -351,6 +358,9 @@ export default function SpectatorPage() {
                 } else if (msg.game_type === 'mafia') {
                     setGameType('mafia');
                     setGameState('MAFIA');
+                } else if (msg.game_type === 'party_quests') {
+                    setGameType('party_quests');
+                    setGameState('PARTY_QUESTS');
                 }
                 else setGameState('INTRO');
             }
@@ -431,6 +441,12 @@ export default function SpectatorPage() {
                 setMafiaState(msg.mafia || null);
                 setLeaderboard(msg.leaderboard || []);
                 setGameState('MAFIA');
+            }
+            else if (msg.type === 'QUESTS_SYNC') {
+                setGameType('party_quests');
+                setPartyQuestsState(msg.party_quests || null);
+                setLeaderboard(msg.leaderboard || []);
+                setGameState('PARTY_QUESTS');
             }
             else if (msg.type === 'MC_WINNER') {
                 setGameType('musical_chairs');
@@ -542,6 +558,7 @@ export default function SpectatorPage() {
                 setWhoAmIState(null);
                 setChitPullState(null);
                 setMafiaState(null);
+                setPartyQuestsState(null);
                 if (msg.game_type) setGameType(msg.game_type);
                 setGameState('LOBBY');
             }
@@ -895,6 +912,10 @@ export default function SpectatorPage() {
 
                     {gameState === 'MAFIA' && (
                         <MafiaGame state={mafiaState} controls="spectator" />
+                    )}
+
+                    {gameState === 'PARTY_QUESTS' && (
+                        <PartyQuestsGame state={partyQuestsState} controls="spectator" />
                     )}
 
                     {gameState === 'QUESTION' && (question || currentStatement || gameType === 'drawing') && (

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { WS_URL } from '../config';
-import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, type PartyQuestsState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -28,8 +28,9 @@ import FindSomeoneGame from '../components/FindSomeoneGame';
 import WhoAmIGame from '../components/WhoAmIGame';
 import ChitPullGame from '../components/ChitPullGame';
 import MafiaGame from '../components/MafiaGame';
+import PartyQuestsGame from '../components/PartyQuestsGame';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'PARTY_QUESTS' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
 interface PlayerQuestion {
     id: number;
@@ -153,6 +154,7 @@ export default function PlayerPage() {
     const [whoAmIState, setWhoAmIState] = useState<WhoAmIState | null>(null);
     const [chitPullState, setChitPullState] = useState<ChitPullState | null>(null);
     const [mafiaState, setMafiaState] = useState<MafiaState | null>(null);
+    const [partyQuestsState, setPartyQuestsState] = useState<PartyQuestsState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const submittedRef = useRef(false);
@@ -273,6 +275,10 @@ export default function PlayerPage() {
                     setGameType('mafia');
                     setMafiaState(msg.mafia as MafiaState);
                     setState('MAFIA');
+                } else if (msg.game_type === 'party_quests' && msg.party_quests) {
+                    setGameType('party_quests');
+                    setPartyQuestsState(msg.party_quests as PartyQuestsState);
+                    setState('PARTY_QUESTS');
                 } else {
                     setState('LOBBY');
                 }
@@ -325,6 +331,10 @@ export default function PlayerPage() {
                     setGameType('mafia');
                     setMafiaState(msg.mafia as MafiaState);
                     setState('MAFIA');
+                } else if (msg.game_type === 'party_quests' && msg.party_quests) {
+                    setGameType('party_quests');
+                    setPartyQuestsState(msg.party_quests as PartyQuestsState);
+                    setState('PARTY_QUESTS');
                 } else if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
                         setGameType('drawing');
@@ -404,6 +414,9 @@ export default function PlayerPage() {
                 } else if (msg.game_type === 'mafia') {
                     setGameType('mafia');
                     setState('MAFIA');
+                } else if (msg.game_type === 'party_quests') {
+                    setGameType('party_quests');
+                    setState('PARTY_QUESTS');
                 }
                 else setState('INTRO');
             }
@@ -528,6 +541,13 @@ export default function PlayerPage() {
                 setMafiaState(msg.mafia as MafiaState);
                 setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
                 setState('MAFIA');
+            }
+            if (msg.type === 'QUESTS_SYNC') {
+                setError('');
+                setGameType('party_quests');
+                setPartyQuestsState(msg.party_quests as PartyQuestsState);
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+                setState('PARTY_QUESTS');
             }
             if (msg.type === 'QUESTION') {
                 if (msg.game_type === 'drawing') {
@@ -707,6 +727,7 @@ export default function PlayerPage() {
                 setWhoAmIState(null);
                 setChitPullState(null);
                 setMafiaState(null);
+                setPartyQuestsState(null);
                 setMcGrabbed(false);
                 setMcEliminated(false);
                 setMcReactionMs(null);
@@ -889,6 +910,14 @@ export default function PlayerPage() {
     const submitMafiaVote = (target: string) => {
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'MAFIA_VOTE', target }));
+    };
+    const requestPartyQuestConfirmation = (questId: string, partnerPlayerId: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'QUESTS_REQUEST_CONFIRMATION', quest_id: questId, partner_player_id: partnerPlayerId }));
+    };
+    const confirmPartyQuest = (requestId: string, accepted: boolean) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'QUESTS_CONFIRM', request_id: requestId, accepted }));
     };
 
     const activatePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
@@ -1262,6 +1291,19 @@ export default function PlayerPage() {
                             onNightAction={submitMafiaNightAction}
                             onNightRead={submitMafiaNightRead}
                             onVote={submitMafiaVote}
+                        />
+                    </>
+                )}
+
+                {state === 'PARTY_QUESTS' && (
+                    <>
+                        {error && <div className="status-pill status-error animate-shake player-runtime-error">{error}</div>}
+                        <PartyQuestsGame
+                            state={partyQuestsState}
+                            viewerName={nickname}
+                            controls="player"
+                            onRequestConfirmation={requestPartyQuestConfirmation}
+                            onConfirm={confirmPartyQuest}
                         />
                     </>
                 )}

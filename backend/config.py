@@ -108,6 +108,7 @@ MIN_FIND_SOMEONE_PLAYERS = 1  # Find Someone Who can auto-start when the first c
 MIN_WHO_AM_I_PLAYERS = 2  # Who Am I minimum players
 MIN_CHIT_PULL_PLAYERS = 3  # Chit Pull minimum players
 MIN_MAFIA_PLAYERS = 6  # Mafia minimum players
+MIN_PARTY_QUESTS_PLAYERS = 1  # Ambient party quests can start as soon as the first guest joins
 MC_MIN_MUSIC_SECONDS = 3
 MC_MAX_MUSIC_SECONDS = 60
 MC_MIN_GRAB_WINDOW = 2

@@ -42,6 +42,7 @@ from find_someone_engine import validate_config as validate_find_someone_config
 from who_am_i_engine import sanitize_generated_game as sanitize_who_am_i_game, validate_config as validate_who_am_i_config, validate_generated_game as validate_who_am_i_game
 from chit_pull_engine import sanitize_generated_game as sanitize_chit_pull_game, validate_config as validate_chit_pull_config, validate_generated_game as validate_chit_pull_game
 from mafia_engine import validate_config as validate_mafia_config
+from party_quests_engine import validate_config as validate_party_quests_config
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -142,8 +143,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="AI Quiz Game Backend", lifespan=lifespan)
 REVELRY_PARTY_GAME_TYPES = ("quiz", "wmlt", "drawing", "housie")
 REVELRY_PARTY_GAME_TYPES_ERROR = 'game_type must be "quiz", "wmlt", "drawing", or "housie"'
-REVELRY_PARTY_GAME_START_TYPES = (*REVELRY_PARTY_GAME_TYPES, "musical_chairs")
-REVELRY_PARTY_GAME_START_TYPES_ERROR = 'game_type must be "quiz", "wmlt", "drawing", "housie", or "musical_chairs"'
+REVELRY_PARTY_GAME_START_TYPES = (*REVELRY_PARTY_GAME_TYPES, "musical_chairs", "party_quests")
+REVELRY_PARTY_GAME_START_TYPES_ERROR = 'game_type must be "quiz", "wmlt", "drawing", "housie", "musical_chairs", or "party_quests"'
 
 
 def get_local_ip():
@@ -487,6 +488,7 @@ class RoomCreateRequest(BaseModel):
     chit_pull_config: dict = {}
     chit_pull_id: str = ""
     mafia_config: dict = {}
+    party_quests_config: dict = {}
     game_type: str = "quiz"
     time_limit: Optional[int] = None
 
@@ -509,7 +511,7 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia"):
+        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests"):
             raise ValueError('game_type must be a supported LocalPlay game type')
         return v
 
@@ -953,6 +955,39 @@ GAME_CATALOG = [
             "role_reveal_seconds": {"min": 5, "max": 20, "default": 10},
         },
     },
+    {
+        "id": "party_quests",
+        "game_type": "party_quests",
+        "runtime_type": "party_quests",
+        "engine_family": "ambient_social",
+        "title": "Party Quests",
+        "description": "Guests complete mingling quests throughout the party and confirm each other on their phones.",
+        "status": "gamma",
+        "launchable": True,
+        "host_app_supported": True,
+        "supported_host_apps": ["revelry"],
+        "supports_custom_content": True,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["quick_start", "settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "party_quests_setup_v1",
+            "supported_media": [],
+        },
+        "result_summary_schema": "party_quests_result_v1",
+        "config_schema": {
+            "players": {"min": config.MIN_PARTY_QUESTS_PLAYERS, "recommended_min": 4, "max": config.MAX_PLAYERS_PER_ROOM},
+            "duration_minutes": {"min": 10, "max": 240, "default": 90},
+            "quests_per_player": {"min": 3, "max": 25, "default": 8},
+            "confirmation_mode": {"default": "tap_confirm", "options": ["tap_confirm", "honor"]},
+            "allow_late_join": {"default": True},
+        },
+    },
 ]
 
 
@@ -976,6 +1011,8 @@ def _default_time_limit_for_game(game_type: str) -> int:
     if game_type == "chit_pull":
         return 30
     if game_type == "mafia":
+        return 30
+    if game_type == "party_quests":
         return 30
     return config.DEFAULT_TIME_LIMIT
 
@@ -1075,6 +1112,8 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
         return str(uuid.uuid4()), validate_chit_pull_config({"game_title": title or "Chit Pull"})
     if game_type == "mafia":
         return str(uuid.uuid4()), validate_mafia_config({"game_title": title or "Mafia"})
+    if game_type == "party_quests":
+        return str(uuid.uuid4()), validate_party_quests_config({"game_title": title or "Party Quests"})
     if game_type == "bingo":
         return str(uuid.uuid4()), default_bingo_game(title or "Bingo")
     if game_type == "housie":
@@ -1133,6 +1172,8 @@ def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = 
             return content_id, chit_pull_games[content_id]
         return _default_game_content(game_type, title)
     if game_type == "mafia":
+        return _default_game_content(game_type, title)
+    if game_type == "party_quests":
         return _default_game_content(game_type, title)
     if game_type == "bingo":
         if not config.BINGO_ENABLED:
@@ -3708,6 +3749,9 @@ async def create_room(request: RoomCreateRequest, req: Request):
     elif request.game_type == "mafia":
         content_id = str(uuid.uuid4())
         game_data = validate_mafia_config(request.mafia_config)
+    elif request.game_type == "party_quests":
+        content_id = str(uuid.uuid4())
+        game_data = validate_party_quests_config(request.party_quests_config)
     else:
         content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
     if request.game_type == "drawing":

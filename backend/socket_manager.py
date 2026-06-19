@@ -130,6 +130,21 @@ from mafia_engine import (
     submit_vote as mafia_submit_vote,
     validate_config as validate_mafia_config,
 )
+from party_quests_engine import (
+    PHASE_PODIUM as QUESTS_PHASE_PODIUM,
+    add_player as quests_add_player,
+    apply_confirmation as quests_apply_confirmation,
+    complete as quests_complete,
+    create_confirmation_request as quests_create_confirmation_request,
+    create_initial_state as quests_create_initial_state,
+    private_sync as quests_private_sync,
+    public_sync as quests_public_sync,
+    result_summary as quests_result_summary,
+    reveal as quests_reveal,
+    start_final_call as quests_start_final_call,
+    standings as quests_standings,
+    validate_config as validate_party_quests_config,
+)
 from bingo_engine import (
     BINGO_PATTERN_ORDER,
     create_bingo_call_deck,
@@ -252,6 +267,9 @@ class Room:
         self.mafia_config = validate_mafia_config(game_data) if game_type == "mafia" else {}
         self.mafia_state: dict = {}
         self.mafia_timer_task: Optional[asyncio.Task] = None
+        # Party Quests state
+        self.party_quests_config = validate_party_quests_config(game_data) if game_type == "party_quests" else {}
+        self.party_quests_state: dict = {}
 
     def reset_for_new_game(self, new_game_data: dict, new_time_limit: int,
                            game_type: Optional[str] = None,
@@ -355,6 +373,8 @@ class Room:
             self.mafia_timer_task = None
         self.mafia_config = validate_mafia_config(new_game_data) if self.game_type == "mafia" else {}
         self.mafia_state = {}
+        self.party_quests_config = validate_party_quests_config(new_game_data) if self.game_type == "party_quests" else {}
+        self.party_quests_state = {}
 
         for nickname in self.power_ups:
             self.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
@@ -394,6 +414,8 @@ class Room:
             return int(self.chit_pull_state.get("config", {}).get("rounds", 0)) or int(self.chit_pull_config.get("rounds", 20) or 20)
         if self.game_type == "mafia":
             return int(self.mafia_state.get("round", 1) or 1)
+        if self.game_type == "party_quests":
+            return 1
         return len(self.quiz.get("questions", []))
 
     def current_round_data(self) -> Optional[dict]:
@@ -427,6 +449,8 @@ class Room:
             return chit_pull_public_sync(self.chit_pull_state, players=self.player_public_list()) if self.chit_pull_state else None
         if self.game_type == "mafia":
             return mafia_public_sync(self.mafia_state, players=self.player_public_list()) if self.mafia_state else None
+        if self.game_type == "party_quests":
+            return quests_public_sync(self.party_quests_state, players=self.player_public_list()) if self.party_quests_state else None
         return self.quiz["questions"][idx]
 
     def game_title(self) -> str:
@@ -952,6 +976,8 @@ class SocketManager:
             sync["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
         if room.game_type == "mafia" and room.mafia_state:
             sync["mafia"] = mafia_public_sync(room.mafia_state, players=room.player_public_list())
+        if room.game_type == "party_quests" and room.party_quests_state:
+            sync["party_quests"] = quests_public_sync(room.party_quests_state, players=room.player_public_list())
 
         if room.organizer:
             await room.organizer.send_json(sync)
@@ -1082,6 +1108,14 @@ class SocketManager:
                                 "message": f"Mafia needs at least {config.MIN_MAFIA_PLAYERS} players to start",
                             })
                             return
+                    elif room.game_type == "party_quests":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_PARTY_QUESTS_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": "Party Quests starts when at least one guest has joined",
+                            })
+                            return
                     if room.billing_mode == "host_app_managed":
                         spent = True
                     else:
@@ -1141,12 +1175,16 @@ class SocketManager:
                         self._start_mafia_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": "mafia"})
                         await self._broadcast_mafia_sync(room)
+                    elif room.game_type == "party_quests":
+                        self._start_party_quests_game(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": "party_quests"})
+                        await self._broadcast_party_quests_sync(room)
                     else:
                         room.state = "INTRO"
                         await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
-                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia"):
+                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests"):
                     return
                 if room.game_type == "drawing" and room.drawing_auto_task:
                     room.drawing_auto_task.cancel()
@@ -1258,6 +1296,12 @@ class SocketManager:
             elif msg_type == "MAFIA_EXTEND_TIMER" and room.game_type == "mafia":
                 await self._mafia_extend_timer(room)
 
+            elif msg_type == "QUESTS_FINAL_CALL" and room.game_type == "party_quests":
+                await self._party_quests_final_call(room)
+
+            elif msg_type == "QUESTS_REVEAL" and room.game_type == "party_quests":
+                await self._party_quests_reveal(room)
+
             elif msg_type == "SET_TIME_LIMIT":
                 if room.state in ("LOBBY", "LEADERBOARD", "PODIUM"):
                     new_limit = message.get("time_limit", 15)
@@ -1298,6 +1342,9 @@ class SocketManager:
                 if room.game_type == "mafia":
                     await self._mafia_complete_game(room)
                     return
+                if room.game_type == "party_quests":
+                    await self._party_quests_complete_game(room)
+                    return
                 if room.game_type in ("housie", "bingo") and room.state == "BINGO_CALLING":
                     await self._complete_housie(room)
                     return
@@ -1335,7 +1382,7 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia") else room.game_type
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests") else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
 
                     # Validate time_limit
@@ -1373,6 +1420,8 @@ class SocketManager:
                         new_game_data = chit_pull_games.get(new_content_id) or validate_chit_pull_config({})
                     elif new_game_type == "mafia":
                         new_game_data = validate_mafia_config({})
+                    elif new_game_type == "party_quests":
+                        new_game_data = validate_party_quests_config({})
                     else:
                         new_game_data = quizzes.get(new_content_id)
 
@@ -1544,6 +1593,8 @@ class SocketManager:
                             state_info["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
                         elif room.game_type == "mafia" and room.mafia_state:
                             state_info["mafia"] = mafia_private_sync(room.mafia_state, nickname, players=room.player_public_list())
+                        elif room.game_type == "party_quests" and room.party_quests_state:
+                            state_info["party_quests"] = quests_private_sync(room.party_quests_state, nickname, players=room.player_public_list())
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1646,6 +1697,8 @@ class SocketManager:
                             state_info["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
                         elif room.game_type == "mafia" and room.mafia_state:
                             state_info["mafia"] = mafia_private_sync(room.mafia_state, player_data["nickname"], players=room.player_public_list())
+                        elif room.game_type == "party_quests" and room.party_quests_state:
+                            state_info["party_quests"] = quests_private_sync(room.party_quests_state, player_data["nickname"], players=room.player_public_list())
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1686,6 +1739,13 @@ class SocketManager:
                     and bool(room.find_someone_state)
                     and room.state != "LOBBY"
                     and room.state != FIND_PHASE_PODIUM
+                )
+                active_party_quests_join = (
+                    room.game_type == "party_quests"
+                    and bool(room.party_quests_state)
+                    and bool(room.party_quests_state.get("config", {}).get("allow_late_join", True))
+                    and room.state != "LOBBY"
+                    and room.state != QUESTS_PHASE_PODIUM
                 )
 
                 if len(room.players) >= config.MAX_PLAYERS_PER_ROOM:
@@ -1745,6 +1805,32 @@ class SocketManager:
                         "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()]
                     })
                     await self._broadcast_find_someone_sync(room)
+                    return
+
+                if active_party_quests_join:
+                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
+                    room.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
+                    player_session_token = secrets.token_urlsafe(16)
+                    room.player_tokens[nickname] = player_session_token
+                    room.party_quests_state = quests_add_player(room.party_quests_state, nickname, now=time.time())
+                    self._sync_party_quests_scores_to_players(room)
+                    ws = room.connections.get(client_id)
+                    if ws:
+                        await ws.send_json({
+                            "type": "JOINED_ROOM",
+                            "room_code": room.room_code,
+                            "session_token": player_session_token,
+                            "state": room.state,
+                            "game_type": "party_quests",
+                            "party_quests": quests_private_sync(room.party_quests_state, nickname, players=room.player_public_list()),
+                        })
+                    await room.broadcast({
+                        "type": "PLAYER_JOINED",
+                        "nickname": nickname,
+                        "player_count": len(room.players),
+                        "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()]
+                    })
+                    await self._broadcast_party_quests_sync(room)
                     return
 
                 # Block new players if room is locked
@@ -1890,8 +1976,14 @@ class SocketManager:
             elif msg_type == "MAFIA_VOTE" and room.game_type == "mafia":
                 await self._mafia_submit_vote(room, client_id, str(message.get("target") or ""))
 
+            elif msg_type == "QUESTS_REQUEST_CONFIRMATION" and room.game_type == "party_quests":
+                await self._party_quests_request_confirmation(room, client_id, message)
+
+            elif msg_type == "QUESTS_CONFIRM" and room.game_type == "party_quests":
+                await self._party_quests_confirm(room, client_id, message)
+
             elif msg_type == "ANSWER":
-                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia"):
+                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests"):
                     return  # Other games use their own input messages
                 if client_id not in room.players:
                     return
@@ -3316,6 +3408,148 @@ class SocketManager:
             self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Mafia history for room %s", room.room_code)
+
+    def _start_party_quests_game(self, room: Room):
+        room.party_quests_config = validate_party_quests_config(room.quiz)
+        room.party_quests_state = quests_create_initial_state(
+            [p["nickname"] for p in room.players.values() if p.get("nickname")],
+            room.party_quests_config,
+            now=time.time(),
+            seed=secrets.randbits(32),
+        )
+        self._sync_party_quests_phase_to_room(room)
+        self._sync_party_quests_scores_to_players(room)
+
+    def _sync_party_quests_phase_to_room(self, room: Room):
+        if room.party_quests_state:
+            room.state = str(room.party_quests_state.get("phase") or "QUESTS_ACTIVE")
+            room.current_question_index = 0
+
+    def _sync_party_quests_scores_to_players(self, room: Room):
+        scores = room.party_quests_state.get("scores", {}) if room.party_quests_state else {}
+        for pdata in room.players.values():
+            nickname = pdata.get("nickname")
+            pdata["score"] = int(scores.get(nickname, 0) or 0)
+
+    async def _broadcast_party_quests_sync(self, room: Room):
+        if not room.party_quests_state:
+            return
+        players = room.player_public_list()
+        self._sync_party_quests_phase_to_room(room)
+        self._sync_party_quests_scores_to_players(room)
+        public = {
+            "type": "QUESTS_SYNC",
+            "game_type": "party_quests",
+            "party_quests": quests_public_sync(room.party_quests_state, players=players),
+            "player_count": len(room.players),
+            "players": players,
+            "leaderboard": self.get_leaderboard(room),
+        }
+        if room.organizer:
+            await room.send_to_organizer(public)
+        for spec_id, ws in list(room.spectators.items()):
+            try:
+                await ws.send_json(public)
+            except Exception:
+                room._remove_connection(spec_id)
+        for client_id, pdata in list(room.players.items()):
+            ws = room.connections.get(client_id)
+            if not ws:
+                continue
+            payload = dict(public)
+            payload["party_quests"] = quests_private_sync(room.party_quests_state, pdata.get("nickname", ""), players=players)
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                room._remove_connection(client_id)
+        await room.emit_pending_player_event()
+
+    async def _party_quests_request_confirmation(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players or not room.party_quests_state:
+            return
+        nickname = room.players[client_id].get("nickname", "")
+        try:
+            async with room.lock:
+                room.party_quests_state, request = quests_create_confirmation_request(
+                    room.party_quests_state,
+                    nickname,
+                    str(message.get("quest_id") or ""),
+                    str(message.get("partner_player_id") or ""),
+                    now=time.time(),
+                )
+                self._sync_party_quests_scores_to_players(room)
+                self._sync_party_quests_phase_to_room(room)
+                room.answer_log.append({"kind": "party_quest_request", "nickname": nickname, "quest_id": message.get("quest_id")})
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._send_to_client(room, client_id, {"type": "QUESTS_REQUEST_ACK", "request_id": request.get("id") if request else ""})
+        await self._broadcast_party_quests_sync(room)
+
+    async def _party_quests_confirm(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players or not room.party_quests_state:
+            return
+        nickname = room.players[client_id].get("nickname", "")
+        try:
+            async with room.lock:
+                room.party_quests_state, result = quests_apply_confirmation(
+                    room.party_quests_state,
+                    str(message.get("request_id") or ""),
+                    nickname,
+                    bool(message.get("accepted", False)),
+                    now=time.time(),
+                )
+                self._sync_party_quests_scores_to_players(room)
+                self._sync_party_quests_phase_to_room(room)
+                room.answer_log.append({"kind": "party_quest_confirm", "nickname": nickname, "accepted": result.get("accepted")})
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._broadcast_party_quests_sync(room)
+
+    async def _party_quests_final_call(self, room: Room):
+        if not room.party_quests_state:
+            return
+        async with room.lock:
+            room.party_quests_state = quests_start_final_call(room.party_quests_state, now=time.time())
+            self._sync_party_quests_phase_to_room(room)
+        await self._broadcast_party_quests_sync(room)
+
+    async def _party_quests_reveal(self, room: Room):
+        if not room.party_quests_state:
+            return
+        async with room.lock:
+            room.party_quests_state = quests_reveal(room.party_quests_state, now=time.time())
+            self._sync_party_quests_phase_to_room(room)
+            self._sync_party_quests_scores_to_players(room)
+        await self._broadcast_party_quests_sync(room)
+
+    async def _party_quests_complete_game(self, room: Room):
+        if room.state == "PODIUM":
+            return
+        if room.party_quests_state:
+            room.party_quests_state = quests_complete(room.party_quests_state, now=time.time())
+        self._sync_party_quests_scores_to_players(room)
+        room.state = "PODIUM"
+        leaderboard = self.get_leaderboard(room)
+        await room.broadcast({
+            "type": "PODIUM",
+            "game_type": "party_quests",
+            "leaderboard": leaderboard,
+            "team_leaderboard": [],
+            "party_quests": quests_public_sync(room.party_quests_state, players=room.player_public_list()) if room.party_quests_state else {},
+        })
+        try:
+            from main import game_history
+            summary = self.get_game_summary(room)
+            summary["party_quests_result"] = quests_result_summary(room.party_quests_state, players=room.player_public_list()) if room.party_quests_state else {}
+            summary["party_quests_standings"] = quests_standings(room.party_quests_state) if room.party_quests_state else []
+            game_history.append(summary)
+            if len(game_history) > config.MAX_GAME_HISTORY:
+                del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+            self._mark_game_session_complete(room, summary)
+        except Exception:
+            logger.warning("Could not save Party Quests history for room %s", room.room_code)
 
     def _start_musical_chairs_game(self, room: Room):
         room.mc_config = validate_musical_chairs_config(room.quiz)

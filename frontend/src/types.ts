@@ -67,7 +67,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -574,6 +574,72 @@ export interface MafiaState {
     my_vote?: string;
     my_investigations?: Array<{ round: number; target: string; result: 'town' | 'mafia' | string }>;
     ghost?: boolean;
+}
+
+export interface PartyQuestItem {
+    quest_id: string;
+    display: string;
+    category?: string;
+    points: number;
+    status: 'open' | 'pending_confirmation' | 'confirmed' | string;
+    confirmed_by_player_id?: string;
+    confirmed_by_name?: string;
+    request_id?: string;
+    completed_at?: number | null;
+}
+
+export interface PartyQuestConfirmation {
+    id: string;
+    requester_id: string;
+    partner_player_id: string;
+    quest_id: string;
+    display: string;
+    points?: number;
+    created_at?: number;
+    expires_at?: number;
+}
+
+export interface PartyQuestsState {
+    phase: 'QUESTS_ACTIVE' | 'QUESTS_FINAL_CALL' | 'QUESTS_REVEAL' | 'PODIUM' | string;
+    config: {
+        game_title?: string;
+        duration_minutes?: number;
+        quests_per_player?: number;
+        confirmation_mode?: 'tap_confirm' | 'honor' | 'pair_code' | string;
+        allow_late_join?: boolean;
+        theme?: string;
+    };
+    players: PlayerInfo[];
+    started_at?: number;
+    ends_at?: number | null;
+    player_count: number;
+    completed_count: number;
+    pending_count: number;
+    leaderboard: Array<{
+        player_id: string;
+        nickname?: string;
+        avatar?: string;
+        rank: number;
+        score: number;
+        completed: number;
+        total: number;
+        unique_partners: number;
+    }>;
+    standings: Array<{
+        player_id: string;
+        nickname?: string;
+        avatar?: string;
+        rank: number;
+        score: number;
+        completed: number;
+        total: number;
+        unique_partners: number;
+    }>;
+    awards: Array<{ id: string; label: string; player_id: string }>;
+    my_board?: PartyQuestItem[];
+    my_score?: number;
+    incoming_requests?: PartyQuestConfirmation[];
+    outgoing_requests?: PartyQuestConfirmation[];
 }
 
 export interface HousieCell {

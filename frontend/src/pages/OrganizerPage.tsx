@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type WhoAmIGameContent, type ChitPullCategory, type ChitPullGameContent, type ChitPullSafeLevel, type ChitPullState, type MafiaState } from '../types';
+import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type WhoAmIGameContent, type ChitPullCategory, type ChitPullGameContent, type ChitPullSafeLevel, type ChitPullState, type MafiaState, type PartyQuestsState } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending, saveOrganizerSession, getSavedOrganizerSession, clearOrganizerSession } from '../utils/storage';
@@ -24,6 +24,7 @@ import HousieSetupScreen from '../components/organizer/HousieSetupScreen';
 import BingoPromptScreen from '../components/organizer/BingoPromptScreen';
 import BingoSetupScreen from '../components/organizer/BingoSetupScreen';
 import MusicalChairsSetupScreen, { defaultMusicalChairsConfig } from '../components/organizer/MusicalChairsSetupScreen';
+import PartyQuestsSetupScreen, { defaultPartyQuestsConfig, type PartyQuestSetupConfig } from '../components/organizer/PartyQuestsSetupScreen';
 import MusicalChairsGameScreen from '../components/organizer/MusicalChairsGameScreen';
 import BluffTable from '../components/BluffTable';
 import TwoTruthsGame from '../components/TwoTruthsGame';
@@ -33,6 +34,7 @@ import FindSomeoneGame from '../components/FindSomeoneGame';
 import WhoAmIGame from '../components/WhoAmIGame';
 import ChitPullGame from '../components/ChitPullGame';
 import MafiaGame from '../components/MafiaGame';
+import PartyQuestsGame from '../components/PartyQuestsGame';
 import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
 import { BingoCalledList, BingoCallOverlay } from '../components/BingoBoard';
 import ImageGenerationScreen from '../components/organizer/ImageGenerationScreen';
@@ -47,7 +49,7 @@ import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'WHO_AM_I_PROMPT' | 'WHO_AM_I_REVIEW' | 'CHIT_PULL_PROMPT' | 'CHIT_PULL_REVIEW' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'WHO_AM_I_PROMPT' | 'WHO_AM_I_REVIEW' | 'CHIT_PULL_PROMPT' | 'CHIT_PULL_REVIEW' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'PARTY_QUESTS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'PARTY_QUESTS' | 'LEADERBOARD' | 'PODIUM';
 
 function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'housie' || type === 'bingo' || type === 'baby_bingo') return 15;
@@ -60,6 +62,7 @@ function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'who_am_i') return 25;
     if (type === 'chit_pull') return 30;
     if (type === 'mafia') return 30;
+    if (type === 'party_quests') return 30;
     return type === 'drawing' ? 30 : 15;
 }
 
@@ -178,6 +181,8 @@ export default function OrganizerPage() {
     const [chitPullState, setChitPullState] = useState<ChitPullState | null>(null);
     const [chitPullSafeLevel, setChitPullSafeLevel] = useState<ChitPullSafeLevel>('family');
     const [mafiaState, setMafiaState] = useState<MafiaState | null>(null);
+    const [partyQuestsState, setPartyQuestsState] = useState<PartyQuestsState | null>(null);
+    const [partyQuestsConfig, setPartyQuestsConfig] = useState<PartyQuestSetupConfig>(defaultPartyQuestsConfig());
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean; returnToHostApp?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -241,13 +246,14 @@ export default function OrganizerPage() {
                 'BINGO_PROMPT',
                 'BINGO_SETUP',
                 'MUSICAL_CHAIRS_SETUP',
+                'PARTY_QUESTS_SETUP',
                 'LOADING',
                 'REVIEW',
                 'MLT_REVIEW',
                 'DRAWING_REVIEW',
                 'GENERATING_IMAGES',
             ];
-            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA'];
+            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'PARTY_QUESTS'];
             if (homeSafeStates.includes(stateRef.current)) {
                 flowEpochRef.current += 1;
                 clearOrganizerSession();
@@ -267,6 +273,7 @@ export default function OrganizerPage() {
                 setChitPullState(null);
                 setChitPullGame(null);
                 setMafiaState(null);
+                setPartyQuestsState(null);
                 setEditingPackId(undefined);
                 setContentId('');
                 setQuestionImages({});
@@ -297,6 +304,7 @@ export default function OrganizerPage() {
                 setChitPullState(null);
                 setChitPullGame(null);
                 setMafiaState(null);
+                setPartyQuestsState(null);
                 setEditingPackId(undefined);
                 setContentId('');
                 setQuestionImages({});
@@ -527,6 +535,12 @@ export default function OrganizerPage() {
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('MAFIA');
         }
+        else if (msg.type === 'QUESTS_SYNC') {
+            setGameType('party_quests');
+            setPartyQuestsState(msg.party_quests as PartyQuestsState);
+            setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+            setState('PARTY_QUESTS');
+        }
         else if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED') {
             setPlayerCount(msg.player_count as number);
             setPlayers(msg.players as PlayerInfo[] || []);
@@ -553,6 +567,7 @@ export default function OrganizerPage() {
             setWhoAmIState(null);
             setChitPullState(null);
             setMafiaState(null);
+            setPartyQuestsState(null);
             setAnsweredCount(0);
             setLiveQuestion(null);
             setCurrentStatement('');
@@ -591,6 +606,7 @@ export default function OrganizerPage() {
             if (msg.who_am_i) setWhoAmIState(msg.who_am_i as WhoAmIState);
             if (msg.chit_pull) setChitPullState(msg.chit_pull as ChitPullState);
             if (msg.mafia) setMafiaState(msg.mafia as MafiaState);
+            if (msg.party_quests) setPartyQuestsState(msg.party_quests as PartyQuestsState);
             if (msg.quiz) {
                 const quizData = msg.quiz as Record<string, unknown>;
                 if (quizData.questions) {
@@ -638,6 +654,10 @@ export default function OrganizerPage() {
                 setState('CHIT_PULL');
             } else if (String(msg.state || '').startsWith('WHOAMI_')) {
                 setState('WHO_AM_I');
+            } else if (String(msg.state || '').startsWith('MAFIA_')) {
+                setState('MAFIA');
+            } else if (String(msg.state || '').startsWith('QUESTS_')) {
+                setState('PARTY_QUESTS');
             }
         }
         else if (msg.type === 'ERROR') {
@@ -741,6 +761,12 @@ export default function OrganizerPage() {
         else if (type === 'mafia') {
             setMafiaState(null);
             void createRoom(undefined, 'mafia', defaultTimeLimitForGame('mafia'));
+        }
+        else if (type === 'party_quests') {
+            const next = defaultPartyQuestsConfig();
+            setPartyQuestsConfig(next);
+            setPartyQuestsState(null);
+            setState('PARTY_QUESTS_SETUP');
         }
         else if (type === 'quiz') {
             setPrompt(randomQuizTopic(prompt));
@@ -1290,7 +1316,7 @@ export default function OrganizerPage() {
         ws.onclose = () => {
             wsRef.current = null;
             if (!mountedRef.current) return;
-            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'LEADERBOARD', 'PODIUM'];
+            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'PARTY_QUESTS', 'LEADERBOARD', 'PODIUM'];
             if (roomCodeRef.current && activeStates.includes(stateRef.current)) {
                 if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                 reconnectTimerRef.current = setTimeout(() => connectWsRef.current(roomCodeRef.current), 2000);
@@ -1368,6 +1394,7 @@ export default function OrganizerPage() {
         contentOverride?: string,
         gameTypeOverride: GameType = gameType,
         timeLimitOverride: number = timeLimit,
+        runtimeConfigOverride?: Record<string, unknown>,
     ) => {
         const selectedContentId = contentOverride ?? contentId;
         const effectiveGameType = gameTypeOverride;
@@ -1444,6 +1471,8 @@ export default function OrganizerPage() {
                 else body.chit_pull_config = { game_title: 'Chit Pull' };
             } else if (effectiveGameType === 'mafia') {
                 body.mafia_config = { game_title: 'Mafia' };
+            } else if (effectiveGameType === 'party_quests') {
+                body.party_quests_config = runtimeConfigOverride || partyQuestsConfig;
             } else if (isQuizRuntimeGame(effectiveGameType)) {
                 body.quiz_id = selectedContentId;
             }
@@ -1586,7 +1615,7 @@ export default function OrganizerPage() {
             wsRef.current?.send(JSON.stringify({ type: 'SET_SHOW_VOTES', show_votes: showVotes }));
         }
         wsRef.current?.send(JSON.stringify({ type: 'START_GAME' }));
-        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'musical_chairs' && gameType !== 'bluff' && gameType !== 'two_truths' && gameType !== 'story_chain' && gameType !== 'common_ground' && gameType !== 'find_someone' && gameType !== 'who_am_i' && gameType !== 'chit_pull' && gameType !== 'mafia') {
+        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'musical_chairs' && gameType !== 'bluff' && gameType !== 'two_truths' && gameType !== 'story_chain' && gameType !== 'common_ground' && gameType !== 'find_someone' && gameType !== 'who_am_i' && gameType !== 'chit_pull' && gameType !== 'mafia' && gameType !== 'party_quests') {
             wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
         }
     };
@@ -1623,6 +1652,13 @@ export default function OrganizerPage() {
     const redrawChit = () => wsRef.current?.send(JSON.stringify({ type: 'CHIT_REDRAW_CHIT' }));
     const skipMafiaTimer = () => wsRef.current?.send(JSON.stringify({ type: 'MAFIA_SKIP_TIMER' }));
     const extendMafiaTimer = () => wsRef.current?.send(JSON.stringify({ type: 'MAFIA_EXTEND_TIMER' }));
+    const partyQuestsFinalCall = () => wsRef.current?.send(JSON.stringify({ type: 'QUESTS_FINAL_CALL' }));
+    const partyQuestsReveal = () => wsRef.current?.send(JSON.stringify({ type: 'QUESTS_REVEAL' }));
+    const createPartyQuestsAndRoom = async (config: PartyQuestSetupConfig) => {
+        setPartyQuestsConfig(config);
+        setGameType('party_quests');
+        await createRoom(undefined, 'party_quests', defaultTimeLimitForGame('party_quests'), config as unknown as Record<string, unknown>);
+    };
     const createWhoAmIAndRoom = async () => {
         try {
             const game = whoAmIGame || starterWhoAmIGame();
@@ -1663,6 +1699,7 @@ export default function OrganizerPage() {
         setWhoAmIState(null);
         setChitPullState(null);
         setMafiaState(null);
+        setPartyQuestsState(null);
         if (contentId && roomCode && wsRef.current?.readyState === WebSocket.OPEN) {
             createRoom(contentId);
             return;
@@ -1690,6 +1727,7 @@ export default function OrganizerPage() {
         setChitPullState(null);
         setChitPullGame(null);
         setMafiaState(null);
+        setPartyQuestsState(null);
         if (hostAppMode) {
             returnToHostApp();
         } else {
@@ -2034,6 +2072,14 @@ export default function OrganizerPage() {
                     />
                 )}
 
+                {state === 'PARTY_QUESTS_SETUP' && (
+                    <PartyQuestsSetupScreen
+                        initialConfig={partyQuestsConfig}
+                        onCreate={(config) => void createPartyQuestsAndRoom(config)}
+                        onBack={() => setState('SELECT_GAME')}
+                    />
+                )}
+
                 {state === 'LOADING' && <LoadingScreen title={loadingCopy.title} messages={loadingCopy.messages} />}
 
                 {state === 'REVIEW' && quiz && (
@@ -2184,6 +2230,16 @@ export default function OrganizerPage() {
                         controls="host"
                         onSkipTimer={skipMafiaTimer}
                         onExtendTimer={extendMafiaTimer}
+                        onEndGame={endQuiz}
+                    />
+                )}
+
+                {state === 'PARTY_QUESTS' && (
+                    <PartyQuestsGame
+                        state={partyQuestsState}
+                        controls="host"
+                        onFinalCall={partyQuestsFinalCall}
+                        onReveal={partyQuestsReveal}
                         onEndGame={endQuiz}
                     />
                 )}

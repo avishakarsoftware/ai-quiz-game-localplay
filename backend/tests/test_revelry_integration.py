@@ -141,10 +141,11 @@ def test_catalog_lists_launchable_games():
     assert res.status_code == 200
     games = res.json()["games"]
     game_ids = {game["id"] for game in games}
-    assert {"quiz", "wmlt", "drawing", "musical_chairs"}.issubset(game_ids)
+    assert {"quiz", "wmlt", "drawing", "musical_chairs", "party_quests"}.issubset(game_ids)
     quiz = next(game for game in games if game["id"] == "quiz")
     drawing = next(game for game in games if game["id"] == "drawing")
     musical_chairs = next(game for game in games if game["id"] == "musical_chairs")
+    party_quests = next(game for game in games if game["id"] == "party_quests")
     assert quiz["can_create_content"] is True
     assert quiz["embedded_authoring_supported"] is True
     assert quiz["supports_ai_generation"] is True
@@ -160,6 +161,10 @@ def test_catalog_lists_launchable_games():
     assert musical_chairs["can_create_content"] is False
     assert musical_chairs["supports_ai_generation"] is False
     assert musical_chairs["content_schema"]["kind"] == "musical_chairs_setup"
+    assert party_quests["can_quick_start"] is True
+    assert party_quests["can_create_content"] is False
+    assert party_quests["supports_ai_generation"] is False
+    assert party_quests["content_schema"]["kind"] == "party_quests_setup_v1"
 
 
 def test_revelry_session_create_launch_token_and_status(monkeypatch):
@@ -1247,6 +1252,47 @@ def test_revelry_party_hub_can_quick_start_musical_chairs(monkeypatch):
     assert room.quiz["game_title"] == "Ava's Dance Party"
     assert room.quiz["music_mode"] == "builtin"
     assert room.quiz["music_track_id"] == "upbeat-confetti"
+
+
+def test_revelry_party_hub_can_quick_start_party_quests(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-quests-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Ava's Mixer",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["operate_game", "manage_games"],
+        },
+    }
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+    assert link_res.status_code == 200
+    party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
+
+    resolve_res = client.get(f"/integrations/revelry/party-games/resolve?party_games_token={party_token}")
+    assert resolve_res.status_code == 200
+    catalog = {game["id"]: game for game in resolve_res.json()["workspace"]["catalog"]}
+    assert catalog["party_quests"]["can_quick_start"] is True
+    assert catalog["party_quests"]["content_schema"]["kind"] == "party_quests_setup_v1"
+
+    start_res = client.post(
+        "/integrations/revelry/party-games/start",
+        json={"party_games_token": party_token, "game_type": "party_quests"},
+    )
+    assert start_res.status_code == 200, start_res.text
+    body = start_res.json()
+    room = socket_manager.rooms[body["session"]["room_code"]]
+    assert room.game_type == "party_quests"
+    assert room.quiz["game_title"] == "Ava's Mixer"
+    assert room.party_quests_config["quests_per_player"] == 8
+    assert room.party_quests_config["allow_late_join"] is True
 
 
 def test_revelry_replacement_closes_superseded_runtime_room(monkeypatch):
