@@ -8,5 +8,5 @@
 
 ## Platform / Persistence
 
-- **Rules surface for every game.** Spec complete in `SPEC-GAME-RULES.md`. Next implementation pass: add catalog-backed rules metadata for every launchable game, host picker rules modal, organizer/player lobby rules access, and Revelry catalog propagation tests.
+- **Rules surface for every game.** Phase 1 underway in `SPEC-GAME-RULES.md`: catalog-backed rules metadata, host picker rules modal, organizer/player lobby access, embedded Party Hub rules affordance, and backend/frontend regression tests. Follow-ups: room-config-aware rule overrides and post-start help access from the menu.
 - **Deprecate SQLite runtime fallback.** Production and gamma now run on Supabase, but the codebase still keeps SQLite as the default local/dev adapter and as a documented rollback path. Plan a follow-up to narrow SQLite to explicit local tests only, remove deployed rollback assumptions after the Supabase cutover window, make deploy/runtime fail clearly if a deployed environment is accidentally configured with `DB_BACKEND=sqlite`, and move remaining SQLite-specific schema/admin behavior behind test-only fixtures or a clearly named legacy adapter.

@@ -14,6 +14,14 @@ describe('quiz variant game modes', () => {
         expect(screen.getByRole('button', { name: /Odd One Out/ })).toBeInTheDocument();
     });
 
+    it('falls back to local games when the remote catalog is empty', () => {
+        render(<GameSelectScreen onSelect={() => {}} catalog={[]} />);
+
+        expect(screen.getByRole('button', { name: /AI Quiz/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Mafia/ })).toBeInTheDocument();
+        expect(screen.queryByText('No games found')).not.toBeInTheDocument();
+    });
+
     it('selects a variant from the game grid', () => {
         const onSelect = vi.fn();
         render(<GameSelectScreen onSelect={onSelect} />);
@@ -21,6 +29,17 @@ describe('quiz variant game modes', () => {
         fireEvent.click(screen.getByRole('button', { name: /Rebus Rush/ }));
 
         expect(onSelect).toHaveBeenCalledWith('rebus');
+    });
+
+    it('opens rules without selecting the game', () => {
+        const onSelect = vi.fn();
+        render(<GameSelectScreen onSelect={onSelect} />);
+
+        const rebusCard = screen.getByTestId('game-card-rebus');
+        fireEvent.click(rebusCard.querySelector('[aria-label="Rules"]') as HTMLElement);
+
+        expect(screen.getByRole('dialog', { name: 'Rebus Rush Rules' })).toBeInTheDocument();
+        expect(onSelect).not.toHaveBeenCalled();
     });
 
     it('filters games by category and search text', () => {

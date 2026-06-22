@@ -33,7 +33,7 @@ Launch readiness baseline:
 - Host-app launches must hide standalone economy/account/library chrome unless explicitly allowed by the host-app context.
 - All user-facing labels should treat the app as a multi-game surface, not as "Revelry Quiz".
 - The standalone game picker is a catalog, not a long vertical list: show all available games sorted alphabetically by display name, include search, and filter with the product categories **All**, **Quiz/Trivia**, **Creative**, **Bingo/Housie**, and **Cards**. Do not include a generic "Social" category because all LocalPlay games are social by design. Games that support AI-generated setup/content should show a small sparkle marker after the game name.
-- Every game must expose concise rules before play. `SPEC-GAME-RULES.md` defines the implementation-ready shared rules surface: catalog-backed rules metadata, host game-picker rules modal, organizer/player lobby access, Revelry catalog propagation, and tests that require rules for every launchable game.
+- Every game must expose concise rules before play. `SPEC-GAME-RULES.md` defines the shared rules surface and Phase 1 implementation: catalog-backed rules metadata, host game-picker rules modal, organizer/player lobby access, embedded Revelry Party Hub affordance, and tests that require rules for every launchable game.
 - Backend-served SPA and service worker routing must never allow API routes to be fulfilled by cached app shell HTML.
 - PWA prompts should improve continuity without interrupting gameplay: update prompts are allowed globally, while install and notification prompts are standalone-first and suppressed in Revelry/host-app embedded surfaces.
 

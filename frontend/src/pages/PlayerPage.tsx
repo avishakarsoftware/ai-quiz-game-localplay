@@ -29,6 +29,8 @@ import WhoAmIGame from '../components/WhoAmIGame';
 import ChitPullGame from '../components/ChitPullGame';
 import MafiaGame from '../components/MafiaGame';
 import PartyQuestsGame from '../components/PartyQuestsGame';
+import GameRulesModal from '../components/GameRulesModal';
+import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
 
 type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'PARTY_QUESTS' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
@@ -82,7 +84,22 @@ export default function PlayerPage() {
     const [launchResolving, setLaunchResolving] = useState(() => searchParams.has('launch_token'));
     const [introCount, setIntroCount] = useState(3);
     const [lobbyPlayers, setLobbyPlayers] = useState<PlayerInfo[]>([]);
+    const [catalog, setCatalog] = useState<CatalogGameWithRules[]>([]);
+    const [activeRules, setActiveRules] = useState<GameRules | null>(null);
     const [powerUps, setPowerUps] = useState<PowerUps>({ double_points: true, fifty_fifty: true });
+
+    useEffect(() => {
+        let cancelled = false;
+        fetch(apiUrl('/catalog'))
+            .then((res) => res.ok ? res.json() : null)
+            .then((body) => {
+                if (!cancelled && Array.isArray(body?.games)) setCatalog(body.games as CatalogGameWithRules[]);
+            })
+            .catch(() => {
+                if (!cancelled) setCatalog([]);
+            });
+        return () => { cancelled = true; };
+    }, []);
 
     useEffect(() => {
         const launchToken = searchParams.get('launch_token');
@@ -1101,6 +1118,14 @@ export default function PlayerPage() {
                             </div>
                         )}
 
+                        <button
+                            type="button"
+                            className="btn btn-secondary mb-4"
+                            onClick={() => setActiveRules(rulesForGame(gameType, catalog))}
+                        >
+                            Rules
+                        </button>
+
                         <div className="flex gap-1.5 mt-4">
                             {[0, 1, 2].map((i) => (
                                 <div key={i} className="w-2 h-2 bg-[--accent-primary] rounded-full animate-bounce"
@@ -1820,6 +1845,7 @@ export default function PlayerPage() {
                 )}
 
             </div>
+            <GameRulesModal rules={activeRules} onClose={() => setActiveRules(null)} />
         </div>
     );
 }

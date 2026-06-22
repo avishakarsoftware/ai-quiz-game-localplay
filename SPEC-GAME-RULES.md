@@ -1,7 +1,7 @@
 # LocalPlay Game Rules Surface Spec
 
-Status: Implementation-ready
-Last updated: June 19, 2026
+Status: Phase 1 in implementation
+Last updated: June 21, 2026
 
 ## Goal
 
@@ -240,10 +240,19 @@ Phase 1:
 - Add backend catalog metadata and schema tests.
 - Add LocalPlay host picker modal.
 - Add organizer/player lobby modal.
+- Add embedded Party Hub rules affordance for Revelry-hosted catalog cards.
+
+Implemented in this phase:
+
+- Backend `rules` metadata is attached to static catalog games and flows through `GET /catalog` plus host-app catalog policy filtering.
+- Frontend fallback rules cover local-only game modes such as Rebus Rush, Emoji Charades, Fact or Fiction, Timeline Twist, and Odd One Out.
+- Host game picker cards expose a Rules affordance without selecting the game.
+- Organizer and player lobby screens expose Rules before the host starts.
+- Revelry embedded Party Hub catalog cards can render a Rules button when LocalPlay catalog metadata includes rules.
+- Tests cover backend rules presence/policy propagation and the game-picker rules modal.
 
 Phase 2:
 
-- Add rules affordance to embedded Revelry hub.
 - Add room-config-aware rule overrides for games such as Musical Chairs mode, Bingo card shape, and Mafia role mix.
 
 Phase 3:

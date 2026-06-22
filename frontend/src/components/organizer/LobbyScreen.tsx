@@ -14,6 +14,7 @@ interface LobbyScreenProps {
     locked: boolean;
     onStartGame: () => void;
     onToggleLock: () => void;
+    onShowRules?: () => void;
     hostAppMode?: boolean;
     hostAppJoinUrl?: string;
     hostAppJoinLabel?: string;
@@ -27,6 +28,7 @@ export default function LobbyScreen({
     locked,
     onStartGame,
     onToggleLock,
+    onShowRules,
     hostAppMode = false,
     hostAppJoinUrl = '',
     hostAppJoinLabel = 'Scan to join from Revelry',
@@ -164,6 +166,12 @@ export default function LobbyScreen({
             <div className="w-full mb-4">
                 <CastButton roomCode={roomCode} />
             </div>
+
+            {onShowRules && (
+                <button type="button" onClick={onShowRules} className="btn btn-secondary w-full mb-3">
+                    Rules
+                </button>
+            )}
 
             <button onClick={onStartGame} disabled={playerCount === 0} className="btn btn-primary btn-glow w-full">
                 Start Game

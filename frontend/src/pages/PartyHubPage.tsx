@@ -2,6 +2,8 @@ import { Search } from 'lucide-react';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { API_URL } from '../config';
 import { getGameModeConfig } from '../gameModes';
+import GameRulesModal from '../components/GameRulesModal';
+import { type GameRules } from '../gameRules';
 import { returnToHostApp } from '../utils/hostAppReturn';
 
 type LaunchContext = {
@@ -68,6 +70,7 @@ type CatalogGame = {
     supports_ai_generation?: boolean;
     creation_modes?: string[];
     embedded_authoring_supported?: boolean;
+    rules?: GameRules;
     config_schema?: {
         time_limit?: {
             default?: number;
@@ -297,6 +300,7 @@ export default function PartyHubPage() {
     const [replacementPrompt, setReplacementPrompt] = useState<ReplacementPrompt | null>(null);
     const [catalogCategory, setCatalogCategory] = useState<PartyHubGameCategory>('all');
     const [catalogSearch, setCatalogSearch] = useState('');
+    const [activeRules, setActiveRules] = useState<GameRules | null>(null);
     const autoStartRef = useRef('');
     const setupSectionRef = useRef<HTMLElement | null>(null);
     const savedGamesSectionRef = useRef<HTMLElement | null>(null);
@@ -822,6 +826,11 @@ export default function PartyHubPage() {
                                             <small>{cardMetaForGame(game)}</small>
                                         </div>
                                         <div className="party-hub__actions">
+                                            {game.rules && (
+                                                <button type="button" className="party-hub__secondary" onClick={() => setActiveRules(game.rules || null)}>
+                                                    Rules
+                                                </button>
+                                            )}
                                             <button onClick={() => createFromCatalog(game)} disabled={disabled}>
                                                 {startingId === (game.game_type || game.id)
                                                     ? 'Starting...'
@@ -985,6 +994,7 @@ export default function PartyHubPage() {
                 )}
                 </section>
             )}
+            <GameRulesModal rules={activeRules} onClose={() => setActiveRules(null)} />
         </main>
     );
 }

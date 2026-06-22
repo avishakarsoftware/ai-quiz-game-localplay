@@ -1,12 +1,14 @@
-import { Search } from 'lucide-react';
+import { Info, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { type GameType } from '../../types';
 import { filterGameModesForCatalog, GAME_MODE_CONFIGS, type GameModeConfig } from '../../gameModes';
 import { ENABLE_BINGO } from '../../config';
+import GameRulesModal from '../GameRulesModal';
+import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../../gameRules';
 
 interface GameSelectScreenProps {
     onSelect: (gameType: GameType) => void;
-    catalog?: Array<{ id: string; launchable?: boolean; supports_ai_generation?: boolean }>;
+    catalog?: CatalogGameWithRules[];
 }
 
 type GameCategory = 'all' | 'quiz' | 'creative' | 'bingo_housie' | 'cards';
@@ -54,11 +56,13 @@ function hasAiGeneration(game: GameModeConfig): boolean {
 export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreenProps) {
     const [activeCategory, setActiveCategory] = useState<GameCategory>('all');
     const [searchQuery, setSearchQuery] = useState('');
+    const [activeRules, setActiveRules] = useState<GameRules | null>(null);
+    const hasCatalog = Boolean(catalog?.length);
     const gameModes = useMemo(() => {
-        const availableGames = (catalog ? filterGameModesForCatalog(catalog) : GAME_MODE_CONFIGS)
+        const availableGames = (hasCatalog ? filterGameModesForCatalog(catalog) : GAME_MODE_CONFIGS)
             .filter((game) => ENABLE_BINGO || !['bingo', 'baby_bingo'].includes(game.id));
         return [...availableGames].sort((a, b) => a.title.localeCompare(b.title));
-    }, [catalog]);
+    }, [catalog, hasCatalog]);
     const aiCapable = useMemo(() => new Set((catalog || []).filter((item) => item.supports_ai_generation).map((item) => item.id)), [catalog]);
     const query = searchQuery.trim().toLowerCase();
     const filteredGameModes = useMemo(() => {
@@ -111,21 +115,31 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
                 {filteredGameModes.length > 0 ? (
                     <div className="game-select-grid">
                         {filteredGameModes.map((game) => (
-                        <button
+                        <article
                             key={game.id}
-                            onClick={() => onSelect(game.id)}
                             className="game-select-card"
                             data-testid={`game-card-${game.id}`}
                         >
-                            <span className="game-select-icon">{game.icon}</span>
-                            <div className="game-select-info">
-                                <span className="game-select-title">
-                                    {game.title}{(catalog ? aiCapable.has(game.id) : hasAiGeneration(game)) ? ' ✨' : ''}
-                                </span>
-                                <span className="game-select-desc">{game.description}</span>
-                            </div>
-                            <span className="game-select-arrow">›</span>
-                        </button>
+                            <button type="button" onClick={() => onSelect(game.id)} className="game-select-main">
+                                <span className="game-select-icon">{game.icon}</span>
+                                <div className="game-select-info">
+                                    <span className="game-select-title">
+                                        {game.title}{(hasCatalog ? aiCapable.has(game.id) : hasAiGeneration(game)) ? ' ✨' : ''}
+                                    </span>
+                                    <span className="game-select-desc">{game.description}</span>
+                                </div>
+                                <span className="game-select-arrow">›</span>
+                            </button>
+                            <button
+                                type="button"
+                                className="game-select-rules"
+                                onClick={() => setActiveRules(rulesForGame(game.id, hasCatalog ? catalog : undefined))}
+                                aria-label="Rules"
+                                title={`Rules for ${game.title}`}
+                            >
+                                <Info size={19} aria-hidden="true" />
+                            </button>
+                        </article>
                         ))}
                     </div>
                 ) : (
@@ -137,6 +151,7 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
                     </div>
                 )}
             </div>
+            <GameRulesModal rules={activeRules} onClose={() => setActiveRules(null)} />
         </div>
     );
 }

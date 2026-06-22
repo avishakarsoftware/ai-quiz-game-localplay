@@ -149,6 +149,7 @@ def test_catalog_lists_launchable_games():
     assert quiz["can_create_content"] is True
     assert quiz["embedded_authoring_supported"] is True
     assert quiz["supports_ai_generation"] is True
+    assert quiz["rules"]["title"] == "AI Quiz Rules"
     assert "manual" in quiz["creation_modes"]
     assert "ai" in quiz["creation_modes"]
     assert drawing["can_create_content"] is True
@@ -161,10 +162,12 @@ def test_catalog_lists_launchable_games():
     assert musical_chairs["can_create_content"] is False
     assert musical_chairs["supports_ai_generation"] is False
     assert musical_chairs["content_schema"]["kind"] == "musical_chairs_setup"
+    assert musical_chairs["rules"]["sections"][0]["id"] == "objective"
     assert party_quests["can_quick_start"] is True
     assert party_quests["can_create_content"] is False
     assert party_quests["supports_ai_generation"] is False
     assert party_quests["content_schema"]["kind"] == "party_quests_setup_v1"
+    assert party_quests["rules"]["title"] == "Party Quests Rules"
 
 
 def test_revelry_session_create_launch_token_and_status(monkeypatch):

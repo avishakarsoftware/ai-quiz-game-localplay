@@ -50,6 +50,7 @@ import tokens
 import db
 import auth
 import remote_config
+from game_rules import attach_rules
 from host_app_catalog_policy import clear_policy_cache, effective_catalog, is_game_allowed
 
 logger = logging.getLogger(__name__)
@@ -989,6 +990,8 @@ GAME_CATALOG = [
         },
     },
 ]
+
+attach_rules(GAME_CATALOG)
 
 
 def _default_time_limit_for_game(game_type: str) -> int:

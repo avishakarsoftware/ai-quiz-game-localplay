@@ -15,6 +15,16 @@ def test_local_missing_policy_uses_static_host_app_catalog():
     games = effective_catalog(GAME_CATALOG, host_app="revelry", environment="local")
     game_ids = {game["id"] for game in games}
     assert {"quiz", "wmlt", "drawing", "housie", "musical_chairs", "party_quests"}.issubset(game_ids)
+    assert all(game.get("rules", {}).get("sections") for game in games)
+
+
+def test_static_launchable_games_have_rules_metadata():
+    missing = [
+        game["id"]
+        for game in GAME_CATALOG
+        if game.get("launchable") and game.get("enabled", True) and not game.get("rules", {}).get("summary")
+    ]
+    assert missing == []
 
 
 def test_musical_chairs_is_host_app_quick_startable_in_gamma():
@@ -26,6 +36,7 @@ def test_musical_chairs_is_host_app_quick_startable_in_gamma():
     assert musical_chairs["can_quick_start"] is True
     assert musical_chairs["can_create_content"] is False
     assert musical_chairs["supports_ai_generation"] is False
+    assert musical_chairs["rules"]["title"] == "Musical Chairs Rules"
 
 
 def test_party_quests_is_host_app_quick_startable_in_gamma():

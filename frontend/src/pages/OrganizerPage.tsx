@@ -35,6 +35,7 @@ import WhoAmIGame from '../components/WhoAmIGame';
 import ChitPullGame from '../components/ChitPullGame';
 import MafiaGame from '../components/MafiaGame';
 import PartyQuestsGame from '../components/PartyQuestsGame';
+import GameRulesModal from '../components/GameRulesModal';
 import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
 import { BingoCalledList, BingoCallOverlay } from '../components/BingoBoard';
 import ImageGenerationScreen from '../components/organizer/ImageGenerationScreen';
@@ -47,6 +48,7 @@ import BonusSplash from '../components/BonusSplash';
 import ErrorModal from '../components/ErrorModal';
 import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
+import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
 type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'WHO_AM_I_PROMPT' | 'WHO_AM_I_REVIEW' | 'CHIT_PULL_PROMPT' | 'CHIT_PULL_REVIEW' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'PARTY_QUESTS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'PARTY_QUESTS' | 'LEADERBOARD' | 'PODIUM';
@@ -183,6 +185,8 @@ export default function OrganizerPage() {
     const [mafiaState, setMafiaState] = useState<MafiaState | null>(null);
     const [partyQuestsState, setPartyQuestsState] = useState<PartyQuestsState | null>(null);
     const [partyQuestsConfig, setPartyQuestsConfig] = useState<PartyQuestSetupConfig>(defaultPartyQuestsConfig());
+    const [catalog, setCatalog] = useState<CatalogGameWithRules[]>([]);
+    const [activeRules, setActiveRules] = useState<GameRules | null>(null);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean; returnToHostApp?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -218,6 +222,18 @@ export default function OrganizerPage() {
             hostAppPartyHubUrl: String(overrides?.hostAppPartyHubUrl || hostAppPartyHubUrl || ''),
         });
     }, [contentId, gameType, hostAppJoinLabel, hostAppJoinUrl, hostAppPartyHubUrl, hostAppReturnUrl, roomCode]);
+    useEffect(() => {
+        let cancelled = false;
+        fetch(apiUrl('/catalog'), { headers: apiHeaders() })
+            .then((res) => res.ok ? res.json() : null)
+            .then((body) => {
+                if (!cancelled && Array.isArray(body?.games)) setCatalog(body.games as CatalogGameWithRules[]);
+            })
+            .catch(() => {
+                if (!cancelled) setCatalog([]);
+            });
+        return () => { cancelled = true; };
+    }, []);
     useEffect(() => {
         window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
         document.documentElement.scrollTop = 0;
@@ -1774,7 +1790,7 @@ export default function OrganizerPage() {
                             )}
                         </div>
                     ) : (
-                        <GameSelectScreen onSelect={handleGameSelect} />
+                        <GameSelectScreen onSelect={handleGameSelect} catalog={catalog} />
                     )
                 )}
 
@@ -2138,6 +2154,7 @@ export default function OrganizerPage() {
                         hostAppJoinLabel={hostAppJoinLabel}
                         onStartGame={startGame}
                         onToggleLock={() => wsRef.current?.send(JSON.stringify({ type: 'TOGGLE_LOCK' }))}
+                        onShowRules={() => setActiveRules(rulesForGame(gameType, catalog))}
                     />
                 )}
 
@@ -2451,6 +2468,8 @@ export default function OrganizerPage() {
                     />
                 )}
             </div>
+
+            <GameRulesModal rules={activeRules} onClose={() => setActiveRules(null)} />
 
             {errorModal && (
                 <ErrorModal
