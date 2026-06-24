@@ -57,6 +57,10 @@ Deployed via `./scripts/deploy-gcp.sh --gamma --with-frontend` to `games-backend
 
 Deployed commit `e00a3ef` via `./scripts/deploy-gcp.sh --gamma --with-frontend` to `games-backend-gamma` (prod `games-backend` untouched). Ships LocalPlay bridge support for Revelry quick-start/settings launches of `would_you_rather`, `never_have_i_ever`, `word_association`, `acronym`, `photo_clue`, and `poker`, plus updated specs and Revelry preprod matrix expectations. Verified live after deploy: `/health` returned healthy, `/catalog?host_app=revelry` returned the expanded game set, and an unauthenticated `POST /integrations/revelry/sessions` with `game_type=photo_clue` returned `401 Missing integration credential` rather than a validator rejection.
 
+### Recent gamma deploy — June 24, 2026 (Survey Says standalone MVP)
+
+Deployed commit `119ff65` via `./scripts/deploy-gcp.sh --gamma --with-frontend` to `games-backend-gamma` (prod `games-backend` untouched). Ships standalone `survey_says` with default curated rounds, automatic two-team assignment, player guesses, host answer-board adjudication, strikes, steal flow, late joins, spectator sync, rules metadata, and podium. Verified live after deploy: `/health` returned healthy, `/catalog` includes `survey_says`, and `npm run test:e2e:gamma` passed against `https://gamesapi-gamma.revelryapp.me` on desktop and mobile.
+
 Follow-up verification on June 24:
 
 - `npm run test:e2e:gamma` passed against `https://gamesapi-gamma.revelryapp.me` on desktop and mobile.
