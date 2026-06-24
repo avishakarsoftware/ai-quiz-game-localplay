@@ -1088,7 +1088,7 @@ export default function OrganizerPage() {
     });
 
     const starterChitPullGame = (): ChitPullGameContent => ({
-        game_title: 'Chit Pull',
+        game_title: 'Random Chit',
         rounds: 10,
         turn_time_seconds: 30,
         safe_level: chitPullSafeLevel,
@@ -1484,7 +1484,7 @@ export default function OrganizerPage() {
                 else body.who_am_i_config = { game_title: 'Who Am I?' };
             } else if (effectiveGameType === 'chit_pull') {
                 if (selectedContentId) body.chit_pull_id = selectedContentId;
-                else body.chit_pull_config = { game_title: 'Chit Pull' };
+                else body.chit_pull_config = { game_title: 'Random Chit' };
             } else if (effectiveGameType === 'mafia') {
                 body.mafia_config = { game_title: 'Mafia' };
             } else if (effectiveGameType === 'party_quests') {
@@ -1693,7 +1693,7 @@ export default function OrganizerPage() {
             setGameType('chit_pull');
             await createRoom(nextContentId, 'chit_pull', defaultTimeLimitForGame('chit_pull'));
         } catch {
-            setErrorModal({ title: 'Chit Pull', message: 'Could not prepare this chit deck.' });
+            setErrorModal({ title: 'Random Chit', message: 'Could not prepare this chit deck.' });
         }
     };
 

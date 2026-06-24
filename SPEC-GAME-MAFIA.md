@@ -2,12 +2,21 @@
 
 Status: **implemented standalone MVP locally; gamma deploy and multi-device Playwright QA pending**
 
+Last updated: June 23, 2026
+
 The current implementation is a deterministic, in-memory standalone runtime that
 works without AI narration, durable party/host-app authoring, or Revelry
 exposure. It includes Night Reads so every living player has a private night
 prompt, reducing the risk that special roles are exposed by phone behavior. AI
 narration, richer setup UI, and host-app launch remain follow-up polish once the
 standalone UX has passed multi-device QA.
+
+June 23, 2026 polish update:
+
+- Player Night UI now explicitly shows whether the private role action is submitted and whether the quiet Night Read is submitted.
+- Role reveal reminds players to keep roles private and sets up the "everyone checks their phone at night" behavior.
+- Frontend component tests cover Night action/Night Read task visibility and submission callbacks.
+- Backend engine/socket tests continue to cover Night Reads, private role boundaries, Mafia target voting, day vote, and podium flow.
 
 ## Overview
 
@@ -670,7 +679,7 @@ The organizer can skip any timer (advance to next phase) or extend discussion ti
 ### Socket Manager Integration Points
 
 Update `backend/socket_manager.py` in the same style as Bluff, Two Truths, Common
-Ground, Who Am I, and Chit Pull:
+Ground, Who Am I, and Random Chit (`chit_pull`):
 
 - Import Mafia engine functions at the top of the file.
 - Add `room.mafia_config`, `room.mafia_state`, and `room.mafia_timer_task`.

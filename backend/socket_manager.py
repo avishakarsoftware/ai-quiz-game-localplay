@@ -1097,7 +1097,7 @@ class SocketManager:
                         if player_count < config.MIN_CHIT_PULL_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
-                                "message": f"Chit Pull needs at least {config.MIN_CHIT_PULL_PLAYERS} players to start",
+                                "message": f"Random Chit needs at least {config.MIN_CHIT_PULL_PLAYERS} players to start",
                             })
                             return
                     elif room.game_type == "mafia":
@@ -3218,7 +3218,7 @@ class SocketManager:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
             self._mark_game_session_complete(room, summary)
         except Exception:
-            logger.warning("Could not save Chit Pull history for room %s", room.room_code)
+            logger.warning("Could not save Random Chit history for room %s", room.room_code)
 
     def _start_mafia_game(self, room: Room):
         room.mafia_config = validate_mafia_config(room.quiz)

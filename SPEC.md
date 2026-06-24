@@ -20,7 +20,7 @@ The platform currently supports:
 - `story_chain`: standalone sequential creative game where players privately add one sentence each, then the room reveals the final story.
 - `common_ground`: standalone team icebreaker where auto-assigned teams submit shared facts, vote on the best answers, and finish on a team podium.
 - `who_am_i`: standalone clue-ladder guessing game where clues reveal progressively and players submit free-text guesses.
-- `chit_pull`: standalone random-chit party game where the server picks a player and prompt, then the host marks completed/skipped/redrawn outcomes.
+- `chit_pull`: standalone Random Chit party game where the server picks a player and prompt, then the host marks completed/skipped/redrawn outcomes.
 - Standalone custom quiz authoring and saved quiz packs.
 - Host-app/party-scoped authoring and game setup through the Revelry Games hub.
 
@@ -60,7 +60,7 @@ Key files:
 - `backend/story_chain_engine.py`: setup validation, private turn context, sentence submission, reveal stepping, and scoring helpers for Story Chain.
 - `backend/common_ground_engine.py`: setup validation, team assignment, private/public sync, team submissions, voting, scoring, and podium helpers for Common Ground.
 - `backend/who_am_i_engine.py`: clue-ladder setup validation, guess normalization/matching, private/public sync, and scoring helpers for Who Am I.
-- `backend/chit_pull_engine.py`: random player/chit selection, safe deck sanitization, redraw handling, scoring, public sync, and podium helpers for Chit Pull.
+- `backend/chit_pull_engine.py`: random player/chit selection, safe deck sanitization, redraw handling, scoring, public sync, and podium helpers for Random Chit.
 - `backend/image_engine.py`: optional Stable Diffusion image generation for quiz questions.
 - `backend/auth.py`: Google/Apple sign-in and session handling.
 - `backend/remote_config.py`: remote config for provider/model/operation flags.
@@ -87,7 +87,7 @@ Key files:
 - `frontend/src/components/StoryChainGame.tsx`: shared Story Chain UI for organizer, player, and spectator views.
 - `frontend/src/components/CommonGroundGame.tsx`: shared Common Ground UI for organizer, player, and spectator views.
 - `frontend/src/components/WhoAmIGame.tsx`: shared Who Am I clue/guess UI for organizer, player, and spectator views.
-- `frontend/src/components/ChitPullGame.tsx`: shared Chit Pull selected-player/chit, standings, and host-control UI for organizer, player, and spectator views.
+- `frontend/src/components/ChitPullGame.tsx`: shared Random Chit selected-player/chit, standings, and host-control UI for organizer, player, and spectator views.
 - `frontend/src/components/organizer/CustomQuizEditor.tsx`: manual custom quiz authoring.
 - `frontend/src/components/organizer/ReviewScreen.tsx`: quiz review/edit before room creation.
 - `frontend/src/components/organizer/MLTReviewScreen.tsx`: WMLT review/edit before room creation.
@@ -334,7 +334,7 @@ Bingo-family games are a separate runtime family rather than quiz variants. `SPE
 
 Social icebreakers should be their own lightweight runtime family when they are not caller-led or quiz-shaped. `SPEC-GAME-COMMON-GROUND.md` defines and now implements the standalone Common Ground flow: automatic team assignment, mid-party QR joins with token-based reconnects, private team submissions during discussion, reveal, optional voting, round scoring, spectator sync, and final team podium. Revelry exposure remains disabled until a host-app bridge pass is completed.
 `SPEC-GAME-TWO-TRUTHS.md` defines and now implements the standalone classic player-authored Two Truths and a Lie flow: private statement submission, sequential author reveals, lie voting, deception/detection scoring, spectator sync, and a final individual podium. Revelry exposure remains disabled until a host-app bridge pass is completed.
-`SPEC-GAME-CHIT-PULL.md` defines an implementation-ready random chit game where the host manually creates or AI-generates a reviewed deck of questions/actions/funny-face prompts, the server randomly picks a player and chit each turn, and the host marks completed/skipped/redrawn outcomes for scoring and podium.
+`SPEC-GAME-CHIT-PULL.md` defines and now implements Random Chit, a random chit game where the host manually creates or AI-generates a reviewed deck of questions/actions/funny-face prompts, the server randomly picks a player and chit each turn, and the host marks completed/skipped/redrawn outcomes for scoring and podium. The stable API/game type remains `chit_pull`.
 `SPEC-GAME-PARTY-QUESTS.md` defines a long-running ambient party game where players complete mingling tasks throughout the event, collect tap/QR confirmations from other players, and gather later for a final reveal and podium.
 `SPEC-GAME-MAFIA.md` defines and now implements the standalone Mafia flow: secret role assignment, private Mafia/Detective/Doctor night actions, Night Reads for every living player so action roles are not socially exposed, public-safe dawn narration, day discussion, vote elimination, role reveal on elimination, and Town/Mafia win conditions. Revelry exposure remains disabled until standalone multi-device QA is complete.
 
@@ -1073,7 +1073,7 @@ Generation:
 - Drawing calls `/drawing/generate`.
 - Successful generation moves to review.
 - Provider-picking UI is a local/gamma diagnostic affordance only. Production standalone and production backend-served surfaces must hide raw provider selectors such as "Google AI"; production still uses the configured backend/default provider and remote config.
-- AI Quiz, quiz variants, WMLT, Bingo, Drawing, Who Am I, and Chit Pull prompt screens must include a visible random-topic/theme dice control with an accessible label and a mobile-friendly tap target. The textarea must reserve space for that control so typed prompt text does not sit underneath it.
+- AI Quiz, quiz variants, WMLT, Bingo, Drawing, Who Am I, and Random Chit prompt screens must include a visible random-topic/theme dice control with an accessible label and a mobile-friendly tap target. The textarea must reserve space for that control so typed prompt text does not sit underneath it.
 - AI Quiz, quiz variants, and Drawing-style prompt screens must include a consistent back control positioned with the header/icon area so hosts can return to the game catalog without using the global menu.
 - AI-generated setup screens must keep visible vertical separation between count selectors and the final generate action. The primary action should not visually attach to the last selector row.
 - `402`, `429`, and `503` are surfaced in an error modal.
@@ -1287,7 +1287,7 @@ The backend test suite includes API validation, game logic, WebSocket flows, pow
 Launch-readiness checks should include:
 
 - Desktop and mobile screenshots of the standalone game catalog, menu, each setup/review flow, lobby, player join, and TV/spectator entry.
-- For major production game/runtime changes, run the pre-prod live regression against gamma before promoting. Current deterministic coverage includes Quiz runtime, Most Likely To, Housie, Bingo/Baby Bingo, Musical Chairs, Bluff, Two Truths and a Lie, Story Chain, Common Ground, Who Am I, and Chit Pull. Quiz variants share the Quiz runtime and are separately covered by prompt/setup audits. Drawing is intentionally marked as a tracked gap until a deterministic Drawing import endpoint exists; the suite should not depend on AI generation.
+- For major production game/runtime changes, run the pre-prod live regression against gamma before promoting. Current deterministic coverage includes Quiz runtime, Most Likely To, Housie, Bingo/Baby Bingo, Musical Chairs, Bluff, Two Truths and a Lie, Story Chain, Common Ground, Who Am I, and Random Chit. Quiz variants share the Quiz runtime and are separately covered by prompt/setup audits. Drawing is intentionally marked as a tracked gap until a deterministic Drawing import endpoint exists; the suite should not depend on AI generation.
 - Saved quiz library flow: list, start, prepare copy, review, Home return, edit, delete.
 - Host-app flow: party hub, create game, save setup, start saved game, replacement confirmation, lobby, player join, completion, return.
 - Host-app callback mirror flow: save or update party-scoped quiz, WMLT, and Drawing content; verify `content.created` / `content.updated` safe `payload.content` can update the prepared-games mirror even if follow-up metadata fetch fails.

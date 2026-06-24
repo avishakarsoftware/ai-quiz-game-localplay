@@ -170,7 +170,7 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         id: 'chit_pull',
         runtimeType: 'chit_pull',
         icon: '🎟️',
-        title: 'Chit Pull',
+        title: 'Random Chit',
         description: 'Randomly pick a player and a funny question, action, or mini challenge',
     },
     {

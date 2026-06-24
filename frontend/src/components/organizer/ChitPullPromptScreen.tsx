@@ -38,7 +38,7 @@ export default function ChitPullPromptScreen({
             providers={props.providers}
             onGenerate={props.onGenerate}
             onBack={props.onBack}
-            title="Chit Pull"
+            title="Random Chit"
             icon="🎟️"
             subtitle="Generate funny questions, actions, and mini challenges"
             placeholder="Birthday party, cousins, silly but clean..."

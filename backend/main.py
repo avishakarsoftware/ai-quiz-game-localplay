@@ -896,7 +896,7 @@ GAME_CATALOG = [
         "id": "chit_pull",
         "game_type": "chit_pull",
         "runtime_type": "chit_pull",
-        "title": "Chit Pull",
+        "title": "Random Chit",
         "description": "Randomly pick a player and a funny question, action, or mini challenge.",
         "launchable": True,
         "host_app_supported": False,
@@ -1112,7 +1112,7 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
     if game_type == "who_am_i":
         return str(uuid.uuid4()), validate_who_am_i_config({"game_title": title or "Who Am I?"})
     if game_type == "chit_pull":
-        return str(uuid.uuid4()), validate_chit_pull_config({"game_title": title or "Chit Pull"})
+        return str(uuid.uuid4()), validate_chit_pull_config({"game_title": title or "Random Chit"})
     if game_type == "mafia":
         return str(uuid.uuid4()), validate_mafia_config({"game_title": title or "Mafia"})
     if game_type == "party_quests":
@@ -1171,7 +1171,7 @@ def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = 
     if game_type == "chit_pull":
         if content_id:
             if content_id not in chit_pull_games:
-                raise HTTPException(status_code=404, detail="Chit Pull game not found")
+                raise HTTPException(status_code=404, detail="Random Chit game not found")
             return content_id, chit_pull_games[content_id]
         return _default_game_content(game_type, title)
     if game_type == "mafia":
@@ -1298,7 +1298,7 @@ def _create_runtime_room(
     if game_type == "who_am_i" and len(game_data.get("rounds", [])) < 3:
         raise HTTPException(status_code=422, detail="Who Am I? needs at least 3 clue rounds")
     if game_type == "chit_pull" and len(game_data.get("chits", [])) < 5:
-        raise HTTPException(status_code=422, detail="Chit Pull needs at least 5 chits")
+        raise HTTPException(status_code=422, detail="Random Chit needs at least 5 chits")
     if len(socket_manager.rooms) >= config.MAX_ROOMS:
         raise HTTPException(status_code=429, detail="Too many active rooms. Please try again later.")
 
@@ -4517,10 +4517,10 @@ Rules:
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code in (403, 429):
             raise HTTPException(status_code=503, detail="Free tier limit reached. Upgrade for unlimited games.")
-        raise HTTPException(status_code=500, detail="Failed to generate Chit Pull")
+        raise HTTPException(status_code=500, detail="Failed to generate Random Chit")
     except Exception:
-        logger.exception("Chit Pull generation failed")
-        raise HTTPException(status_code=500, detail="Failed to generate Chit Pull")
+        logger.exception("Random Chit generation failed")
+        raise HTTPException(status_code=500, detail="Failed to generate Random Chit")
     game_data = sanitize_chit_pull_game({**(raw or {}), "safe_level": request.safe_level, "rounds": min(request.num_chits, 20)})
     if not validate_chit_pull_game(game_data):
         raise HTTPException(status_code=500, detail="Generated chit deck was not playable")
@@ -4550,7 +4550,7 @@ async def import_chit_pull(request: ChitPullUpdateRequest, req: Request):
         raise HTTPException(status_code=401, detail="Authentication required")
     game_data = sanitize_chit_pull_game(request.model_dump())
     if not validate_chit_pull_game(game_data):
-        raise HTTPException(status_code=422, detail="Chit Pull needs at least 5 valid chits")
+        raise HTTPException(status_code=422, detail="Random Chit needs at least 5 valid chits")
     _evict_old_content()
     chit_pull_id = str(uuid.uuid4())
     chit_pull_games[chit_pull_id] = game_data
@@ -4565,11 +4565,11 @@ async def update_chit_pull(chit_pull_id: str, request: ChitPullUpdateRequest, re
     if not wallet_id:
         raise HTTPException(status_code=401, detail="Authentication required")
     if chit_pull_id not in chit_pull_games:
-        raise HTTPException(status_code=404, detail="Chit Pull game not found")
+        raise HTTPException(status_code=404, detail="Random Chit game not found")
     _check_content_owner(chit_pull_id, wallet_id)
     game_data = sanitize_chit_pull_game(request.model_dump())
     if not validate_chit_pull_game(game_data):
-        raise HTTPException(status_code=422, detail="Chit Pull needs at least 5 valid chits")
+        raise HTTPException(status_code=422, detail="Random Chit needs at least 5 valid chits")
     chit_pull_games[chit_pull_id] = game_data
     return {"chit_pull_id": chit_pull_id, "game": game_data}
 

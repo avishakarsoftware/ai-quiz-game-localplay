@@ -103,7 +103,7 @@ def validate_config(raw: dict | None) -> dict:
     if safe_level not in VALID_SAFE_LEVELS:
         safe_level = "family"
     return {
-        "game_title": _clean_text(raw.get("game_title") or "Chit Pull", 120) or "Chit Pull",
+        "game_title": _clean_text(raw.get("game_title") or "Random Chit", 120) or "Random Chit",
         "selection_mode": "random_player",
         "rounds": min(rounds, len(chits) if not bool(raw.get("allow_chit_repeats", False)) else rounds),
         "turn_time_seconds": _clamp_int(raw, "turn_time_seconds", 30, 10, 120),
@@ -313,7 +313,7 @@ def final_standings(state: dict) -> list[dict[str, Any]]:
     ]
 
 
-def sanitize_generated_game(raw: dict, fallback_title: str = "Chit Pull") -> dict:
+def sanitize_generated_game(raw: dict, fallback_title: str = "Random Chit") -> dict:
     if not isinstance(raw, dict):
         raw = {}
     return validate_config({

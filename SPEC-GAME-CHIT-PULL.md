@@ -1,8 +1,8 @@
-# LocalPlay Chit Pull Game Spec
+# LocalPlay Random Chit Game Spec
 
 ## Overview
 
-Add **Chit Pull** as a light party prompt game where the app randomly picks a player, reveals a random chit, and asks that player to answer a question, do a tiny action, make a funny face, perform a mini challenge, or involve the group.
+Add **Random Chit** as a light party prompt game where the app randomly picks a player, reveals a random chit, and asks that player to answer a question, do a tiny action, make a funny face, perform a mini challenge, or involve the group.
 
 The host can write their own chits or generate a reviewed chit deck with AI. This should feel like a digital bowl of folded paper chits, but with LocalPlay room sync, player selection, spectator reveal, scoring, and replay controls.
 
@@ -10,12 +10,13 @@ The host can write their own chits or generate a reviewed chit deck with AI. Thi
 GameType: chit_pull
 Runtime family: social_icebreaker
 Backend engine: chit_pull_engine.py
-Frontend display name: Chit Pull
+Frontend display name: Random Chit
+Legacy/internal name: Chit Pull
 ```
 
 ## Implementation Status
 
-Status: implemented MVP in standalone LocalPlay.
+Status: implemented MVP in standalone LocalPlay. The stable API/game type remains `chit_pull`; user-facing catalog/setup/runtime labels now use **Random Chit**.
 
 Implemented in this repo with:
 
@@ -24,7 +25,7 @@ Implemented in this repo with:
 - Room creation support through `game_type="chit_pull"` and `chit_pull_id` / `chit_pull_config`.
 - WebSocket runtime messages: `CHIT_SYNC`, `CHIT_NEXT`, `CHIT_COMPLETE`, `CHIT_SKIP`, `CHIT_REDRAW_PLAYER`, and `CHIT_REDRAW_CHIT`.
 - Organizer prompt/review/live screens, plus player and spectator live views.
-- Backend and frontend tests for engine behavior and live component rendering.
+- Backend and frontend tests for engine behavior, Random Chit default naming, and live component rendering.
 
 Current exposure is standalone LocalPlay first. Revelry catalog exposure should follow the host-app allowlist/policy rollout after gamma smoke.
 
@@ -133,7 +134,7 @@ Player-facing skip should always be available in MVP. The game should normalize 
 ```json
 {
   "game_type": "chit_pull",
-  "game_title": "Chit Pull",
+  "game_title": "Random Chit",
   "selection_mode": "random_player",
   "rounds": 20,
   "turn_time_seconds": 30,
@@ -184,7 +185,7 @@ AI generation is part of the MVP.
 
 Host flow:
 
-1. Host chooses Chit Pull.
+1. Host chooses Random Chit.
 2. Host enters a theme/vibe, e.g. "birthday party, cousins, silly but clean."
 3. Host chooses count: 10, 20, 30, or 50 chits.
 4. Host chooses safety level: `kids`, `work_safe`, `family`, or `spicy`.
@@ -211,7 +212,7 @@ Host flow:
 
 ```json
 {
-  "game_title": "Birthday Chit Pull",
+  "game_title": "Birthday Random Chit",
   "chits": [
     {
       "id": 1,
@@ -511,7 +512,7 @@ Playwright:
 
 ## Acceptance Criteria
 
-- Host can AI-generate, review, edit, and start a Chit Pull deck.
+- Host can AI-generate, review, edit, and start a Random Chit deck.
 - Host can manually create a deck without AI.
 - Game starts with 3+ players.
 - Server randomly chooses player and chit.
@@ -523,7 +524,7 @@ Playwright:
 
 ## Revelry / Host-App Fit
 
-Chit Pull is a strong Revelry fit because it is party-native, highly customizable, and easy to theme for an event.
+Random Chit is a strong Revelry fit because it is party-native, highly customizable, and easy to theme for an event.
 
 Defer Revelry exposure until:
 

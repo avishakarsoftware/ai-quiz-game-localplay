@@ -43,6 +43,13 @@ function roleDescription(role?: string) {
     return 'Find the Mafia during the day and vote them out.';
 }
 
+function actionLabel(kind?: string) {
+    if (kind === 'mafia_kill') return 'target';
+    if (kind === 'investigate') return 'investigation';
+    if (kind === 'protect') return 'protection';
+    return 'night action';
+}
+
 export default function MafiaGame({
     state,
     viewerName = '',
@@ -60,6 +67,10 @@ export default function MafiaGame({
     const selectedNightTarget = state?.my_action?.submitted_target || '';
     const selectedNightReadTarget = state?.my_action?.night_read?.submitted_target || '';
     const selectedVote = state?.my_vote || '';
+    const needsNightAction = state?.phase === 'MAFIA_NIGHT' && state.my_action && state.my_action.kind !== 'none' && !state.ghost;
+    const needsNightRead = state?.phase === 'MAFIA_NIGHT' && Boolean(state.my_action?.night_read) && !state.ghost;
+    const nightActionDone = Boolean(needsNightAction && selectedNightTarget);
+    const nightReadDone = Boolean(needsNightRead && selectedNightReadTarget);
     const sortedPlayers = useMemo(() => {
         if (!state) return [];
         return [...state.players].sort((a, b) => Number(b.alive) - Number(a.alive) || a.nickname.localeCompare(b.nickname));
@@ -148,6 +159,25 @@ export default function MafiaGame({
                     {state.my_action?.kind === 'mafia_kill' && Boolean(state.my_action.mafia_teammates?.length) && (
                         <p className="text-[--text-secondary] mt-2">Your Mafia teammate{state.my_action.mafia_teammates!.length === 1 ? '' : 's'}: {state.my_action.mafia_teammates!.join(', ')}</p>
                     )}
+                    {state.phase === 'MAFIA_ROLE_REVEAL' && !state.ghost && (
+                        <p className="text-[--accent-primary] font-bold mt-3">Keep this role private. Everyone will check their phone when night starts.</p>
+                    )}
+                    {state.phase === 'MAFIA_NIGHT' && !state.ghost && (
+                        <div className="mt-4 common-ground-scoreboard">
+                            {state.my_action && state.my_action.kind !== 'none' && (
+                                <div>
+                                    <strong>{nightActionDone ? 'Action submitted' : `Choose your ${actionLabel(state.my_action?.kind)}`}</strong>
+                                    <small>{nightActionDone ? selectedNightTarget : 'This is private to you.'}</small>
+                                </div>
+                            )}
+                            {state.my_action?.night_read && (
+                                <div>
+                                    <strong>{nightReadDone ? 'Night Read submitted' : 'Answer the Night Read'}</strong>
+                                    <small>{nightReadDone ? selectedNightReadTarget : 'Everyone gets one, so roles stay hidden.'}</small>
+                                </div>
+                            )}
+                        </div>
+                    )}
                     {state.my_investigations && state.my_investigations.length > 0 && (
                         <div className="mt-4 common-ground-scoreboard">
                             {state.my_investigations.map((item) => (
@@ -164,6 +194,9 @@ export default function MafiaGame({
             {isPlayer && state.phase === 'MAFIA_NIGHT' && state.my_action && state.my_action.kind !== 'none' && !state.ghost && (
                 <section className="common-ground-panel">
                     <h2>{state.my_action.kind === 'mafia_kill' ? 'Choose a target' : state.my_action.kind === 'investigate' ? 'Investigate a player' : 'Protect a player'}</h2>
+                    <p className="text-[--text-secondary] mb-4">
+                        {selectedNightTarget ? `Selected: ${selectedNightTarget}. You can change it until night resolves.` : 'Make your private choice, then answer the Night Read below.'}
+                    </p>
                     <div className="common-ground-actions">
                         {state.my_action.eligible_targets.map((target) => (
                             <button
@@ -186,7 +219,9 @@ export default function MafiaGame({
                     </p>
                     <h2>{state.my_action.night_read.question}</h2>
                     <p className="text-[--text-secondary]">
-                        These answers are shown only as anonymous group patterns before discussion.
+                        {selectedNightReadTarget
+                            ? `Selected: ${selectedNightReadTarget}. You can change it until night resolves.`
+                            : 'These answers are shown only as anonymous group patterns before discussion.'}
                     </p>
                     <div className="common-ground-actions mt-4">
                         {state.my_action.night_read.eligible_targets.map((target) => (

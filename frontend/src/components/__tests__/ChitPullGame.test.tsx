@@ -37,6 +37,12 @@ function baseState(overrides: Partial<ChitPullState> = {}): ChitPullState {
 }
 
 describe('ChitPullGame', () => {
+    it('uses Random Chit as the default game title', () => {
+        render(<ChitPullGame state={baseState({ config: { ...baseState().config, game_title: undefined } })} controls="spectator" />);
+
+        expect(screen.getByText('Random Chit')).toBeInTheDocument();
+    });
+
     it('highlights the selected player and current chit', () => {
         render(<ChitPullGame state={baseState()} viewerName="Alice" controls="player" />);
 

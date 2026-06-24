@@ -192,7 +192,7 @@ Add rules metadata for every catalog game:
 - Baby Bingo
 - Bingo
 - Bluff
-- Chit Pull
+- Random Chit (`chit_pull`)
 - Common Ground
 - Drawing Game
 - Emoji Charades

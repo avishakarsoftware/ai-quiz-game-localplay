@@ -32,7 +32,7 @@ export default function ChitPullGame({
     const isPlayer = controls === 'player';
     const selected = state?.selected_player_id || '';
     const amSelected = isPlayer && selected === viewerName;
-    const title = state?.config?.game_title || 'Chit Pull';
+    const title = state?.config?.game_title || 'Random Chit';
     const scoreboard = useMemo(() => {
         if (!state) return [];
         return [...state.players]
@@ -49,7 +49,7 @@ export default function ChitPullGame({
             <div className="chit-pull-shell container-responsive safe-top safe-bottom animate-in">
                 <div className="screen-hero">
                     <div className="hero-icon mb-4">🎟️</div>
-                    <h1 className="hero-title">Chit Pull</h1>
+                    <h1 className="hero-title">Random Chit</h1>
                     <p className="hero-subtitle">Waiting for the room</p>
                 </div>
             </div>

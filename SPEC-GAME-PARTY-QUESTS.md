@@ -554,6 +554,7 @@ Playwright:
 - Incoming confirmation flow on second player.
 - Long quest labels wrap cleanly.
 - Final reveal with 20+ players.
+- June 23, 2026 local QA: focused engine tests still pass for config, confirmation, denial, late join, public/private sync, honor mode, and reveal/complete phases. Added frontend component tests for player confirmation requests, incoming confirm actions, and host Final Call / Reveal Scores / End Game controls. Added WebSocket regression coverage for start, request/confirm, active late join, final call, and reveal. Gamma multi-tab Revelry smoke remains the launch gate before broad production exposure.
 
 ## Acceptance Criteria
 

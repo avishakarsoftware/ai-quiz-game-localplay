@@ -36,6 +36,12 @@ def test_validate_config_sanitizes_chits_and_defaults():
     assert config["chits"][1]["category"] == "funny_face"
 
 
+def test_default_title_is_random_chit():
+    config = validate_config({})
+
+    assert config["game_title"] == "Random Chit"
+
+
 def test_draw_complete_skip_and_final_standings():
     config = validate_config({
         "rounds": 5,
