@@ -49,6 +49,10 @@ curl -sS -i https://gamesapi.revelryapp.me/health
 curl -sS -i https://gamesapi-gamma.revelryapp.me/health
 ```
 
+### Recent gamma deploy — June 24, 2026 (Generic Prompt Party engine)
+
+Deployed commit `44d38ad` via `./scripts/deploy-gcp.sh --gamma --with-frontend` to `games-backend-gamma` (prod `games-backend` untouched). Ships the shared Generic Prompt Party runtime plus ten standalone games: `hot_takes`, `this_or_that`, `caption_contest`, `pitch_battle`, `roast_toast`, `desert_island`, `memory_lane`, `rapid_fire`, `one_word_vibes`, and `emoji_story`. Verified live after deploy: `/health` returned healthy, `/catalog` contains all ten game ids with `content_schema.kind=generic_prompt_party_v1`, and `npm run test:e2e:gamma` passed on desktop and mobile. No Supabase schema migration is required. Revelry/host-app exposure remains disabled because these entries are standalone-only until a bridge/policy pass is completed.
+
 ### Recent gamma deploy — June 12, 2026 (Revelry integration hardening)
 
 Deployed via `./scripts/deploy-gcp.sh --gamma --with-frontend` to `games-backend-gamma` (prod `games-backend` untouched). Ships the June 12 integration hardening in `SPEC-REVELRY-INTEGRATION.md`: session-create/party-games-link `game_type` validators accept all Revelry host-app start types, handoff JWTs require `iss=revelry`+`aud=localplay`+`typ=localplay_launch`, and return-url default-port normalization. Verified live: `POST https://gamesapi-gamma.revelryapp.me/integrations/revelry/sessions` with `game_type=drawing` passes validation (→ 401 without credentials) and `game_type=bogus` → 422 listing all five types. Not yet redeployed to prod — run `./scripts/deploy-gcp.sh --with-frontend` after a reviewed prod cutover.
