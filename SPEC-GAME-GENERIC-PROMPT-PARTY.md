@@ -1,6 +1,6 @@
 # Generic Prompt Party Games Spec
 
-Status: Implemented in LocalPlay standalone. Gamma deploy pending this change set.
+Status: Implemented in LocalPlay standalone and covered by a live gamma regression suite. Gamma redeploy pending this change set.
 Last updated: 2026-06-24
 
 ## Purpose
@@ -128,6 +128,10 @@ Rules are declared in both:
 Shared UI:
 
 - `frontend/src/components/GenericPromptGame.tsx`
+- Host and spectator views show non-interactive choice previews before reveal instead of disabled player buttons.
+- Player text submissions remain visible after submit so players can edit/update before the host advances.
+- Text-vote host controls guide the sequence: collect submissions, start voting, then reveal.
+- Reveal/result cards use a mobile-first one-column layout and only expand to two columns on wider screens.
 
 State machine integration:
 
@@ -162,6 +166,14 @@ Implemented tests:
   - game metadata validation
 - `backend/tests/test_generic_prompt_socket.py`
   - organizer/player websocket flow through submit, voting, reveal, and podium
+
+Live gamma Playwright coverage:
+
+- `frontend/e2e/generic-prompt-gamma-live.spec.ts`
+  - creates a real gamma room for every implemented Generic Prompt Party game.
+  - joins two live player browser contexts.
+  - starts the room, plays one round through reveal, validates host/player UI, and checks horizontal overflow.
+  - covers all three mechanics: `choice_vote`, `text_vote`, and `text_group`.
 
 Build coverage:
 

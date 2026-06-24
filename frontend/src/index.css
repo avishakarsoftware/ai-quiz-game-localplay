@@ -6032,6 +6032,70 @@ body {
     margin-top: 18px;
 }
 
+.generic-prompt-choice-grid,
+.generic-prompt-option-preview,
+.generic-prompt-results {
+    display: grid;
+    gap: 12px;
+}
+
+.generic-prompt-choice-grid,
+.generic-prompt-results {
+    grid-template-columns: 1fr;
+}
+
+.generic-prompt-option-preview {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.generic-prompt-option-preview span,
+.generic-prompt-result-card,
+.generic-prompt-results > div {
+    min-width: 0;
+    padding: 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(31, 17, 52, 0.78);
+    box-shadow: var(--shadow-card);
+}
+
+.generic-prompt-option-preview span {
+    display: grid;
+    min-height: 64px;
+    place-items: center;
+    color: var(--text-secondary);
+    font-weight: 900;
+    text-align: center;
+}
+
+.generic-prompt-result-card.winner,
+.generic-prompt-results > div.winner {
+    border-color: rgba(var(--accent-primary-rgb), 0.66);
+    background: rgba(var(--accent-primary-rgb), 0.16);
+    box-shadow: var(--shadow-glow);
+}
+
+.generic-prompt-result-card strong,
+.generic-prompt-result-card small,
+.generic-prompt-results strong,
+.generic-prompt-results small {
+    display: block;
+}
+
+.generic-prompt-result-card strong,
+.generic-prompt-results strong {
+    overflow-wrap: anywhere;
+    font-weight: 950;
+    line-height: 1.25;
+}
+
+.generic-prompt-result-card small,
+.generic-prompt-results small {
+    margin-top: 6px;
+    color: var(--text-tertiary);
+    font-weight: 800;
+}
+
 .common-ground-scoreboard > div {
     padding: 14px;
     display: grid;
@@ -6056,6 +6120,13 @@ body {
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 12px;
     margin-top: 22px;
+}
+
+@media (min-width: 720px) {
+    .generic-prompt-choice-grid,
+    .generic-prompt-results {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 .chit-pull-scoreboard > div {

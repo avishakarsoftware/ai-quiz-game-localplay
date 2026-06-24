@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { type GenericPromptGameType, type GenericPromptState, type PlayerInfo } from '../types';
 import { getGameModeConfig } from '../gameModes';
 
@@ -61,13 +61,25 @@ export default function GenericPromptGame({
     const isReveal = state?.phase === 'GENERIC_REVEAL';
     const isPodium = state?.phase === 'PODIUM';
     const canSubmitText = isPlayer && state?.phase === 'GENERIC_SUBMITTING';
+    const canChoose = isPlayer && state?.phase === 'GENERIC_CHOICE';
+    const hasSubmissions = (state?.submitted_count || 0) > 0;
+    const canStartVoting = state?.mode === 'text_vote' && state?.phase === 'GENERIC_SUBMITTING' && hasSubmissions;
+    const canReveal =
+        state?.phase !== 'GENERIC_REVEAL'
+        && state?.phase !== 'PODIUM'
+        && hasSubmissions
+        && !(state?.mode === 'text_vote' && state?.phase === 'GENERIC_SUBMITTING');
     const submitted = Boolean(state?.your_choice || state?.your_submission || state?.your_vote);
+
+    useEffect(() => {
+        if (!isPlayer || state?.phase !== 'GENERIC_SUBMITTING') return;
+        setText(state.your_submission || '');
+    }, [isPlayer, state?.phase, state?.current_round_index, state?.your_submission]);
 
     const submitText = () => {
         const clean = text.trim();
         if (!clean) return;
         onSubmitText?.(clean);
-        setText('');
     };
 
     if (!state) {
@@ -103,22 +115,36 @@ export default function GenericPromptGame({
                 <p className="text-[--text-tertiary] text-sm font-bold uppercase tracking-wide">{state.prompt?.hint || config.description}</p>
                 <h2>{state.prompt?.prompt}</h2>
 
-                {state.mode === 'choice_vote' && (
-                    <div className="grid gap-4 md:grid-cols-2 mt-5">
+                {state.mode === 'choice_vote' && !canChoose && !isReveal && !isPodium && (
+                    <div className="generic-prompt-option-preview mt-5" aria-label="Round options">
+                        {choiceOptions.map((option) => (
+                            <span key={option}>{option}</span>
+                        ))}
+                    </div>
+                )}
+
+                {state.mode === 'choice_vote' && (canChoose || isReveal || isPodium) && (
+                    <div className="generic-prompt-choice-grid mt-5">
                         {choiceOptions.map((option) => {
                             const selected = state.your_choice === option;
                             const count = resultCounts[option] || 0;
                             const isWinner = state.result?.winners?.includes(option);
+                            if (!canChoose) {
+                                return (
+                                    <div key={option} className={`generic-prompt-result-card ${isWinner ? 'winner' : ''}`}>
+                                        <strong>{option}</strong>
+                                        <small>{count} vote{count === 1 ? '' : 's'}</small>
+                                    </div>
+                                );
+                            }
                             return (
                                 <button
                                     key={option}
                                     type="button"
                                     className={`btn ${selected || isWinner ? 'btn-primary btn-glow' : 'btn-secondary'}`}
-                                    disabled={!isPlayer || isReveal || isPodium}
                                     onClick={() => onChoice?.(option)}
                                 >
                                     <span>{option}</span>
-                                    {isReveal && <small className="block mt-1 opacity-80">{count} vote{count === 1 ? '' : 's'}</small>}
                                 </button>
                             );
                         })}
@@ -157,7 +183,7 @@ export default function GenericPromptGame({
                 )}
 
                 {state.mode === 'text_vote' && isReveal && (
-                    <div className="common-ground-scoreboard mt-5">
+                    <div className="generic-prompt-results mt-5">
                         {entries.map((entry) => (
                             <div key={entry.entry_id}>
                                 <strong>{entry.text}</strong>
@@ -168,7 +194,7 @@ export default function GenericPromptGame({
                 )}
 
                 {state.mode === 'text_group' && isReveal && (
-                    <div className="common-ground-scoreboard mt-5">
+                    <div className="generic-prompt-results mt-5">
                         {groups.length > 0 ? groups.map((group) => (
                             <div key={group.normalized}>
                                 <strong>{group.display}</strong>
@@ -186,9 +212,9 @@ export default function GenericPromptGame({
             {isHost && !isPodium && (
                 <div className="common-ground-actions mt-5">
                     {state.mode === 'text_vote' && state.phase === 'GENERIC_SUBMITTING' && (
-                        <button type="button" className="btn btn-secondary" onClick={onStartVoting}>Start Voting</button>
+                        <button type="button" className="btn btn-secondary" disabled={!canStartVoting} onClick={onStartVoting}>Start Voting</button>
                     )}
-                    {state.phase !== 'GENERIC_REVEAL' && (
+                    {canReveal && (
                         <button type="button" className="btn btn-secondary" onClick={onReveal}>Reveal</button>
                     )}
                     {state.phase === 'GENERIC_REVEAL' && (
