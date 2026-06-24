@@ -53,6 +53,10 @@ curl -sS -i https://gamesapi-gamma.revelryapp.me/health
 
 Deployed via `./scripts/deploy-gcp.sh --gamma --with-frontend` to `games-backend-gamma` (prod `games-backend` untouched). Ships the June 12 integration hardening in `SPEC-REVELRY-INTEGRATION.md`: session-create/party-games-link `game_type` validators accept all Revelry host-app start types, handoff JWTs require `iss=revelry`+`aud=localplay`+`typ=localplay_launch`, and return-url default-port normalization. Verified live: `POST https://gamesapi-gamma.revelryapp.me/integrations/revelry/sessions` with `game_type=drawing` passes validation (→ 401 without credentials) and `game_type=bogus` → 422 listing all five types. Not yet redeployed to prod — run `./scripts/deploy-gcp.sh --with-frontend` after a reviewed prod cutover.
 
+### Recent gamma deploy — June 24, 2026 (expanded Revelry quick-start catalog)
+
+Deployed commit `e00a3ef` via `./scripts/deploy-gcp.sh --gamma --with-frontend` to `games-backend-gamma` (prod `games-backend` untouched). Ships LocalPlay bridge support for Revelry quick-start/settings launches of `would_you_rather`, `never_have_i_ever`, `word_association`, `acronym`, `photo_clue`, and `poker`, plus updated specs and Revelry preprod matrix expectations. Verified live after deploy: `/health` returned healthy, `/catalog?host_app=revelry` returned the expanded game set, and an unauthenticated `POST /integrations/revelry/sessions` with `game_type=photo_clue` returned `401 Missing integration credential` rather than a validator rejection.
+
 ### Pending LocalPlay DB/content migration — June 24, 2026
 
 Random Chit host-app authoring adds `chit_pull` as a saved `generated_content.content_type`. The local SQLite initializer/migration and rendered Supabase SQL expand the CHECK constraint to `('quiz', 'mlt', 'drawing', 'housie', 'chit_pull')`. Gamma Supabase DDL was applied on June 24, 2026 and verified with `games_gamma_generated_content_content_type_check`. Production SQL is updated in-repo but not applied; do not enable Random Chit `can_create_content` / `supports_ai_generation` production policy rows until the production DDL is explicitly applied.
@@ -1601,7 +1605,7 @@ cd frontend
 PREPROD_REVELRY=1 REVELRY_GAMMA_PARTY_GAMES_URL_FILE=../gamma_party_games_url.txt npm run test:e2e:preprod-revelry
 ```
 
-The matrix verifies the embedded Revelry Games hub catalog/search UI, then starts every launchable game returned by the live Revelry catalog. It currently covers deterministic party-scoped content saves for Quiz, Most Likely To, Drawing, and Housie, plus quick-start launch for Musical Chairs. It also mints organizer/player/spectator launch tokens for each session. If a newly exposed Revelry game is missing from the matrix fixture set, the test fails and the harness must be updated before rollout.
+The matrix verifies the embedded Revelry Games hub catalog/search UI, then starts every launchable game returned by the live Revelry catalog. It covers deterministic party-scoped content saves for Quiz, Most Likely To, Drawing, Housie, and Random Chit, and quick-start launch for all catalog games that expose `can_quick_start=true` without `can_create_content`. It also mints organizer/player/spectator launch tokens for each session. If a newly exposed Revelry game requires saved content but is missing from the matrix fixture set, the test fails and the harness must be updated before rollout.
 
 The test verifies:
 

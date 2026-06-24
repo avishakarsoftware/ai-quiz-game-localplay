@@ -98,6 +98,22 @@ function contentPayloadFor(game: RevelryCatalogGame, title: string) {
       },
     };
   }
+  if (type === 'chit_pull') {
+    return {
+      game: {
+        game_title: title,
+        rounds: 5,
+        safe_level: 'family',
+        chits: [
+          { id: 'c1', text: 'Make your best celebration face.', category: 'funny_face', safe_level: 'family' },
+          { id: 'c2', text: 'Tell the room your favorite snack.', category: 'question', safe_level: 'family' },
+          { id: 'c3', text: 'Invent a tiny award for someone nearby.', category: 'group', safe_level: 'family' },
+          { id: 'c4', text: 'Do a five second victory dance.', category: 'action', safe_level: 'family' },
+          { id: 'c5', text: 'Give the party a headline.', category: 'mini_challenge', safe_level: 'family' },
+        ],
+      },
+    };
+  }
   throw new Error(`No Revelry content fixture for ${type}. Add one before exposing the game in the Revelry catalog.`);
 }
 
@@ -239,7 +255,7 @@ test.describe('Revelry pre-prod live game matrix', () => {
       if (!game.can_create_content && !game.can_quick_start) {
         throw new Error(`${gameType(game)} is launchable in Revelry but has no tested create or quick-start path.`);
       }
-      if (game.can_create_content && !['drawing', 'housie', 'quiz', 'wmlt'].includes(gameType(game))) {
+      if (game.can_create_content && !['chit_pull', 'drawing', 'housie', 'quiz', 'wmlt'].includes(gameType(game))) {
         throw new Error(`${gameType(game)} is exposed in Revelry but the pre-prod harness has no content fixture.`);
       }
 
