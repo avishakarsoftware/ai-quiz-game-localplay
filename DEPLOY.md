@@ -57,6 +57,22 @@ Deployed via `./scripts/deploy-gcp.sh --gamma --with-frontend` to `games-backend
 
 Deployed commit `e00a3ef` via `./scripts/deploy-gcp.sh --gamma --with-frontend` to `games-backend-gamma` (prod `games-backend` untouched). Ships LocalPlay bridge support for Revelry quick-start/settings launches of `would_you_rather`, `never_have_i_ever`, `word_association`, `acronym`, `photo_clue`, and `poker`, plus updated specs and Revelry preprod matrix expectations. Verified live after deploy: `/health` returned healthy, `/catalog?host_app=revelry` returned the expanded game set, and an unauthenticated `POST /integrations/revelry/sessions` with `game_type=photo_clue` returned `401 Missing integration credential` rather than a validator rejection.
 
+Follow-up verification on June 24:
+
+- `npm run test:e2e:gamma` passed against `https://gamesapi-gamma.revelryapp.me` on desktop and mobile.
+- `python3 scripts/smoke-remote.py --base-url https://gamesapi-gamma.revelryapp.me --skip-generate` passed.
+- `PREPROD_REVELRY=1 REVELRY_GAMMA_PARTY_GAMES_URL_FILE=../gamma_party_games_url.txt npm run test:e2e:preprod-revelry` passed after adding the Random Chit saved-content fixture to the matrix.
+
+Production is intentionally not updated by this gamma deploy. As of the same check, `https://gamesapi.revelryapp.me/catalog?host_app=revelry` exposed only `quiz`, `wmlt`, `drawing`, and `musical_chairs`, and `POST /integrations/revelry/sessions` with `game_type=photo_clue` returned a validator `422`. A prod rollout therefore requires deploying current `master` to production before enabling policy rows for the new game types.
+
+Production rollout notes for the six new quick-start/settings candidates:
+
+- No Supabase schema migration is required for `would_you_rather`, `never_have_i_ever`, `word_association`, `acronym`, `photo_clue`, or `poker` because the Revelry bridge starts them without saved `generated_content`.
+- Add production `host_app_catalog_flags` rows only after prod deploy and smoke. Use `status=live`, `enabled=true`, and leave `can_create_content=false` as advertised by the static catalog.
+- Photo Clue policy may expose `supports_images=true`, but Revelry should not mirror raw uploaded photos unless LocalPlay returns an explicit safe share payload.
+- Party Poker must stay no-money/no-rewards: no buy-ins, cash-out, sparks, prizes, or economy-linked copy.
+- Random Chit can be enabled in production as quick-start-only before the prod DDL by overriding `can_create_content=false`, `can_edit_content=false`, and `supports_ai_generation=false`. Do not enable Random Chit saved-content/AI authoring in prod until the `generated_content.content_type` CHECK migration is applied.
+
 ### Pending LocalPlay DB/content migration — June 24, 2026
 
 Random Chit host-app authoring adds `chit_pull` as a saved `generated_content.content_type`. The local SQLite initializer/migration and rendered Supabase SQL expand the CHECK constraint to `('quiz', 'mlt', 'drawing', 'housie', 'chit_pull')`. Gamma Supabase DDL was applied on June 24, 2026 and verified with `games_gamma_generated_content_content_type_check`. Production SQL is updated in-repo but not applied; do not enable Random Chit `can_create_content` / `supports_ai_generation` production policy rows until the production DDL is explicitly applied.
