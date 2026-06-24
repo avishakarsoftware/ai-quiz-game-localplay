@@ -67,7 +67,9 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | QuizVariantGameType;
+export type SimpleSocialGameType = 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym';
+
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'photo_clue' | SimpleSocialGameType | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -197,6 +199,29 @@ export interface BluffState {
     } | null;
     revealed_cards: PlayingCard[];
     winners: Array<{ player_id: string; place: number }>;
+}
+
+export interface PokerState {
+    phase: 'POKER_DECISION' | 'POKER_SHOWDOWN' | 'PODIUM' | string;
+    config?: { game_title?: string; variant?: string; starting_stack?: number; ante?: number; decision_time_seconds?: number };
+    players: string[];
+    stacks: Record<string, number>;
+    statuses: Record<string, string>;
+    hand_number: number;
+    dealer_index?: number;
+    community_cards: PlayingCard[];
+    hole_cards: Record<string, PlayingCard[]>;
+    pot: number;
+    decisions: Record<string, 'pending' | 'stay' | 'fold' | string>;
+    hand_result?: {
+        winner_id?: string;
+        pot?: number;
+        ranked?: Array<{ player_id: string; place: number; evaluation?: { category?: string } | null }>;
+        decisions?: Record<string, string>;
+    } | null;
+    standings?: Array<{ player_id: string; place: number; stack?: number }>;
+    deadline?: number | null;
+    your_decision?: string | null;
 }
 
 export interface TwoTruthsStatement {
@@ -640,6 +665,108 @@ export interface PartyQuestsState {
     my_score?: number;
     incoming_requests?: PartyQuestConfirmation[];
     outgoing_requests?: PartyQuestConfirmation[];
+}
+
+export interface SimpleSocialStanding {
+    player_id: string;
+    score: number;
+    rank: number;
+}
+
+export interface WouldYouRatherState {
+    phase: 'WYR_VOTING' | 'WYR_REVEAL' | 'PODIUM' | string;
+    game_title?: string;
+    current_round_index: number;
+    round_count: number;
+    prompt?: { id?: string; question: string; option_a: string; option_b: string; category?: string };
+    submitted_votes: number;
+    scores: Record<string, number>;
+    standings?: SimpleSocialStanding[];
+    your_vote?: 'A' | 'B';
+    result?: { count_a: number; count_b: number; total_votes: number; percent_a: number; percent_b: number; majority?: 'A' | 'B' | null; tie?: boolean };
+    votes?: Record<string, 'A' | 'B'>;
+    completed_at?: number | null;
+}
+
+export interface NeverHaveIEverState {
+    phase: 'NHIE_ANSWERING' | 'NHIE_REVEAL' | 'PODIUM' | string;
+    game_title?: string;
+    current_round_index: number;
+    round_count: number;
+    prompt?: { id?: string; statement: string; category?: string };
+    submitted_answers: number;
+    scores: Record<string, number>;
+    standings?: SimpleSocialStanding[];
+    your_answer?: 'have' | 'never';
+    result?: { have_count: number; never_count: number; total_answers: number; have_percent: number; never_percent: number; minority?: string | null; tie?: boolean };
+    answers?: Record<string, 'have' | 'never'>;
+    completed_at?: number | null;
+}
+
+export interface WordAssociationState {
+    phase: 'WORD_ASSOC_SUBMITTING' | 'WORD_ASSOC_REVEAL' | 'PODIUM' | string;
+    game_title?: string;
+    current_round_index: number;
+    round_count: number;
+    seed?: { id?: string; seed: string; category?: string };
+    submitted_count: number;
+    scores: Record<string, number>;
+    standings?: SimpleSocialStanding[];
+    your_submission?: string;
+    groups?: Array<{ normalized: string; display: string; count: number; players: Array<{ player_id: string; text: string }> }>;
+    submissions?: Record<string, { text: string; normalized: string }>;
+    completed_at?: number | null;
+}
+
+export interface AcronymState {
+    phase: 'ACRONYM_SUBMITTING' | 'ACRONYM_VOTING' | 'ACRONYM_REVEAL' | 'PODIUM' | string;
+    game_title?: string;
+    current_round_index: number;
+    round_count: number;
+    prompt?: { id?: string; acronym: string; hint?: string; category?: string };
+    submitted_count: number;
+    vote_count: number;
+    scores: Record<string, number>;
+    standings?: SimpleSocialStanding[];
+    your_entry_id?: string;
+    your_submission?: string;
+    entries?: Array<{ entry_id: string; text: string }>;
+    submissions?: Record<string, { entry_id: string; text: string }>;
+    votes?: Record<string, string>;
+    vote_counts?: Record<string, number>;
+    completed_at?: number | null;
+}
+
+export type SimpleSocialState = WouldYouRatherState | NeverHaveIEverState | WordAssociationState | AcronymState;
+
+export interface PhotoClueState {
+    phase: 'PHOTO_WAITING_FOR_PHOTO' | 'PHOTO_GUESSING' | 'PHOTO_REVEAL' | 'PODIUM';
+    config?: {
+        game_title?: string;
+        theme?: string;
+        photo_time_seconds?: number;
+        guess_time_seconds?: number;
+        correct_guess_points?: number;
+        clue_giver_points?: number;
+        allow_late_join?: boolean;
+    };
+    players?: string[];
+    current_round_index: number;
+    round_count: number;
+    clue_giver_id?: string;
+    image_asset_id?: string;
+    image_url?: string;
+    answer?: string;
+    category?: string;
+    correct_guessers?: string[];
+    guess_count?: number;
+    scores?: Record<string, number>;
+    deadline?: number | null;
+    completed_at?: number | null;
+    private_prompts?: Array<{ round_index: number; prompt: { id?: string; answer: string; aliases?: string[]; category?: string; photo_tip?: string } }>;
+    secret_prompt?: { id?: string; answer: string; aliases?: string[]; category?: string; photo_tip?: string };
+    your_guess?: string;
+    your_guess_correct?: boolean;
 }
 
 export interface HousieCell {

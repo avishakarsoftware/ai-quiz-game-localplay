@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, type PartyQuestsState, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, type PartyQuestsState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
@@ -21,6 +21,7 @@ import { hasEmoji, isEmojiForwardGame } from '../utils/emoji';
 import { returnToHostApp } from '../utils/hostAppReturn';
 import MusicalChairsVisualizer from '../components/musical-chairs/MusicalChairsVisualizer';
 import BluffTable from '../components/BluffTable';
+import PokerGame from '../components/PokerGame';
 import TwoTruthsGame from '../components/TwoTruthsGame';
 import StoryChainGame from '../components/StoryChainGame';
 import CommonGroundGame from '../components/CommonGroundGame';
@@ -29,6 +30,8 @@ import WhoAmIGame from '../components/WhoAmIGame';
 import ChitPullGame from '../components/ChitPullGame';
 import MafiaGame from '../components/MafiaGame';
 import PartyQuestsGame from '../components/PartyQuestsGame';
+import SimpleSocialGame from '../components/SimpleSocialGame';
+import PhotoClueGame from '../components/PhotoClueGame';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 
@@ -119,6 +122,7 @@ export default function SpectatorPage() {
     const [housieAnnouncement, setHousieAnnouncement] = useState<{ text: string; key: number } | null>(null);
     const [musicalChairsState, setMusicalChairsState] = useState<MusicalChairsState | null>(null);
     const [bluffState, setBluffState] = useState<BluffState | null>(null);
+    const [pokerState, setPokerState] = useState<PokerState | null>(null);
     const [twoTruthsState, setTwoTruthsState] = useState<TwoTruthsState | null>(null);
     const [storyChainState, setStoryChainState] = useState<StoryChainState | null>(null);
     const [commonGroundState, setCommonGroundState] = useState<CommonGroundState | null>(null);
@@ -127,6 +131,8 @@ export default function SpectatorPage() {
     const [chitPullState, setChitPullState] = useState<ChitPullState | null>(null);
     const [mafiaState, setMafiaState] = useState<MafiaState | null>(null);
     const [partyQuestsState, setPartyQuestsState] = useState<PartyQuestsState | null>(null);
+    const [simpleSocialState, setSimpleSocialState] = useState<SimpleSocialState | null>(null);
+    const [photoClueState, setPhotoClueState] = useState<PhotoClueState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -298,6 +304,23 @@ export default function SpectatorPage() {
                     setGameState('PARTY_QUESTS');
                     return;
                 }
+                if ((msg.game_type === 'would_you_rather' || msg.game_type === 'never_have_i_ever' || msg.game_type === 'word_association' || msg.game_type === 'acronym') && msg[msg.game_type]) {
+                    setSimpleSocialState(msg[msg.game_type] as SimpleSocialState);
+                    setGameState('SIMPLE_SOCIAL');
+                    return;
+                }
+                if (msg.game_type === 'photo_clue' && msg.photo_clue) {
+                    setGameType('photo_clue');
+                    setPhotoClueState(msg.photo_clue as PhotoClueState);
+                    setGameState('PHOTO_CLUE');
+                    return;
+                }
+                if (msg.game_type === 'poker' && msg.poker) {
+                    setGameType('poker');
+                    setPokerState(msg.poker as PokerState);
+                    setGameState('POKER');
+                    return;
+                }
                 // Handle mid-question sync
                 if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
@@ -361,6 +384,15 @@ export default function SpectatorPage() {
                 } else if (msg.game_type === 'party_quests') {
                     setGameType('party_quests');
                     setGameState('PARTY_QUESTS');
+                } else if (msg.game_type === 'would_you_rather' || msg.game_type === 'never_have_i_ever' || msg.game_type === 'word_association' || msg.game_type === 'acronym') {
+                    setGameType(msg.game_type as SimpleSocialGameType);
+                    setGameState('SIMPLE_SOCIAL');
+                } else if (msg.game_type === 'photo_clue') {
+                    setGameType('photo_clue');
+                    setGameState('PHOTO_CLUE');
+                } else if (msg.game_type === 'poker') {
+                    setGameType('poker');
+                    setGameState('POKER');
                 }
                 else setGameState('INTRO');
             }
@@ -448,6 +480,31 @@ export default function SpectatorPage() {
                 setLeaderboard(msg.leaderboard || []);
                 setGameState('PARTY_QUESTS');
             }
+            else if (msg.type === 'SIMPLE_SOCIAL_SYNC') {
+                const incomingGameType = msg.game_type as SimpleSocialGameType;
+                setGameType(incomingGameType);
+                setSimpleSocialState(msg[incomingGameType] as SimpleSocialState);
+                setPlayers(msg.players || []);
+                setPlayerCount(msg.player_count || 0);
+                setLeaderboard(msg.leaderboard || []);
+                setGameState('SIMPLE_SOCIAL');
+            }
+            else if (msg.type === 'PHOTO_CLUE_SYNC') {
+                setGameType('photo_clue');
+                setPhotoClueState(msg.photo_clue as PhotoClueState);
+                setPlayers(msg.players || []);
+                setPlayerCount(msg.player_count || 0);
+                setLeaderboard(msg.leaderboard || []);
+                setGameState('PHOTO_CLUE');
+            }
+            else if (msg.type === 'POKER_SYNC') {
+                setGameType('poker');
+                setPokerState(msg.poker as PokerState);
+                setPlayers(msg.players || []);
+                setPlayerCount(msg.player_count || 0);
+                setLeaderboard(msg.leaderboard || []);
+                setGameState('POKER');
+            }
             else if (msg.type === 'MC_WINNER') {
                 setGameType('musical_chairs');
             }
@@ -517,6 +574,11 @@ export default function SpectatorPage() {
                 setLeaderboard(msg.leaderboard);
                 setTeamLeaderboard(msg.team_leaderboard || []);
                 if (msg.find_someone) setFindSomeoneState(msg.find_someone);
+                if (msg.photo_clue) setPhotoClueState(msg.photo_clue as PhotoClueState);
+                if (msg.poker) setPokerState(msg.poker as PokerState);
+                if (msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) {
+                    setSimpleSocialState((msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) as SimpleSocialState);
+                }
                 setSuperlatives(msg.superlatives || []);
                 setPodiumReveal(0);
                 setGameState('PODIUM');
@@ -555,11 +617,15 @@ export default function SpectatorPage() {
                 setTwoTruthsState(null);
                 setStoryChainState(null);
                 setCommonGroundState(null);
+                setFindSomeoneState(null);
                 setWhoAmIState(null);
                 setChitPullState(null);
                 setMafiaState(null);
                 setPartyQuestsState(null);
+                setSimpleSocialState(null);
                 if (msg.game_type) setGameType(msg.game_type);
+                setPhotoClueState(null);
+                setPokerState(null);
                 setGameState('LOBBY');
             }
         };
@@ -916,6 +982,31 @@ export default function SpectatorPage() {
 
                     {gameState === 'PARTY_QUESTS' && (
                         <PartyQuestsGame state={partyQuestsState} controls="spectator" />
+                    )}
+
+                    {gameState === 'SIMPLE_SOCIAL' && (
+                        <SimpleSocialGame
+                            gameType={gameType as SimpleSocialGameType}
+                            state={simpleSocialState}
+                            players={players}
+                            controls="spectator"
+                        />
+                    )}
+
+                    {gameState === 'PHOTO_CLUE' && (
+                        <PhotoClueGame
+                            state={photoClueState || { phase: 'PHOTO_WAITING_FOR_PHOTO', current_round_index: 0, round_count: 1 }}
+                            role="spectator"
+                            leaderboard={leaderboard}
+                        />
+                    )}
+
+                    {gameState === 'POKER' && (
+                        <PokerGame
+                            state={pokerState}
+                            role="spectator"
+                            leaderboard={leaderboard}
+                        />
                     )}
 
                     {gameState === 'QUESTION' && (question || currentStatement || gameType === 'drawing') && (

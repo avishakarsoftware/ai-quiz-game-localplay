@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { WS_URL } from '../config';
-import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, type PartyQuestsState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, type PartyQuestsState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -21,6 +21,7 @@ import { hasEmoji, isEmojiForwardGame } from '../utils/emoji';
 import { returnToHostApp } from '../utils/hostAppReturn';
 import MusicalChairsPlayer from '../components/player/MusicalChairsPlayer';
 import BluffTable from '../components/BluffTable';
+import PokerGame from '../components/PokerGame';
 import TwoTruthsGame from '../components/TwoTruthsGame';
 import StoryChainGame from '../components/StoryChainGame';
 import CommonGroundGame from '../components/CommonGroundGame';
@@ -29,10 +30,12 @@ import WhoAmIGame from '../components/WhoAmIGame';
 import ChitPullGame from '../components/ChitPullGame';
 import MafiaGame from '../components/MafiaGame';
 import PartyQuestsGame from '../components/PartyQuestsGame';
+import SimpleSocialGame from '../components/SimpleSocialGame';
+import PhotoClueGame from '../components/PhotoClueGame';
 import GameRulesModal from '../components/GameRulesModal';
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'PARTY_QUESTS' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'POKER' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'PARTY_QUESTS' | 'SIMPLE_SOCIAL' | 'PHOTO_CLUE' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
 
 interface PlayerQuestion {
     id: number;
@@ -163,6 +166,7 @@ export default function PlayerPage() {
     const [mcEliminated, setMcEliminated] = useState(false);
     const [mcReactionMs, setMcReactionMs] = useState<number | null>(null);
     const [bluffState, setBluffState] = useState<BluffState | null>(null);
+    const [pokerState, setPokerState] = useState<PokerState | null>(null);
     const [selectedBluffCards, setSelectedBluffCards] = useState<Set<string>>(new Set());
     const [twoTruthsState, setTwoTruthsState] = useState<TwoTruthsState | null>(null);
     const [storyChainState, setStoryChainState] = useState<StoryChainState | null>(null);
@@ -172,6 +176,8 @@ export default function PlayerPage() {
     const [chitPullState, setChitPullState] = useState<ChitPullState | null>(null);
     const [mafiaState, setMafiaState] = useState<MafiaState | null>(null);
     const [partyQuestsState, setPartyQuestsState] = useState<PartyQuestsState | null>(null);
+    const [simpleSocialState, setSimpleSocialState] = useState<SimpleSocialState | null>(null);
+    const [photoClueState, setPhotoClueState] = useState<PhotoClueState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const autoJoinedRef = useRef(false);
     const submittedRef = useRef(false);
@@ -296,6 +302,18 @@ export default function PlayerPage() {
                     setGameType('party_quests');
                     setPartyQuestsState(msg.party_quests as PartyQuestsState);
                     setState('PARTY_QUESTS');
+                } else if ((msg.game_type === 'would_you_rather' || msg.game_type === 'never_have_i_ever' || msg.game_type === 'word_association' || msg.game_type === 'acronym') && msg[msg.game_type]) {
+                    setGameType(msg.game_type as SimpleSocialGameType);
+                    setSimpleSocialState(msg[msg.game_type] as SimpleSocialState);
+                    setState('SIMPLE_SOCIAL');
+                } else if (msg.game_type === 'photo_clue' && msg.photo_clue) {
+                    setGameType('photo_clue');
+                    setPhotoClueState(msg.photo_clue as PhotoClueState);
+                    setState('PHOTO_CLUE');
+                } else if (msg.game_type === 'poker' && msg.poker) {
+                    setGameType('poker');
+                    setPokerState(msg.poker as PokerState);
+                    setState('POKER');
                 } else {
                     setState('LOBBY');
                 }
@@ -352,6 +370,18 @@ export default function PlayerPage() {
                     setGameType('party_quests');
                     setPartyQuestsState(msg.party_quests as PartyQuestsState);
                     setState('PARTY_QUESTS');
+                } else if ((msg.game_type === 'would_you_rather' || msg.game_type === 'never_have_i_ever' || msg.game_type === 'word_association' || msg.game_type === 'acronym') && msg[msg.game_type]) {
+                    setGameType(msg.game_type as SimpleSocialGameType);
+                    setSimpleSocialState(msg[msg.game_type] as SimpleSocialState);
+                    setState('SIMPLE_SOCIAL');
+                } else if (msg.game_type === 'photo_clue' && msg.photo_clue) {
+                    setGameType('photo_clue');
+                    setPhotoClueState(msg.photo_clue as PhotoClueState);
+                    setState('PHOTO_CLUE');
+                } else if (msg.game_type === 'poker' && msg.poker) {
+                    setGameType('poker');
+                    setPokerState(msg.poker as PokerState);
+                    setState('POKER');
                 } else if (msg.state === 'QUESTION') {
                     if (msg.game_type === 'drawing') {
                         setGameType('drawing');
@@ -434,6 +464,15 @@ export default function PlayerPage() {
                 } else if (msg.game_type === 'party_quests') {
                     setGameType('party_quests');
                     setState('PARTY_QUESTS');
+                } else if (msg.game_type === 'would_you_rather' || msg.game_type === 'never_have_i_ever' || msg.game_type === 'word_association' || msg.game_type === 'acronym') {
+                    setGameType(msg.game_type as SimpleSocialGameType);
+                    setState('SIMPLE_SOCIAL');
+                } else if (msg.game_type === 'photo_clue') {
+                    setGameType('photo_clue');
+                    setState('PHOTO_CLUE');
+                } else if (msg.game_type === 'poker') {
+                    setGameType('poker');
+                    setState('POKER');
                 }
                 else setState('INTRO');
             }
@@ -566,6 +605,31 @@ export default function PlayerPage() {
                 setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
                 setState('PARTY_QUESTS');
             }
+            if (msg.type === 'SIMPLE_SOCIAL_SYNC') {
+                setError('');
+                const incomingGameType = msg.game_type as SimpleSocialGameType;
+                setGameType(incomingGameType);
+                setSimpleSocialState(msg[incomingGameType] as SimpleSocialState);
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+                setVotePlayers(msg.players as PlayerInfo[] || []);
+                setState('SIMPLE_SOCIAL');
+            }
+            if (msg.type === 'PHOTO_CLUE_SYNC') {
+                setError('');
+                setGameType('photo_clue');
+                setPhotoClueState(msg.photo_clue as PhotoClueState);
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+                setVotePlayers(msg.players as PlayerInfo[] || []);
+                setState('PHOTO_CLUE');
+            }
+            if (msg.type === 'POKER_SYNC') {
+                setError('');
+                setGameType('poker');
+                setPokerState(msg.poker as PokerState);
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+                setVotePlayers(msg.players as PlayerInfo[] || []);
+                setState('POKER');
+            }
             if (msg.type === 'QUESTION') {
                 if (msg.game_type === 'drawing') {
                     setGameType('drawing');
@@ -686,6 +750,11 @@ export default function PlayerPage() {
                 const rank = lb.findIndex((p) => p.nickname === nickname) + 1;
                 track('player_game_finished', { room_code: roomCode, nickname, rank, total_players: lb.length });
                 if (msg.find_someone) setFindSomeoneState(msg.find_someone as FindSomeoneState);
+                if (msg.photo_clue) setPhotoClueState(msg.photo_clue as PhotoClueState);
+                if (msg.poker) setPokerState(msg.poker as PokerState);
+                if (msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) {
+                    setSimpleSocialState((msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) as SimpleSocialState);
+                }
                 setLeaderboard(msg.leaderboard); setTeamLeaderboard(msg.team_leaderboard || []); setSuperlatives(msg.superlatives || []); setState('PODIUM'); soundManager.play('fanfare');
             }
             if (msg.type === 'ORGANIZER_DISCONNECTED') {
@@ -911,6 +980,42 @@ export default function PlayerPage() {
     const claimFindSomeonePattern = (patternId: string) => {
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'FIND_CLAIM_PATTERN', pattern_id: patternId }));
+    };
+    const submitWouldYouRatherVote = (choice: 'A' | 'B') => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'WYR_VOTE', choice }));
+    };
+    const submitNeverHaveIEverAnswer = (answer: 'have' | 'never') => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'NHIE_ANSWER', answer }));
+    };
+    const submitWordAssociation = (word: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'WORD_SUBMIT', word }));
+    };
+    const submitAcronymExpansion = (text: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'ACRO_SUBMIT', text }));
+    };
+    const voteAcronymEntry = (entryId: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'ACRO_VOTE', entry_id: entryId }));
+    };
+    const submitPhotoClueReady = (assetId: string, imageUrl?: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'PHOTO_CLUE_UPLOAD_READY', asset_id: assetId, image_url: imageUrl || '' }));
+    };
+    const submitPhotoClueGuess = (photoGuess: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'PHOTO_CLUE_GUESS', guess: photoGuess }));
+    };
+    const pokerStay = () => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'POKER_STAY' }));
+    };
+    const pokerFold = () => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'POKER_FOLD' }));
     };
     const submitWhoAmIGuess = (guess: string) => {
         soundManager.hapticsSelect();
@@ -1231,6 +1336,20 @@ export default function PlayerPage() {
                     </>
                 )}
 
+                {state === 'POKER' && (
+                    <>
+                        {error && <div className="status-pill status-error animate-shake player-runtime-error">{error}</div>}
+                        <PokerGame
+                            state={pokerState}
+                            role="player"
+                            viewerName={nickname}
+                            leaderboard={leaderboard}
+                            onStay={pokerStay}
+                            onFold={pokerFold}
+                        />
+                    </>
+                )}
+
                 {state === 'TWO_TRUTHS' && (
                     <>
                         {error && <div className="status-pill status-error animate-shake player-runtime-error">{error}</div>}
@@ -1329,6 +1448,38 @@ export default function PlayerPage() {
                             controls="player"
                             onRequestConfirmation={requestPartyQuestConfirmation}
                             onConfirm={confirmPartyQuest}
+                        />
+                    </>
+                )}
+
+                {state === 'SIMPLE_SOCIAL' && (
+                    <>
+                        {error && <div className="status-pill status-error animate-shake player-runtime-error">{error}</div>}
+                        <SimpleSocialGame
+                            gameType={gameType as SimpleSocialGameType}
+                            state={simpleSocialState}
+                            players={votePlayers}
+                            viewerName={nickname}
+                            controls="player"
+                            onWouldYouRatherVote={submitWouldYouRatherVote}
+                            onNeverHaveIEverAnswer={submitNeverHaveIEverAnswer}
+                            onWordSubmit={submitWordAssociation}
+                            onAcronymSubmit={submitAcronymExpansion}
+                            onAcronymVote={voteAcronymEntry}
+                        />
+                    </>
+                )}
+
+                {state === 'PHOTO_CLUE' && (
+                    <>
+                        {error && <div className="status-pill status-error animate-shake player-runtime-error">{error}</div>}
+                        <PhotoClueGame
+                            state={photoClueState || { phase: 'PHOTO_WAITING_FOR_PHOTO', current_round_index: 0, round_count: 1 }}
+                            role="player"
+                            nickname={nickname}
+                            leaderboard={leaderboard}
+                            onPhotoReady={submitPhotoClueReady}
+                            onGuess={submitPhotoClueGuess}
                         />
                     </>
                 )}

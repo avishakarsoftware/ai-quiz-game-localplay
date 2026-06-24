@@ -13,7 +13,7 @@ Frontend display name: Acronym Game
 
 ## Implementation-Ready MVP Scope
 
-Status: backend engine foundation implemented on June 24, 2026. `backend/acronym_engine.py` owns acronym validation, expansion validation, anonymous voting payloads, vote capture, reveal, scoring, redaction, late join, podium transition, and pure tests. Remaining MVP work is setup/AI UI, socket events, player submission/voting UI, spectator reveal UI, rules metadata, and Playwright coverage.
+Status: standalone playable MVP implemented on June 24, 2026. `backend/acronym_engine.py` owns acronym validation, expansion validation, anonymous voting payloads, vote capture, reveal, scoring, redaction, late join, podium transition, standings, and pure tests. LocalPlay now exposes the game in the standalone catalog with default content, room creation, WebSocket sync, organizer/player/spectator UI, rules metadata, reconnect handling, podium flow, and focused API/socket regression tests. Remaining follow-ups are setup/AI authoring UI and broader Playwright matrix coverage.
 
 - Host starts from curated or AI-generated acronyms.
 - Each player submits one expansion per round.
@@ -83,4 +83,4 @@ Generate short pronounceable acronyms with party-safe hints. Avoid acronyms that
 
 ## Revelry Readiness
 
-Acronym Game should stay hidden from Revelry until runtime socket/UI and end-to-end tests exist. It can later reuse the same authoring style as Random Chit and Most Likely To.
+Acronym Game should stay hidden from Revelry until gamma multi-tab tests cover submit, anonymous voting, reveal, late join, and final results. It can later reuse the same authoring style as Random Chit and Most Likely To.

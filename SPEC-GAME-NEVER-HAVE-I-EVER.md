@@ -13,7 +13,7 @@ Frontend display name: Never Have I Ever
 
 ## Implementation-Ready MVP Scope
 
-Status: backend engine foundation implemented on June 24, 2026. `backend/never_have_i_ever_engine.py` owns prompt validation, player answer capture, reveal splits, optional minority scoring, redaction, late join, podium transition, and pure tests. Remaining MVP work is catalog exposure, setup/AI UI, socket events, player answer UI, spectator reveal UI, rules metadata, and Playwright coverage.
+Status: standalone playable MVP implemented on June 24, 2026. `backend/never_have_i_ever_engine.py` owns prompt validation, player answer capture, reveal splits, optional minority scoring, redaction, late join, podium transition, and pure tests. LocalPlay now exposes the game in the standalone catalog with default content, room creation, WebSocket sync, organizer/player/spectator UI, rules metadata, reconnect handling, podium flow, and focused API/socket regression tests. Remaining follow-ups are setup/AI authoring UI and broader Playwright matrix coverage.
 
 - Host starts from curated or AI-generated prompts.
 - Players answer `have` or `never`.
@@ -83,4 +83,4 @@ Generate prompts that are playful, broadly answerable, and safe for the selected
 
 ## Revelry Readiness
 
-Do not enable in Revelry catalog until the runtime socket/UI slice is complete and gamma has multi-tab tests for host, player, spectator, late join, and reveal.
+Keep Revelry exposure behind host-app policy until gamma multi-tab tests cover host, player, spectator, late join, reveal, and final results.

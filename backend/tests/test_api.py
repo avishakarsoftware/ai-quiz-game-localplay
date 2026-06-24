@@ -123,6 +123,31 @@ class TestHealthEndpoints:
         assert room.quiz["vote_category"] == "funniest"
         assert room.time_limit == 30
 
+    @pytest.mark.parametrize(
+        "game_type,config_key,title",
+        [
+            ("would_you_rather", "would_you_rather_config", "Would You Rather"),
+            ("never_have_i_ever", "never_have_i_ever_config", "Never Have I Ever"),
+            ("word_association", "word_association_config", "Word Association"),
+            ("acronym", "acronym_config", "Acronym Game"),
+            ("photo_clue", "photo_clue_config", "Photo Clue"),
+            ("poker", "poker_config", "Party Poker"),
+        ],
+    )
+    def test_create_simple_social_room(self, game_type, config_key, title):
+        res = client.post(
+            "/room/create",
+            json={"game_type": game_type, config_key: {"game_title": title}},
+            headers=AUTH_HEADERS,
+        )
+
+        assert res.status_code == 200, res.text
+        body = res.json()
+        room = main.socket_manager.rooms[body["room_code"]]
+        assert room.game_type == game_type
+        assert room.quiz["game_title"] == title
+        assert room.time_limit == 30
+
     def test_create_who_am_i_room(self):
         res = client.post(
             "/room/create",

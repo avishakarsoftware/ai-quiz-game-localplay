@@ -16,9 +16,9 @@ Frontend display name: Party Poker
 
 ## Implementation-Ready MVP Scope
 
-Status: evaluator foundation implemented on June 24, 2026. The shared card engine dependency exists through the Bluff MVP, and `backend/poker_hand_evaluator.py` now evaluates best 5-card Hold'em hands from 5-7 cards, handles wheel straights, tie-breaking, player ranking, and pure tests. Poker is not playable yet. The next implementation slice is `poker_engine.py` for tournament/chip/side-pot state, then socket events and organizer/player/spectator UI on top of the existing card primitives.
+Status: first playable standalone MVP implemented on June 24, 2026. The shared card engine dependency exists through the Bluff MVP, and `backend/poker_hand_evaluator.py` evaluates best 5-card Hold'em hands from 5-7 cards, handles wheel straights, tie-breaking, player ranking, and pure tests. `backend/poker_engine.py` now ships a quick no-money Hold'em tournament slice: equal play-chip stacks, fixed antes, two private hole cards, five table cards, Stay/Fold decisions, showdown, elimination, podium, private card redaction, room/socket events, organizer/player/spectator UI, and focused API/socket regression tests. Full betting rounds, blinds, raises, all-ins, side pots, and richer dealer controls remain Phase 2.
 
-- Variant: Texas Hold'em tournament.
+- Variant: Texas Hold'em tournament. The shipped first slice is quick Hold'em with antes plus Stay/Fold decisions; full betting is Phase 2.
 - One table only in MVP.
 - 2-10 players.
 - Spectators can watch the table.
@@ -536,13 +536,14 @@ Playwright:
 - Desktop spectator table is readable with 10 players.
 - Showdown reveal fits long names and split pots.
 - Tournament completion renders full standings.
+- Quick MVP tests cover fixed-ante Stay/Fold decisions, private hole-card redaction, showdown, next hand, elimination, and podium.
 
 ## Acceptance Criteria
 
-- Party Poker appears as a standalone game only after backend runtime is wired.
+- Party Poker appears as a standalone game after the quick no-money runtime is wired and tested.
 - A 2-10 player table can start with equal play chips.
-- Players can complete repeated Texas Hold'em hands.
-- Side pots and all-ins resolve correctly.
+- Players can complete repeated quick Hold'em hands with fixed antes and Stay/Fold decisions.
+- Side pots, raises, all-ins, and full betting rounds are Phase 2 acceptance criteria, not part of the first playable standalone slice.
 - Hidden cards are never leaked to spectators/other players.
 - Eliminated players are ranked.
 - Final podium shows winner, runner up, third place, and full standings.

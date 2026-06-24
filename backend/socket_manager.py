@@ -16,6 +16,7 @@ import random
 
 import config
 import tokens as token_module
+from media_store import media_store
 from musical_chairs_engine import choose_eliminated, intensity_for_round, rank_grabs, total_rounds as mc_total_rounds, validate_config as validate_musical_chairs_config
 from bluff_engine import (
     PHASE_CHALLENGE as BLUFF_PHASE_CHALLENGE,
@@ -145,6 +146,68 @@ from party_quests_engine import (
     standings as quests_standings,
     validate_config as validate_party_quests_config,
 )
+from would_you_rather_engine import (
+    PHASE_PODIUM as WYR_PHASE_PODIUM,
+    create_initial_state as wyr_create_initial_state,
+    next_round as wyr_next_round,
+    public_state as wyr_public_state,
+    reveal_round as wyr_reveal_round,
+    standings as wyr_standings,
+    submit_vote as wyr_submit_vote,
+    validate_config as validate_would_you_rather_config,
+)
+from never_have_i_ever_engine import (
+    PHASE_PODIUM as NHIE_PHASE_PODIUM,
+    create_initial_state as nhie_create_initial_state,
+    next_round as nhie_next_round,
+    public_state as nhie_public_state,
+    reveal_round as nhie_reveal_round,
+    standings as nhie_standings,
+    submit_answer as nhie_submit_answer,
+    validate_config as validate_never_have_i_ever_config,
+)
+from word_association_engine import (
+    PHASE_PODIUM as WORD_PHASE_PODIUM,
+    create_initial_state as word_create_initial_state,
+    next_round as word_next_round,
+    public_state as word_public_state,
+    reveal_round as word_reveal_round,
+    standings as word_standings,
+    submit_word as word_submit_word,
+    validate_config as validate_word_association_config,
+)
+from acronym_engine import (
+    PHASE_PODIUM as ACRO_PHASE_PODIUM,
+    create_initial_state as acro_create_initial_state,
+    next_round as acro_next_round,
+    public_state as acro_public_state,
+    reveal_round as acro_reveal_round,
+    standings as acro_standings,
+    start_voting as acro_start_voting,
+    submit_expansion as acro_submit_expansion,
+    submit_vote as acro_submit_vote,
+    validate_config as validate_acronym_config,
+)
+from photo_clue_engine import (
+    PHASE_PODIUM as PHOTO_PHASE_PODIUM,
+    create_initial_state as photo_create_initial_state,
+    next_round as photo_next_round,
+    private_prompt_for_player as photo_private_prompt_for_player,
+    public_state as photo_public_state,
+    reveal_round as photo_reveal_round,
+    submit_guess as photo_submit_guess,
+    submit_photo as photo_submit_photo,
+    validate_config as validate_photo_clue_config,
+)
+from poker_engine import (
+    PHASE_PODIUM as POKER_PHASE_PODIUM,
+    create_initial_state as poker_create_initial_state,
+    public_sync as poker_public_sync,
+    reveal_hand as poker_reveal_hand,
+    start_next_hand as poker_start_next_hand,
+    submit_decision as poker_submit_decision,
+    validate_config as validate_poker_config,
+)
 from bingo_engine import (
     BINGO_PATTERN_ORDER,
     create_bingo_call_deck,
@@ -270,6 +333,24 @@ class Room:
         # Party Quests state
         self.party_quests_config = validate_party_quests_config(game_data) if game_type == "party_quests" else {}
         self.party_quests_state: dict = {}
+        # Lightweight social round games
+        self.wyr_config = validate_would_you_rather_config(game_data) if game_type == "would_you_rather" else {}
+        self.wyr_state: dict = {}
+        self.nhie_config = validate_never_have_i_ever_config(game_data) if game_type == "never_have_i_ever" else {}
+        self.nhie_state: dict = {}
+        self.word_config = validate_word_association_config(game_data) if game_type == "word_association" else {}
+        self.word_state: dict = {}
+        self.acro_config = validate_acronym_config(game_data) if game_type == "acronym" else {}
+        self.acro_state: dict = {}
+        self.simple_social_completed_sent = False
+        # Photo Clue state
+        self.photo_clue_config = validate_photo_clue_config(game_data) if game_type == "photo_clue" else {}
+        self.photo_clue_state: dict = {}
+        self.photo_clue_completed_sent = False
+        # Party Poker state
+        self.poker_config = validate_poker_config(game_data) if game_type == "poker" else {}
+        self.poker_state: dict = {}
+        self.poker_completed_sent = False
 
     def reset_for_new_game(self, new_game_data: dict, new_time_limit: int,
                            game_type: Optional[str] = None,
@@ -375,6 +456,21 @@ class Room:
         self.mafia_state = {}
         self.party_quests_config = validate_party_quests_config(new_game_data) if self.game_type == "party_quests" else {}
         self.party_quests_state = {}
+        self.wyr_config = validate_would_you_rather_config(new_game_data) if self.game_type == "would_you_rather" else {}
+        self.wyr_state = {}
+        self.nhie_config = validate_never_have_i_ever_config(new_game_data) if self.game_type == "never_have_i_ever" else {}
+        self.nhie_state = {}
+        self.word_config = validate_word_association_config(new_game_data) if self.game_type == "word_association" else {}
+        self.word_state = {}
+        self.acro_config = validate_acronym_config(new_game_data) if self.game_type == "acronym" else {}
+        self.acro_state = {}
+        self.simple_social_completed_sent = False
+        self.photo_clue_config = validate_photo_clue_config(new_game_data) if self.game_type == "photo_clue" else {}
+        self.photo_clue_state = {}
+        self.photo_clue_completed_sent = False
+        self.poker_config = validate_poker_config(new_game_data) if self.game_type == "poker" else {}
+        self.poker_state = {}
+        self.poker_completed_sent = False
 
         for nickname in self.power_ups:
             self.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
@@ -416,6 +512,18 @@ class Room:
             return int(self.mafia_state.get("round", 1) or 1)
         if self.game_type == "party_quests":
             return 1
+        if self.game_type == "would_you_rather":
+            return len(self.wyr_state.get("rounds", [])) or len(self.wyr_config.get("prompts", [])) or 3
+        if self.game_type == "never_have_i_ever":
+            return len(self.nhie_state.get("rounds", [])) or len(self.nhie_config.get("prompts", [])) or 3
+        if self.game_type == "word_association":
+            return len(self.word_state.get("rounds", [])) or len(self.word_config.get("seeds", [])) or 3
+        if self.game_type == "acronym":
+            return len(self.acro_state.get("rounds", [])) or len(self.acro_config.get("prompts", [])) or 3
+        if self.game_type == "photo_clue":
+            return len(self.photo_clue_state.get("assignments", [])) or len(self.photo_clue_config.get("prompts", [])) or 3
+        if self.game_type == "poker":
+            return int(self.poker_state.get("hand_number", 0)) or 1
         return len(self.quiz.get("questions", []))
 
     def current_round_data(self) -> Optional[dict]:
@@ -451,6 +559,18 @@ class Room:
             return mafia_public_sync(self.mafia_state, players=self.player_public_list()) if self.mafia_state else None
         if self.game_type == "party_quests":
             return quests_public_sync(self.party_quests_state, players=self.player_public_list()) if self.party_quests_state else None
+        if self.game_type == "would_you_rather":
+            return wyr_public_state(self.wyr_state) if self.wyr_state else None
+        if self.game_type == "never_have_i_ever":
+            return nhie_public_state(self.nhie_state) if self.nhie_state else None
+        if self.game_type == "word_association":
+            return word_public_state(self.word_state) if self.word_state else None
+        if self.game_type == "acronym":
+            return acro_public_state(self.acro_state) if self.acro_state else None
+        if self.game_type == "photo_clue":
+            return photo_public_state(self.photo_clue_state) if self.photo_clue_state else None
+        if self.game_type == "poker":
+            return poker_public_sync(self.poker_state) if self.poker_state else None
         return self.quiz["questions"][idx]
 
     def game_title(self) -> str:
@@ -792,6 +912,14 @@ class SocketManager:
                     sync["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
                 if room.game_type == "mafia" and room.mafia_state:
                     sync["mafia"] = mafia_public_sync(room.mafia_state, players=room.player_public_list())
+                if room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
+                    state = getattr(room, self._simple_social_state_attr(room.game_type), {})
+                    if state:
+                        sync[self._simple_social_sync_key(room.game_type)] = self._simple_social_public_state(room)
+                if room.game_type == "photo_clue" and room.photo_clue_state:
+                    sync["photo_clue"] = self._photo_clue_public_state(room)
+                if room.game_type == "poker" and room.poker_state:
+                    sync["poker"] = self._poker_public_state(room)
                 await websocket.send_json(sync)
                 while True:
                     try:
@@ -978,6 +1106,14 @@ class SocketManager:
             sync["mafia"] = mafia_public_sync(room.mafia_state, players=room.player_public_list())
         if room.game_type == "party_quests" and room.party_quests_state:
             sync["party_quests"] = quests_public_sync(room.party_quests_state, players=room.player_public_list())
+        if room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
+            state = getattr(room, self._simple_social_state_attr(room.game_type), {})
+            if state:
+                sync[self._simple_social_sync_key(room.game_type)] = self._simple_social_public_state(room)
+        if room.game_type == "photo_clue" and room.photo_clue_state:
+            sync["photo_clue"] = self._photo_clue_public_state(room)
+        if room.game_type == "poker" and room.poker_state:
+            sync["poker"] = self._poker_public_state(room)
 
         if room.organizer:
             await room.organizer.send_json(sync)
@@ -1116,6 +1252,60 @@ class SocketManager:
                                 "message": "Party Quests starts when at least one guest has joined",
                             })
                             return
+                    elif room.game_type == "would_you_rather":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_WOULD_YOU_RATHER_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Would You Rather needs at least {config.MIN_WOULD_YOU_RATHER_PLAYERS} players to start",
+                            })
+                            return
+                    elif room.game_type == "never_have_i_ever":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_NEVER_HAVE_I_EVER_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Never Have I Ever needs at least {config.MIN_NEVER_HAVE_I_EVER_PLAYERS} players to start",
+                            })
+                            return
+                    elif room.game_type == "word_association":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_WORD_ASSOCIATION_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Word Association needs at least {config.MIN_WORD_ASSOCIATION_PLAYERS} players to start",
+                            })
+                            return
+                    elif room.game_type == "acronym":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_ACRONYM_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Acronym Game needs at least {config.MIN_ACRONYM_PLAYERS} players to start",
+                            })
+                            return
+                    elif room.game_type == "photo_clue":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_PHOTO_CLUE_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Photo Clue needs at least {config.MIN_PHOTO_CLUE_PLAYERS} players to start",
+                            })
+                            return
+                    elif room.game_type == "poker":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_POKER_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Party Poker needs at least {config.MIN_POKER_PLAYERS} players to start",
+                            })
+                            return
+                        if player_count > 10:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": "Party Poker supports up to 10 players",
+                            })
+                            return
                     if room.billing_mode == "host_app_managed":
                         spent = True
                     else:
@@ -1179,12 +1369,24 @@ class SocketManager:
                         self._start_party_quests_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": "party_quests"})
                         await self._broadcast_party_quests_sync(room)
+                    elif room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
+                        self._start_simple_social_game(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": room.game_type})
+                        await self._broadcast_simple_social_sync(room)
+                    elif room.game_type == "photo_clue":
+                        self._start_photo_clue_game(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": "photo_clue"})
+                        await self._broadcast_photo_clue_sync(room)
+                    elif room.game_type == "poker":
+                        self._start_poker_game(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": "poker"})
+                        await self._broadcast_poker_sync(room)
                     else:
                         room.state = "INTRO"
                         await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
-                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests"):
+                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker"):
                     return
                 if room.game_type == "drawing" and room.drawing_auto_task:
                     room.drawing_auto_task.cancel()
@@ -1266,6 +1468,33 @@ class SocketManager:
             elif msg_type == "COMMON_NEXT_ROUND" and room.game_type == "common_ground":
                 await self._common_next_round(room)
 
+            elif msg_type in ("WYR_REVEAL", "NHIE_REVEAL", "WORD_REVEAL") and room.game_type in ("would_you_rather", "never_have_i_ever", "word_association"):
+                await self._simple_social_reveal(room)
+
+            elif msg_type in ("WYR_NEXT_ROUND", "NHIE_NEXT_ROUND", "WORD_NEXT_ROUND") and room.game_type in ("would_you_rather", "never_have_i_ever", "word_association"):
+                await self._simple_social_next_round(room)
+
+            elif msg_type == "ACRO_START_VOTING" and room.game_type == "acronym":
+                await self._acronym_start_voting(room)
+
+            elif msg_type == "ACRO_REVEAL" and room.game_type == "acronym":
+                await self._simple_social_reveal(room)
+
+            elif msg_type == "ACRO_NEXT_ROUND" and room.game_type == "acronym":
+                await self._simple_social_next_round(room)
+
+            elif msg_type == "PHOTO_CLUE_REVEAL" and room.game_type == "photo_clue":
+                await self._photo_clue_reveal(room)
+
+            elif msg_type == "PHOTO_CLUE_NEXT_ROUND" and room.game_type == "photo_clue":
+                await self._photo_clue_next_round(room)
+
+            elif msg_type == "POKER_REVEAL" and room.game_type == "poker":
+                await self._poker_reveal(room)
+
+            elif msg_type == "POKER_NEXT_HAND" and room.game_type == "poker":
+                await self._poker_next_hand(room)
+
             elif msg_type == "WHOAMI_NEXT_CLUE" and room.game_type == "who_am_i":
                 await self._who_am_i_next_clue(room)
 
@@ -1345,6 +1574,15 @@ class SocketManager:
                 if room.game_type == "party_quests":
                     await self._party_quests_complete_game(room)
                     return
+                if room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
+                    await self._simple_social_complete_game(room)
+                    return
+                if room.game_type == "photo_clue":
+                    await self._photo_clue_complete_game(room)
+                    return
+                if room.game_type == "poker":
+                    await self._poker_complete_game(room)
+                    return
                 if room.game_type in ("housie", "bingo") and room.state == "BINGO_CALLING":
                     await self._complete_housie(room)
                     return
@@ -1382,7 +1620,7 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests") else room.game_type
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker") else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
 
                     # Validate time_limit
@@ -1422,6 +1660,18 @@ class SocketManager:
                         new_game_data = validate_mafia_config({})
                     elif new_game_type == "party_quests":
                         new_game_data = validate_party_quests_config({})
+                    elif new_game_type == "would_you_rather":
+                        new_game_data = validate_would_you_rather_config({})
+                    elif new_game_type == "never_have_i_ever":
+                        new_game_data = validate_never_have_i_ever_config({})
+                    elif new_game_type == "word_association":
+                        new_game_data = validate_word_association_config({})
+                    elif new_game_type == "acronym":
+                        new_game_data = validate_acronym_config({})
+                    elif new_game_type == "photo_clue":
+                        new_game_data = validate_photo_clue_config({})
+                    elif new_game_type == "poker":
+                        new_game_data = validate_poker_config({})
                     else:
                         new_game_data = quizzes.get(new_content_id)
 
@@ -1595,6 +1845,14 @@ class SocketManager:
                             state_info["mafia"] = mafia_private_sync(room.mafia_state, nickname, players=room.player_public_list())
                         elif room.game_type == "party_quests" and room.party_quests_state:
                             state_info["party_quests"] = quests_private_sync(room.party_quests_state, nickname, players=room.player_public_list())
+                        elif room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
+                            state = getattr(room, self._simple_social_state_attr(room.game_type), {})
+                            if state:
+                                state_info[self._simple_social_sync_key(room.game_type)] = self._simple_social_public_state(room, nickname)
+                        elif room.game_type == "photo_clue" and room.photo_clue_state:
+                            state_info["photo_clue"] = self._photo_clue_public_state(room, nickname)
+                        elif room.game_type == "poker" and room.poker_state:
+                            state_info["poker"] = self._poker_public_state(room, nickname)
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1699,6 +1957,14 @@ class SocketManager:
                             state_info["mafia"] = mafia_private_sync(room.mafia_state, player_data["nickname"], players=room.player_public_list())
                         elif room.game_type == "party_quests" and room.party_quests_state:
                             state_info["party_quests"] = quests_private_sync(room.party_quests_state, player_data["nickname"], players=room.player_public_list())
+                        elif room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
+                            state = getattr(room, self._simple_social_state_attr(room.game_type), {})
+                            if state:
+                                state_info[self._simple_social_sync_key(room.game_type)] = self._simple_social_public_state(room, player_data["nickname"])
+                        elif room.game_type == "photo_clue" and room.photo_clue_state:
+                            state_info["photo_clue"] = self._photo_clue_public_state(room, player_data["nickname"])
+                        elif room.game_type == "poker" and room.poker_state:
+                            state_info["poker"] = self._poker_public_state(room, player_data["nickname"])
                         elif room.state == "QUESTION":
                             round_data = room.current_round_data()
                             if room.game_type == "wmlt":
@@ -1982,8 +2248,17 @@ class SocketManager:
             elif msg_type == "QUESTS_CONFIRM" and room.game_type == "party_quests":
                 await self._party_quests_confirm(room, client_id, message)
 
+            elif msg_type in ("WYR_VOTE", "NHIE_ANSWER", "WORD_SUBMIT", "ACRO_SUBMIT", "ACRO_VOTE") and room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
+                await self._simple_social_player_action(room, client_id, message)
+
+            elif msg_type in ("PHOTO_CLUE_UPLOAD_READY", "PHOTO_CLUE_GUESS") and room.game_type == "photo_clue":
+                await self._photo_clue_player_action(room, client_id, message)
+
+            elif msg_type in ("POKER_STAY", "POKER_FOLD") and room.game_type == "poker":
+                await self._poker_player_action(room, client_id, message)
+
             elif msg_type == "ANSWER":
-                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests"):
+                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker"):
                     return  # Other games use their own input messages
                 if client_id not in room.players:
                     return
@@ -2516,6 +2791,447 @@ class SocketManager:
             self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Two Truths history for room %s", room.room_code)
+
+    def _poker_public_state(self, room: Room, viewer_id: str | None = None) -> dict:
+        return poker_public_sync(room.poker_state, viewer_id) if room.poker_state else {}
+
+    def _start_poker_game(self, room: Room):
+        nicknames = [player["nickname"] for player in room.players.values()]
+        room.poker_config = validate_poker_config(room.quiz)
+        room.poker_state = poker_create_initial_state(nicknames, room.poker_config, seed=room.room_code, now=time.time())
+        room.poker_completed_sent = False
+        room.state = room.poker_state["phase"]
+        room.answer_log = []
+        self._sync_poker_scores_to_players(room)
+
+    def _sync_poker_scores_to_players(self, room: Room):
+        stacks = room.poker_state.get("stacks", {}) if room.poker_state else {}
+        for player in room.players.values():
+            player["score"] = int(stacks.get(player.get("nickname"), player.get("score", 0)))
+
+    async def _broadcast_poker_sync(self, room: Room):
+        if not room.poker_state:
+            return
+        players = room.player_public_list()
+        public = {
+            "type": "POKER_SYNC",
+            "game_type": "poker",
+            "poker": self._poker_public_state(room),
+            "player_count": len(room.players),
+            "players": players,
+            "leaderboard": self.get_leaderboard(room),
+        }
+        for client_id, ws in list(room.connections.items()):
+            if client_id in room.players:
+                nickname = room.players[client_id]["nickname"]
+                payload = dict(public)
+                payload["poker"] = self._poker_public_state(room, nickname)
+                try:
+                    await ws.send_json(payload)
+                except Exception:
+                    room._remove_connection(client_id)
+        await room.emit_pending_player_event()
+        await room.send_to_organizer(public)
+        for ws in list(room.spectators.values()):
+            try:
+                await ws.send_json(public)
+            except Exception:
+                pass
+
+    async def _poker_player_action(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players:
+            return
+        nickname = room.players[client_id]["nickname"]
+        decision = "fold" if message.get("type") == "POKER_FOLD" else "stay"
+        try:
+            async with room.lock:
+                room.poker_state = poker_submit_decision(room.poker_state, nickname, decision)
+                room.state = room.poker_state.get("phase", room.state)
+                room.answer_log.append({"kind": "poker_decision", "nickname": nickname, "decision": decision})
+                self._sync_poker_scores_to_players(room)
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._broadcast_poker_sync(room)
+        if room.poker_state.get("phase") == POKER_PHASE_PODIUM:
+            await self._poker_complete_game(room)
+
+    async def _poker_reveal(self, room: Room):
+        try:
+            async with room.lock:
+                room.poker_state = poker_reveal_hand(room.poker_state)
+                room.state = room.poker_state.get("phase", room.state)
+                self._sync_poker_scores_to_players(room)
+        except ValueError:
+            return
+        await self._broadcast_poker_sync(room)
+        if room.poker_state.get("phase") == POKER_PHASE_PODIUM:
+            await self._poker_complete_game(room)
+
+    async def _poker_next_hand(self, room: Room):
+        try:
+            async with room.lock:
+                room.poker_state = poker_start_next_hand(room.poker_state, now=time.time())
+                room.state = room.poker_state.get("phase", room.state)
+                self._sync_poker_scores_to_players(room)
+        except ValueError:
+            return
+        await self._broadcast_poker_sync(room)
+        if room.poker_state.get("phase") == POKER_PHASE_PODIUM:
+            await self._poker_complete_game(room)
+
+    async def _poker_complete_game(self, room: Room):
+        if room.poker_completed_sent:
+            return
+        room.poker_completed_sent = True
+        self._sync_poker_scores_to_players(room)
+        room.state = "PODIUM"
+        leaderboard = self.get_leaderboard(room)
+        await room.broadcast({
+            "type": "PODIUM",
+            "game_type": "poker",
+            "leaderboard": leaderboard,
+            "team_leaderboard": [],
+            "poker": self._poker_public_state(room),
+        })
+        try:
+            from main import game_history
+            summary = self.get_game_summary(room)
+            game_history.append(summary)
+            if len(game_history) > config.MAX_GAME_HISTORY:
+                del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+            self._mark_game_session_complete(room, summary)
+        except Exception:
+            logger.warning("Could not save Party Poker history for room %s", room.room_code)
+
+    def _photo_clue_public_state(self, room: Room, viewer_id: str | None = None) -> dict:
+        if not room.photo_clue_state:
+            return {}
+        state = photo_public_state(room.photo_clue_state)
+        if viewer_id:
+            state["private_prompts"] = photo_private_prompt_for_player(room.photo_clue_state, viewer_id)
+            assignments = room.photo_clue_state.get("assignments") or []
+            index = int(room.photo_clue_state.get("current_round_index", 0))
+            assignment = assignments[index] if 0 <= index < len(assignments) else None
+            if assignment:
+                if assignment.get("clue_giver_id") == viewer_id:
+                    state["secret_prompt"] = assignment.get("prompt")
+                guesses = assignment.get("guesses") or {}
+                if viewer_id in guesses:
+                    state["your_guess"] = guesses[viewer_id].get("guess", "")
+                    state["your_guess_correct"] = bool(guesses[viewer_id].get("correct"))
+        return state
+
+    def _start_photo_clue_game(self, room: Room):
+        nicknames = [player["nickname"] for player in room.players.values()]
+        room.photo_clue_config = validate_photo_clue_config(room.quiz)
+        room.photo_clue_state = photo_create_initial_state(nicknames, room.photo_clue_config, now=time.time())
+        room.photo_clue_completed_sent = False
+        room.state = room.photo_clue_state["phase"]
+        room.answer_log = []
+
+    async def _broadcast_photo_clue_sync(self, room: Room):
+        if not room.photo_clue_state:
+            return
+        players = room.player_public_list()
+        public = {
+            "type": "PHOTO_CLUE_SYNC",
+            "game_type": "photo_clue",
+            "photo_clue": self._photo_clue_public_state(room),
+            "player_count": len(room.players),
+            "players": players,
+            "leaderboard": self.get_leaderboard(room),
+        }
+        for client_id, ws in list(room.connections.items()):
+            if client_id in room.players:
+                nickname = room.players[client_id]["nickname"]
+                payload = dict(public)
+                payload["photo_clue"] = self._photo_clue_public_state(room, nickname)
+                try:
+                    await ws.send_json(payload)
+                except Exception:
+                    room._remove_connection(client_id)
+        await room.emit_pending_player_event()
+        await room.send_to_organizer(public)
+        for ws in list(room.spectators.values()):
+            try:
+                await ws.send_json(public)
+            except Exception:
+                pass
+
+    def _sync_photo_scores_to_players(self, room: Room):
+        scores = room.photo_clue_state.get("scores", {}) if room.photo_clue_state else {}
+        for player in room.players.values():
+            player["score"] = int(scores.get(player.get("nickname"), player.get("score", 0)))
+
+    async def _photo_clue_player_action(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players:
+            return
+        nickname = room.players[client_id]["nickname"]
+        try:
+            async with room.lock:
+                if message.get("type") == "PHOTO_CLUE_UPLOAD_READY":
+                    asset_id = str(message.get("asset_id") or "").strip()
+                    asset = media_store.get_asset(asset_id) if asset_id else None
+                    image_url = getattr(asset, "url", "") if asset else str(message.get("image_url") or "")
+                    if asset is not None and getattr(asset, "status", "") not in ("ready", "finalized", "active"):
+                        raise ValueError("Photo upload is not ready yet")
+                    room.photo_clue_state = photo_submit_photo(room.photo_clue_state, nickname, asset_id, image_url, now=time.time())
+                    room.answer_log.append({"kind": "photo", "nickname": nickname, "asset_id": asset_id})
+                else:
+                    room.photo_clue_state, correct = photo_submit_guess(room.photo_clue_state, nickname, str(message.get("guess") or ""), now=time.time())
+                    room.answer_log.append({"kind": "guess", "nickname": nickname, "correct": correct})
+                self._sync_photo_scores_to_players(room)
+                room.state = room.photo_clue_state.get("phase", room.state)
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._broadcast_photo_clue_sync(room)
+
+    async def _photo_clue_reveal(self, room: Room):
+        try:
+            async with room.lock:
+                room.photo_clue_state = photo_reveal_round(room.photo_clue_state)
+                self._sync_photo_scores_to_players(room)
+                room.state = room.photo_clue_state.get("phase", room.state)
+        except ValueError:
+            return
+        await self._broadcast_photo_clue_sync(room)
+
+    async def _photo_clue_next_round(self, room: Room):
+        try:
+            async with room.lock:
+                room.photo_clue_state = photo_next_round(room.photo_clue_state, now=time.time())
+                self._sync_photo_scores_to_players(room)
+                room.state = room.photo_clue_state.get("phase", room.state)
+        except ValueError:
+            return
+        await self._broadcast_photo_clue_sync(room)
+        if room.photo_clue_state.get("phase") == PHOTO_PHASE_PODIUM:
+            await self._photo_clue_complete_game(room)
+
+    async def _photo_clue_complete_game(self, room: Room):
+        if room.photo_clue_completed_sent:
+            return
+        room.photo_clue_completed_sent = True
+        self._sync_photo_scores_to_players(room)
+        room.state = "PODIUM"
+        leaderboard = self.get_leaderboard(room)
+        await room.broadcast({
+            "type": "PODIUM",
+            "game_type": "photo_clue",
+            "leaderboard": leaderboard,
+            "team_leaderboard": [],
+            "photo_clue": self._photo_clue_public_state(room),
+        })
+        try:
+            from main import game_history
+            summary = self.get_game_summary(room)
+            game_history.append(summary)
+            if len(game_history) > config.MAX_GAME_HISTORY:
+                del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+            self._mark_game_session_complete(room, summary)
+        except Exception:
+            logger.warning("Could not save Photo Clue history for room %s", room.room_code)
+
+    def _simple_social_state_attr(self, game_type: str) -> str:
+        return {
+            "would_you_rather": "wyr_state",
+            "never_have_i_ever": "nhie_state",
+            "word_association": "word_state",
+            "acronym": "acro_state",
+        }[game_type]
+
+    def _simple_social_sync_key(self, game_type: str) -> str:
+        return {
+            "would_you_rather": "would_you_rather",
+            "never_have_i_ever": "never_have_i_ever",
+            "word_association": "word_association",
+            "acronym": "acronym",
+        }[game_type]
+
+    def _simple_social_public_state(self, room: Room, viewer_id: str | None = None) -> dict:
+        if room.game_type == "would_you_rather":
+            return wyr_public_state(room.wyr_state, viewer_id)
+        if room.game_type == "never_have_i_ever":
+            return nhie_public_state(room.nhie_state, viewer_id)
+        if room.game_type == "word_association":
+            return word_public_state(room.word_state, viewer_id)
+        if room.game_type == "acronym":
+            return acro_public_state(room.acro_state, viewer_id)
+        return {}
+
+    def _simple_social_standings(self, room: Room) -> list[dict]:
+        if room.game_type == "would_you_rather" and room.wyr_state:
+            return wyr_standings(room.wyr_state)
+        if room.game_type == "never_have_i_ever" and room.nhie_state:
+            return nhie_standings(room.nhie_state)
+        if room.game_type == "word_association" and room.word_state:
+            return word_standings(room.word_state)
+        if room.game_type == "acronym" and room.acro_state:
+            return acro_standings(room.acro_state)
+        return []
+
+    def _start_simple_social_game(self, room: Room):
+        nicknames = [player["nickname"] for player in room.players.values()]
+        room.simple_social_completed_sent = False
+        if room.game_type == "would_you_rather":
+            room.wyr_config = validate_would_you_rather_config(room.quiz)
+            room.wyr_state = wyr_create_initial_state(nicknames, room.wyr_config, now=time.time())
+            room.state = room.wyr_state["phase"]
+        elif room.game_type == "never_have_i_ever":
+            room.nhie_config = validate_never_have_i_ever_config(room.quiz)
+            room.nhie_state = nhie_create_initial_state(nicknames, room.nhie_config, now=time.time())
+            room.state = room.nhie_state["phase"]
+        elif room.game_type == "word_association":
+            room.word_config = validate_word_association_config(room.quiz)
+            room.word_state = word_create_initial_state(nicknames, room.word_config, now=time.time())
+            room.state = room.word_state["phase"]
+        elif room.game_type == "acronym":
+            room.acro_config = validate_acronym_config(room.quiz)
+            room.acro_state = acro_create_initial_state(nicknames, room.acro_config, now=time.time())
+            room.state = room.acro_state["phase"]
+        room.answer_log = []
+
+    def _sync_simple_social_phase_to_room(self, room: Room):
+        state = getattr(room, self._simple_social_state_attr(room.game_type), {})
+        room.state = state.get("phase") or room.state
+
+    def _sync_simple_social_scores_to_players(self, room: Room):
+        state = getattr(room, self._simple_social_state_attr(room.game_type), {})
+        scores = state.get("scores", {}) if state else {}
+        for player in room.players.values():
+            player["score"] = int(scores.get(player.get("nickname"), player.get("score", 0)))
+
+    async def _broadcast_simple_social_sync(self, room: Room):
+        state = getattr(room, self._simple_social_state_attr(room.game_type), {})
+        if not state:
+            return
+        key = self._simple_social_sync_key(room.game_type)
+        players = room.player_public_list()
+        public = {
+            "type": "SIMPLE_SOCIAL_SYNC",
+            "game_type": room.game_type,
+            key: self._simple_social_public_state(room),
+            "player_count": len(room.players),
+            "players": players,
+            "leaderboard": self.get_leaderboard(room),
+        }
+        for client_id, ws in list(room.connections.items()):
+            if client_id in room.players:
+                nickname = room.players[client_id]["nickname"]
+                payload = dict(public)
+                payload[key] = self._simple_social_public_state(room, nickname)
+                try:
+                    await ws.send_json(payload)
+                except Exception:
+                    room._remove_connection(client_id)
+        await room.emit_pending_player_event()
+        await room.send_to_organizer(public)
+        for ws in list(room.spectators.values()):
+            try:
+                await ws.send_json(public)
+            except Exception:
+                pass
+
+    async def _simple_social_player_action(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players:
+            return
+        nickname = room.players[client_id]["nickname"]
+        try:
+            async with room.lock:
+                if room.game_type == "would_you_rather":
+                    room.wyr_state = wyr_submit_vote(room.wyr_state, nickname, str(message.get("choice") or ""))
+                    room.answer_log.append({"kind": "vote", "nickname": nickname, "choice": message.get("choice")})
+                elif room.game_type == "never_have_i_ever":
+                    room.nhie_state = nhie_submit_answer(room.nhie_state, nickname, str(message.get("answer") or ""))
+                    room.answer_log.append({"kind": "answer", "nickname": nickname, "answer": message.get("answer")})
+                elif room.game_type == "word_association":
+                    room.word_state = word_submit_word(room.word_state, nickname, str(message.get("word") or message.get("text") or ""))
+                    room.answer_log.append({"kind": "word", "nickname": nickname})
+                elif room.game_type == "acronym":
+                    if message.get("type") == "ACRO_VOTE":
+                        room.acro_state = acro_submit_vote(room.acro_state, nickname, str(message.get("entry_id") or ""))
+                        room.answer_log.append({"kind": "vote", "nickname": nickname, "entry_id": message.get("entry_id")})
+                    else:
+                        room.acro_state = acro_submit_expansion(room.acro_state, nickname, str(message.get("text") or message.get("expansion") or ""))
+                        room.answer_log.append({"kind": "submission", "nickname": nickname})
+                self._sync_simple_social_phase_to_room(room)
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._broadcast_simple_social_sync(room)
+
+    async def _simple_social_reveal(self, room: Room):
+        try:
+            async with room.lock:
+                if room.game_type == "would_you_rather":
+                    room.wyr_state = wyr_reveal_round(room.wyr_state, now=time.time())
+                elif room.game_type == "never_have_i_ever":
+                    room.nhie_state = nhie_reveal_round(room.nhie_state, now=time.time())
+                elif room.game_type == "word_association":
+                    room.word_state = word_reveal_round(room.word_state, now=time.time())
+                elif room.game_type == "acronym":
+                    room.acro_state = acro_reveal_round(room.acro_state, now=time.time())
+                self._sync_simple_social_scores_to_players(room)
+                self._sync_simple_social_phase_to_room(room)
+        except ValueError:
+            return
+        await self._broadcast_simple_social_sync(room)
+
+    async def _simple_social_next_round(self, room: Room):
+        try:
+            async with room.lock:
+                if room.game_type == "would_you_rather":
+                    room.wyr_state = wyr_next_round(room.wyr_state, now=time.time())
+                elif room.game_type == "never_have_i_ever":
+                    room.nhie_state = nhie_next_round(room.nhie_state, now=time.time())
+                elif room.game_type == "word_association":
+                    room.word_state = word_next_round(room.word_state, now=time.time())
+                elif room.game_type == "acronym":
+                    room.acro_state = acro_next_round(room.acro_state, now=time.time())
+                self._sync_simple_social_phase_to_room(room)
+        except ValueError:
+            return
+        await self._broadcast_simple_social_sync(room)
+        state = getattr(room, self._simple_social_state_attr(room.game_type), {})
+        if state.get("phase") in {WYR_PHASE_PODIUM, NHIE_PHASE_PODIUM, WORD_PHASE_PODIUM, ACRO_PHASE_PODIUM}:
+            await self._simple_social_complete_game(room)
+
+    async def _acronym_start_voting(self, room: Room):
+        try:
+            async with room.lock:
+                room.acro_state = acro_start_voting(room.acro_state)
+                self._sync_simple_social_phase_to_room(room)
+        except ValueError:
+            return
+        await self._broadcast_simple_social_sync(room)
+
+    async def _simple_social_complete_game(self, room: Room):
+        if room.simple_social_completed_sent:
+            return
+        room.simple_social_completed_sent = True
+        self._sync_simple_social_scores_to_players(room)
+        room.state = "PODIUM"
+        key = self._simple_social_sync_key(room.game_type)
+        leaderboard = self.get_leaderboard(room)
+        await room.broadcast({
+            "type": "PODIUM",
+            "game_type": room.game_type,
+            "leaderboard": leaderboard,
+            "team_leaderboard": [],
+            key: self._simple_social_public_state(room),
+        })
+        try:
+            from main import game_history
+            summary = self.get_game_summary(room)
+            summary["winners"] = self._simple_social_standings(room)[:3]
+            game_history.append(summary)
+            if len(game_history) > config.MAX_GAME_HISTORY:
+                del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+            self._mark_game_session_complete(room, summary)
+        except Exception:
+            logger.warning("Could not save %s history for room %s", room.game_type, room.room_code)
 
     def _start_story_chain_game(self, room: Room):
         nicknames = [player["nickname"] for player in room.players.values()]
@@ -4263,6 +4979,29 @@ class SocketManager:
             summary["total_rounds"] = mafia_summary.get("rounds_played", 1)
             summary["winner"] = mafia_summary.get("winner")
             summary["mafia_result"] = mafia_summary
+        if room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
+            standings = self._simple_social_standings(room)
+            summary["total_questions"] = room.total_rounds()
+            summary["total_rounds"] = room.total_rounds()
+            summary["winners"] = standings[:3]
+        if room.game_type == "photo_clue" and room.photo_clue_state:
+            summary["total_questions"] = room.total_rounds()
+            summary["total_rounds"] = room.total_rounds()
+            summary["photos_submitted"] = len([item for item in room.photo_clue_state.get("assignments", []) if item.get("image_asset_id")])
+            scores = room.photo_clue_state.get("scores", {})
+            summary["winners"] = [
+                {"nickname": player_id, "score": score}
+                for player_id, score in sorted(scores.items(), key=lambda item: item[1], reverse=True)[:3]
+            ]
+        if room.game_type == "poker" and room.poker_state:
+            summary["total_questions"] = int(room.poker_state.get("hand_number", 0))
+            summary["total_rounds"] = int(room.poker_state.get("hand_number", 0))
+            summary["variant"] = room.poker_state.get("config", {}).get("variant")
+            summary["final_standings"] = room.poker_state.get("standings", [])
+            summary["winners"] = [
+                {"nickname": row.get("player_id"), "score": row.get("stack", 0), "place": row.get("place")}
+                for row in room.poker_state.get("standings", [])[:3]
+            ]
         return summary
 
     def _callback_event_type(self, event_type: str) -> str:

@@ -43,6 +43,12 @@ from who_am_i_engine import sanitize_generated_game as sanitize_who_am_i_game, v
 from chit_pull_engine import VALID_SAFE_LEVELS as VALID_CHIT_PULL_SAFE_LEVELS, sanitize_generated_game as sanitize_chit_pull_game, validate_config as validate_chit_pull_config, validate_generated_game as validate_chit_pull_game
 from mafia_engine import validate_config as validate_mafia_config
 from party_quests_engine import validate_config as validate_party_quests_config
+from would_you_rather_engine import validate_config as validate_would_you_rather_config
+from never_have_i_ever_engine import validate_config as validate_never_have_i_ever_config
+from word_association_engine import validate_config as validate_word_association_config
+from acronym_engine import validate_config as validate_acronym_config
+from photo_clue_engine import validate_config as validate_photo_clue_config
+from poker_engine import validate_config as validate_poker_config
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -498,6 +504,12 @@ class RoomCreateRequest(BaseModel):
     chit_pull_id: str = ""
     mafia_config: dict = {}
     party_quests_config: dict = {}
+    would_you_rather_config: dict = {}
+    never_have_i_ever_config: dict = {}
+    word_association_config: dict = {}
+    acronym_config: dict = {}
+    photo_clue_config: dict = {}
+    poker_config: dict = {}
     game_type: str = "quiz"
     time_limit: Optional[int] = None
 
@@ -520,7 +532,7 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests"):
+        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker"):
             raise ValueError('game_type must be a supported LocalPlay game type')
         return v
 
@@ -997,6 +1009,184 @@ GAME_CATALOG = [
             "allow_late_join": {"default": True},
         },
     },
+    {
+        "id": "would_you_rather",
+        "game_type": "would_you_rather",
+        "runtime_type": "would_you_rather",
+        "title": "Would You Rather",
+        "description": "Pick between two funny options, then reveal where the room landed.",
+        "status": "gamma",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": True,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "binary_choice_setup_v1",
+            "supported_media": [],
+        },
+        "config_schema": {
+            "players": {"min": config.MIN_WOULD_YOU_RATHER_PLAYERS, "max": config.MAX_PLAYERS_PER_ROOM},
+            "rounds": {"min": 3, "max": 25, "default": 10},
+            "scoring_modes": ["majority", "none"],
+        },
+    },
+    {
+        "id": "never_have_i_ever",
+        "game_type": "never_have_i_ever",
+        "runtime_type": "never_have_i_ever",
+        "title": "Never Have I Ever",
+        "description": "Answer privately, then reveal the room split for each prompt.",
+        "status": "gamma",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": True,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "confession_prompt_setup_v1",
+            "supported_media": [],
+        },
+        "config_schema": {
+            "players": {"min": config.MIN_NEVER_HAVE_I_EVER_PLAYERS, "max": config.MAX_PLAYERS_PER_ROOM},
+            "rounds": {"min": 3, "max": 25, "default": 10},
+            "safe_levels": ["family", "work", "party", "spicy"],
+        },
+    },
+    {
+        "id": "word_association",
+        "game_type": "word_association",
+        "runtime_type": "word_association",
+        "title": "Word Association",
+        "description": "Everyone submits the first word that comes to mind and matches score together.",
+        "status": "gamma",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": True,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "word_seed_setup_v1",
+            "supported_media": [],
+        },
+        "config_schema": {
+            "players": {"min": config.MIN_WORD_ASSOCIATION_PLAYERS, "max": config.MAX_PLAYERS_PER_ROOM},
+            "rounds": {"min": 3, "max": 25, "default": 10},
+            "scoring_modes": ["majority", "none"],
+        },
+    },
+    {
+        "id": "acronym",
+        "game_type": "acronym",
+        "runtime_type": "acronym",
+        "title": "Acronym Game",
+        "description": "Expand random acronyms into silly phrases, then vote for the best one.",
+        "status": "gamma",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": True,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "acronym_setup_v1",
+            "supported_media": [],
+        },
+        "config_schema": {
+            "players": {"min": config.MIN_ACRONYM_PLAYERS, "max": config.MAX_PLAYERS_PER_ROOM},
+            "rounds": {"min": 3, "max": 20, "default": 8},
+            "acronym_length": {"min": 2, "max": 8},
+        },
+    },
+    {
+        "id": "photo_clue",
+        "game_type": "photo_clue",
+        "runtime_type": "photo_clue",
+        "engine_family": "image_games",
+        "title": "Photo Clue",
+        "description": "One player gets a secret phrase, submits a photo clue, and everyone guesses.",
+        "status": "gamma",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": True,
+        "supports_images": True,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "photo_clue_setup_v1",
+            "supported_media": ["image"],
+        },
+        "config_schema": {
+            "players": {"min": config.MIN_PHOTO_CLUE_PLAYERS, "recommended_min": 4, "max": config.MAX_PLAYERS_PER_ROOM},
+            "rounds": {"min": 3, "max": 25, "default": 5},
+            "photo_time_seconds": {"min": 30, "max": 300, "default": 90},
+            "guess_time_seconds": {"min": 10, "max": 120, "default": 45},
+        },
+    },
+    {
+        "id": "poker",
+        "game_type": "poker",
+        "runtime_type": "poker",
+        "engine_family": "cards",
+        "title": "Party Poker",
+        "description": "A no-money quick Hold'em tournament with play chips, folds, showdowns, and podium.",
+        "status": "gamma",
+        "launchable": True,
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": False,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "quick_holdem_setup_v1",
+            "supported_media": [],
+        },
+        "config_schema": {
+            "players": {"min": config.MIN_POKER_PLAYERS, "max": 10},
+            "starting_stack": {"min": 200, "max": 10000, "default": 1000},
+            "ante": {"min": 5, "max": 500, "default": 20},
+            "decision_time_seconds": {"min": 10, "max": 90, "default": 25},
+        },
+    },
 ]
 
 attach_rules(GAME_CATALOG)
@@ -1008,6 +1198,8 @@ def _default_time_limit_for_game(game_type: str) -> int:
     if game_type == "musical_chairs":
         return 5
     if game_type == "bluff":
+        return 30
+    if game_type == "poker":
         return 30
     if game_type == "two_truths":
         return 30
@@ -1024,6 +1216,8 @@ def _default_time_limit_for_game(game_type: str) -> int:
     if game_type == "mafia":
         return 30
     if game_type == "party_quests":
+        return 30
+    if game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue"):
         return 30
     return config.DEFAULT_TIME_LIMIT
 
@@ -1125,6 +1319,18 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
         return str(uuid.uuid4()), validate_mafia_config({"game_title": title or "Mafia"})
     if game_type == "party_quests":
         return str(uuid.uuid4()), validate_party_quests_config({"game_title": title or "Party Quests"})
+    if game_type == "would_you_rather":
+        return str(uuid.uuid4()), validate_would_you_rather_config({"game_title": title or "Would You Rather"})
+    if game_type == "never_have_i_ever":
+        return str(uuid.uuid4()), validate_never_have_i_ever_config({"game_title": title or "Never Have I Ever"})
+    if game_type == "word_association":
+        return str(uuid.uuid4()), validate_word_association_config({"game_title": title or "Word Association"})
+    if game_type == "acronym":
+        return str(uuid.uuid4()), validate_acronym_config({"game_title": title or "Acronym Game"})
+    if game_type == "photo_clue":
+        return str(uuid.uuid4()), validate_photo_clue_config({"game_title": title or "Photo Clue"})
+    if game_type == "poker":
+        return str(uuid.uuid4()), validate_poker_config({"game_title": title or "Party Poker"})
     if game_type == "bingo":
         return str(uuid.uuid4()), default_bingo_game(title or "Bingo")
     if game_type == "housie":
@@ -1162,6 +1368,8 @@ def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = 
         return _default_game_content(game_type, title)
     if game_type == "bluff":
         return _default_game_content(game_type, title)
+    if game_type == "poker":
+        return _default_game_content(game_type, title)
     if game_type == "two_truths":
         return _default_game_content(game_type, title)
     if game_type == "story_chain":
@@ -1185,6 +1393,8 @@ def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = 
     if game_type == "mafia":
         return _default_game_content(game_type, title)
     if game_type == "party_quests":
+        return _default_game_content(game_type, title)
+    if game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue"):
         return _default_game_content(game_type, title)
     if game_type == "bingo":
         if not config.BINGO_ENABLED:
@@ -3794,6 +4004,24 @@ async def create_room(request: RoomCreateRequest, req: Request):
     elif request.game_type == "party_quests":
         content_id = str(uuid.uuid4())
         game_data = validate_party_quests_config(request.party_quests_config)
+    elif request.game_type == "would_you_rather":
+        content_id = str(uuid.uuid4())
+        game_data = validate_would_you_rather_config(request.would_you_rather_config)
+    elif request.game_type == "never_have_i_ever":
+        content_id = str(uuid.uuid4())
+        game_data = validate_never_have_i_ever_config(request.never_have_i_ever_config)
+    elif request.game_type == "word_association":
+        content_id = str(uuid.uuid4())
+        game_data = validate_word_association_config(request.word_association_config)
+    elif request.game_type == "acronym":
+        content_id = str(uuid.uuid4())
+        game_data = validate_acronym_config(request.acronym_config)
+    elif request.game_type == "photo_clue":
+        content_id = str(uuid.uuid4())
+        game_data = validate_photo_clue_config(request.photo_clue_config)
+    elif request.game_type == "poker":
+        content_id = str(uuid.uuid4())
+        game_data = validate_poker_config(request.poker_config)
     else:
         content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
     if request.game_type == "drawing":

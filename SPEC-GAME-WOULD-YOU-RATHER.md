@@ -15,7 +15,7 @@ This is intentionally close to Most Likely To and Fact or Fiction in pacing, but
 
 ## Implementation-Ready MVP Scope
 
-Status: backend engine foundation implemented on June 24, 2026. `backend/would_you_rather_engine.py` owns prompt validation, round state, binary vote capture, reveal, split calculation, optional majority scoring, public-state redaction, and pure tests. Remaining MVP work is catalog exposure, AI/manual setup UI, room/socket events, player voting UI, spectator reveal UI, and Playwright end-to-end coverage.
+Status: standalone playable MVP implemented on June 24, 2026. `backend/would_you_rather_engine.py` owns prompt validation, round state, binary vote capture, reveal, split calculation, optional majority scoring, public-state redaction, and pure tests. LocalPlay now exposes the game in the standalone catalog with default content, room creation, WebSocket sync, organizer/player/spectator UI, rules metadata, reconnect handling, podium flow, and focused API/socket regression tests. Remaining follow-ups are AI/manual authoring UI and broader Playwright matrix coverage.
 
 - Host starts with curated prompts or AI-generated prompts from a theme.
 - Each prompt has exactly two options.
@@ -159,11 +159,8 @@ Final standings sort by score desc, then stable join order.
 
 ## Revelry Integration
 
-Would You Rather is a future Revelry quick-start candidate, but should not be enabled until:
+Would You Rather is a future Revelry quick-start candidate, but should remain behind host-app policy until:
 
-- Runtime socket events exist.
-- Player and spectator UI are implemented.
-- Rules metadata is present in the LocalPlay catalog.
 - Gamma multi-tab smoke verifies host, player, spectator, late join, and final result.
 
 ## Test Plan

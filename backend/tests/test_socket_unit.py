@@ -125,6 +125,74 @@ def make_housie_room():
     return room
 
 
+def make_simple_social_room(game_type):
+    configs = {
+        "would_you_rather": {
+            "game_title": "Would You Rather",
+            "prompts": [
+                {"question": "Pick one?", "option_a": "A side", "option_b": "B side"},
+                {"question": "Pick again?", "option_a": "Cats", "option_b": "Dogs"},
+                {"question": "Final pick?", "option_a": "Cake", "option_b": "Pie"},
+            ],
+        },
+        "never_have_i_ever": {
+            "game_title": "Never Have I Ever",
+            "prompts": [
+                {"statement": "Never have I ever sung karaoke."},
+                {"statement": "Never have I ever missed a flight."},
+                {"statement": "Never have I ever made a midnight snack."},
+            ],
+        },
+        "word_association": {
+            "game_title": "Word Association",
+            "seeds": [
+                {"seed": "Party"},
+                {"seed": "Music"},
+                {"seed": "Cake"},
+            ],
+        },
+        "acronym": {
+            "game_title": "Acronym Game",
+            "prompts": [
+                {"acronym": "FUN"},
+                {"acronym": "CAKE"},
+                {"acronym": "WOW"},
+            ],
+        },
+    }
+    room = Room("SOC001", configs[game_type], 30, game_type=game_type, billing_mode="host_app_managed")
+    room.wallet_id = "test-wallet-id"
+    return room
+
+
+def make_photo_clue_room():
+    game = {
+        "game_title": "Photo Clue",
+        "prompts": [
+            {"answer": "Birthday Cake", "aliases": ["cake"]},
+            {"answer": "Party Lights"},
+            {"answer": "Dancing Shoes"},
+        ],
+        "correct_guess_points": 100,
+        "clue_giver_points": 25,
+    }
+    room = Room("PIC001", game, 30, game_type="photo_clue", billing_mode="host_app_managed")
+    room.wallet_id = "test-wallet-id"
+    return room
+
+
+def make_poker_room():
+    game = {
+        "game_title": "Party Poker",
+        "starting_stack": 500,
+        "ante": 50,
+        "decision_time_seconds": 25,
+    }
+    room = Room("POK001", game, 30, game_type="poker", billing_mode="host_app_managed")
+    room.wallet_id = "test-wallet-id"
+    return room
+
+
 # ===========================================================================
 # Room._remove_connection
 # ===========================================================================
@@ -312,6 +380,127 @@ class TestStateGuardStartGame:
         room.state = "PODIUM"
         await sm.handle_message(room, "org-1", {"type": "START_GAME"}, is_organizer=True)
         assert room.state == "PODIUM"
+
+
+class TestSimpleSocialGames:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "game_type,start_phase,player_message,reveal_message,next_message,state_attr",
+        [
+            ("would_you_rather", "WYR_VOTING", {"type": "WYR_VOTE", "choice": "A"}, {"type": "WYR_REVEAL"}, {"type": "WYR_NEXT_ROUND"}, "wyr_state"),
+            ("never_have_i_ever", "NHIE_ANSWERING", {"type": "NHIE_ANSWER", "answer": "have"}, {"type": "NHIE_REVEAL"}, {"type": "NHIE_NEXT_ROUND"}, "nhie_state"),
+            ("word_association", "WORD_ASSOC_SUBMITTING", {"type": "WORD_SUBMIT", "word": "dance"}, {"type": "WORD_REVEAL"}, {"type": "WORD_NEXT_ROUND"}, "word_state"),
+        ],
+    )
+    async def test_simple_social_submit_reveal_and_next_round(self, game_type, start_phase, player_message, reveal_message, next_message, state_attr):
+        room = make_simple_social_room(game_type)
+        sm = SocketManager()
+        organizer = add_organizer(room, "org-1")
+        player_one = add_player(room, "p1", "Alice")
+        add_player(room, "p2", "Bob")
+
+        await sm.handle_message(room, "org-1", {"type": "START_GAME"}, is_organizer=True)
+        assert room.state == start_phase
+        assert organizer.last("SIMPLE_SOCIAL_SYNC")["game_type"] == game_type
+
+        await sm.handle_message(room, "p1", player_message, is_organizer=False)
+        player_sync = player_one.last("SIMPLE_SOCIAL_SYNC")
+        assert player_sync["game_type"] == game_type
+
+        await sm.handle_message(room, "org-1", reveal_message, is_organizer=True)
+        assert getattr(room, state_attr)["phase"].endswith("REVEAL")
+
+        await sm.handle_message(room, "org-1", next_message, is_organizer=True)
+        assert getattr(room, state_attr)["current_round_index"] == 1
+
+    @pytest.mark.asyncio
+    async def test_acronym_submit_vote_reveal_and_next_round(self):
+        room = make_simple_social_room("acronym")
+        sm = SocketManager()
+        organizer = add_organizer(room, "org-1")
+        add_player(room, "p1", "Alice")
+        add_player(room, "p2", "Bob")
+
+        await sm.handle_message(room, "org-1", {"type": "START_GAME"}, is_organizer=True)
+        assert room.state == "ACRONYM_SUBMITTING"
+        assert organizer.last("SIMPLE_SOCIAL_SYNC")["game_type"] == "acronym"
+
+        await sm.handle_message(room, "p1", {"type": "ACRO_SUBMIT", "text": "Funny Unicorn Nap"}, is_organizer=False)
+        await sm.handle_message(room, "p2", {"type": "ACRO_SUBMIT", "text": "Fast Umbrellas Nap"}, is_organizer=False)
+        await sm.handle_message(room, "org-1", {"type": "ACRO_START_VOTING"}, is_organizer=True)
+        assert room.acro_state["phase"] == "ACRONYM_VOTING"
+
+        entry_id = room.acro_state["rounds"][0]["submissions"]["Alice"]["entry_id"]
+        await sm.handle_message(room, "p2", {"type": "ACRO_VOTE", "entry_id": entry_id}, is_organizer=False)
+        await sm.handle_message(room, "org-1", {"type": "ACRO_REVEAL"}, is_organizer=True)
+        assert room.acro_state["phase"] == "ACRONYM_REVEAL"
+        assert room.players["p1"]["score"] == 1
+
+        await sm.handle_message(room, "org-1", {"type": "ACRO_NEXT_ROUND"}, is_organizer=True)
+        assert room.acro_state["current_round_index"] == 1
+
+
+class TestPhotoClueGame:
+    @pytest.mark.asyncio
+    async def test_photo_clue_upload_guess_reveal_and_next_round(self):
+        room = make_photo_clue_room()
+        sm = SocketManager()
+        organizer = add_organizer(room, "org-1")
+        alice = add_player(room, "p1", "Alice")
+        bob = add_player(room, "p2", "Bob")
+        spectator = add_spectator(room)
+
+        await sm.handle_message(room, "org-1", {"type": "START_GAME"}, is_organizer=True)
+        assert room.state == "PHOTO_WAITING_FOR_PHOTO"
+        assert organizer.last("PHOTO_CLUE_SYNC")["photo_clue"]["answer"] == ""
+        assert alice.last("PHOTO_CLUE_SYNC")["photo_clue"]["secret_prompt"]["answer"] == "Birthday Cake"
+        assert "secret_prompt" not in bob.last("PHOTO_CLUE_SYNC")["photo_clue"]
+
+        await sm.handle_message(room, "p1", {"type": "PHOTO_CLUE_UPLOAD_READY", "asset_id": "asset_1", "image_url": "/media/asset_1"}, is_organizer=False)
+        assert room.state == "PHOTO_GUESSING"
+        assert spectator.last("PHOTO_CLUE_SYNC")["photo_clue"]["image_url"] == "/media/asset_1"
+
+        await sm.handle_message(room, "p2", {"type": "PHOTO_CLUE_GUESS", "guess": "cake"}, is_organizer=False)
+        assert room.players["p2"]["score"] == 100
+        assert room.players["p1"]["score"] == 25
+        assert bob.last("PHOTO_CLUE_SYNC")["photo_clue"]["your_guess_correct"] is True
+
+        await sm.handle_message(room, "org-1", {"type": "PHOTO_CLUE_REVEAL"}, is_organizer=True)
+        assert room.photo_clue_state["phase"] == "PHOTO_REVEAL"
+        assert organizer.last("PHOTO_CLUE_SYNC")["photo_clue"]["answer"] == "Birthday Cake"
+
+        await sm.handle_message(room, "org-1", {"type": "PHOTO_CLUE_NEXT_ROUND"}, is_organizer=True)
+        assert room.photo_clue_state["current_round_index"] == 1
+        assert room.state == "PHOTO_WAITING_FOR_PHOTO"
+
+
+class TestPokerGame:
+    @pytest.mark.asyncio
+    async def test_poker_private_sync_stay_fold_showdown_and_next_hand(self):
+        room = make_poker_room()
+        sm = SocketManager()
+        organizer = add_organizer(room, "org-1")
+        alice = add_player(room, "p1", "Alice")
+        bob = add_player(room, "p2", "Bob")
+        spectator = add_spectator(room)
+
+        await sm.handle_message(room, "org-1", {"type": "START_GAME"}, is_organizer=True)
+        assert room.state == "POKER_DECISION"
+        assert organizer.last("POKER_SYNC")["poker"]["hole_cards"]["Alice"][0]["hidden"] is True
+        assert spectator.last("POKER_SYNC")["poker"]["hole_cards"]["Alice"][0]["hidden"] is True
+        assert alice.last("POKER_SYNC")["poker"]["hole_cards"]["Alice"][0]["rank"]
+        assert alice.last("POKER_SYNC")["poker"]["hole_cards"]["Bob"][0]["hidden"] is True
+
+        await sm.handle_message(room, "p1", {"type": "POKER_STAY"}, is_organizer=False)
+        assert room.poker_state["decisions"]["Alice"] == "stay"
+        await sm.handle_message(room, "p2", {"type": "POKER_FOLD"}, is_organizer=False)
+        assert room.state == "POKER_SHOWDOWN"
+        assert room.poker_state["hand_result"]["winner_id"] == "Alice"
+        assert bob.last("POKER_SYNC")["poker"]["hole_cards"]["Alice"][0]["rank"]
+
+        await sm.handle_message(room, "org-1", {"type": "POKER_NEXT_HAND"}, is_organizer=True)
+        assert room.poker_state["hand_number"] == 2
+        assert room.state in {"POKER_DECISION", "PODIUM"}
 
 
 class TestStateGuardNextQuestion:

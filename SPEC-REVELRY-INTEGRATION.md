@@ -33,12 +33,12 @@ LocalPlay accepts `chit_pull` in the party-games content save/generate/start end
 
 Gamma/prod rollout still requires host-app catalog policy rows for each game and an embedded hub smoke test. In production, missing policy fails closed.
 
-Photo Clue and Party Poker remain LocalPlay implementation work, not Revelry contract changes yet. As of June 24, LocalPlay has pure backend foundations for both:
+Photo Clue and Party Poker are now standalone-playable LocalPlay games, but they are not Revelry contract changes yet. As of June 24, LocalPlay has room/socket/UI runtime slices for both:
 
-- `photo_clue_engine.py`: prompt validation, up-front assignment, private prompt queues, photo submission state, guesses, scoring, reveal, podium, and tests.
-- `poker_hand_evaluator.py`: Texas Hold'em 5-7 card evaluation, tie-breakers, player ranking, and tests.
+- `photo_clue`: prompt validation, up-front assignment, private prompt queues, player photo upload/finalize, guesses, scoring, reveal, podium, organizer/player/spectator UI, and focused tests.
+- `poker`: no-money quick Hold'em with equal play chips, fixed antes, Stay/Fold decisions, private card redaction, showdown, elimination, podium, organizer/player/spectator UI, hand evaluation, and focused tests.
 
-They should not appear in the Revelry host-app catalog until the room/socket/UI slices are complete and tested.
+They should not appear in the Revelry host-app catalog until host-app policy intentionally enables them and gamma embedded hub QA covers start, join, spectator, reconnect, completion, and result polling.
 
 ## June 18, 2026 — Party Quests LocalPlay support
 

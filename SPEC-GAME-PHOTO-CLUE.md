@@ -22,7 +22,7 @@ Working title alternatives:
 
 ## Implementation-Ready MVP Scope
 
-Status: backend engine foundation implemented on June 24, 2026. The shared media upload/finalize platform exists, and `backend/photo_clue_engine.py` now owns prompt validation, up-front prompt assignment, private clue-giver queues, photo submission state, guess normalization, scoring, reveal, podium transition, public-state redaction, and pure engine tests. The remaining MVP work is room/socket events, player upload UI, guessing UI, spectator reveal UI, catalog exposure, and end-to-end tests.
+Status: standalone playable MVP implemented on June 24, 2026. The shared media upload/finalize platform exists, and `backend/photo_clue_engine.py` owns prompt validation, up-front prompt assignment, private clue-giver queues, photo submission state, guess normalization, scoring, reveal, podium transition, public-state redaction, and pure engine tests. LocalPlay now exposes Photo Clue in the standalone catalog with default prompts, room creation, WebSocket events, player upload/guessing UI, organizer reveal/next controls, spectator reveal UI, reconnect handling, podium flow, and focused API/socket regression tests. Remaining follow-ups are AI/manual authoring UI, moderation/review, richer media retention controls, and broader Playwright matrix coverage.
 
 - Host creates or AI-generates a list of words/phrases.
 - At game start, the server pre-assigns prompts to players for all planned rounds.

@@ -13,7 +13,7 @@ Frontend display name: Word Association
 
 ## Implementation-Ready MVP Scope
 
-Status: backend engine foundation implemented on June 24, 2026. `backend/word_association_engine.py` owns seed validation, submission capture, normalization/grouping, majority scoring, redaction, late join, podium transition, and pure tests. Remaining MVP work is setup/AI UI, socket events, player submission UI, spectator grouped reveal, rules metadata, and Playwright coverage.
+Status: standalone playable MVP implemented on June 24, 2026. `backend/word_association_engine.py` owns seed validation, submission capture, normalization/grouping, majority scoring, redaction, late join, podium transition, standings, and pure tests. LocalPlay now exposes the game in the standalone catalog with default content, room creation, WebSocket sync, organizer/player/spectator UI, rules metadata, reconnect handling, podium flow, and focused API/socket regression tests. Remaining follow-ups are setup/AI authoring UI and broader Playwright matrix coverage.
 
 - Host starts from curated or AI-generated seed words.
 - Players submit one association per round.
@@ -79,4 +79,4 @@ Generate seed words that are concrete, party-safe, culturally broad, and likely 
 
 ## Revelry Readiness
 
-Word Association is a future quick-start candidate after socket/UI completion. It should not be exposed in host-app policy until gamma multi-tab tests cover submission, reveal grouping, late join, and final results.
+Word Association is a future host-app quick-start candidate. Keep Revelry exposure behind host-app policy until gamma multi-tab tests cover submission, reveal grouping, late join, and final results.

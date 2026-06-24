@@ -197,6 +197,24 @@ def next_round(state: dict, now: float | None = None) -> dict:
     return next_state
 
 
+def add_player(state: dict, player_id: str) -> dict:
+    player_id = str(player_id or "")
+    if not player_id:
+        raise ValueError("player_id is required")
+    next_state = _copy_state(state)
+    if player_id not in next_state["players"]:
+        next_state["players"].append(player_id)
+        next_state["scores"][player_id] = 0
+    return next_state
+
+
+def standings(state: dict) -> list[dict]:
+    players = list(state.get("players") or [])
+    scores = dict(state.get("scores") or {})
+    ordered = sorted(players, key=lambda player_id: (-int(scores.get(player_id, 0)), players.index(player_id)))
+    return [{"player_id": player_id, "score": int(scores.get(player_id, 0)), "rank": index + 1} for index, player_id in enumerate(ordered)]
+
+
 def public_state(state: dict, viewer_id: str | None = None) -> dict:
     state_copy = _copy_state(state)
     phase = state_copy.get("phase")
@@ -213,6 +231,7 @@ def public_state(state: dict, viewer_id: str | None = None) -> dict:
         "submitted_count": len(submissions),
         "vote_count": len(votes),
         "scores": dict(state_copy.get("scores") or {}),
+        "standings": standings(state_copy),
         "completed_at": state_copy.get("completed_at"),
     }
     if viewer_id and viewer_id in submissions:

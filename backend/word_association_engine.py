@@ -181,6 +181,13 @@ def add_player(state: dict, player_id: str) -> dict:
     return next_state
 
 
+def standings(state: dict) -> list[dict]:
+    players = list(state.get("players") or [])
+    scores = dict(state.get("scores") or {})
+    ordered = sorted(players, key=lambda player_id: (-int(scores.get(player_id, 0)), players.index(player_id)))
+    return [{"player_id": player_id, "score": int(scores.get(player_id, 0)), "rank": index + 1} for index, player_id in enumerate(ordered)]
+
+
 def public_state(state: dict, viewer_id: str | None = None) -> dict:
     state_copy = _copy_state(state)
     phase = state_copy.get("phase")
@@ -194,6 +201,7 @@ def public_state(state: dict, viewer_id: str | None = None) -> dict:
         "seed": (round_state or {}).get("seed"),
         "submitted_count": len(submissions),
         "scores": dict(state_copy.get("scores") or {}),
+        "standings": standings(state_copy),
         "completed_at": state_copy.get("completed_at"),
     }
     if viewer_id and viewer_id in submissions:

@@ -2,7 +2,7 @@ import { type GameType, type QuizVariantGameType } from './types';
 
 export interface GameModeConfig {
     id: GameType;
-    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests';
+    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'photo_clue';
     icon: string;
     title: string;
     description: string;
@@ -132,6 +132,13 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         description: 'Play cards face down, claim a rank, and dare the room to call you',
     },
     {
+        id: 'poker',
+        runtimeType: 'poker',
+        icon: '♠️',
+        title: 'Party Poker',
+        description: 'No-money quick Hold’em with play chips and showdowns',
+    },
+    {
         id: 'two_truths',
         runtimeType: 'two_truths',
         icon: '🤥',
@@ -187,6 +194,41 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         title: 'Party Quests',
         description: 'Complete mingling quests throughout the party',
     },
+    {
+        id: 'would_you_rather',
+        runtimeType: 'would_you_rather',
+        icon: '⚖️',
+        title: 'Would You Rather',
+        description: 'Pick between two choices and reveal where the room lands',
+    },
+    {
+        id: 'never_have_i_ever',
+        runtimeType: 'never_have_i_ever',
+        icon: '🙋',
+        title: 'Never Have I Ever',
+        description: 'Answer privately, then reveal the group split',
+    },
+    {
+        id: 'word_association',
+        runtimeType: 'word_association',
+        icon: '💭',
+        title: 'Word Association',
+        description: 'Match minds by writing the first word that comes up',
+    },
+    {
+        id: 'acronym',
+        runtimeType: 'acronym',
+        icon: '🔤',
+        title: 'Acronym Game',
+        description: 'Turn letters into funny phrases and vote for the best',
+    },
+    {
+        id: 'photo_clue',
+        runtimeType: 'photo_clue',
+        icon: '📸',
+        title: 'Photo Clue',
+        description: 'Submit a photo clue while everyone guesses the phrase',
+    },
 ];
 
 export const QUIZ_VARIANT_IDS: QuizVariantGameType[] = [
@@ -211,6 +253,6 @@ export function isQuizRuntimeGame(gameType: GameType): boolean {
     return getGameModeConfig(gameType).runtimeType === 'quiz';
 }
 
-export function runtimeGameType(gameType: GameType): 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' {
+export function runtimeGameType(gameType: GameType): GameModeConfig['runtimeType'] {
     return getGameModeConfig(gameType).runtimeType;
 }
