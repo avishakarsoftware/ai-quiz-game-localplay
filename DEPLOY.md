@@ -55,7 +55,9 @@ Deployed via `./scripts/deploy-gcp.sh --gamma --with-frontend` to `games-backend
 
 ### Pending LocalPlay DB/content migration — June 24, 2026
 
-Random Chit host-app authoring adds `chit_pull` as a saved `generated_content.content_type`. The local SQLite initializer/migration and rendered Supabase SQL expand the CHECK constraint to `('quiz', 'mlt', 'drawing', 'housie', 'chit_pull')`. Gamma Supabase DDL was applied on June 24, 2026 and verified with `games_gamma_generated_content_content_type_check`. Production SQL is updated in-repo but not applied; do not enable Random Chit `can_create_content` / `supports_ai_generation` production policy rows until the production DDL is explicitly applied. Photo Clue, Party Poker, and Would You Rather currently have backend foundation code only and should not be enabled in host-app catalog policy yet.
+Random Chit host-app authoring adds `chit_pull` as a saved `generated_content.content_type`. The local SQLite initializer/migration and rendered Supabase SQL expand the CHECK constraint to `('quiz', 'mlt', 'drawing', 'housie', 'chit_pull')`. Gamma Supabase DDL was applied on June 24, 2026 and verified with `games_gamma_generated_content_content_type_check`. Production SQL is updated in-repo but not applied; do not enable Random Chit `can_create_content` / `supports_ai_generation` production policy rows until the production DDL is explicitly applied.
+
+Would You Rather, Never Have I Ever, Word Association, Acronym Game, Photo Clue, and Party Poker are Revelry quick-start/settings candidates only. They do not save `generated_content` rows through the host-app bridge and do not require a schema migration before host-app catalog policy enablement. Keep them policy-gated until embedded gamma QA covers start, join, spectator, reconnect, completion, and result polling. Photo Clue should not mirror raw uploaded photos into Revelry unless LocalPlay returns an explicit safe share payload. Party Poker must remain no-money/no-rewards.
 
 ## IONOS Directory Structure
 
