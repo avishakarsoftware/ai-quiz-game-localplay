@@ -14,7 +14,7 @@ test.describe('Bingo gamma live flow', () => {
     expect((await mediaStatus.json()).upload_available).toBe(true);
 
     await page.goto('/');
-    await page.getByRole('button', { name: /Bingo/ }).click();
+    await page.getByTestId('game-card-bingo').locator('.game-select-main').click();
     await page.getByRole('button', { name: 'Custom Deck' }).click();
     await expect(page.getByRole('heading', { name: 'Set Up Bingo' })).toBeVisible();
 
