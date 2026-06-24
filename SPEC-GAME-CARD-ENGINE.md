@@ -13,7 +13,7 @@ Backend engine: card_engine.py / bluff_engine.py
 Frontend display name: Bluff
 ```
 
-Status: **Bluff MVP implemented locally**. The shared card engine and Bluff rules engine now exist with unit tests, and Bluff is wired into standalone room creation, WebSocket runtime, organizer/player/spectator views, and focused API/socket tests. Gamma deployment and full remote visual QA should be completed before promoting it as production-ready.
+Status: **Bluff MVP implemented locally; Revelry quick-start eligible**. The shared card engine and Bluff rules engine now exist with unit tests, and Bluff is wired into standalone room creation, WebSocket runtime, organizer/player/spectator views, and focused API/socket tests. On June 24, 2026, LocalPlay declared Bluff as `host_app_supported = true` for Revelry with `can_quick_start = true`, `can_create_content = false`, and `supports_ai_generation = false`. Gamma deployment and full remote visual QA should be completed before promoting it as production-ready.
 
 ## Goals
 
@@ -33,7 +33,7 @@ Status: **Bluff MVP implemented locally**. The shared card engine and Bluff rule
 - No random matchmaking.
 - No persistent ranked ladder.
 - No physical card scanning.
-- No Revelry launch until standalone cards are tested.
+- No broad Revelry production rollout until standalone cards and host-app quick-start are tested on gamma.
 
 ## Recommended Game Roadmap
 

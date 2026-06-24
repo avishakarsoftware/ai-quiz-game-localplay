@@ -15,7 +15,7 @@ Frontend display name: Find Someone Who
 
 ## Implementation-Ready MVP Scope
 
-Status: implemented for standalone LocalPlay MVP on June 12, 2026. Revelry/check-in exposure is a host-app contract item; LocalPlay advertises the needed catalog capabilities but Revelry owns the event check-in default setting and first-guest trigger.
+Status: implemented for standalone LocalPlay MVP on June 12, 2026. On June 24, 2026, LocalPlay made it eligible for Revelry host-app quick-start/catalog exposure with `host_app_supported = true`, `supported_host_apps = ["revelry"]`, `can_quick_start = true`, `can_create_content = false`, `checkin_friendly = true`, `can_start_with_first_player = true`, and `supports_late_join = true`. Revelry still owns the event check-in default setting and first-guest trigger.
 
 - Standalone LocalPlay first.
 - Host can quick-start a safe default prompt pack.
@@ -231,7 +231,7 @@ Ownership boundary:
 - Revelry owns the party/event setting: "use Find Someone Who as the default check-in game".
 - Revelry owns the toggle: "start automatically when the first guest checks in"; default should be on.
 - LocalPlay owns room/session creation, first-player start safety, late-join card assignment, duplicate nickname/session-token reconciliation, and public/private game sync.
-- Until Revelry implements the check-in setting and has bridge tests, LocalPlay keeps `host_app_supported = false` for this game and exposes it as standalone only.
+- LocalPlay exposes this as a quick-start game for Revelry. It does not expose generic saved-content authoring for this game yet, so hosts should start the default prompt pack/settings until a dedicated host-app setup flow exists.
 
 Expected check-in launch flow:
 

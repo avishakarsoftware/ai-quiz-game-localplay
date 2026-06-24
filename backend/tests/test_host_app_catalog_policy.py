@@ -14,7 +14,18 @@ def setup_function():
 def test_local_missing_policy_uses_static_host_app_catalog():
     games = effective_catalog(GAME_CATALOG, host_app="revelry", environment="local")
     game_ids = {game["id"] for game in games}
-    assert {"quiz", "wmlt", "drawing", "housie", "musical_chairs", "party_quests"}.issubset(game_ids)
+    assert {
+        "quiz",
+        "wmlt",
+        "drawing",
+        "housie",
+        "musical_chairs",
+        "bluff",
+        "find_someone",
+        "chit_pull",
+        "mafia",
+        "party_quests",
+    }.issubset(game_ids)
     assert all(game.get("rules", {}).get("sections") for game in games)
 
 
@@ -49,6 +60,27 @@ def test_party_quests_is_host_app_quick_startable_in_gamma():
     assert party_quests["can_create_content"] is False
     assert party_quests["supports_custom_content"] is True
     assert party_quests["supports_ai_generation"] is False
+
+
+def test_more_standalone_games_are_host_app_quick_startable_in_gamma():
+    env = f"test-standalone-quick-start-{uuid.uuid4().hex}"
+    games = {game["id"]: game for game in effective_catalog(GAME_CATALOG, host_app="revelry", environment=env)}
+
+    for game_id in ("bluff", "find_someone", "mafia"):
+        assert games[game_id]["launchable"] is True
+        assert games[game_id]["can_quick_start"] is True
+        assert games[game_id]["can_create_content"] is False
+        assert games[game_id]["supports_ai_generation"] is False
+        assert games[game_id]["rules"]["sections"]
+
+    assert games["chit_pull"]["launchable"] is True
+    assert games["chit_pull"]["can_quick_start"] is True
+    assert games["chit_pull"]["can_create_content"] is True
+    assert games["chit_pull"]["can_edit_content"] is True
+    assert games["chit_pull"]["supports_ai_generation"] is True
+    assert games["chit_pull"]["rules"]["sections"]
+    assert games["find_someone"]["checkin_friendly"] is True
+    assert games["find_someone"]["can_start_with_first_player"] is True
 
 
 def test_production_missing_policy_fails_closed():

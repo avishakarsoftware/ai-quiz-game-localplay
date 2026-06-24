@@ -1,8 +1,44 @@
 # LocalPlay Revelry Integration Spec
 
-Status: Gamma bridge plus party-scoped quiz authoring, generic WMLT/Drawing/Housie setup-save-start flow, catalog-driven party hub creation, and party hub start flow implemented; production hardening remains. June 18, 2026 added Party Quests as a LocalPlay quick-start host-app-capable catalog game; policy enablement/embedded QA still gates Revelry exposure.
+Status: Gamma bridge plus party-scoped quiz authoring, generic WMLT/Drawing/Housie/Random Chit setup-save-start flow, catalog-driven party hub creation, and party hub start flow implemented; production hardening remains. June 24, 2026 expanded LocalPlay host-app quick-start eligibility to Bluff, Find Someone Who, Random Chit, and Mafia; policy enablement/embedded QA still gates actual Revelry exposure.
 
-Last updated: 2026-06-18
+Last updated: 2026-06-24
+
+## June 24, 2026 — More standalone games exposed as quick-start candidates
+
+LocalPlay now declares these implemented standalone games as Revelry host-app-capable quick-start entries:
+
+- `bluff`
+- `find_someone`
+- `chit_pull` (user-facing name: Random Chit)
+- `mafia`
+
+They are added to `REVELRY_PARTY_GAME_START_TYPES`, so `party-games-link`, `/sessions`, and `party-games/start` accept them when catalog policy allows the game. Bluff, Find Someone Who, and Mafia are deliberately quick-start/settings only in the bridge catalog:
+
+- `can_quick_start = true`
+- `can_create_content = false`
+- `can_edit_content = false`
+- `supports_ai_generation = false`
+
+Random Chit is richer because LocalPlay now supports its host-app content schema:
+
+- `can_quick_start = true`
+- `can_create_content = true`
+- `can_edit_content = true`
+- `supports_ai_generation = true`
+
+LocalPlay accepts `chit_pull` in the party-games content save/generate/start endpoints, persists it in `generated_content`, and validates with the same sanitizer as standalone Random Chit. This introduces a LocalPlay DB migration: `generated_content.content_type` must include `chit_pull`.
+
+`find_someone` also advertises `checkin_friendly = true`, `can_start_with_first_player = true`, and `supports_late_join = true`. Revelry owns the party setting that makes it the default check-in game and the auto-start-on-first-check-in trigger. LocalPlay owns the resulting room/session runtime, late-join card assignment, and reconnect/duplicate-device handling.
+
+Gamma/prod rollout still requires host-app catalog policy rows for each game and an embedded hub smoke test. In production, missing policy fails closed.
+
+Photo Clue and Party Poker remain LocalPlay implementation work, not Revelry contract changes yet. As of June 24, LocalPlay has pure backend foundations for both:
+
+- `photo_clue_engine.py`: prompt validation, up-front assignment, private prompt queues, photo submission state, guesses, scoring, reveal, podium, and tests.
+- `poker_hand_evaluator.py`: Texas Hold'em 5-7 card evaluation, tie-breakers, player ranking, and tests.
+
+They should not appear in the Revelry host-app catalog until the room/socket/UI slices are complete and tested.
 
 ## June 18, 2026 — Party Quests LocalPlay support
 
@@ -18,7 +54,7 @@ LocalPlay now implements `party_quests` as a standalone ambient social runtime a
 
 Deployed to the `games-backend-gamma` container (image `revelry-backend-gamma:latest`, `gamesapi-gamma.revelryapp.me`); prod `games-backend` not yet redeployed.
 
-- **`game_type` validators accept all Revelry host-app start types.** `RevelrySessionCreateRequest` and `RevelryPartyGamesLinkRequest` previously rejected anything but `quiz` (a leftover "dedicated authoring route" copy/paste). They now accept `REVELRY_PARTY_GAME_START_TYPES` (`quiz`, `wmlt`, `drawing`, `housie`, `musical_chairs`), matching the bridge-supported runtime start paths. This unblocks starting saved non-quiz content directly. Verified live on gamma: `game_type=drawing` passes validation (→ 401 auth), `game_type=bogus` → 422 with the full type list.
+- **`game_type` validators accept all Revelry host-app start types.** `RevelrySessionCreateRequest` and `RevelryPartyGamesLinkRequest` previously rejected anything but `quiz` (a leftover "dedicated authoring route" copy/paste). They now accept `REVELRY_PARTY_GAME_START_TYPES`, matching the bridge-supported runtime start paths. This unblocks starting saved non-quiz content and quick-start catalog games directly. Verified live on gamma on June 12: `game_type=drawing` passed validation (→ 401 auth), `game_type=bogus` returned 422 with the full type list.
 - **Handoff-token auth tightened.** `_require_revelry_auth` now requires partner handoff JWTs to carry `iss=revelry`, `aud=localplay`, and `typ=localplay_launch` (the shared service-secret bearer path is unchanged). Tokens LocalPlay or Revelry mint for other purposes are no longer accepted as a partner credential.
 - **Revelry code review note.** Revelry commit `57f967a0` added assertions that its `_mint_handoff_token` helper emits `iss=revelry`, `aud=localplay`, `typ=localplay_launch`, `iat`, and `exp`. Most current Revelry backend calls to LocalPlay use the shared service-secret bearer path rather than `handoff_token`; that remains valid. If Revelry adds or switches any API path to handoff-token auth, it must use that helper or emit the same required claims.
 - **Return-url validation normalizes default ports** (`:443`/`:80`) so a Revelry URL carrying an explicit default port is not falsely rejected.
@@ -653,8 +689,8 @@ Rules:
 - The party hub's "Create a game" section must be driven by this catalog, not by hardcoded quiz-only UI. Quiz opens the full quiz authoring flow. WMLT/Drawing open a lightweight setup form that lets the host edit ready-made or AI-generated prompts/settings, save the setup, and optionally start immediately. Housie opens a lightweight setup that saves default prize/caller settings without AI generation. Future games should use the same setup/save/start contract unless they have a richer dedicated authoring surface.
 - If a quiz variant such as Rebus, Timeline, or Odd One Out should appear in Revelry, it must first be represented in the bridge contract with catalog metadata, accepted `game_type` or mode validation, content/session creation semantics, launch-token handling, status, and result summary support.
 - Games not represented in the bridge contract must be hidden in Revelry-launched host-app mode even if they are available in standalone LocalPlay.
-- Backlog games such as Bingo and Baby Bingo may appear as `planned` if Revelry wants to show coming-soon cards. Housie and Musical Chairs are implemented on the LocalPlay side and may be `gamma`/launchable in Revelry gamma when policy allows them; production remains disabled until explicitly promoted.
-- `find_someone` is implemented in standalone LocalPlay as a check-in-friendly social bingo runtime and advertises `checkin_friendly`, `can_start_with_first_player`, and `supports_late_join` in the LocalPlay catalog. It must remain hidden from `GET /catalog?host_app=revelry` until Revelry implements the host-owned setting to make it the party's default check-in game and the optional auto-start-on-first-check-in trigger. That Revelry setting should default auto-start to on; LocalPlay owns the resulting session runtime, late-join card assignment, and duplicate nickname/session-token reconciliation.
+- Backlog games such as Bingo and Baby Bingo may appear as `planned` if Revelry wants to show coming-soon cards. Housie, Musical Chairs, Party Quests, Bluff, Find Someone Who, Random Chit, and Mafia are implemented on the LocalPlay side and may be `gamma`/launchable in Revelry gamma when policy allows them; production remains disabled until explicitly promoted.
+- `find_someone` is implemented in standalone LocalPlay as a check-in-friendly social bingo runtime and advertises `checkin_friendly`, `can_start_with_first_player`, and `supports_late_join` in the LocalPlay host-app catalog. It may appear as a quick-start game when policy allows it. Revelry still owns the host-owned setting to make it the party's default check-in game and the optional auto-start-on-first-check-in trigger. That Revelry setting should default auto-start to on; LocalPlay owns the resulting session runtime, late-join card assignment, and duplicate nickname/session-token reconciliation.
 
 Implementation-ready remote catalog policy:
 

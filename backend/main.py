@@ -40,7 +40,7 @@ from story_chain_engine import validate_config as validate_story_chain_config
 from common_ground_engine import validate_config as validate_common_ground_config
 from find_someone_engine import validate_config as validate_find_someone_config
 from who_am_i_engine import sanitize_generated_game as sanitize_who_am_i_game, validate_config as validate_who_am_i_config, validate_generated_game as validate_who_am_i_game
-from chit_pull_engine import sanitize_generated_game as sanitize_chit_pull_game, validate_config as validate_chit_pull_config, validate_generated_game as validate_chit_pull_game
+from chit_pull_engine import VALID_SAFE_LEVELS as VALID_CHIT_PULL_SAFE_LEVELS, sanitize_generated_game as sanitize_chit_pull_game, validate_config as validate_chit_pull_config, validate_generated_game as validate_chit_pull_game
 from mafia_engine import validate_config as validate_mafia_config
 from party_quests_engine import validate_config as validate_party_quests_config
 from socket_manager import socket_manager
@@ -142,10 +142,18 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="AI Quiz Game Backend", lifespan=lifespan)
-REVELRY_PARTY_GAME_TYPES = ("quiz", "wmlt", "drawing", "housie")
-REVELRY_PARTY_GAME_TYPES_ERROR = 'game_type must be "quiz", "wmlt", "drawing", or "housie"'
-REVELRY_PARTY_GAME_START_TYPES = (*REVELRY_PARTY_GAME_TYPES, "musical_chairs", "party_quests")
-REVELRY_PARTY_GAME_START_TYPES_ERROR = 'game_type must be "quiz", "wmlt", "drawing", "housie", "musical_chairs", or "party_quests"'
+REVELRY_PARTY_GAME_TYPES = ("quiz", "wmlt", "drawing", "housie", "chit_pull")
+REVELRY_PARTY_GAME_TYPES_ERROR = 'game_type must be "quiz", "wmlt", "drawing", "housie", or "chit_pull"'
+REVELRY_PARTY_GAME_START_TYPES = (
+    *REVELRY_PARTY_GAME_TYPES,
+    "musical_chairs",
+    "bluff",
+    "find_someone",
+    "chit_pull",
+    "mafia",
+    "party_quests",
+)
+REVELRY_PARTY_GAME_START_TYPES_ERROR = 'game_type must be "quiz", "wmlt", "drawing", "housie", "musical_chairs", "bluff", "find_someone", "chit_pull", "mafia", or "party_quests"'
 
 
 def get_local_ip():
@@ -716,8 +724,8 @@ GAME_CATALOG = [
         "title": "Bluff",
         "description": "A big-group card game of bold claims and louder challenges.",
         "launchable": True,
-        "host_app_supported": False,
-        "supported_host_apps": [],
+        "host_app_supported": True,
+        "supported_host_apps": ["revelry"],
         "supports_custom_content": False,
         "supports_images": False,
         "can_create_content": False,
@@ -834,8 +842,8 @@ GAME_CATALOG = [
         "title": "Find Someone Who",
         "description": "A social bingo grid that gets guests talking throughout the party.",
         "launchable": True,
-        "host_app_supported": False,
-        "supported_host_apps": [],
+        "host_app_supported": True,
+        "supported_host_apps": ["revelry"],
         "supports_custom_content": True,
         "supports_images": False,
         "can_create_content": False,
@@ -899,8 +907,8 @@ GAME_CATALOG = [
         "title": "Random Chit",
         "description": "Randomly pick a player and a funny question, action, or mini challenge.",
         "launchable": True,
-        "host_app_supported": False,
-        "supported_host_apps": [],
+        "host_app_supported": True,
+        "supported_host_apps": ["revelry"],
         "supports_custom_content": True,
         "supports_images": False,
         "can_create_content": True,
@@ -932,8 +940,8 @@ GAME_CATALOG = [
         "description": "Secret roles, night kills, and daytime accusations. Find the Mafia before they outnumber you.",
         "status": "gamma",
         "launchable": True,
-        "host_app_supported": False,
-        "supported_host_apps": [],
+        "host_app_supported": True,
+        "supported_host_apps": ["revelry"],
         "supports_custom_content": False,
         "supports_images": False,
         "can_create_content": False,
@@ -1229,7 +1237,7 @@ def _resolve_revelry_runtime_content(
         quiz_timestamps[content_id] = time.time()
         content_owners[content_id] = wallet_id
         return content_id, quiz_data
-    if game_type in ("wmlt", "drawing", "housie", "bingo") and content_id:
+    if game_type in ("wmlt", "drawing", "housie", "bingo", "chit_pull") and content_id:
         if game_type == "wmlt" and content_id in mlt_scenarios:
             return content_id, mlt_scenarios[content_id]
         if game_type == "drawing" and content_id in drawing_games:
@@ -1238,6 +1246,8 @@ def _resolve_revelry_runtime_content(
             return content_id, housie_games[content_id]
         if game_type == "bingo" and content_id in bingo_games:
             return content_id, bingo_games[content_id]
+        if game_type == "chit_pull" and content_id in chit_pull_games:
+            return content_id, chit_pull_games[content_id]
         content = db.get_game_content(wallet_id, content_id)
         if not content or content.get("game_type") != game_type:
             raise HTTPException(status_code=404, detail="Game content not found for this party")
@@ -1263,10 +1273,16 @@ def _resolve_revelry_runtime_content(
             game_data = _sanitize_housie_game(game_data)
             housie_games[content_id] = game_data
             housie_timestamps[content_id] = time.time()
-        else:
+        elif game_type == "bingo":
             game_data = _sanitize_bingo_game(game_data)
             bingo_games[content_id] = game_data
             bingo_timestamps[content_id] = time.time()
+        else:
+            game_data = sanitize_chit_pull_game(game_data)
+            if not validate_chit_pull_game(game_data):
+                raise HTTPException(status_code=422, detail="Invalid Random Chit content")
+            chit_pull_games[content_id] = game_data
+            chit_pull_timestamps[content_id] = time.time()
         content_owners[content_id] = wallet_id
         return content_id, game_data
     return _resolve_runtime_content(game_type, content_id, title)
@@ -2597,6 +2613,8 @@ def _count_game_items(game_type: str, payload: dict) -> int:
         return len(game.get("prompts") or [])
     if game_type == "housie":
         return len(game.get("patterns") or [])
+    if game_type == "chit_pull":
+        return len(game.get("chits") or [])
     if game_type == "quiz":
         return len(game.get("questions") or [])
     return 0
@@ -2609,7 +2627,7 @@ def _game_content_summary(content: dict) -> dict:
     return {
         "localplay_content_id": content["id"],
         "game_type": game_type,
-        "title": content.get("title") or ("Drawing Game" if game_type == "drawing" else "Housie" if game_type == "housie" else "Most Likely To"),
+        "title": content.get("title") or ("Drawing Game" if game_type == "drawing" else "Housie" if game_type == "housie" else "Random Chit" if game_type == "chit_pull" else "Most Likely To"),
         "status": content.get("status") or "ready",
         "thumbnail_url": "",
         "question_count": count,
@@ -2635,7 +2653,7 @@ def _prepared_content_summary(content: dict) -> dict:
 def _workspace_payload(context: RevelryExternalContext, actor: Optional[RevelryActor] = None) -> dict:
     wallet_id = _revelry_party_wallet_id(context.external_container_id)
     packs = db.list_quiz_packs(wallet_id)
-    saved_games = db.list_game_content(wallet_id, ["wmlt", "drawing", "housie"])
+    saved_games = db.list_game_content(wallet_id, ["wmlt", "drawing", "housie", "chit_pull"])
     prepared = [_quiz_pack_summary(pack) for pack in packs] + [_game_content_summary(game) for game in saved_games]
     prepared.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
     active = db.get_active_game_session(context.host_app, context.external_container_id)
@@ -3073,6 +3091,13 @@ def _content_game_from_payload(game_type: str, title: str, payload: dict[str, An
             game_data = {**game_data, "game_title": title}
         game_data = _sanitize_housie_game(game_data)
         return {"game": game_data}
+    if game_type == "chit_pull":
+        if "game_title" not in game_data and title:
+            game_data = {**game_data, "game_title": title}
+        game_data = sanitize_chit_pull_game(game_data)
+        if not validate_chit_pull_game(game_data):
+            raise HTTPException(status_code=422, detail="Invalid Random Chit content")
+        return {"game": game_data}
     raise HTTPException(status_code=422, detail="Unsupported game_type")
 
 
@@ -3123,6 +3148,20 @@ async def _generate_party_prompt_content(context: RevelryExternalContext, reques
             game_data = _sanitize_mlt(game_data)
             if not _validate_mlt(game_data, attempt=0):
                 raise HTTPException(status_code=500, detail="Failed to generate prompts")
+            return {"game": game_data}
+        if request.game_type == "chit_pull":
+            game_data = await generate_chit_pull_content(
+                prompt,
+                max(5, min(50, request.num_prompts)),
+                provider,
+                safe_level=request.difficulty if request.difficulty in VALID_CHIT_PULL_SAFE_LEVELS else "family",
+                model_override=model_override,
+            )
+            if not game_data:
+                raise HTTPException(status_code=500, detail="Failed to generate chits")
+            game_data = sanitize_chit_pull_game(game_data)
+            if not validate_chit_pull_game(game_data):
+                raise HTTPException(status_code=500, detail="Failed to generate chits")
             return {"game": game_data}
         difficulty = request.difficulty if request.difficulty in config.VALID_DIFFICULTIES else "medium"
         game_data = await drawing_engine.generate_prompts(
@@ -4460,6 +4499,55 @@ class ChitPullGenerateRequest(BaseModel):
         return v
 
 
+async def generate_chit_pull_content(
+    prompt: str,
+    num_chits: int,
+    provider: str,
+    *,
+    difficulty: str = "medium",
+    safe_level: str = "family",
+    model_override: str = "",
+) -> dict:
+    safe_level = safe_level.lower().strip().replace(" ", "_")
+    if safe_level not in VALID_CHIT_PULL_SAFE_LEVELS:
+        safe_level = "family"
+    difficulty = difficulty.lower().strip()
+    if difficulty not in config.VALID_DIFFICULTIES:
+        difficulty = "medium"
+    num_chits = max(5, min(100, int(num_chits or 20)))
+    prompt_text = f"""
+Generate {num_chits} short, performable party chits for a live group game.
+Theme/vibe: bounded user theme below.
+Difficulty: {difficulty}. Safety level: {safe_level}.
+
+Rules:
+- Every chit must be safe, voluntary, inclusive, and easy to do in person.
+- Mix categories: question, action, funny_face, mini_challenge, group.
+- Keep each chit under 120 characters.
+- Avoid protected-class targeting, private/sensitive disclosure, humiliation, touching, drinking, spending money, leaving the venue, explicit sexual content, or medical/legal/financial topics.
+- For kids/family/work_safe, keep everything clean and broadly comfortable.
+- For spicy, be playful and cheeky but not explicit, coercive, or humiliating.
+- Return JSON only:
+{{
+  "game_title": "string",
+  "safe_level": "{safe_level}",
+  "rounds": {min(num_chits, 20)},
+  "chits": [
+    {{"id": "chit_1", "text": "string", "category": "question", "safe_level": "{safe_level}"}}
+  ]
+}}
+
+--- BEGIN USER THEME ---
+{prompt}
+--- END USER THEME ---
+"""
+    raw = await _generate_json_content(provider, model_override, prompt_text)
+    game_data = sanitize_chit_pull_game({**(raw or {}), "safe_level": safe_level, "rounds": min(num_chits, 20)})
+    if not validate_chit_pull_game(game_data):
+        raise ValueError("Generated chit deck was not playable")
+    return game_data
+
+
 @app.post("/chit-pull/generate")
 async def generate_chit_pull(request: ChitPullGenerateRequest, req: Request):
     client_ip = _get_client_ip(req)
@@ -4486,44 +4574,24 @@ async def generate_chit_pull(request: ChitPullGenerateRequest, req: Request):
     await remote_config.get_config()
     provider = request.provider or remote_config.get_provider()
     model_override = remote_config.get_paid_model() if tokens.use_premium_model(wallet_id) else remote_config.get_free_model()
-    prompt_text = f"""
-Generate {request.num_chits} short, performable party chits for a live group game.
-Theme/vibe: bounded user theme below.
-Difficulty: {request.difficulty}. Safety level: {request.safe_level}.
-
-Rules:
-- Every chit must be safe, voluntary, inclusive, and easy to do in person.
-- Mix categories: question, action, funny_face, mini_challenge, group.
-- Keep each chit under 120 characters.
-- Avoid protected-class targeting, private/sensitive disclosure, humiliation, touching, drinking, spending money, leaving the venue, explicit sexual content, or medical/legal/financial topics.
-- For kids/family/work_safe, keep everything clean and broadly comfortable.
-- For spicy, be playful and cheeky but not explicit, coercive, or humiliating.
-- Return JSON only:
-{{
-  "game_title": "string",
-  "safe_level": "{request.safe_level}",
-  "rounds": {min(request.num_chits, 20)},
-  "chits": [
-    {{"id": "chit_1", "text": "string", "category": "question", "safe_level": "{request.safe_level}"}}
-  ]
-}}
-
---- BEGIN USER THEME ---
-{request.prompt}
---- END USER THEME ---
-"""
     try:
-        raw = await _generate_json_content(provider, model_override, prompt_text)
+        game_data = await generate_chit_pull_content(
+            request.prompt,
+            request.num_chits,
+            provider,
+            difficulty=request.difficulty,
+            safe_level=request.safe_level,
+            model_override=model_override,
+        )
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code in (403, 429):
             raise HTTPException(status_code=503, detail="Free tier limit reached. Upgrade for unlimited games.")
         raise HTTPException(status_code=500, detail="Failed to generate Random Chit")
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
     except Exception:
         logger.exception("Random Chit generation failed")
         raise HTTPException(status_code=500, detail="Failed to generate Random Chit")
-    game_data = sanitize_chit_pull_game({**(raw or {}), "safe_level": request.safe_level, "rounds": min(request.num_chits, 20)})
-    if not validate_chit_pull_game(game_data):
-        raise HTTPException(status_code=500, detail="Generated chit deck was not playable")
     _evict_old_content()
     chit_pull_id = str(uuid.uuid4())
     chit_pull_games[chit_pull_id] = game_data

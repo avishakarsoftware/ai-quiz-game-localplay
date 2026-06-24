@@ -18,6 +18,8 @@ Legacy/internal name: Chit Pull
 
 Status: implemented MVP in standalone LocalPlay. The stable API/game type remains `chit_pull`; user-facing catalog/setup/runtime labels now use **Random Chit**.
 
+On June 24, 2026, LocalPlay made Random Chit eligible for Revelry host-app catalog exposure and host-app authoring: `host_app_supported = true`, `supported_host_apps = ["revelry"]`, `can_quick_start = true`, `can_create_content = true`, `can_edit_content = true`, and `supports_ai_generation = true`. LocalPlay now supports `chit_pull` in the Revelry party-games save/start/generate contract, stores it in `generated_content`, and shares the same sanitizer/generation helper with standalone `/chit-pull/generate`.
+
 Implemented in this repo with:
 
 - `backend/chit_pull_engine.py` pure mechanics and validation helpers.
@@ -27,7 +29,7 @@ Implemented in this repo with:
 - Organizer prompt/review/live screens, plus player and spectator live views.
 - Backend and frontend tests for engine behavior, Random Chit default naming, and live component rendering.
 
-Current exposure is standalone LocalPlay first. Revelry catalog exposure should follow the host-app allowlist/policy rollout after gamma smoke.
+Current host-app exposure can include quick-start, manual saved-content authoring, and AI deck generation once Revelry catalog policy enables it in gamma/prod. This is still driven by LocalPlay's catalog response and policy rows; no Revelry repo changes are included here.
 
 ## MVP Scope
 
@@ -61,7 +63,7 @@ Current exposure is standalone LocalPlay first. Revelry catalog exposure should 
 - No judging with AI.
 - No real-money or economy-linked rewards.
 - No photo/video capture in MVP.
-- No Revelry exposure until standalone runtime and host-app catalog policy are tested.
+- Revelry exposure is controlled by host-app catalog policy; LocalPlay now supports the saved-content and AI generation contract for `chit_pull`.
 
 ## Game Modes
 

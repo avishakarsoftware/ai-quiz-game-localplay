@@ -1,15 +1,21 @@
 # LocalPlay Mafia Game Spec
 
-Status: **implemented standalone MVP locally; gamma deploy and multi-device Playwright QA pending**
+Status: **implemented standalone MVP locally; Revelry quick-start eligible; gamma multi-device Playwright QA pending**
 
-Last updated: June 23, 2026
+Last updated: June 24, 2026
 
 The current implementation is a deterministic, in-memory standalone runtime that
-works without AI narration, durable party/host-app authoring, or Revelry
-exposure. It includes Night Reads so every living player has a private night
+works without AI narration or durable party/host-app authoring. It includes Night Reads so every living player has a private night
 prompt, reducing the risk that special roles are exposed by phone behavior. AI
-narration, richer setup UI, and host-app launch remain follow-up polish once the
-standalone UX has passed multi-device QA.
+narration and richer setup UI remain follow-up polish once the standalone UX has
+passed multi-device QA.
+
+June 24, 2026 host-app update:
+
+- LocalPlay now declares `mafia` as `host_app_supported = true` for Revelry.
+- Revelry sees Mafia as quick-start/settings only: `can_quick_start = true`, `can_create_content = false`, and `supports_ai_generation = false`.
+- The generic Revelry saved-content/AI authoring endpoints do not apply to Mafia.
+- Multi-device gamma QA remains required before broad production rollout because private role prompts, Night Reads, and day voting need real-device validation.
 
 June 23, 2026 polish update:
 
@@ -42,7 +48,7 @@ Frontend display name: Mafia
 - Support eliminated players as spectators who can still watch but cannot act or vote.
 - Use template narration in v1, with an engine hook for later AI-generated flavor text.
 - Keep the game playable at party scale: 6-15 players, 15-30 minute sessions.
-- Support standalone LocalPlay first; expose to Revelry only after standalone UX is polished.
+- Support standalone LocalPlay first and Revelry quick-start after host-app policy/QA allows it.
 
 ## Constraints
 

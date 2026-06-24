@@ -16,7 +16,7 @@ Frontend display name: Party Poker
 
 ## Implementation-Ready MVP Scope
 
-Status: implementation-ready after the shared card engine exists.
+Status: evaluator foundation implemented on June 24, 2026. The shared card engine dependency exists through the Bluff MVP, and `backend/poker_hand_evaluator.py` now evaluates best 5-card Hold'em hands from 5-7 cards, handles wheel straights, tie-breaking, player ranking, and pure tests. Poker is not playable yet. The next implementation slice is `poker_engine.py` for tournament/chip/side-pot state, then socket events and organizer/player/spectator UI on top of the existing card primitives.
 
 - Variant: Texas Hold'em tournament.
 - One table only in MVP.

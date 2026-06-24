@@ -141,10 +141,24 @@ def test_catalog_lists_launchable_games():
     assert res.status_code == 200
     games = res.json()["games"]
     game_ids = {game["id"] for game in games}
-    assert {"quiz", "wmlt", "drawing", "musical_chairs", "party_quests"}.issubset(game_ids)
+    assert {
+        "quiz",
+        "wmlt",
+        "drawing",
+        "musical_chairs",
+        "bluff",
+        "find_someone",
+        "chit_pull",
+        "mafia",
+        "party_quests",
+    }.issubset(game_ids)
     quiz = next(game for game in games if game["id"] == "quiz")
     drawing = next(game for game in games if game["id"] == "drawing")
     musical_chairs = next(game for game in games if game["id"] == "musical_chairs")
+    bluff = next(game for game in games if game["id"] == "bluff")
+    find_someone = next(game for game in games if game["id"] == "find_someone")
+    chit_pull = next(game for game in games if game["id"] == "chit_pull")
+    mafia = next(game for game in games if game["id"] == "mafia")
     party_quests = next(game for game in games if game["id"] == "party_quests")
     assert quiz["can_create_content"] is True
     assert quiz["embedded_authoring_supported"] is True
@@ -163,6 +177,15 @@ def test_catalog_lists_launchable_games():
     assert musical_chairs["supports_ai_generation"] is False
     assert musical_chairs["content_schema"]["kind"] == "musical_chairs_setup"
     assert musical_chairs["rules"]["sections"][0]["id"] == "objective"
+    for quick_start_game in (bluff, find_someone, mafia):
+        assert quick_start_game["can_quick_start"] is True
+        assert quick_start_game["can_create_content"] is False
+        assert quick_start_game["supports_ai_generation"] is False
+    assert chit_pull["can_quick_start"] is True
+    assert chit_pull["can_create_content"] is True
+    assert chit_pull["can_edit_content"] is True
+    assert chit_pull["supports_ai_generation"] is True
+    assert find_someone["checkin_friendly"] is True
     assert party_quests["can_quick_start"] is True
     assert party_quests["can_create_content"] is False
     assert party_quests["supports_ai_generation"] is False
@@ -1217,6 +1240,69 @@ def test_revelry_party_hub_can_save_and_start_housie(monkeypatch):
     assert room.quiz["game_title"] == "Ava's Housie"
 
 
+def test_revelry_party_hub_can_save_and_start_random_chit(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    db.upsert_host_app_catalog_flag(config.ENVIRONMENT, "revelry", "chit_pull", {
+        "enabled": True,
+        "status": "gamma",
+    })
+    container_id = f"party-hub-chit-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Ava's Chit Night",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["author_content", "operate_game"],
+        },
+    }
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+    assert link_res.status_code == 200
+    party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
+
+    save_res = client.post(
+        "/integrations/revelry/party-games/content",
+        json={
+            "party_games_token": party_token,
+            "game_type": "chit_pull",
+            "title": "Ava's Random Chit",
+            "content_payload": {
+                "game": {
+                    "game_title": "Ava's Random Chit",
+                    "rounds": 5,
+                    "safe_level": "family",
+                    "chits": [
+                        {"id": "c1", "text": "Make your best celebration face.", "category": "funny_face", "safe_level": "family"},
+                        {"id": "c2", "text": "Tell the room your favorite snack.", "category": "question", "safe_level": "family"},
+                        {"id": "c3", "text": "Invent a tiny award for someone nearby.", "category": "group", "safe_level": "family"},
+                        {"id": "c4", "text": "Do a five second victory dance.", "category": "action", "safe_level": "family"},
+                        {"id": "c5", "text": "Give the party a headline.", "category": "mini_challenge", "safe_level": "family"},
+                    ],
+                },
+            },
+        },
+    )
+    assert save_res.status_code == 200, save_res.text
+    saved = save_res.json()["content"]
+    assert saved["game_type"] == "chit_pull"
+    assert saved["question_count"] == 5
+
+    start_res = client.post(
+        "/integrations/revelry/party-games/start",
+        json={"party_games_token": party_token, "game_type": "chit_pull", "content_id": saved["localplay_content_id"]},
+    )
+    assert start_res.status_code == 200, start_res.text
+    room = socket_manager.rooms[start_res.json()["session"]["room_code"]]
+    assert room.game_type == "chit_pull"
+    assert room.quiz["game_title"] == "Ava's Random Chit"
+
+
 def test_revelry_party_hub_can_quick_start_musical_chairs(monkeypatch):
     monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
     db.init_db()
@@ -1296,6 +1382,54 @@ def test_revelry_party_hub_can_quick_start_party_quests(monkeypatch):
     assert room.quiz["game_title"] == "Ava's Mixer"
     assert room.party_quests_config["quests_per_player"] == 8
     assert room.party_quests_config["allow_late_join"] is True
+
+
+def test_revelry_party_hub_can_quick_start_more_standalone_games(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    expected_titles = {
+        "bluff": "Ava's Bluff Night",
+        "find_someone": "Ava's Find Someone Night",
+        "chit_pull": "Ava's Random Chit Night",
+        "mafia": "Ava's Mafia Night",
+    }
+
+    for game_type, party_title in expected_titles.items():
+        container_id = f"party-{game_type}-{uuid.uuid4().hex}"
+        payload = {
+            "external_context": {
+                "host_app": "revelry",
+                "external_container_type": "party",
+                "external_container_id": container_id,
+                "external_container_title": party_title,
+            },
+            "actor": {
+                "external_user_id": "host-1",
+                "display_name": "Ava",
+                "role": "host",
+                "capabilities": ["operate_game", "manage_games"],
+            },
+        }
+        link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+        assert link_res.status_code == 200
+        party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
+
+        resolve_res = client.get(f"/integrations/revelry/party-games/resolve?party_games_token={party_token}")
+        assert resolve_res.status_code == 200
+        catalog = {game["id"]: game for game in resolve_res.json()["workspace"]["catalog"]}
+        assert catalog[game_type]["can_quick_start"] is True
+        assert catalog[game_type]["can_create_content"] is (game_type == "chit_pull")
+
+        start_res = client.post(
+            "/integrations/revelry/party-games/start",
+            json={"party_games_token": party_token, "game_type": game_type},
+        )
+        assert start_res.status_code == 200, start_res.text
+        body = start_res.json()
+        room = socket_manager.rooms[body["session"]["room_code"]]
+        assert room.game_type == game_type
+        assert room.quiz["game_title"] == party_title
+        assert room.billing_mode == "host_app_managed"
 
 
 def test_revelry_replacement_closes_superseded_runtime_room(monkeypatch):
