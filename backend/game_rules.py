@@ -188,6 +188,16 @@ GAME_RULES: dict[str, dict[str, Any]] = {
         players={"min": 1, "recommended": "8-100"},
         late_join_policy="Late joiners can receive a quest board while the activity is active if the host allows late joins.",
     ),
+    "survey_says": _rules(
+        "Survey Says Rules",
+        "Teams guess the top survey answers while the host reveals the board and tracks strikes.",
+        ["Win rounds by finding high-value answers and protecting the bank."],
+        ["Players submit guesses on their phones.", "The host reveals matching answers or gives strikes.", "After max strikes, the other team gets one steal chance."],
+        ["Revealed answers build a round bank.", "Clearing the board wins the bank.", "A successful steal wins the bank for the stealing team."],
+        players={"min": 2, "recommended": "6-30"},
+        late_join_policy="Late joiners can be added to the smaller team while the game is active.",
+        host_notes=["The host adjudicates close guesses and can reveal all answers to end a round."],
+    ),
     "would_you_rather": _rules(
         "Would You Rather Rules",
         "Pick between two options and reveal how the room splits.",

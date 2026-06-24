@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type WhoAmIGameContent, type ChitPullCategory, type ChitPullGameContent, type ChitPullSafeLevel, type ChitPullState, type MafiaState, type PartyQuestsState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState } from '../types';
+import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type WhoAmIGameContent, type ChitPullCategory, type ChitPullGameContent, type ChitPullSafeLevel, type ChitPullState, type MafiaState, type PartyQuestsState, type SurveySaysState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending, saveOrganizerSession, getSavedOrganizerSession, clearOrganizerSession } from '../utils/storage';
@@ -36,6 +36,7 @@ import WhoAmIGame from '../components/WhoAmIGame';
 import ChitPullGame from '../components/ChitPullGame';
 import MafiaGame from '../components/MafiaGame';
 import PartyQuestsGame from '../components/PartyQuestsGame';
+import SurveySaysGame from '../components/SurveySaysGame';
 import SimpleSocialGame from '../components/SimpleSocialGame';
 import PhotoClueGame from '../components/PhotoClueGame';
 import GameRulesModal from '../components/GameRulesModal';
@@ -54,7 +55,7 @@ import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameMo
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'WHO_AM_I_PROMPT' | 'WHO_AM_I_REVIEW' | 'CHIT_PULL_PROMPT' | 'CHIT_PULL_REVIEW' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'PARTY_QUESTS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'POKER' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'PARTY_QUESTS' | 'SIMPLE_SOCIAL' | 'PHOTO_CLUE' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'WHO_AM_I_PROMPT' | 'WHO_AM_I_REVIEW' | 'CHIT_PULL_PROMPT' | 'CHIT_PULL_REVIEW' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'PARTY_QUESTS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'POKER' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'PARTY_QUESTS' | 'SURVEY_SAYS' | 'SIMPLE_SOCIAL' | 'PHOTO_CLUE' | 'LEADERBOARD' | 'PODIUM';
 
 function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'housie' || type === 'bingo' || type === 'baby_bingo') return 15;
@@ -69,6 +70,7 @@ function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'chit_pull') return 30;
     if (type === 'mafia') return 30;
     if (type === 'party_quests') return 30;
+    if (type === 'survey_says') return 30;
     if (type === 'would_you_rather' || type === 'never_have_i_ever' || type === 'word_association' || type === 'acronym' || type === 'photo_clue') return 30;
     return type === 'drawing' ? 30 : 15;
 }
@@ -190,6 +192,7 @@ export default function OrganizerPage() {
     const [chitPullSafeLevel, setChitPullSafeLevel] = useState<ChitPullSafeLevel>('family');
     const [mafiaState, setMafiaState] = useState<MafiaState | null>(null);
     const [partyQuestsState, setPartyQuestsState] = useState<PartyQuestsState | null>(null);
+    const [surveySaysState, setSurveySaysState] = useState<SurveySaysState | null>(null);
     const [simpleSocialState, setSimpleSocialState] = useState<SimpleSocialState | null>(null);
     const [photoClueState, setPhotoClueState] = useState<PhotoClueState | null>(null);
     const [partyQuestsConfig, setPartyQuestsConfig] = useState<PartyQuestSetupConfig>(defaultPartyQuestsConfig());
@@ -569,6 +572,15 @@ export default function OrganizerPage() {
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('PARTY_QUESTS');
         }
+        else if (msg.type === 'SURVEY_SYNC') {
+            setGameType('survey_says');
+            setSurveySaysState(msg.survey_says as SurveySaysState);
+            setPlayers(msg.players as PlayerInfo[] || []);
+            setPlayerCount(msg.player_count as number || 0);
+            setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+            setTeamLeaderboard(msg.team_leaderboard as TeamLeaderboardEntry[] || []);
+            setState('SURVEY_SAYS');
+        }
         else if (msg.type === 'SIMPLE_SOCIAL_SYNC') {
             const incomingGameType = msg.game_type as SimpleSocialGameType;
             const payload = (msg[incomingGameType] || null) as SimpleSocialState | null;
@@ -622,6 +634,7 @@ export default function OrganizerPage() {
             setChitPullState(null);
             setMafiaState(null);
             setPartyQuestsState(null);
+            setSurveySaysState(null);
             setAnsweredCount(0);
             setLiveQuestion(null);
             setCurrentStatement('');
@@ -662,6 +675,7 @@ export default function OrganizerPage() {
             if (msg.chit_pull) setChitPullState(msg.chit_pull as ChitPullState);
             if (msg.mafia) setMafiaState(msg.mafia as MafiaState);
             if (msg.party_quests) setPartyQuestsState(msg.party_quests as PartyQuestsState);
+            if (msg.survey_says) setSurveySaysState(msg.survey_says as SurveySaysState);
             if (msg.photo_clue) setPhotoClueState(msg.photo_clue as PhotoClueState);
             if (msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) {
                 setSimpleSocialState((msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) as SimpleSocialState);
@@ -719,6 +733,8 @@ export default function OrganizerPage() {
                 setState('MAFIA');
             } else if (String(msg.state || '').startsWith('QUESTS_')) {
                 setState('PARTY_QUESTS');
+            } else if (String(msg.state || '').startsWith('SURVEY_')) {
+                setState('SURVEY_SAYS');
             } else if (String(msg.state || '').startsWith('PHOTO_')) {
                 setState('PHOTO_CLUE');
             } else if (
@@ -841,6 +857,10 @@ export default function OrganizerPage() {
             setPartyQuestsConfig(next);
             setPartyQuestsState(null);
             setState('PARTY_QUESTS_SETUP');
+        }
+        else if (type === 'survey_says') {
+            setSurveySaysState(null);
+            void createRoom(undefined, 'survey_says', defaultTimeLimitForGame('survey_says'));
         }
         else if (type === 'would_you_rather' || type === 'never_have_i_ever' || type === 'word_association' || type === 'acronym') {
             setSimpleSocialState(null);
@@ -1398,7 +1418,7 @@ export default function OrganizerPage() {
         ws.onclose = () => {
             wsRef.current = null;
             if (!mountedRef.current) return;
-            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'PARTY_QUESTS', 'SIMPLE_SOCIAL', 'LEADERBOARD', 'PODIUM'];
+            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'PARTY_QUESTS', 'SURVEY_SAYS', 'SIMPLE_SOCIAL', 'LEADERBOARD', 'PODIUM'];
             if (roomCodeRef.current && activeStates.includes(stateRef.current)) {
                 if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                 reconnectTimerRef.current = setTimeout(() => connectWsRef.current(roomCodeRef.current), 2000);
@@ -1555,6 +1575,8 @@ export default function OrganizerPage() {
                 body.mafia_config = { game_title: 'Mafia' };
             } else if (effectiveGameType === 'party_quests') {
                 body.party_quests_config = runtimeConfigOverride || partyQuestsConfig;
+            } else if (effectiveGameType === 'survey_says') {
+                body.survey_says_config = { game_title: 'Survey Says' };
             } else if (effectiveGameType === 'would_you_rather') {
                 body.would_you_rather_config = { game_title: 'Would You Rather' };
             } else if (effectiveGameType === 'never_have_i_ever') {
@@ -1709,7 +1731,7 @@ export default function OrganizerPage() {
             wsRef.current?.send(JSON.stringify({ type: 'SET_SHOW_VOTES', show_votes: showVotes }));
         }
         wsRef.current?.send(JSON.stringify({ type: 'START_GAME' }));
-        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'musical_chairs' && gameType !== 'bluff' && gameType !== 'poker' && gameType !== 'two_truths' && gameType !== 'story_chain' && gameType !== 'common_ground' && gameType !== 'find_someone' && gameType !== 'who_am_i' && gameType !== 'chit_pull' && gameType !== 'mafia' && gameType !== 'party_quests' && gameType !== 'would_you_rather' && gameType !== 'never_have_i_ever' && gameType !== 'word_association' && gameType !== 'acronym' && gameType !== 'photo_clue') {
+        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'musical_chairs' && gameType !== 'bluff' && gameType !== 'poker' && gameType !== 'two_truths' && gameType !== 'story_chain' && gameType !== 'common_ground' && gameType !== 'find_someone' && gameType !== 'who_am_i' && gameType !== 'chit_pull' && gameType !== 'mafia' && gameType !== 'party_quests' && gameType !== 'survey_says' && gameType !== 'would_you_rather' && gameType !== 'never_have_i_ever' && gameType !== 'word_association' && gameType !== 'acronym' && gameType !== 'photo_clue') {
             wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
         }
     };
@@ -1748,6 +1770,10 @@ export default function OrganizerPage() {
     const extendMafiaTimer = () => wsRef.current?.send(JSON.stringify({ type: 'MAFIA_EXTEND_TIMER' }));
     const partyQuestsFinalCall = () => wsRef.current?.send(JSON.stringify({ type: 'QUESTS_FINAL_CALL' }));
     const partyQuestsReveal = () => wsRef.current?.send(JSON.stringify({ type: 'QUESTS_REVEAL' }));
+    const revealSurveyAnswer = (answerId: string) => wsRef.current?.send(JSON.stringify({ type: 'SURVEY_REVEAL_ANSWER', answer_id: answerId }));
+    const strikeSurvey = () => wsRef.current?.send(JSON.stringify({ type: 'SURVEY_STRIKE' }));
+    const revealSurveyAll = () => wsRef.current?.send(JSON.stringify({ type: 'SURVEY_REVEAL_ALL' }));
+    const nextSurveyRound = () => wsRef.current?.send(JSON.stringify({ type: 'SURVEY_NEXT_ROUND' }));
     const revealSimpleSocialRound = () => {
         if (gameType === 'would_you_rather') wsRef.current?.send(JSON.stringify({ type: 'WYR_REVEAL' }));
         else if (gameType === 'never_have_i_ever') wsRef.current?.send(JSON.stringify({ type: 'NHIE_REVEAL' }));
@@ -1811,6 +1837,7 @@ export default function OrganizerPage() {
         setChitPullState(null);
         setMafiaState(null);
         setPartyQuestsState(null);
+        setSurveySaysState(null);
         if (contentId && roomCode && wsRef.current?.readyState === WebSocket.OPEN) {
             createRoom(contentId);
             return;
@@ -1839,6 +1866,7 @@ export default function OrganizerPage() {
         setChitPullGame(null);
         setMafiaState(null);
         setPartyQuestsState(null);
+        setSurveySaysState(null);
         if (hostAppMode) {
             returnToHostApp();
         } else {
@@ -2363,6 +2391,18 @@ export default function OrganizerPage() {
                         controls="host"
                         onFinalCall={partyQuestsFinalCall}
                         onReveal={partyQuestsReveal}
+                        onEndGame={endQuiz}
+                    />
+                )}
+
+                {state === 'SURVEY_SAYS' && (
+                    <SurveySaysGame
+                        state={surveySaysState}
+                        controls="host"
+                        onRevealAnswer={revealSurveyAnswer}
+                        onStrike={strikeSurvey}
+                        onRevealAll={revealSurveyAll}
+                        onNextRound={nextSurveyRound}
                         onEndGame={endQuiz}
                     />
                 )}

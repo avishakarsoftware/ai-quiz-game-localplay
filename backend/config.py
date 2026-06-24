@@ -109,6 +109,7 @@ MIN_WHO_AM_I_PLAYERS = 2  # Who Am I minimum players
 MIN_CHIT_PULL_PLAYERS = 3  # Chit Pull minimum players
 MIN_MAFIA_PLAYERS = 6  # Mafia minimum players
 MIN_PARTY_QUESTS_PLAYERS = 1  # Ambient party quests can start as soon as the first guest joins
+MIN_SURVEY_SAYS_PLAYERS = 2  # Survey Says needs at least two teams to feel right
 MIN_WOULD_YOU_RATHER_PLAYERS = 2  # Would You Rather minimum players
 MIN_NEVER_HAVE_I_EVER_PLAYERS = 2  # Never Have I Ever minimum players
 MIN_WORD_ASSOCIATION_PLAYERS = 2  # Word Association minimum players

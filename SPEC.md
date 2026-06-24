@@ -21,6 +21,7 @@ The platform currently supports:
 - `common_ground`: standalone team icebreaker where auto-assigned teams submit shared facts, vote on the best answers, and finish on a team podium.
 - `who_am_i`: standalone clue-ladder guessing game where clues reveal progressively and players submit free-text guesses.
 - `chit_pull`: standalone Random Chit party game where the server picks a player and prompt, then the host marks completed/skipped/redrawn outcomes.
+- `survey_says`: standalone team survey game where players guess ranked answers and the host reveals slots, strikes, steals, and team scoring.
 - Standalone custom quiz authoring and saved quiz packs.
 - Host-app/party-scoped authoring and game setup through the Revelry Games hub.
 
@@ -61,6 +62,7 @@ Key files:
 - `backend/common_ground_engine.py`: setup validation, team assignment, private/public sync, team submissions, voting, scoring, and podium helpers for Common Ground.
 - `backend/who_am_i_engine.py`: clue-ladder setup validation, guess normalization/matching, private/public sync, and scoring helpers for Who Am I.
 - `backend/chit_pull_engine.py`: random player/chit selection, safe deck sanitization, redraw handling, scoring, public sync, and podium helpers for Random Chit.
+- `backend/survey_says_engine.py`: Survey Says setup validation, team assignment, guess capture, host-revealed answer board, strikes, steals, scoring, late joins, and public/private sync.
 - `backend/image_engine.py`: optional Stable Diffusion image generation for quiz questions.
 - `backend/auth.py`: Google/Apple sign-in and session handling.
 - `backend/remote_config.py`: remote config for provider/model/operation flags.
@@ -88,6 +90,7 @@ Key files:
 - `frontend/src/components/CommonGroundGame.tsx`: shared Common Ground UI for organizer, player, and spectator views.
 - `frontend/src/components/WhoAmIGame.tsx`: shared Who Am I clue/guess UI for organizer, player, and spectator views.
 - `frontend/src/components/ChitPullGame.tsx`: shared Random Chit selected-player/chit, standings, and host-control UI for organizer, player, and spectator views.
+- `frontend/src/components/SurveySaysGame.tsx`: shared Survey Says answer-board, team standings, player guess, and host adjudication UI for organizer, player, and spectator views.
 - `frontend/src/components/organizer/CustomQuizEditor.tsx`: manual custom quiz authoring.
 - `frontend/src/components/organizer/ReviewScreen.tsx`: quiz review/edit before room creation.
 - `frontend/src/components/organizer/MLTReviewScreen.tsx`: WMLT review/edit before room creation.

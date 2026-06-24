@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, type PartyQuestsState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, type PartyQuestsState, type SurveySaysState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
@@ -30,6 +30,7 @@ import WhoAmIGame from '../components/WhoAmIGame';
 import ChitPullGame from '../components/ChitPullGame';
 import MafiaGame from '../components/MafiaGame';
 import PartyQuestsGame from '../components/PartyQuestsGame';
+import SurveySaysGame from '../components/SurveySaysGame';
 import SimpleSocialGame from '../components/SimpleSocialGame';
 import PhotoClueGame from '../components/PhotoClueGame';
 import '../cast.d.ts';
@@ -131,6 +132,7 @@ export default function SpectatorPage() {
     const [chitPullState, setChitPullState] = useState<ChitPullState | null>(null);
     const [mafiaState, setMafiaState] = useState<MafiaState | null>(null);
     const [partyQuestsState, setPartyQuestsState] = useState<PartyQuestsState | null>(null);
+    const [surveySaysState, setSurveySaysState] = useState<SurveySaysState | null>(null);
     const [simpleSocialState, setSimpleSocialState] = useState<SimpleSocialState | null>(null);
     const [photoClueState, setPhotoClueState] = useState<PhotoClueState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -304,6 +306,11 @@ export default function SpectatorPage() {
                     setGameState('PARTY_QUESTS');
                     return;
                 }
+                if (msg.game_type === 'survey_says' && msg.survey_says) {
+                    setSurveySaysState(msg.survey_says as SurveySaysState);
+                    setGameState('SURVEY_SAYS');
+                    return;
+                }
                 if ((msg.game_type === 'would_you_rather' || msg.game_type === 'never_have_i_ever' || msg.game_type === 'word_association' || msg.game_type === 'acronym') && msg[msg.game_type]) {
                     setSimpleSocialState(msg[msg.game_type] as SimpleSocialState);
                     setGameState('SIMPLE_SOCIAL');
@@ -384,6 +391,9 @@ export default function SpectatorPage() {
                 } else if (msg.game_type === 'party_quests') {
                     setGameType('party_quests');
                     setGameState('PARTY_QUESTS');
+                } else if (msg.game_type === 'survey_says') {
+                    setGameType('survey_says');
+                    setGameState('SURVEY_SAYS');
                 } else if (msg.game_type === 'would_you_rather' || msg.game_type === 'never_have_i_ever' || msg.game_type === 'word_association' || msg.game_type === 'acronym') {
                     setGameType(msg.game_type as SimpleSocialGameType);
                     setGameState('SIMPLE_SOCIAL');
@@ -480,6 +490,15 @@ export default function SpectatorPage() {
                 setLeaderboard(msg.leaderboard || []);
                 setGameState('PARTY_QUESTS');
             }
+            else if (msg.type === 'SURVEY_SYNC') {
+                setGameType('survey_says');
+                setSurveySaysState(msg.survey_says as SurveySaysState);
+                setPlayers(msg.players || []);
+                setPlayerCount(msg.player_count || 0);
+                setLeaderboard(msg.leaderboard || []);
+                setTeamLeaderboard(msg.team_leaderboard || []);
+                setGameState('SURVEY_SAYS');
+            }
             else if (msg.type === 'SIMPLE_SOCIAL_SYNC') {
                 const incomingGameType = msg.game_type as SimpleSocialGameType;
                 setGameType(incomingGameType);
@@ -574,6 +593,7 @@ export default function SpectatorPage() {
                 setLeaderboard(msg.leaderboard);
                 setTeamLeaderboard(msg.team_leaderboard || []);
                 if (msg.find_someone) setFindSomeoneState(msg.find_someone);
+                if (msg.survey_says) setSurveySaysState(msg.survey_says as SurveySaysState);
                 if (msg.photo_clue) setPhotoClueState(msg.photo_clue as PhotoClueState);
                 if (msg.poker) setPokerState(msg.poker as PokerState);
                 if (msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) {
@@ -622,6 +642,7 @@ export default function SpectatorPage() {
                 setChitPullState(null);
                 setMafiaState(null);
                 setPartyQuestsState(null);
+                setSurveySaysState(null);
                 setSimpleSocialState(null);
                 if (msg.game_type) setGameType(msg.game_type);
                 setPhotoClueState(null);
@@ -982,6 +1003,10 @@ export default function SpectatorPage() {
 
                     {gameState === 'PARTY_QUESTS' && (
                         <PartyQuestsGame state={partyQuestsState} controls="spectator" />
+                    )}
+
+                    {gameState === 'SURVEY_SAYS' && (
+                        <SurveySaysGame state={surveySaysState} controls="spectator" />
                     )}
 
                     {gameState === 'SIMPLE_SOCIAL' && (

@@ -146,6 +146,20 @@ from party_quests_engine import (
     standings as quests_standings,
     validate_config as validate_party_quests_config,
 )
+from survey_says_engine import (
+    PHASE_PODIUM as SURVEY_PHASE_PODIUM,
+    add_player as survey_add_player,
+    add_strike as survey_add_strike,
+    create_initial_state as survey_create_initial_state,
+    force_complete as survey_force_complete,
+    next_round as survey_next_round,
+    public_sync as survey_public_sync,
+    reveal_all as survey_reveal_all,
+    reveal_answer as survey_reveal_answer,
+    standings as survey_standings,
+    submit_guess as survey_submit_guess,
+    validate_config as validate_survey_says_config,
+)
 from would_you_rather_engine import (
     PHASE_PODIUM as WYR_PHASE_PODIUM,
     create_initial_state as wyr_create_initial_state,
@@ -333,6 +347,10 @@ class Room:
         # Party Quests state
         self.party_quests_config = validate_party_quests_config(game_data) if game_type == "party_quests" else {}
         self.party_quests_state: dict = {}
+        # Survey Says state
+        self.survey_says_config = validate_survey_says_config(game_data) if game_type == "survey_says" else {}
+        self.survey_says_state: dict = {}
+        self.survey_says_completed_sent = False
         # Lightweight social round games
         self.wyr_config = validate_would_you_rather_config(game_data) if game_type == "would_you_rather" else {}
         self.wyr_state: dict = {}
@@ -456,6 +474,9 @@ class Room:
         self.mafia_state = {}
         self.party_quests_config = validate_party_quests_config(new_game_data) if self.game_type == "party_quests" else {}
         self.party_quests_state = {}
+        self.survey_says_config = validate_survey_says_config(new_game_data) if self.game_type == "survey_says" else {}
+        self.survey_says_state = {}
+        self.survey_says_completed_sent = False
         self.wyr_config = validate_would_you_rather_config(new_game_data) if self.game_type == "would_you_rather" else {}
         self.wyr_state = {}
         self.nhie_config = validate_never_have_i_ever_config(new_game_data) if self.game_type == "never_have_i_ever" else {}
@@ -512,6 +533,8 @@ class Room:
             return int(self.mafia_state.get("round", 1) or 1)
         if self.game_type == "party_quests":
             return 1
+        if self.game_type == "survey_says":
+            return len(self.survey_says_state.get("config", {}).get("rounds", [])) or len(self.survey_says_config.get("rounds", [])) or 3
         if self.game_type == "would_you_rather":
             return len(self.wyr_state.get("rounds", [])) or len(self.wyr_config.get("prompts", [])) or 3
         if self.game_type == "never_have_i_ever":
@@ -559,6 +582,8 @@ class Room:
             return mafia_public_sync(self.mafia_state, players=self.player_public_list()) if self.mafia_state else None
         if self.game_type == "party_quests":
             return quests_public_sync(self.party_quests_state, players=self.player_public_list()) if self.party_quests_state else None
+        if self.game_type == "survey_says":
+            return survey_public_sync(self.survey_says_state, players=self.player_public_list()) if self.survey_says_state else None
         if self.game_type == "would_you_rather":
             return wyr_public_state(self.wyr_state) if self.wyr_state else None
         if self.game_type == "never_have_i_ever":
@@ -789,6 +814,9 @@ class SocketManager:
             except Exception:
                 pass
 
+    async def _send_to_organizer_error(self, room: Room, message: str):
+        await room.send_to_organizer({"type": "ERROR", "message": message})
+
     def create_room(self, room_code: str, game_data: dict, time_limit: int = 15,
                     organizer_token: str = "", content_id: str = "",
                     game_type: str = "quiz", billing_mode: str = "localplay_sparks") -> Room:
@@ -912,6 +940,10 @@ class SocketManager:
                     sync["chit_pull"] = chit_pull_public_sync(room.chit_pull_state, players=room.player_public_list())
                 if room.game_type == "mafia" and room.mafia_state:
                     sync["mafia"] = mafia_public_sync(room.mafia_state, players=room.player_public_list())
+                if room.game_type == "party_quests" and room.party_quests_state:
+                    sync["party_quests"] = quests_public_sync(room.party_quests_state, players=room.player_public_list())
+                if room.game_type == "survey_says" and room.survey_says_state:
+                    sync["survey_says"] = survey_public_sync(room.survey_says_state, players=room.player_public_list())
                 if room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
                     state = getattr(room, self._simple_social_state_attr(room.game_type), {})
                     if state:
@@ -1106,6 +1138,8 @@ class SocketManager:
             sync["mafia"] = mafia_public_sync(room.mafia_state, players=room.player_public_list())
         if room.game_type == "party_quests" and room.party_quests_state:
             sync["party_quests"] = quests_public_sync(room.party_quests_state, players=room.player_public_list())
+        if room.game_type == "survey_says" and room.survey_says_state:
+            sync["survey_says"] = survey_public_sync(room.survey_says_state, players=room.player_public_list(), host=True)
         if room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
             state = getattr(room, self._simple_social_state_attr(room.game_type), {})
             if state:
@@ -1252,6 +1286,14 @@ class SocketManager:
                                 "message": "Party Quests starts when at least one guest has joined",
                             })
                             return
+                    elif room.game_type == "survey_says":
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < config.MIN_SURVEY_SAYS_PLAYERS:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Survey Says needs at least {config.MIN_SURVEY_SAYS_PLAYERS} players to start",
+                            })
+                            return
                     elif room.game_type == "would_you_rather":
                         player_count = len([p for p in room.players.values() if p.get("nickname")])
                         if player_count < config.MIN_WOULD_YOU_RATHER_PLAYERS:
@@ -1369,6 +1411,10 @@ class SocketManager:
                         self._start_party_quests_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": "party_quests"})
                         await self._broadcast_party_quests_sync(room)
+                    elif room.game_type == "survey_says":
+                        self._start_survey_says_game(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": "survey_says"})
+                        await self._broadcast_survey_says_sync(room)
                     elif room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
                         self._start_simple_social_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": room.game_type})
@@ -1386,7 +1432,7 @@ class SocketManager:
                         await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
-                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker"):
+                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker"):
                     return
                 if room.game_type == "drawing" and room.drawing_auto_task:
                     room.drawing_auto_task.cancel()
@@ -1531,6 +1577,18 @@ class SocketManager:
             elif msg_type == "QUESTS_REVEAL" and room.game_type == "party_quests":
                 await self._party_quests_reveal(room)
 
+            elif msg_type == "SURVEY_REVEAL_ANSWER" and room.game_type == "survey_says":
+                await self._survey_says_reveal_answer(room, str(message.get("answer_id") or ""))
+
+            elif msg_type == "SURVEY_STRIKE" and room.game_type == "survey_says":
+                await self._survey_says_strike(room)
+
+            elif msg_type == "SURVEY_REVEAL_ALL" and room.game_type == "survey_says":
+                await self._survey_says_reveal_all(room)
+
+            elif msg_type == "SURVEY_NEXT_ROUND" and room.game_type == "survey_says":
+                await self._survey_says_next_round(room)
+
             elif msg_type == "SET_TIME_LIMIT":
                 if room.state in ("LOBBY", "LEADERBOARD", "PODIUM"):
                     new_limit = message.get("time_limit", 15)
@@ -1573,6 +1631,9 @@ class SocketManager:
                     return
                 if room.game_type == "party_quests":
                     await self._party_quests_complete_game(room)
+                    return
+                if room.game_type == "survey_says":
+                    await self._survey_says_complete_game(room)
                     return
                 if room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
                     await self._simple_social_complete_game(room)
@@ -1620,7 +1681,7 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker") else room.game_type
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker") else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
 
                     # Validate time_limit
@@ -1660,6 +1721,8 @@ class SocketManager:
                         new_game_data = validate_mafia_config({})
                     elif new_game_type == "party_quests":
                         new_game_data = validate_party_quests_config({})
+                    elif new_game_type == "survey_says":
+                        new_game_data = validate_survey_says_config({})
                     elif new_game_type == "would_you_rather":
                         new_game_data = validate_would_you_rather_config({})
                     elif new_game_type == "never_have_i_ever":
@@ -1845,6 +1908,8 @@ class SocketManager:
                             state_info["mafia"] = mafia_private_sync(room.mafia_state, nickname, players=room.player_public_list())
                         elif room.game_type == "party_quests" and room.party_quests_state:
                             state_info["party_quests"] = quests_private_sync(room.party_quests_state, nickname, players=room.player_public_list())
+                        elif room.game_type == "survey_says" and room.survey_says_state:
+                            state_info["survey_says"] = survey_public_sync(room.survey_says_state, players=room.player_public_list(), viewer_id=nickname)
                         elif room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
                             state = getattr(room, self._simple_social_state_attr(room.game_type), {})
                             if state:
@@ -1957,6 +2022,8 @@ class SocketManager:
                             state_info["mafia"] = mafia_private_sync(room.mafia_state, player_data["nickname"], players=room.player_public_list())
                         elif room.game_type == "party_quests" and room.party_quests_state:
                             state_info["party_quests"] = quests_private_sync(room.party_quests_state, player_data["nickname"], players=room.player_public_list())
+                        elif room.game_type == "survey_says" and room.survey_says_state:
+                            state_info["survey_says"] = survey_public_sync(room.survey_says_state, players=room.player_public_list(), viewer_id=player_data["nickname"])
                         elif room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
                             state = getattr(room, self._simple_social_state_attr(room.game_type), {})
                             if state:
@@ -2012,6 +2079,13 @@ class SocketManager:
                     and bool(room.party_quests_state.get("config", {}).get("allow_late_join", True))
                     and room.state != "LOBBY"
                     and room.state != QUESTS_PHASE_PODIUM
+                )
+                active_survey_says_join = (
+                    room.game_type == "survey_says"
+                    and bool(room.survey_says_state)
+                    and bool(room.survey_says_state.get("config", {}).get("allow_late_join", True))
+                    and room.state != "LOBBY"
+                    and room.state != SURVEY_PHASE_PODIUM
                 )
 
                 if len(room.players) >= config.MAX_PLAYERS_PER_ROOM:
@@ -2097,6 +2171,32 @@ class SocketManager:
                         "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()]
                     })
                     await self._broadcast_party_quests_sync(room)
+                    return
+
+                if active_survey_says_join:
+                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
+                    room.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
+                    player_session_token = secrets.token_urlsafe(16)
+                    room.player_tokens[nickname] = player_session_token
+                    room.survey_says_state = survey_add_player(room.survey_says_state, nickname)
+                    self._sync_survey_says_scores_to_players(room)
+                    ws = room.connections.get(client_id)
+                    if ws:
+                        await ws.send_json({
+                            "type": "JOINED_ROOM",
+                            "room_code": room.room_code,
+                            "session_token": player_session_token,
+                            "state": room.state,
+                            "game_type": "survey_says",
+                            "survey_says": survey_public_sync(room.survey_says_state, players=room.player_public_list(), viewer_id=nickname),
+                        })
+                    await room.broadcast({
+                        "type": "PLAYER_JOINED",
+                        "nickname": nickname,
+                        "player_count": len(room.players),
+                        "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()]
+                    })
+                    await self._broadcast_survey_says_sync(room)
                     return
 
                 # Block new players if room is locked
@@ -2248,6 +2348,9 @@ class SocketManager:
             elif msg_type == "QUESTS_CONFIRM" and room.game_type == "party_quests":
                 await self._party_quests_confirm(room, client_id, message)
 
+            elif msg_type == "SURVEY_SUBMIT_GUESS" and room.game_type == "survey_says":
+                await self._survey_says_submit_guess(room, client_id, message)
+
             elif msg_type in ("WYR_VOTE", "NHIE_ANSWER", "WORD_SUBMIT", "ACRO_SUBMIT", "ACRO_VOTE") and room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
                 await self._simple_social_player_action(room, client_id, message)
 
@@ -2258,7 +2361,7 @@ class SocketManager:
                 await self._poker_player_action(room, client_id, message)
 
             elif msg_type == "ANSWER":
-                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker"):
+                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker"):
                     return  # Other games use their own input messages
                 if client_id not in room.players:
                     return
@@ -4267,6 +4370,178 @@ class SocketManager:
         except Exception:
             logger.warning("Could not save Party Quests history for room %s", room.room_code)
 
+    def _start_survey_says_game(self, room: Room):
+        room.survey_says_config = validate_survey_says_config(room.quiz)
+        room.survey_says_state = survey_create_initial_state(
+            [p["nickname"] for p in room.players.values() if p.get("nickname")],
+            room.survey_says_config,
+            now=time.time(),
+        )
+        room.survey_says_completed_sent = False
+        self._sync_survey_says_phase_to_room(room)
+        self._sync_survey_says_scores_to_players(room)
+        room.answer_log = []
+
+    def _sync_survey_says_phase_to_room(self, room: Room):
+        if room.survey_says_state:
+            room.state = str(room.survey_says_state.get("phase") or "SURVEY_ANSWERING")
+            room.current_question_index = int(room.survey_says_state.get("round_index", 0))
+
+    def _sync_survey_says_scores_to_players(self, room: Room):
+        if not room.survey_says_state:
+            return
+        scores = room.survey_says_state.get("scores", {})
+        player_team = {}
+        for team in room.survey_says_state.get("teams", []):
+            for player_id in team.get("player_ids", []):
+                player_team[player_id] = team.get("id")
+        for pdata in room.players.values():
+            nickname = pdata.get("nickname")
+            team_id = player_team.get(nickname)
+            pdata["score"] = int(scores.get(team_id, 0) or 0)
+
+    async def _broadcast_survey_says_sync(self, room: Room):
+        if not room.survey_says_state:
+            return
+        players = room.player_public_list()
+        self._sync_survey_says_phase_to_room(room)
+        self._sync_survey_says_scores_to_players(room)
+        public = {
+            "type": "SURVEY_SYNC",
+            "game_type": "survey_says",
+            "survey_says": survey_public_sync(room.survey_says_state, players=players),
+            "player_count": len(room.players),
+            "players": players,
+            "leaderboard": self.get_leaderboard(room),
+            "team_leaderboard": [
+                {"team": row.get("team_name"), "score": row.get("score"), "members": len(row.get("members") or [])}
+                for row in survey_standings(room.survey_says_state)
+            ],
+        }
+        if room.organizer:
+            host_payload = dict(public)
+            host_payload["survey_says"] = survey_public_sync(room.survey_says_state, players=players, host=True)
+            await room.send_to_organizer(host_payload)
+        for spec_id, ws in list(room.spectators.items()):
+            try:
+                await ws.send_json(public)
+            except Exception:
+                room._remove_connection(spec_id)
+        for client_id, pdata in list(room.players.items()):
+            ws = room.connections.get(client_id)
+            if not ws:
+                continue
+            payload = dict(public)
+            payload["survey_says"] = survey_public_sync(room.survey_says_state, players=players, viewer_id=pdata.get("nickname", ""))
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                room._remove_connection(client_id)
+        await room.emit_pending_player_event()
+
+    async def _survey_says_submit_guess(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players or not room.survey_says_state:
+            return
+        nickname = room.players[client_id].get("nickname", "")
+        try:
+            async with room.lock:
+                room.survey_says_state = survey_submit_guess(room.survey_says_state, nickname, str(message.get("guess") or ""), now=time.time())
+                self._sync_survey_says_phase_to_room(room)
+                room.answer_log.append({"kind": "survey_guess", "nickname": nickname})
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._send_to_client(room, client_id, {"type": "SURVEY_GUESS_ACK"})
+        await self._broadcast_survey_says_sync(room)
+
+    async def _survey_says_reveal_answer(self, room: Room, answer_id: str):
+        if not room.survey_says_state or not answer_id:
+            return
+        try:
+            async with room.lock:
+                room.survey_says_state = survey_reveal_answer(room.survey_says_state, answer_id, now=time.time())
+                self._sync_survey_says_phase_to_room(room)
+                self._sync_survey_says_scores_to_players(room)
+                room.answer_log.append({"kind": "survey_reveal_answer", "answer_id": answer_id})
+        except ValueError as exc:
+            await self._send_to_organizer_error(room, str(exc))
+            return
+        await self._broadcast_survey_says_sync(room)
+
+    async def _survey_says_strike(self, room: Room):
+        if not room.survey_says_state:
+            return
+        try:
+            async with room.lock:
+                room.survey_says_state = survey_add_strike(room.survey_says_state, now=time.time())
+                self._sync_survey_says_phase_to_room(room)
+                self._sync_survey_says_scores_to_players(room)
+                room.answer_log.append({"kind": "survey_strike", "strikes": room.survey_says_state.get("strikes")})
+        except ValueError as exc:
+            await self._send_to_organizer_error(room, str(exc))
+            return
+        await self._broadcast_survey_says_sync(room)
+
+    async def _survey_says_reveal_all(self, room: Room):
+        if not room.survey_says_state:
+            return
+        try:
+            async with room.lock:
+                room.survey_says_state = survey_reveal_all(room.survey_says_state, now=time.time())
+                self._sync_survey_says_phase_to_room(room)
+                self._sync_survey_says_scores_to_players(room)
+                room.answer_log.append({"kind": "survey_reveal_all"})
+        except ValueError as exc:
+            await self._send_to_organizer_error(room, str(exc))
+            return
+        await self._broadcast_survey_says_sync(room)
+
+    async def _survey_says_next_round(self, room: Room):
+        if not room.survey_says_state:
+            return
+        try:
+            async with room.lock:
+                room.survey_says_state = survey_next_round(room.survey_says_state, now=time.time())
+                self._sync_survey_says_phase_to_room(room)
+                self._sync_survey_says_scores_to_players(room)
+        except ValueError as exc:
+            await self._send_to_organizer_error(room, str(exc))
+            return
+        await self._broadcast_survey_says_sync(room)
+        if room.survey_says_state.get("phase") == SURVEY_PHASE_PODIUM:
+            await self._survey_says_complete_game(room)
+
+    async def _survey_says_complete_game(self, room: Room):
+        if room.survey_says_completed_sent:
+            return
+        room.survey_says_completed_sent = True
+        if room.survey_says_state:
+            room.survey_says_state = survey_force_complete(room.survey_says_state, now=time.time())
+        self._sync_survey_says_scores_to_players(room)
+        room.state = "PODIUM"
+        leaderboard = self.get_leaderboard(room)
+        team_rows = [
+            {"team": row.get("team_name"), "score": row.get("score"), "members": len(row.get("members") or [])}
+            for row in (survey_standings(room.survey_says_state) if room.survey_says_state else [])
+        ]
+        await room.broadcast({
+            "type": "PODIUM",
+            "game_type": "survey_says",
+            "leaderboard": leaderboard,
+            "team_leaderboard": team_rows,
+            "survey_says": survey_public_sync(room.survey_says_state, players=room.player_public_list()) if room.survey_says_state else {},
+        })
+        try:
+            from main import game_history
+            summary = self.get_game_summary(room)
+            summary["winners"] = survey_standings(room.survey_says_state)[:3] if room.survey_says_state else []
+            game_history.append(summary)
+            if len(game_history) > config.MAX_GAME_HISTORY:
+                del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+            self._mark_game_session_complete(room, summary)
+        except Exception:
+            logger.warning("Could not save Survey Says history for room %s", room.room_code)
+
     def _start_musical_chairs_game(self, room: Room):
         room.mc_config = validate_musical_chairs_config(room.quiz)
         room.mc_active_players = sorted([p["nickname"] for p in room.players.values()])
@@ -4979,6 +5254,15 @@ class SocketManager:
             summary["total_rounds"] = mafia_summary.get("rounds_played", 1)
             summary["winner"] = mafia_summary.get("winner")
             summary["mafia_result"] = mafia_summary
+        if room.game_type == "survey_says" and room.survey_says_state:
+            survey_rows = survey_standings(room.survey_says_state)
+            summary["total_questions"] = len(room.survey_says_state.get("round_results", []))
+            summary["total_rounds"] = summary["total_questions"]
+            summary["winners"] = survey_rows[:3]
+            summary["team_leaderboard"] = [
+                {"team": row.get("team_name"), "score": row.get("score"), "members": len(row.get("members") or [])}
+                for row in survey_rows
+            ]
         if room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
             standings = self._simple_social_standings(room)
             summary["total_questions"] = room.total_rounds()

@@ -2,7 +2,7 @@ import { type GameType, type QuizVariantGameType } from './types';
 
 export interface GameModeConfig {
     id: GameType;
-    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'photo_clue';
+    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'survey_says' | 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'photo_clue';
     icon: string;
     title: string;
     description: string;
@@ -193,6 +193,13 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         icon: '🗺️',
         title: 'Party Quests',
         description: 'Complete mingling quests throughout the party',
+    },
+    {
+        id: 'survey_says',
+        runtimeType: 'survey_says',
+        icon: '📊',
+        title: 'Survey Says',
+        description: 'Guess the top survey answers before strikes give the other team a steal',
     },
     {
         id: 'would_you_rather',

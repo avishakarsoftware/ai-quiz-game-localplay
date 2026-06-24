@@ -69,7 +69,7 @@ export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 
 
 export type SimpleSocialGameType = 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'photo_clue' | SimpleSocialGameType | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'survey_says' | 'photo_clue' | SimpleSocialGameType | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -665,6 +665,53 @@ export interface PartyQuestsState {
     my_score?: number;
     incoming_requests?: PartyQuestConfirmation[];
     outgoing_requests?: PartyQuestConfirmation[];
+}
+
+export interface SurveySaysTeam {
+    id: string;
+    name: string;
+    player_ids: string[];
+}
+
+export interface SurveySaysAnswer {
+    id: string;
+    rank: number;
+    revealed: boolean;
+    text: string;
+    points: number;
+    aliases?: string[];
+}
+
+export interface SurveySaysGuess {
+    player_id: string;
+    team_id?: string;
+    guess: string;
+    at?: number;
+}
+
+export interface SurveySaysState {
+    phase: 'SURVEY_ANSWERING' | 'SURVEY_STEAL' | 'SURVEY_REVEAL' | 'PODIUM' | string;
+    config: {
+        game_title?: string;
+        max_strikes?: number;
+        guess_time_seconds?: number;
+    };
+    players: PlayerInfo[];
+    teams: SurveySaysTeam[];
+    round_number: number;
+    total_rounds: number;
+    question: string;
+    answers: SurveySaysAnswer[];
+    active_team_id?: string | null;
+    stealing_team_id?: string | null;
+    strikes: number;
+    round_bank: number;
+    scores: Record<string, number>;
+    standings: Array<{ team_id: string; team_name: string; score: number; members: string[]; rank: number }>;
+    guesses: SurveySaysGuess[];
+    round_results: Array<{ round_number: number; winner_team_id?: string; outcome?: string; bank?: number; scores?: Record<string, number> }>;
+    deadline?: number | null;
+    my_team_id?: string | null;
 }
 
 export interface SimpleSocialStanding {
