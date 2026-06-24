@@ -67,7 +67,7 @@ test.describe('Foundation games live regression', () => {
       await players[0].page.getByRole('button', { name: 'I have' }).click();
       await expect(players[0].page.getByText(/Submitted/)).toBeVisible({ timeout: 20_000 });
       await page.getByRole('button', { name: 'Reveal' }).click();
-      await expect(page.getByText(/I have|Never/)).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator('.common-ground-panel').getByText('100%').first()).toBeVisible({ timeout: 20_000 });
       await expectNoHorizontalOverflow(page);
     } finally {
       await closePlayers(players);
@@ -190,7 +190,7 @@ test.describe('Foundation games live regression', () => {
     const players = await joinPlayers(browser, room.roomCode, ['Alice', 'Bob']);
     try {
       await startAndExpect(page, players, 'Live Party Poker');
-      await expect(page.getByText(/Choose stay or fold/)).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText('Choose stay or fold', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
       await players[0].page.getByRole('button', { name: 'Stay' }).click();
       await players[1].page.getByRole('button', { name: 'Fold' }).click();
       await expect(page.getByText(/wins 200 play chips/)).toBeVisible({ timeout: 20_000 });
