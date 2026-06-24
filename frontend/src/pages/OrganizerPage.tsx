@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type WhoAmIGameContent, type ChitPullCategory, type ChitPullGameContent, type ChitPullSafeLevel, type ChitPullState, type MafiaState, type PartyQuestsState, type SurveySaysState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState } from '../types';
+import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type GenericPromptGameType, type GenericPromptState, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type WhoAmIGameContent, type ChitPullCategory, type ChitPullGameContent, type ChitPullSafeLevel, type ChitPullState, type MafiaState, type PartyQuestsState, type SurveySaysState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending, saveOrganizerSession, getSavedOrganizerSession, clearOrganizerSession } from '../utils/storage';
@@ -37,6 +37,7 @@ import ChitPullGame from '../components/ChitPullGame';
 import MafiaGame from '../components/MafiaGame';
 import PartyQuestsGame from '../components/PartyQuestsGame';
 import SurveySaysGame from '../components/SurveySaysGame';
+import GenericPromptGame from '../components/GenericPromptGame';
 import SimpleSocialGame from '../components/SimpleSocialGame';
 import PhotoClueGame from '../components/PhotoClueGame';
 import GameRulesModal from '../components/GameRulesModal';
@@ -51,11 +52,15 @@ import PodiumScreen from '../components/organizer/PodiumScreen';
 import BonusSplash from '../components/BonusSplash';
 import ErrorModal from '../components/ErrorModal';
 import { useRemoteConfigContext } from '../context/RemoteConfigContext';
-import { getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
+import { GENERIC_PROMPT_GAME_IDS, getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'WHO_AM_I_PROMPT' | 'WHO_AM_I_REVIEW' | 'CHIT_PULL_PROMPT' | 'CHIT_PULL_REVIEW' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'PARTY_QUESTS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'POKER' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'PARTY_QUESTS' | 'SURVEY_SAYS' | 'SIMPLE_SOCIAL' | 'PHOTO_CLUE' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'WHO_AM_I_PROMPT' | 'WHO_AM_I_REVIEW' | 'CHIT_PULL_PROMPT' | 'CHIT_PULL_REVIEW' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'PARTY_QUESTS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'POKER' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'PARTY_QUESTS' | 'SURVEY_SAYS' | 'GENERIC_PROMPT' | 'SIMPLE_SOCIAL' | 'PHOTO_CLUE' | 'LEADERBOARD' | 'PODIUM';
+
+function isGenericPromptGame(type: GameType): type is GenericPromptGameType {
+    return (GENERIC_PROMPT_GAME_IDS as string[]).includes(type);
+}
 
 function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'housie' || type === 'bingo' || type === 'baby_bingo') return 15;
@@ -71,6 +76,7 @@ function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'mafia') return 30;
     if (type === 'party_quests') return 30;
     if (type === 'survey_says') return 30;
+    if (isGenericPromptGame(type)) return 30;
     if (type === 'would_you_rather' || type === 'never_have_i_ever' || type === 'word_association' || type === 'acronym' || type === 'photo_clue') return 30;
     return type === 'drawing' ? 30 : 15;
 }
@@ -193,6 +199,7 @@ export default function OrganizerPage() {
     const [mafiaState, setMafiaState] = useState<MafiaState | null>(null);
     const [partyQuestsState, setPartyQuestsState] = useState<PartyQuestsState | null>(null);
     const [surveySaysState, setSurveySaysState] = useState<SurveySaysState | null>(null);
+    const [genericPromptState, setGenericPromptState] = useState<GenericPromptState | null>(null);
     const [simpleSocialState, setSimpleSocialState] = useState<SimpleSocialState | null>(null);
     const [photoClueState, setPhotoClueState] = useState<PhotoClueState | null>(null);
     const [partyQuestsConfig, setPartyQuestsConfig] = useState<PartyQuestSetupConfig>(defaultPartyQuestsConfig());
@@ -280,7 +287,7 @@ export default function OrganizerPage() {
                 'DRAWING_REVIEW',
                 'GENERATING_IMAGES',
             ];
-            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'PARTY_QUESTS', 'SIMPLE_SOCIAL'];
+            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'PARTY_QUESTS', 'SURVEY_SAYS', 'GENERIC_PROMPT', 'SIMPLE_SOCIAL', 'PHOTO_CLUE'];
             if (homeSafeStates.includes(stateRef.current)) {
                 flowEpochRef.current += 1;
                 clearOrganizerSession();
@@ -301,6 +308,8 @@ export default function OrganizerPage() {
                 setChitPullGame(null);
                 setMafiaState(null);
                 setPartyQuestsState(null);
+                setSurveySaysState(null);
+                setGenericPromptState(null);
                 setEditingPackId(undefined);
                 setContentId('');
                 setQuestionImages({});
@@ -332,6 +341,8 @@ export default function OrganizerPage() {
                 setChitPullGame(null);
                 setMafiaState(null);
                 setPartyQuestsState(null);
+                setSurveySaysState(null);
+                setGenericPromptState(null);
                 setEditingPackId(undefined);
                 setContentId('');
                 setQuestionImages({});
@@ -456,6 +467,7 @@ export default function OrganizerPage() {
             if (msg.housie_winners) setHousieWinners(msg.housie_winners as HousieWinner[]);
             if (msg.find_someone) setFindSomeoneState(msg.find_someone as FindSomeoneState);
             if (msg.photo_clue) setPhotoClueState(msg.photo_clue as PhotoClueState);
+            if (msg.generic_prompt) setGenericPromptState(msg.generic_prompt as GenericPromptState);
             if (msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) {
                 setSimpleSocialState((msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) as SimpleSocialState);
             }
@@ -581,6 +593,15 @@ export default function OrganizerPage() {
             setTeamLeaderboard(msg.team_leaderboard as TeamLeaderboardEntry[] || []);
             setState('SURVEY_SAYS');
         }
+        else if (msg.type === 'GENERIC_PROMPT_SYNC') {
+            const incomingGameType = msg.game_type as GenericPromptGameType;
+            setGameType(incomingGameType);
+            setGenericPromptState(msg.generic_prompt as GenericPromptState);
+            setPlayers(msg.players as PlayerInfo[] || []);
+            setPlayerCount(msg.player_count as number || 0);
+            setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+            setState('GENERIC_PROMPT');
+        }
         else if (msg.type === 'SIMPLE_SOCIAL_SYNC') {
             const incomingGameType = msg.game_type as SimpleSocialGameType;
             const payload = (msg[incomingGameType] || null) as SimpleSocialState | null;
@@ -635,6 +656,7 @@ export default function OrganizerPage() {
             setMafiaState(null);
             setPartyQuestsState(null);
             setSurveySaysState(null);
+            setGenericPromptState(null);
             setAnsweredCount(0);
             setLiveQuestion(null);
             setCurrentStatement('');
@@ -676,6 +698,7 @@ export default function OrganizerPage() {
             if (msg.mafia) setMafiaState(msg.mafia as MafiaState);
             if (msg.party_quests) setPartyQuestsState(msg.party_quests as PartyQuestsState);
             if (msg.survey_says) setSurveySaysState(msg.survey_says as SurveySaysState);
+            if (msg.generic_prompt) setGenericPromptState(msg.generic_prompt as GenericPromptState);
             if (msg.photo_clue) setPhotoClueState(msg.photo_clue as PhotoClueState);
             if (msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) {
                 setSimpleSocialState((msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) as SimpleSocialState);
@@ -735,6 +758,8 @@ export default function OrganizerPage() {
                 setState('PARTY_QUESTS');
             } else if (String(msg.state || '').startsWith('SURVEY_')) {
                 setState('SURVEY_SAYS');
+            } else if (String(msg.state || '').startsWith('GENERIC_')) {
+                setState('GENERIC_PROMPT');
             } else if (String(msg.state || '').startsWith('PHOTO_')) {
                 setState('PHOTO_CLUE');
             } else if (
@@ -861,6 +886,10 @@ export default function OrganizerPage() {
         else if (type === 'survey_says') {
             setSurveySaysState(null);
             void createRoom(undefined, 'survey_says', defaultTimeLimitForGame('survey_says'));
+        }
+        else if (isGenericPromptGame(type)) {
+            setGenericPromptState(null);
+            void createRoom(undefined, type, defaultTimeLimitForGame(type));
         }
         else if (type === 'would_you_rather' || type === 'never_have_i_ever' || type === 'word_association' || type === 'acronym') {
             setSimpleSocialState(null);
@@ -1577,6 +1606,8 @@ export default function OrganizerPage() {
                 body.party_quests_config = runtimeConfigOverride || partyQuestsConfig;
             } else if (effectiveGameType === 'survey_says') {
                 body.survey_says_config = { game_title: 'Survey Says' };
+            } else if (isGenericPromptGame(effectiveGameType)) {
+                body.generic_prompt_config = { game_title: getGameModeConfig(effectiveGameType).title };
             } else if (effectiveGameType === 'would_you_rather') {
                 body.would_you_rather_config = { game_title: 'Would You Rather' };
             } else if (effectiveGameType === 'never_have_i_ever') {
@@ -1774,6 +1805,9 @@ export default function OrganizerPage() {
     const strikeSurvey = () => wsRef.current?.send(JSON.stringify({ type: 'SURVEY_STRIKE' }));
     const revealSurveyAll = () => wsRef.current?.send(JSON.stringify({ type: 'SURVEY_REVEAL_ALL' }));
     const nextSurveyRound = () => wsRef.current?.send(JSON.stringify({ type: 'SURVEY_NEXT_ROUND' }));
+    const startGenericPromptVoting = () => wsRef.current?.send(JSON.stringify({ type: 'GENERIC_START_VOTING' }));
+    const revealGenericPromptRound = () => wsRef.current?.send(JSON.stringify({ type: 'GENERIC_REVEAL' }));
+    const nextGenericPromptRound = () => wsRef.current?.send(JSON.stringify({ type: 'GENERIC_NEXT_ROUND' }));
     const revealSimpleSocialRound = () => {
         if (gameType === 'would_you_rather') wsRef.current?.send(JSON.stringify({ type: 'WYR_REVEAL' }));
         else if (gameType === 'never_have_i_ever') wsRef.current?.send(JSON.stringify({ type: 'NHIE_REVEAL' }));
@@ -2403,6 +2437,19 @@ export default function OrganizerPage() {
                         onStrike={strikeSurvey}
                         onRevealAll={revealSurveyAll}
                         onNextRound={nextSurveyRound}
+                        onEndGame={endQuiz}
+                    />
+                )}
+
+                {state === 'GENERIC_PROMPT' && (
+                    <GenericPromptGame
+                        gameType={gameType as GenericPromptGameType}
+                        state={genericPromptState}
+                        players={players}
+                        controls="host"
+                        onStartVoting={startGenericPromptVoting}
+                        onReveal={revealGenericPromptRound}
+                        onNextRound={nextGenericPromptRound}
                         onEndGame={endQuiz}
                     />
                 )}

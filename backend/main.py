@@ -44,6 +44,7 @@ from chit_pull_engine import VALID_SAFE_LEVELS as VALID_CHIT_PULL_SAFE_LEVELS, s
 from mafia_engine import validate_config as validate_mafia_config
 from party_quests_engine import validate_config as validate_party_quests_config
 from survey_says_engine import validate_config as validate_survey_says_config
+from generic_prompt_engine import GENERIC_PROMPT_GAME_TYPES, catalog_entries as generic_prompt_catalog_entries, validate_config as validate_generic_prompt_config
 from would_you_rather_engine import validate_config as validate_would_you_rather_config
 from never_have_i_ever_engine import validate_config as validate_never_have_i_ever_config
 from word_association_engine import validate_config as validate_word_association_config
@@ -514,6 +515,7 @@ class RoomCreateRequest(BaseModel):
     mafia_config: dict = {}
     party_quests_config: dict = {}
     survey_says_config: dict = {}
+    generic_prompt_config: dict = {}
     would_you_rather_config: dict = {}
     never_have_i_ever_config: dict = {}
     word_association_config: dict = {}
@@ -542,7 +544,7 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker"):
+        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker") and v not in GENERIC_PROMPT_GAME_TYPES:
             raise ValueError('game_type must be a supported LocalPlay game type')
         return v
 
@@ -1082,6 +1084,7 @@ GAME_CATALOG = [
             "guess_time_seconds": {"min": 10, "max": 180, "default": 45},
         },
     },
+    *generic_prompt_catalog_entries(config.MAX_PLAYERS_PER_ROOM),
     {
         "id": "never_have_i_ever",
         "game_type": "never_have_i_ever",
@@ -1263,6 +1266,8 @@ def _default_time_limit_for_game(game_type: str) -> int:
         return 30
     if game_type == "survey_says":
         return 30
+    if game_type in GENERIC_PROMPT_GAME_TYPES:
+        return 30
     if game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue"):
         return 30
     return config.DEFAULT_TIME_LIMIT
@@ -1367,6 +1372,8 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
         return str(uuid.uuid4()), validate_party_quests_config({"game_title": title or "Party Quests"})
     if game_type == "survey_says":
         return str(uuid.uuid4()), validate_survey_says_config({"game_title": title or "Survey Says"})
+    if game_type in GENERIC_PROMPT_GAME_TYPES:
+        return str(uuid.uuid4()), validate_generic_prompt_config({"game_title": title or ""}, game_type)
     if game_type == "would_you_rather":
         return str(uuid.uuid4()), validate_would_you_rather_config({"game_title": title or "Would You Rather"})
     if game_type == "never_have_i_ever":
@@ -1443,6 +1450,8 @@ def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = 
     if game_type == "party_quests":
         return _default_game_content(game_type, title)
     if game_type == "survey_says":
+        return _default_game_content(game_type, title)
+    if game_type in GENERIC_PROMPT_GAME_TYPES:
         return _default_game_content(game_type, title)
     if game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue"):
         return _default_game_content(game_type, title)
@@ -4057,6 +4066,9 @@ async def create_room(request: RoomCreateRequest, req: Request):
     elif request.game_type == "survey_says":
         content_id = str(uuid.uuid4())
         game_data = validate_survey_says_config(request.survey_says_config)
+    elif request.game_type in GENERIC_PROMPT_GAME_TYPES:
+        content_id = str(uuid.uuid4())
+        game_data = validate_generic_prompt_config(request.generic_prompt_config, request.game_type)
     elif request.game_type == "would_you_rather":
         content_id = str(uuid.uuid4())
         game_data = validate_would_you_rather_config(request.would_you_rather_config)

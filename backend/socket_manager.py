@@ -160,6 +160,21 @@ from survey_says_engine import (
     submit_guess as survey_submit_guess,
     validate_config as validate_survey_says_config,
 )
+from generic_prompt_engine import (
+    GENERIC_PROMPT_GAME_TYPES,
+    PHASE_PODIUM as GENERIC_PHASE_PODIUM,
+    add_player as generic_add_player,
+    create_initial_state as generic_create_initial_state,
+    next_round as generic_next_round,
+    public_state as generic_public_state,
+    reveal_round as generic_reveal_round,
+    standings as generic_standings,
+    start_voting as generic_start_voting,
+    submit_choice as generic_submit_choice,
+    submit_text as generic_submit_text,
+    submit_vote as generic_submit_vote,
+    validate_config as validate_generic_prompt_config,
+)
 from would_you_rather_engine import (
     PHASE_PODIUM as WYR_PHASE_PODIUM,
     create_initial_state as wyr_create_initial_state,
@@ -351,6 +366,10 @@ class Room:
         self.survey_says_config = validate_survey_says_config(game_data) if game_type == "survey_says" else {}
         self.survey_says_state: dict = {}
         self.survey_says_completed_sent = False
+        # Generic prompt party games
+        self.generic_prompt_config = validate_generic_prompt_config(game_data, game_type) if game_type in GENERIC_PROMPT_GAME_TYPES else {}
+        self.generic_prompt_state: dict = {}
+        self.generic_prompt_completed_sent = False
         # Lightweight social round games
         self.wyr_config = validate_would_you_rather_config(game_data) if game_type == "would_you_rather" else {}
         self.wyr_state: dict = {}
@@ -477,6 +496,9 @@ class Room:
         self.survey_says_config = validate_survey_says_config(new_game_data) if self.game_type == "survey_says" else {}
         self.survey_says_state = {}
         self.survey_says_completed_sent = False
+        self.generic_prompt_config = validate_generic_prompt_config(new_game_data, self.game_type) if self.game_type in GENERIC_PROMPT_GAME_TYPES else {}
+        self.generic_prompt_state = {}
+        self.generic_prompt_completed_sent = False
         self.wyr_config = validate_would_you_rather_config(new_game_data) if self.game_type == "would_you_rather" else {}
         self.wyr_state = {}
         self.nhie_config = validate_never_have_i_ever_config(new_game_data) if self.game_type == "never_have_i_ever" else {}
@@ -535,6 +557,8 @@ class Room:
             return 1
         if self.game_type == "survey_says":
             return len(self.survey_says_state.get("config", {}).get("rounds", [])) or len(self.survey_says_config.get("rounds", [])) or 3
+        if self.game_type in GENERIC_PROMPT_GAME_TYPES:
+            return len(self.generic_prompt_state.get("rounds", [])) or len(self.generic_prompt_config.get("rounds", [])) or 3
         if self.game_type == "would_you_rather":
             return len(self.wyr_state.get("rounds", [])) or len(self.wyr_config.get("prompts", [])) or 3
         if self.game_type == "never_have_i_ever":
@@ -584,6 +608,8 @@ class Room:
             return quests_public_sync(self.party_quests_state, players=self.player_public_list()) if self.party_quests_state else None
         if self.game_type == "survey_says":
             return survey_public_sync(self.survey_says_state, players=self.player_public_list()) if self.survey_says_state else None
+        if self.game_type in GENERIC_PROMPT_GAME_TYPES:
+            return generic_public_state(self.generic_prompt_state) if self.generic_prompt_state else None
         if self.game_type == "would_you_rather":
             return wyr_public_state(self.wyr_state) if self.wyr_state else None
         if self.game_type == "never_have_i_ever":
@@ -944,6 +970,8 @@ class SocketManager:
                     sync["party_quests"] = quests_public_sync(room.party_quests_state, players=room.player_public_list())
                 if room.game_type == "survey_says" and room.survey_says_state:
                     sync["survey_says"] = survey_public_sync(room.survey_says_state, players=room.player_public_list())
+                if room.game_type in GENERIC_PROMPT_GAME_TYPES and room.generic_prompt_state:
+                    sync["generic_prompt"] = generic_public_state(room.generic_prompt_state)
                 if room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
                     state = getattr(room, self._simple_social_state_attr(room.game_type), {})
                     if state:
@@ -1140,6 +1168,8 @@ class SocketManager:
             sync["party_quests"] = quests_public_sync(room.party_quests_state, players=room.player_public_list())
         if room.game_type == "survey_says" and room.survey_says_state:
             sync["survey_says"] = survey_public_sync(room.survey_says_state, players=room.player_public_list(), host=True)
+        if room.game_type in GENERIC_PROMPT_GAME_TYPES and room.generic_prompt_state:
+            sync["generic_prompt"] = generic_public_state(room.generic_prompt_state, host=True)
         if room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
             state = getattr(room, self._simple_social_state_attr(room.game_type), {})
             if state:
@@ -1294,6 +1324,14 @@ class SocketManager:
                                 "message": f"Survey Says needs at least {config.MIN_SURVEY_SAYS_PLAYERS} players to start",
                             })
                             return
+                    elif room.game_type in GENERIC_PROMPT_GAME_TYPES:
+                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        if player_count < 2:
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": "This game needs at least 2 players to start",
+                            })
+                            return
                     elif room.game_type == "would_you_rather":
                         player_count = len([p for p in room.players.values() if p.get("nickname")])
                         if player_count < config.MIN_WOULD_YOU_RATHER_PLAYERS:
@@ -1415,6 +1453,10 @@ class SocketManager:
                         self._start_survey_says_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": "survey_says"})
                         await self._broadcast_survey_says_sync(room)
+                    elif room.game_type in GENERIC_PROMPT_GAME_TYPES:
+                        self._start_generic_prompt_game(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": room.game_type})
+                        await self._broadcast_generic_prompt_sync(room)
                     elif room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
                         self._start_simple_social_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": room.game_type})
@@ -1432,7 +1474,7 @@ class SocketManager:
                         await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
-                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker"):
+                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker") or room.game_type in GENERIC_PROMPT_GAME_TYPES:
                     return
                 if room.game_type == "drawing" and room.drawing_auto_task:
                     room.drawing_auto_task.cancel()
@@ -1528,6 +1570,15 @@ class SocketManager:
 
             elif msg_type == "ACRO_NEXT_ROUND" and room.game_type == "acronym":
                 await self._simple_social_next_round(room)
+
+            elif msg_type == "GENERIC_START_VOTING" and room.game_type in GENERIC_PROMPT_GAME_TYPES:
+                await self._generic_prompt_start_voting(room)
+
+            elif msg_type == "GENERIC_REVEAL" and room.game_type in GENERIC_PROMPT_GAME_TYPES:
+                await self._generic_prompt_reveal(room)
+
+            elif msg_type == "GENERIC_NEXT_ROUND" and room.game_type in GENERIC_PROMPT_GAME_TYPES:
+                await self._generic_prompt_next_round(room)
 
             elif msg_type == "PHOTO_CLUE_REVEAL" and room.game_type == "photo_clue":
                 await self._photo_clue_reveal(room)
@@ -1635,6 +1686,9 @@ class SocketManager:
                 if room.game_type == "survey_says":
                     await self._survey_says_complete_game(room)
                     return
+                if room.game_type in GENERIC_PROMPT_GAME_TYPES:
+                    await self._generic_prompt_complete_game(room)
+                    return
                 if room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
                     await self._simple_social_complete_game(room)
                     return
@@ -1681,7 +1735,7 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker") else room.game_type
+                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker") or raw_game_type in GENERIC_PROMPT_GAME_TYPES else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
 
                     # Validate time_limit
@@ -1723,6 +1777,8 @@ class SocketManager:
                         new_game_data = validate_party_quests_config({})
                     elif new_game_type == "survey_says":
                         new_game_data = validate_survey_says_config({})
+                    elif new_game_type in GENERIC_PROMPT_GAME_TYPES:
+                        new_game_data = validate_generic_prompt_config({}, new_game_type)
                     elif new_game_type == "would_you_rather":
                         new_game_data = validate_would_you_rather_config({})
                     elif new_game_type == "never_have_i_ever":
@@ -1910,6 +1966,8 @@ class SocketManager:
                             state_info["party_quests"] = quests_private_sync(room.party_quests_state, nickname, players=room.player_public_list())
                         elif room.game_type == "survey_says" and room.survey_says_state:
                             state_info["survey_says"] = survey_public_sync(room.survey_says_state, players=room.player_public_list(), viewer_id=nickname)
+                        elif room.game_type in GENERIC_PROMPT_GAME_TYPES and room.generic_prompt_state:
+                            state_info["generic_prompt"] = generic_public_state(room.generic_prompt_state, viewer_id=nickname)
                         elif room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
                             state = getattr(room, self._simple_social_state_attr(room.game_type), {})
                             if state:
@@ -2024,6 +2082,8 @@ class SocketManager:
                             state_info["party_quests"] = quests_private_sync(room.party_quests_state, player_data["nickname"], players=room.player_public_list())
                         elif room.game_type == "survey_says" and room.survey_says_state:
                             state_info["survey_says"] = survey_public_sync(room.survey_says_state, players=room.player_public_list(), viewer_id=player_data["nickname"])
+                        elif room.game_type in GENERIC_PROMPT_GAME_TYPES and room.generic_prompt_state:
+                            state_info["generic_prompt"] = generic_public_state(room.generic_prompt_state, viewer_id=player_data["nickname"])
                         elif room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
                             state = getattr(room, self._simple_social_state_attr(room.game_type), {})
                             if state:
@@ -2086,6 +2146,12 @@ class SocketManager:
                     and bool(room.survey_says_state.get("config", {}).get("allow_late_join", True))
                     and room.state != "LOBBY"
                     and room.state != SURVEY_PHASE_PODIUM
+                )
+                active_generic_prompt_join = (
+                    room.game_type in GENERIC_PROMPT_GAME_TYPES
+                    and bool(room.generic_prompt_state)
+                    and room.state != "LOBBY"
+                    and room.state != GENERIC_PHASE_PODIUM
                 )
 
                 if len(room.players) >= config.MAX_PLAYERS_PER_ROOM:
@@ -2197,6 +2263,32 @@ class SocketManager:
                         "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()]
                     })
                     await self._broadcast_survey_says_sync(room)
+                    return
+
+                if active_generic_prompt_join:
+                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
+                    room.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
+                    player_session_token = secrets.token_urlsafe(16)
+                    room.player_tokens[nickname] = player_session_token
+                    room.generic_prompt_state = generic_add_player(room.generic_prompt_state, nickname)
+                    self._sync_generic_prompt_scores_to_players(room)
+                    ws = room.connections.get(client_id)
+                    if ws:
+                        await ws.send_json({
+                            "type": "JOINED_ROOM",
+                            "room_code": room.room_code,
+                            "session_token": player_session_token,
+                            "state": room.state,
+                            "game_type": room.game_type,
+                            "generic_prompt": generic_public_state(room.generic_prompt_state, viewer_id=nickname),
+                        })
+                    await room.broadcast({
+                        "type": "PLAYER_JOINED",
+                        "nickname": nickname,
+                        "player_count": len(room.players),
+                        "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()]
+                    })
+                    await self._broadcast_generic_prompt_sync(room)
                     return
 
                 # Block new players if room is locked
@@ -2351,6 +2443,9 @@ class SocketManager:
             elif msg_type == "SURVEY_SUBMIT_GUESS" and room.game_type == "survey_says":
                 await self._survey_says_submit_guess(room, client_id, message)
 
+            elif msg_type in ("GENERIC_CHOICE", "GENERIC_SUBMIT", "GENERIC_VOTE") and room.game_type in GENERIC_PROMPT_GAME_TYPES:
+                await self._generic_prompt_player_action(room, client_id, message)
+
             elif msg_type in ("WYR_VOTE", "NHIE_ANSWER", "WORD_SUBMIT", "ACRO_SUBMIT", "ACRO_VOTE") and room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
                 await self._simple_social_player_action(room, client_id, message)
 
@@ -2361,7 +2456,7 @@ class SocketManager:
                 await self._poker_player_action(room, client_id, message)
 
             elif msg_type == "ANSWER":
-                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker"):
+                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker") or room.game_type in GENERIC_PROMPT_GAME_TYPES:
                     return  # Other games use their own input messages
                 if client_id not in room.players:
                     return
@@ -3136,6 +3231,167 @@ class SocketManager:
             self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Photo Clue history for room %s", room.room_code)
+
+    def _start_generic_prompt_game(self, room: Room):
+        nicknames = [player["nickname"] for player in room.players.values()]
+        room.generic_prompt_config = validate_generic_prompt_config(room.quiz, room.game_type)
+        room.generic_prompt_state = generic_create_initial_state(
+            nicknames,
+            room.game_type,
+            room.generic_prompt_config,
+            now=time.time(),
+        )
+        room.generic_prompt_completed_sent = False
+        self._sync_generic_prompt_phase_to_room(room)
+        self._sync_generic_prompt_scores_to_players(room)
+        room.answer_log = []
+
+    def _sync_generic_prompt_phase_to_room(self, room: Room):
+        if room.generic_prompt_state:
+            room.state = str(room.generic_prompt_state.get("phase") or "GENERIC_SUBMITTING")
+            room.current_question_index = int(room.generic_prompt_state.get("current_round_index", 0))
+
+    def _sync_generic_prompt_scores_to_players(self, room: Room):
+        scores = room.generic_prompt_state.get("scores", {}) if room.generic_prompt_state else {}
+        for pdata in room.players.values():
+            nickname = pdata.get("nickname")
+            pdata["score"] = int(scores.get(nickname, pdata.get("score", 0)) or 0)
+
+    async def _broadcast_generic_prompt_sync(self, room: Room):
+        if not room.generic_prompt_state:
+            return
+        players = room.player_public_list()
+        self._sync_generic_prompt_phase_to_room(room)
+        self._sync_generic_prompt_scores_to_players(room)
+        public = {
+            "type": "GENERIC_PROMPT_SYNC",
+            "game_type": room.game_type,
+            "generic_prompt": generic_public_state(room.generic_prompt_state),
+            "player_count": len(room.players),
+            "players": players,
+            "leaderboard": self.get_leaderboard(room),
+        }
+        if room.organizer:
+            host_payload = dict(public)
+            host_payload["generic_prompt"] = generic_public_state(room.generic_prompt_state, host=True)
+            await room.send_to_organizer(host_payload)
+        for spec_id, ws in list(room.spectators.items()):
+            try:
+                await ws.send_json(public)
+            except Exception:
+                room._remove_connection(spec_id)
+        for client_id, pdata in list(room.players.items()):
+            ws = room.connections.get(client_id)
+            if not ws:
+                continue
+            payload = dict(public)
+            payload["generic_prompt"] = generic_public_state(room.generic_prompt_state, viewer_id=pdata.get("nickname", ""))
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                room._remove_connection(client_id)
+        await room.emit_pending_player_event()
+
+    async def _generic_prompt_player_action(self, room: Room, client_id: str, message: dict):
+        if client_id not in room.players or not room.generic_prompt_state:
+            return
+        nickname = room.players[client_id].get("nickname", "")
+        try:
+            async with room.lock:
+                if message.get("type") == "GENERIC_CHOICE":
+                    room.generic_prompt_state = generic_submit_choice(
+                        room.generic_prompt_state,
+                        nickname,
+                        str(message.get("choice") or ""),
+                    )
+                    room.answer_log.append({"kind": "generic_choice", "nickname": nickname})
+                elif message.get("type") == "GENERIC_VOTE":
+                    room.generic_prompt_state = generic_submit_vote(
+                        room.generic_prompt_state,
+                        nickname,
+                        str(message.get("entry_id") or ""),
+                    )
+                    room.answer_log.append({"kind": "generic_vote", "nickname": nickname})
+                else:
+                    room.generic_prompt_state = generic_submit_text(
+                        room.generic_prompt_state,
+                        nickname,
+                        str(message.get("text") or ""),
+                    )
+                    room.answer_log.append({"kind": "generic_submission", "nickname": nickname})
+                self._sync_generic_prompt_phase_to_room(room)
+        except ValueError as exc:
+            await self._send_to_client(room, client_id, {"type": "ERROR", "message": str(exc)})
+            return
+        await self._broadcast_generic_prompt_sync(room)
+
+    async def _generic_prompt_start_voting(self, room: Room):
+        if not room.generic_prompt_state:
+            return
+        try:
+            async with room.lock:
+                room.generic_prompt_state = generic_start_voting(room.generic_prompt_state)
+                self._sync_generic_prompt_phase_to_room(room)
+        except ValueError as exc:
+            await self._send_to_organizer_error(room, str(exc))
+            return
+        await self._broadcast_generic_prompt_sync(room)
+
+    async def _generic_prompt_reveal(self, room: Room):
+        if not room.generic_prompt_state:
+            return
+        try:
+            async with room.lock:
+                room.generic_prompt_state = generic_reveal_round(room.generic_prompt_state, now=time.time())
+                self._sync_generic_prompt_phase_to_room(room)
+                self._sync_generic_prompt_scores_to_players(room)
+        except ValueError as exc:
+            await self._send_to_organizer_error(room, str(exc))
+            return
+        await self._broadcast_generic_prompt_sync(room)
+
+    async def _generic_prompt_next_round(self, room: Room):
+        if not room.generic_prompt_state:
+            return
+        try:
+            async with room.lock:
+                room.generic_prompt_state = generic_next_round(room.generic_prompt_state, now=time.time())
+                self._sync_generic_prompt_phase_to_room(room)
+                self._sync_generic_prompt_scores_to_players(room)
+        except ValueError as exc:
+            await self._send_to_organizer_error(room, str(exc))
+            return
+        await self._broadcast_generic_prompt_sync(room)
+        if room.generic_prompt_state.get("phase") == GENERIC_PHASE_PODIUM:
+            await self._generic_prompt_complete_game(room)
+
+    async def _generic_prompt_complete_game(self, room: Room):
+        if room.generic_prompt_completed_sent:
+            return
+        room.generic_prompt_completed_sent = True
+        if room.generic_prompt_state:
+            room.generic_prompt_state["phase"] = GENERIC_PHASE_PODIUM
+            room.generic_prompt_state["completed_at"] = room.generic_prompt_state.get("completed_at") or time.time()
+        self._sync_generic_prompt_scores_to_players(room)
+        room.state = "PODIUM"
+        leaderboard = self.get_leaderboard(room)
+        await room.broadcast({
+            "type": "PODIUM",
+            "game_type": room.game_type,
+            "leaderboard": leaderboard,
+            "team_leaderboard": [],
+            "generic_prompt": generic_public_state(room.generic_prompt_state) if room.generic_prompt_state else {},
+        })
+        try:
+            from main import game_history
+            summary = self.get_game_summary(room)
+            summary["winners"] = generic_standings(room.generic_prompt_state)[:3] if room.generic_prompt_state else []
+            game_history.append(summary)
+            if len(game_history) > config.MAX_GAME_HISTORY:
+                del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+            self._mark_game_session_complete(room, summary)
+        except Exception:
+            logger.warning("Could not save %s history for room %s", room.game_type, room.room_code)
 
     def _simple_social_state_attr(self, game_type: str) -> str:
         return {
@@ -5263,6 +5519,12 @@ class SocketManager:
                 {"team": row.get("team_name"), "score": row.get("score"), "members": len(row.get("members") or [])}
                 for row in survey_rows
             ]
+        if room.game_type in GENERIC_PROMPT_GAME_TYPES and room.generic_prompt_state:
+            standings = generic_standings(room.generic_prompt_state)
+            summary["total_questions"] = len(room.generic_prompt_state.get("rounds", []))
+            summary["total_rounds"] = summary["total_questions"]
+            summary["winners"] = standings[:3]
+            summary["mode"] = room.generic_prompt_state.get("config", {}).get("mode")
         if room.game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym"):
             standings = self._simple_social_standings(room)
             summary["total_questions"] = room.total_rounds()

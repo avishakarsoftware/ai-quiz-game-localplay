@@ -22,6 +22,7 @@ The platform currently supports:
 - `who_am_i`: standalone clue-ladder guessing game where clues reveal progressively and players submit free-text guesses.
 - `chit_pull`: standalone Random Chit party game where the server picks a player and prompt, then the host marks completed/skipped/redrawn outcomes.
 - `survey_says`: standalone team survey game where players guess ranked answers and the host reveals slots, strikes, steals, and team scoring.
+- Generic Prompt Party games: `hot_takes`, `this_or_that`, `caption_contest`, `pitch_battle`, `roast_toast`, `desert_island`, `memory_lane`, `rapid_fire`, `one_word_vibes`, and `emoji_story`.
 - Standalone custom quiz authoring and saved quiz packs.
 - Host-app/party-scoped authoring and game setup through the Revelry Games hub.
 
@@ -63,6 +64,7 @@ Key files:
 - `backend/who_am_i_engine.py`: clue-ladder setup validation, guess normalization/matching, private/public sync, and scoring helpers for Who Am I.
 - `backend/chit_pull_engine.py`: random player/chit selection, safe deck sanitization, redraw handling, scoring, public sync, and podium helpers for Random Chit.
 - `backend/survey_says_engine.py`: Survey Says setup validation, team assignment, guess capture, host-revealed answer board, strikes, steals, scoring, late joins, and public/private sync.
+- `backend/generic_prompt_engine.py`: shared prompt, choice, submission, voting, grouping, scoring, and podium helpers for lightweight prompt party games.
 - `backend/image_engine.py`: optional Stable Diffusion image generation for quiz questions.
 - `backend/auth.py`: Google/Apple sign-in and session handling.
 - `backend/remote_config.py`: remote config for provider/model/operation flags.
@@ -91,6 +93,7 @@ Key files:
 - `frontend/src/components/WhoAmIGame.tsx`: shared Who Am I clue/guess UI for organizer, player, and spectator views.
 - `frontend/src/components/ChitPullGame.tsx`: shared Random Chit selected-player/chit, standings, and host-control UI for organizer, player, and spectator views.
 - `frontend/src/components/SurveySaysGame.tsx`: shared Survey Says answer-board, team standings, player guess, and host adjudication UI for organizer, player, and spectator views.
+- `frontend/src/components/GenericPromptGame.tsx`: shared prompt, choice, submission, voting, reveal, and standings UI for Generic Prompt Party games.
 - `frontend/src/components/organizer/CustomQuizEditor.tsx`: manual custom quiz authoring.
 - `frontend/src/components/organizer/ReviewScreen.tsx`: quiz review/edit before room creation.
 - `frontend/src/components/organizer/MLTReviewScreen.tsx`: WMLT review/edit before room creation.
@@ -280,7 +283,18 @@ Frontend game types are defined in `frontend/src/types.ts`:
 
 ```ts
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | QuizVariantGameType;
+export type GenericPromptGameType =
+  | 'hot_takes'
+  | 'this_or_that'
+  | 'caption_contest'
+  | 'pitch_battle'
+  | 'roast_toast'
+  | 'desert_island'
+  | 'memory_lane'
+  | 'rapid_fire'
+  | 'one_word_vibes'
+  | 'emoji_story';
+export type GameType = /* see frontend/src/types.ts for the full runtime union */ string;
 ```
 
 The frontend catalog in `frontend/src/gameModes.ts` maps visible game ids to runtime types:
@@ -293,14 +307,15 @@ The frontend catalog in `frontend/src/gameModes.ts` maps visible game ids to run
 - `baby_bingo` is a standalone preset card that opens the Bingo setup with a baby-shower deck, then creates a normal `bingo` runtime room.
 - `musical_chairs` uses the Musical Chairs runtime.
 - `bluff` uses the shared card-game runtime.
+- `poker` uses the shared card-game runtime.
+- `party_quests` uses the Party Quests runtime.
+- `survey_says` uses the Survey Says runtime.
+- `hot_takes`, `this_or_that`, `caption_contest`, `pitch_battle`, `roast_toast`, `desert_island`, `memory_lane`, `rapid_fire`, `one_word_vibes`, and `emoji_story` use the Generic Prompt Party runtime.
 
 Backend room creation accepts runtime game types:
 
-- `quiz`
-- `wmlt`
-- `drawing`
-- `housie`
-- `bingo`
+- All runtime ids in `frontend/src/types.ts`, including quiz variants and standalone game runtimes.
+- Generic Prompt Party game ids listed in `backend/generic_prompt_engine.py`.
 
 Unsupported game types are rejected by `RoomCreateRequest.validate_game_type`.
 
@@ -338,6 +353,7 @@ Bingo-family games are a separate runtime family rather than quiz variants. `SPE
 Social icebreakers should be their own lightweight runtime family when they are not caller-led or quiz-shaped. `SPEC-GAME-COMMON-GROUND.md` defines and now implements the standalone Common Ground flow: automatic team assignment, mid-party QR joins with token-based reconnects, private team submissions during discussion, reveal, optional voting, round scoring, spectator sync, and final team podium. Revelry exposure remains disabled until a host-app bridge pass is completed.
 `SPEC-GAME-TWO-TRUTHS.md` defines and now implements the standalone classic player-authored Two Truths and a Lie flow: private statement submission, sequential author reveals, lie voting, deception/detection scoring, spectator sync, and a final individual podium. Revelry exposure remains disabled until a host-app bridge pass is completed.
 `SPEC-GAME-CHIT-PULL.md` defines and now implements Random Chit, a random chit game where the host manually creates or AI-generates a reviewed deck of questions/actions/funny-face prompts, the server randomly picks a player and chit each turn, and the host marks completed/skipped/redrawn outcomes for scoring and podium. The stable API/game type remains `chit_pull`.
+`SPEC-GAME-GENERIC-PROMPT-PARTY.md` defines and now implements the shared Generic Prompt Party runtime for ten lightweight standalone games: Hot Takes, This or That, Caption Contest, Pitch Battle, Roast & Toast, Desert Island, Memory Lane, Rapid Fire, One Word Vibes, and Emoji Story. These games share choice-vote, text-vote, and text-group mechanics, reuse a single websocket protocol, expose rules, support late joins/reconnects/spectators, and remain standalone-only until a host-app bridge pass is done.
 `SPEC-GAME-PARTY-QUESTS.md` defines a long-running ambient party game where players complete mingling tasks throughout the event, collect tap/QR confirmations from other players, and gather later for a final reveal and podium.
 `SPEC-GAME-MAFIA.md` defines and now implements the standalone Mafia flow: secret role assignment, private Mafia/Detective/Doctor night actions, Night Reads for every living player so action roles are not socially exposed, public-safe dawn narration, day discussion, vote elimination, role reveal on elimination, and Town/Mafia win conditions. Revelry exposure remains disabled until standalone multi-device QA is complete.
 

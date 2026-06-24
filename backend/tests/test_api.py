@@ -192,6 +192,8 @@ class TestHealthEndpoints:
         assert games["story_chain"]["config_schema"]["players"]["min"] == config.MIN_STORY_CHAIN_PLAYERS
         assert games["common_ground"]["runtime_type"] == "common_ground"
         assert games["common_ground"]["config_schema"]["players"]["min"] == config.MIN_COMMON_GROUND_PLAYERS
+        assert games["caption_contest"]["runtime_type"] == "caption_contest"
+        assert games["caption_contest"]["content_schema"]["kind"] == "generic_prompt_party_v1"
         assert games["who_am_i"]["runtime_type"] == "who_am_i"
         assert games["who_am_i"]["supports_ai_generation"] is True
         assert games["chit_pull"]["runtime_type"] == "chit_pull"

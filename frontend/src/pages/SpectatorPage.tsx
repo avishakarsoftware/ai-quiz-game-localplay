@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
-import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, type PartyQuestsState, type SurveySaysState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState, ANSWER_STYLES } from '../types';
+import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type GenericPromptGameType, type GenericPromptState, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, type PartyQuestsState, type SurveySaysState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
@@ -31,10 +31,12 @@ import ChitPullGame from '../components/ChitPullGame';
 import MafiaGame from '../components/MafiaGame';
 import PartyQuestsGame from '../components/PartyQuestsGame';
 import SurveySaysGame from '../components/SurveySaysGame';
+import GenericPromptGame from '../components/GenericPromptGame';
 import SimpleSocialGame from '../components/SimpleSocialGame';
 import PhotoClueGame from '../components/PhotoClueGame';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
+import { GENERIC_PROMPT_GAME_IDS } from '../gameModes';
 
 interface SpectatorQuestion {
     id: number;
@@ -45,6 +47,10 @@ interface SpectatorQuestion {
 
 function normalizeRoomCode(value: string | null | undefined): string {
     return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+}
+
+function isGenericPromptGame(type: unknown): type is GenericPromptGameType {
+    return (GENERIC_PROMPT_GAME_IDS as string[]).includes(String(type || ''));
 }
 
 export default function SpectatorPage() {
@@ -133,6 +139,7 @@ export default function SpectatorPage() {
     const [mafiaState, setMafiaState] = useState<MafiaState | null>(null);
     const [partyQuestsState, setPartyQuestsState] = useState<PartyQuestsState | null>(null);
     const [surveySaysState, setSurveySaysState] = useState<SurveySaysState | null>(null);
+    const [genericPromptState, setGenericPromptState] = useState<GenericPromptState | null>(null);
     const [simpleSocialState, setSimpleSocialState] = useState<SimpleSocialState | null>(null);
     const [photoClueState, setPhotoClueState] = useState<PhotoClueState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -311,6 +318,11 @@ export default function SpectatorPage() {
                     setGameState('SURVEY_SAYS');
                     return;
                 }
+                if (isGenericPromptGame(msg.game_type) && msg.generic_prompt) {
+                    setGenericPromptState(msg.generic_prompt as GenericPromptState);
+                    setGameState('GENERIC_PROMPT');
+                    return;
+                }
                 if ((msg.game_type === 'would_you_rather' || msg.game_type === 'never_have_i_ever' || msg.game_type === 'word_association' || msg.game_type === 'acronym') && msg[msg.game_type]) {
                     setSimpleSocialState(msg[msg.game_type] as SimpleSocialState);
                     setGameState('SIMPLE_SOCIAL');
@@ -394,6 +406,9 @@ export default function SpectatorPage() {
                 } else if (msg.game_type === 'survey_says') {
                     setGameType('survey_says');
                     setGameState('SURVEY_SAYS');
+                } else if (isGenericPromptGame(msg.game_type)) {
+                    setGameType(msg.game_type);
+                    setGameState('GENERIC_PROMPT');
                 } else if (msg.game_type === 'would_you_rather' || msg.game_type === 'never_have_i_ever' || msg.game_type === 'word_association' || msg.game_type === 'acronym') {
                     setGameType(msg.game_type as SimpleSocialGameType);
                     setGameState('SIMPLE_SOCIAL');
@@ -499,6 +514,15 @@ export default function SpectatorPage() {
                 setTeamLeaderboard(msg.team_leaderboard || []);
                 setGameState('SURVEY_SAYS');
             }
+            else if (msg.type === 'GENERIC_PROMPT_SYNC') {
+                const incomingGameType = msg.game_type as GenericPromptGameType;
+                setGameType(incomingGameType);
+                setGenericPromptState(msg.generic_prompt as GenericPromptState);
+                setPlayers(msg.players || []);
+                setPlayerCount(msg.player_count || 0);
+                setLeaderboard(msg.leaderboard || []);
+                setGameState('GENERIC_PROMPT');
+            }
             else if (msg.type === 'SIMPLE_SOCIAL_SYNC') {
                 const incomingGameType = msg.game_type as SimpleSocialGameType;
                 setGameType(incomingGameType);
@@ -594,6 +618,7 @@ export default function SpectatorPage() {
                 setTeamLeaderboard(msg.team_leaderboard || []);
                 if (msg.find_someone) setFindSomeoneState(msg.find_someone);
                 if (msg.survey_says) setSurveySaysState(msg.survey_says as SurveySaysState);
+                if (msg.generic_prompt) setGenericPromptState(msg.generic_prompt as GenericPromptState);
                 if (msg.photo_clue) setPhotoClueState(msg.photo_clue as PhotoClueState);
                 if (msg.poker) setPokerState(msg.poker as PokerState);
                 if (msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) {
@@ -1007,6 +1032,15 @@ export default function SpectatorPage() {
 
                     {gameState === 'SURVEY_SAYS' && (
                         <SurveySaysGame state={surveySaysState} controls="spectator" />
+                    )}
+
+                    {gameState === 'GENERIC_PROMPT' && (
+                        <GenericPromptGame
+                            gameType={gameType as GenericPromptGameType}
+                            state={genericPromptState}
+                            players={players}
+                            controls="spectator"
+                        />
                     )}
 
                     {gameState === 'SIMPLE_SOCIAL' && (

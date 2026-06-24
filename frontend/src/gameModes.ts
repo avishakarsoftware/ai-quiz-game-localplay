@@ -1,8 +1,8 @@
-import { type GameType, type QuizVariantGameType } from './types';
+import { type GameType, type GenericPromptGameType, type QuizVariantGameType } from './types';
 
 export interface GameModeConfig {
     id: GameType;
-    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'survey_says' | 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'photo_clue';
+    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'survey_says' | 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'photo_clue' | GenericPromptGameType;
     icon: string;
     title: string;
     description: string;
@@ -202,6 +202,76 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         description: 'Guess the top survey answers before strikes give the other team a steal',
     },
     {
+        id: 'caption_contest',
+        runtimeType: 'caption_contest',
+        icon: '💬',
+        title: 'Caption Contest',
+        description: 'Write the funniest caption, then vote for the winner',
+    },
+    {
+        id: 'desert_island',
+        runtimeType: 'desert_island',
+        icon: '🏝️',
+        title: 'Desert Island',
+        description: 'Pick your survival favorites and vote for the best answers',
+    },
+    {
+        id: 'emoji_story',
+        runtimeType: 'emoji_story',
+        icon: '😄',
+        title: 'Emoji Story',
+        description: 'Turn emoji chains into tiny stories and vote',
+    },
+    {
+        id: 'hot_takes',
+        runtimeType: 'hot_takes',
+        icon: '🔥',
+        title: 'Hot Takes',
+        description: 'Agree or disagree, then reveal the room split',
+    },
+    {
+        id: 'memory_lane',
+        runtimeType: 'memory_lane',
+        icon: '🕰️',
+        title: 'Memory Lane',
+        description: 'Share short memories and vote for the room favorite',
+    },
+    {
+        id: 'one_word_vibes',
+        runtimeType: 'one_word_vibes',
+        icon: '🔮',
+        title: 'One Word Vibes',
+        description: 'Describe prompts in one word and see who matches',
+    },
+    {
+        id: 'pitch_battle',
+        runtimeType: 'pitch_battle',
+        icon: '📣',
+        title: 'Pitch Battle',
+        description: 'Invent ridiculous ideas and vote for the best pitch',
+    },
+    {
+        id: 'rapid_fire',
+        runtimeType: 'rapid_fire',
+        icon: '⚡',
+        title: 'Rapid Fire',
+        description: 'Answer instantly, then reveal matching groups',
+    },
+    {
+        id: 'roast_toast',
+        runtimeType: 'roast_toast',
+        icon: '🥂',
+        title: 'Roast & Toast',
+        description: 'Write playful toasts or gentle roasts and vote',
+    },
+    {
+        id: 'this_or_that',
+        runtimeType: 'this_or_that',
+        icon: '↔️',
+        title: 'This or That',
+        description: 'Fast either-or choices with room split reveals',
+    },
+    {
         id: 'would_you_rather',
         runtimeType: 'would_you_rather',
         icon: '⚖️',
@@ -244,6 +314,19 @@ export const QUIZ_VARIANT_IDS: QuizVariantGameType[] = [
     'fact_fiction',
     'timeline',
     'odd_one_out',
+];
+
+export const GENERIC_PROMPT_GAME_IDS: GenericPromptGameType[] = [
+    'caption_contest',
+    'desert_island',
+    'emoji_story',
+    'hot_takes',
+    'memory_lane',
+    'one_word_vibes',
+    'pitch_battle',
+    'rapid_fire',
+    'roast_toast',
+    'this_or_that',
 ];
 
 export function getGameModeConfig(gameType: GameType): GameModeConfig {

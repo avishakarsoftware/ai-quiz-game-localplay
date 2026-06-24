@@ -39,6 +39,16 @@ const GAME_CATEGORY_BY_ID: Partial<Record<GameType, GameCategory>> = {
     chit_pull: 'creative',
     party_quests: 'creative',
     survey_says: 'quiz',
+    caption_contest: 'creative',
+    desert_island: 'creative',
+    emoji_story: 'creative',
+    hot_takes: 'quiz',
+    memory_lane: 'creative',
+    one_word_vibes: 'creative',
+    pitch_battle: 'creative',
+    rapid_fire: 'quiz',
+    roast_toast: 'creative',
+    this_or_that: 'quiz',
     would_you_rather: 'creative',
     never_have_i_ever: 'creative',
     word_association: 'creative',
@@ -57,7 +67,7 @@ function getGameCategory(game: GameModeConfig): GameCategory {
 }
 
 function hasAiGeneration(game: GameModeConfig): boolean {
-    return !['housie', 'bingo', 'baby_bingo', 'musical_chairs', 'bluff', 'poker', 'two_truths', 'story_chain', 'common_ground', 'find_someone', 'mafia', 'party_quests', 'survey_says', 'would_you_rather', 'never_have_i_ever', 'word_association', 'acronym', 'photo_clue'].includes(game.id);
+    return !['housie', 'bingo', 'baby_bingo', 'musical_chairs', 'bluff', 'poker', 'two_truths', 'story_chain', 'common_ground', 'find_someone', 'mafia', 'party_quests', 'survey_says', 'caption_contest', 'desert_island', 'emoji_story', 'hot_takes', 'memory_lane', 'one_word_vibes', 'pitch_battle', 'rapid_fire', 'roast_toast', 'this_or_that', 'would_you_rather', 'never_have_i_ever', 'word_association', 'acronym', 'photo_clue'].includes(game.id);
 }
 
 export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreenProps) {

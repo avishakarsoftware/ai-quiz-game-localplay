@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { WS_URL } from '../config';
-import { type GameType, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, type PartyQuestsState, type SurveySaysState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
+import { type GameType, type GenericPromptGameType, type GenericPromptState, type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type PowerUps, type DrawOperation, type HousiePattern, type HousieTicket, type HousieWinner, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, type PartyQuestsState, type SurveySaysState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState, ANSWER_STYLES, AVATAR_EMOJIS } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import AnimatedNumber from '../components/AnimatedNumber';
@@ -31,12 +31,18 @@ import ChitPullGame from '../components/ChitPullGame';
 import MafiaGame from '../components/MafiaGame';
 import PartyQuestsGame from '../components/PartyQuestsGame';
 import SurveySaysGame from '../components/SurveySaysGame';
+import GenericPromptGame from '../components/GenericPromptGame';
 import SimpleSocialGame from '../components/SimpleSocialGame';
 import PhotoClueGame from '../components/PhotoClueGame';
 import GameRulesModal from '../components/GameRulesModal';
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
+import { GENERIC_PROMPT_GAME_IDS } from '../gameModes';
 
-type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'POKER' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'PARTY_QUESTS' | 'SURVEY_SAYS' | 'SIMPLE_SOCIAL' | 'PHOTO_CLUE' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+type PlayerState = 'JOIN' | 'LOBBY' | 'INTRO' | 'QUESTION' | 'BINGO' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'POKER' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'PARTY_QUESTS' | 'SURVEY_SAYS' | 'GENERIC_PROMPT' | 'SIMPLE_SOCIAL' | 'PHOTO_CLUE' | 'WAITING' | 'RESULT' | 'PODIUM' | 'RECONNECTING' | 'GAME_IN_PROGRESS';
+
+function isGenericPromptGame(type: unknown): type is GenericPromptGameType {
+    return (GENERIC_PROMPT_GAME_IDS as string[]).includes(String(type || ''));
+}
 
 interface PlayerQuestion {
     id: number;
@@ -178,6 +184,7 @@ export default function PlayerPage() {
     const [mafiaState, setMafiaState] = useState<MafiaState | null>(null);
     const [partyQuestsState, setPartyQuestsState] = useState<PartyQuestsState | null>(null);
     const [surveySaysState, setSurveySaysState] = useState<SurveySaysState | null>(null);
+    const [genericPromptState, setGenericPromptState] = useState<GenericPromptState | null>(null);
     const [simpleSocialState, setSimpleSocialState] = useState<SimpleSocialState | null>(null);
     const [photoClueState, setPhotoClueState] = useState<PhotoClueState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -308,6 +315,10 @@ export default function PlayerPage() {
                     setGameType('survey_says');
                     setSurveySaysState(msg.survey_says as SurveySaysState);
                     setState('SURVEY_SAYS');
+                } else if (isGenericPromptGame(msg.game_type) && msg.generic_prompt) {
+                    setGameType(msg.game_type);
+                    setGenericPromptState(msg.generic_prompt as GenericPromptState);
+                    setState('GENERIC_PROMPT');
                 } else if ((msg.game_type === 'would_you_rather' || msg.game_type === 'never_have_i_ever' || msg.game_type === 'word_association' || msg.game_type === 'acronym') && msg[msg.game_type]) {
                     setGameType(msg.game_type as SimpleSocialGameType);
                     setSimpleSocialState(msg[msg.game_type] as SimpleSocialState);
@@ -380,6 +391,10 @@ export default function PlayerPage() {
                     setGameType('survey_says');
                     setSurveySaysState(msg.survey_says as SurveySaysState);
                     setState('SURVEY_SAYS');
+                } else if (isGenericPromptGame(msg.game_type) && msg.generic_prompt) {
+                    setGameType(msg.game_type);
+                    setGenericPromptState(msg.generic_prompt as GenericPromptState);
+                    setState('GENERIC_PROMPT');
                 } else if ((msg.game_type === 'would_you_rather' || msg.game_type === 'never_have_i_ever' || msg.game_type === 'word_association' || msg.game_type === 'acronym') && msg[msg.game_type]) {
                     setGameType(msg.game_type as SimpleSocialGameType);
                     setSimpleSocialState(msg[msg.game_type] as SimpleSocialState);
@@ -477,6 +492,9 @@ export default function PlayerPage() {
                 } else if (msg.game_type === 'survey_says') {
                     setGameType('survey_says');
                     setState('SURVEY_SAYS');
+                } else if (isGenericPromptGame(msg.game_type)) {
+                    setGameType(msg.game_type);
+                    setState('GENERIC_PROMPT');
                 } else if (msg.game_type === 'would_you_rather' || msg.game_type === 'never_have_i_ever' || msg.game_type === 'word_association' || msg.game_type === 'acronym') {
                     setGameType(msg.game_type as SimpleSocialGameType);
                     setState('SIMPLE_SOCIAL');
@@ -626,6 +644,15 @@ export default function PlayerPage() {
                 setVotePlayers(msg.players as PlayerInfo[] || []);
                 setState('SURVEY_SAYS');
             }
+            if (msg.type === 'GENERIC_PROMPT_SYNC') {
+                setError('');
+                const incomingGameType = msg.game_type as GenericPromptGameType;
+                setGameType(incomingGameType);
+                setGenericPromptState(msg.generic_prompt as GenericPromptState);
+                setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
+                setVotePlayers(msg.players as PlayerInfo[] || []);
+                setState('GENERIC_PROMPT');
+            }
             if (msg.type === 'SIMPLE_SOCIAL_SYNC') {
                 setError('');
                 const incomingGameType = msg.game_type as SimpleSocialGameType;
@@ -772,6 +799,7 @@ export default function PlayerPage() {
                 track('player_game_finished', { room_code: roomCode, nickname, rank, total_players: lb.length });
                 if (msg.find_someone) setFindSomeoneState(msg.find_someone as FindSomeoneState);
                 if (msg.survey_says) setSurveySaysState(msg.survey_says as SurveySaysState);
+                if (msg.generic_prompt) setGenericPromptState(msg.generic_prompt as GenericPromptState);
                 if (msg.photo_clue) setPhotoClueState(msg.photo_clue as PhotoClueState);
                 if (msg.poker) setPokerState(msg.poker as PokerState);
                 if (msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) {
@@ -1067,6 +1095,18 @@ export default function PlayerPage() {
     const submitSurveyGuess = (surveyGuess: string) => {
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'SURVEY_SUBMIT_GUESS', guess: surveyGuess }));
+    };
+    const submitGenericChoice = (choice: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'GENERIC_CHOICE', choice }));
+    };
+    const submitGenericText = (text: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'GENERIC_SUBMIT', text }));
+    };
+    const submitGenericVote = (entryId: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'GENERIC_VOTE', entry_id: entryId }));
     };
 
     const activatePowerUp = (powerUp: 'double_points' | 'fifty_fifty') => {
@@ -1487,6 +1527,22 @@ export default function PlayerPage() {
                             viewerName={nickname}
                             controls="player"
                             onSubmitGuess={submitSurveyGuess}
+                        />
+                    </>
+                )}
+
+                {state === 'GENERIC_PROMPT' && (
+                    <>
+                        {error && <div className="status-pill status-error animate-shake player-runtime-error">{error}</div>}
+                        <GenericPromptGame
+                            gameType={gameType as GenericPromptGameType}
+                            state={genericPromptState}
+                            players={votePlayers}
+                            viewerName={nickname}
+                            controls="player"
+                            onChoice={submitGenericChoice}
+                            onSubmitText={submitGenericText}
+                            onVote={submitGenericVote}
                         />
                     </>
                 )}

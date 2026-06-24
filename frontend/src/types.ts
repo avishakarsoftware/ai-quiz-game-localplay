@@ -69,7 +69,9 @@ export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 
 
 export type SimpleSocialGameType = 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'survey_says' | 'photo_clue' | SimpleSocialGameType | QuizVariantGameType;
+export type GenericPromptGameType = 'hot_takes' | 'this_or_that' | 'caption_contest' | 'pitch_battle' | 'roast_toast' | 'desert_island' | 'memory_lane' | 'rapid_fire' | 'one_word_vibes' | 'emoji_story';
+
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'survey_says' | 'photo_clue' | GenericPromptGameType | SimpleSocialGameType | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -785,6 +787,41 @@ export interface AcronymState {
 }
 
 export type SimpleSocialState = WouldYouRatherState | NeverHaveIEverState | WordAssociationState | AcronymState;
+
+export interface GenericPromptEntry {
+    entry_id: string;
+    player_id: string;
+    text: string;
+    normalized?: string;
+    at?: number;
+}
+
+export interface GenericPromptState {
+    phase: 'GENERIC_CHOICE' | 'GENERIC_SUBMITTING' | 'GENERIC_VOTING' | 'GENERIC_REVEAL' | 'PODIUM' | string;
+    game_type: GenericPromptGameType | string;
+    game_title?: string;
+    mode: 'choice_vote' | 'text_vote' | 'text_group' | string;
+    current_round_index: number;
+    round_count: number;
+    prompt?: { id?: string; prompt: string; hint?: string; options?: string[] };
+    submitted_count: number;
+    entries?: GenericPromptEntry[];
+    scores: Record<string, number>;
+    standings?: SimpleSocialStanding[];
+    result?: {
+        counts?: Record<string, number>;
+        winners?: string[];
+        total?: number;
+        vote_counts?: Record<string, number>;
+        total_votes?: number;
+        groups?: Array<{ normalized: string; display: string; count: number; players: string[] }>;
+    } | null;
+    your_choice?: string;
+    your_submission?: string;
+    your_vote?: string;
+    your_entry_id?: string;
+    completed_at?: number | null;
+}
 
 export interface PhotoClueState {
     phase: 'PHOTO_WAITING_FOR_PHOTO' | 'PHOTO_GUESSING' | 'PHOTO_REVEAL' | 'PODIUM';
