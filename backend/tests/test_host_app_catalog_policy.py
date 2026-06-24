@@ -25,6 +25,12 @@ def test_local_missing_policy_uses_static_host_app_catalog():
         "chit_pull",
         "mafia",
         "party_quests",
+        "would_you_rather",
+        "never_have_i_ever",
+        "word_association",
+        "acronym",
+        "photo_clue",
+        "poker",
     }.issubset(game_ids)
     assert all(game.get("rules", {}).get("sections") for game in games)
 
@@ -66,13 +72,25 @@ def test_more_standalone_games_are_host_app_quick_startable_in_gamma():
     env = f"test-standalone-quick-start-{uuid.uuid4().hex}"
     games = {game["id"]: game for game in effective_catalog(GAME_CATALOG, host_app="revelry", environment=env)}
 
-    for game_id in ("bluff", "find_someone", "mafia"):
+    for game_id in (
+        "bluff",
+        "find_someone",
+        "mafia",
+        "would_you_rather",
+        "never_have_i_ever",
+        "word_association",
+        "acronym",
+        "photo_clue",
+        "poker",
+    ):
         assert games[game_id]["launchable"] is True
         assert games[game_id]["can_quick_start"] is True
         assert games[game_id]["can_create_content"] is False
         assert games[game_id]["supports_ai_generation"] is False
         assert games[game_id]["rules"]["sections"]
 
+    assert games["photo_clue"]["supports_images"] is True
+    assert games["poker"]["supports_custom_content"] is False
     assert games["chit_pull"]["launchable"] is True
     assert games["chit_pull"]["can_quick_start"] is True
     assert games["chit_pull"]["can_create_content"] is True

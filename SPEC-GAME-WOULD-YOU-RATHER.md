@@ -159,9 +159,15 @@ Final standings sort by score desc, then stable join order.
 
 ## Revelry Integration
 
-Would You Rather is a future Revelry quick-start candidate, but should remain behind host-app policy until:
+Would You Rather is LocalPlay bridge-ready as a Revelry quick-start/settings game:
 
-- Gamma multi-tab smoke verifies host, player, spectator, late join, and final result.
+- `host_app_supported = true`, `supported_host_apps = ["revelry"]`
+- `can_quick_start = true`
+- `can_create_content = false`
+- `can_edit_content = false`
+- `supports_ai_generation = false`
+
+It remains policy-gated. Revelry should show/start it only when LocalPlay's host-app catalog policy exposes it and gamma multi-tab smoke verifies host, player, spectator, late join, and final result.
 
 ## Test Plan
 

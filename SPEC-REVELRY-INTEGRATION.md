@@ -1,6 +1,6 @@
 # LocalPlay Revelry Integration Spec
 
-Status: Gamma bridge plus party-scoped quiz authoring, generic WMLT/Drawing/Housie/Random Chit setup-save-start flow, catalog-driven party hub creation, and party hub start flow implemented; production hardening remains. June 24, 2026 expanded LocalPlay host-app quick-start eligibility to Bluff, Find Someone Who, Random Chit, and Mafia; policy enablement/embedded QA still gates actual Revelry exposure.
+Status: Gamma bridge plus party-scoped quiz authoring, generic WMLT/Drawing/Housie/Random Chit setup-save-start flow, catalog-driven party hub creation, and party hub start flow implemented; production hardening remains. June 24, 2026 expanded LocalPlay host-app quick-start eligibility to Bluff, Find Someone Who, Random Chit, Mafia, Would You Rather, Never Have I Ever, Word Association, Acronym Game, Photo Clue, and Party Poker; policy enablement/embedded QA still gates actual Revelry exposure.
 
 Last updated: 2026-06-24
 
@@ -12,13 +12,23 @@ LocalPlay now declares these implemented standalone games as Revelry host-app-ca
 - `find_someone`
 - `chit_pull` (user-facing name: Random Chit)
 - `mafia`
+- `would_you_rather`
+- `never_have_i_ever`
+- `word_association`
+- `acronym`
+- `photo_clue`
+- `poker` (user-facing name: Party Poker)
 
-They are added to `REVELRY_PARTY_GAME_START_TYPES`, so `party-games-link`, `/sessions`, and `party-games/start` accept them when catalog policy allows the game. Bluff, Find Someone Who, and Mafia are deliberately quick-start/settings only in the bridge catalog:
+They are added to `REVELRY_PARTY_GAME_START_TYPES`, so `party-games-link`, `/sessions`, and `party-games/start` accept them when catalog policy allows the game. Bluff, Find Someone Who, Mafia, Would You Rather, Never Have I Ever, Word Association, Acronym Game, Photo Clue, and Party Poker are deliberately quick-start/settings only in the bridge catalog:
 
 - `can_quick_start = true`
 - `can_create_content = false`
 - `can_edit_content = false`
 - `supports_ai_generation = false`
+
+Photo Clue additionally advertises `supports_images = true` because the LocalPlay runtime uses the shared media upload/finalize flow for in-game player photo clues. Revelry should not mirror raw submitted photos into party feeds or result cards unless LocalPlay later returns an explicit safe share payload.
+
+Party Poker remains a no-money game. Revelry must not attach sparks, rewards, buy-ins, cash-out language, or economic value to poker outcomes.
 
 Random Chit is richer because LocalPlay now supports its host-app content schema:
 
@@ -33,7 +43,7 @@ LocalPlay accepts `chit_pull` in the party-games content save/generate/start end
 
 Gamma/prod rollout still requires host-app catalog policy rows for each game and an embedded hub smoke test. In production, missing policy fails closed.
 
-Photo Clue and Party Poker are now standalone-playable LocalPlay games, but they are not Revelry contract changes yet. As of June 24, LocalPlay has room/socket/UI runtime slices for both:
+Photo Clue and Party Poker are now bridge-ready quick-start games, not embedded-authoring games. As of June 24, LocalPlay has room/socket/UI runtime slices for both:
 
 - `photo_clue`: prompt validation, up-front assignment, private prompt queues, player photo upload/finalize, guesses, scoring, reveal, podium, organizer/player/spectator UI, and focused tests.
 - `poker`: no-money quick Hold'em with equal play chips, fixed antes, Stay/Fold decisions, private card redaction, showdown, elimination, podium, organizer/player/spectator UI, hand evaluation, and focused tests.

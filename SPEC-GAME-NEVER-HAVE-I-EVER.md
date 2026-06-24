@@ -83,4 +83,12 @@ Generate prompts that are playful, broadly answerable, and safe for the selected
 
 ## Revelry Readiness
 
-Keep Revelry exposure behind host-app policy until gamma multi-tab tests cover host, player, spectator, late join, reveal, and final results.
+Never Have I Ever is LocalPlay bridge-ready as a Revelry quick-start/settings game:
+
+- `host_app_supported = true`, `supported_host_apps = ["revelry"]`
+- `can_quick_start = true`
+- `can_create_content = false`
+- `can_edit_content = false`
+- `supports_ai_generation = false`
+
+It remains policy-gated. Revelry should show/start it only when LocalPlay's host-app catalog policy exposes it and gamma multi-tab tests cover host, player, spectator, late join, reveal, and final results.

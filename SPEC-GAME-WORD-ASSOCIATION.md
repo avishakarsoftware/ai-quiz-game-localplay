@@ -79,4 +79,12 @@ Generate seed words that are concrete, party-safe, culturally broad, and likely 
 
 ## Revelry Readiness
 
-Word Association is a future host-app quick-start candidate. Keep Revelry exposure behind host-app policy until gamma multi-tab tests cover submission, reveal grouping, late join, and final results.
+Word Association is LocalPlay bridge-ready as a Revelry quick-start/settings game:
+
+- `host_app_supported = true`, `supported_host_apps = ["revelry"]`
+- `can_quick_start = true`
+- `can_create_content = false`
+- `can_edit_content = false`
+- `supports_ai_generation = false`
+
+It remains policy-gated. Revelry should show/start it only when LocalPlay's host-app catalog policy exposes it and gamma multi-tab tests cover submission, reveal grouping, late join, and final results.

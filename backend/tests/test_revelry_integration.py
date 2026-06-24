@@ -1392,6 +1392,12 @@ def test_revelry_party_hub_can_quick_start_more_standalone_games(monkeypatch):
         "find_someone": "Ava's Find Someone Night",
         "chit_pull": "Ava's Random Chit Night",
         "mafia": "Ava's Mafia Night",
+        "would_you_rather": "Ava's Would You Rather Night",
+        "never_have_i_ever": "Ava's Never Have I Ever Night",
+        "word_association": "Ava's Word Association Night",
+        "acronym": "Ava's Acronym Game Night",
+        "photo_clue": "Ava's Photo Clue Night",
+        "poker": "Ava's Party Poker Night",
     }
 
     for game_type, party_title in expected_titles.items():
@@ -1419,6 +1425,10 @@ def test_revelry_party_hub_can_quick_start_more_standalone_games(monkeypatch):
         catalog = {game["id"]: game for game in resolve_res.json()["workspace"]["catalog"]}
         assert catalog[game_type]["can_quick_start"] is True
         assert catalog[game_type]["can_create_content"] is (game_type == "chit_pull")
+        if game_type == "photo_clue":
+            assert catalog[game_type]["supports_images"] is True
+        if game_type == "poker":
+            assert catalog[game_type]["supports_custom_content"] is False
 
         start_res = client.post(
             "/integrations/revelry/party-games/start",

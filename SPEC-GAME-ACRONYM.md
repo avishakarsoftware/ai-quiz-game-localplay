@@ -83,4 +83,12 @@ Generate short pronounceable acronyms with party-safe hints. Avoid acronyms that
 
 ## Revelry Readiness
 
-Acronym Game should stay hidden from Revelry until gamma multi-tab tests cover submit, anonymous voting, reveal, late join, and final results. It can later reuse the same authoring style as Random Chit and Most Likely To.
+Acronym Game is LocalPlay bridge-ready as a Revelry quick-start/settings game:
+
+- `host_app_supported = true`, `supported_host_apps = ["revelry"]`
+- `can_quick_start = true`
+- `can_create_content = false`
+- `can_edit_content = false`
+- `supports_ai_generation = false`
+
+It remains policy-gated. Revelry should show/start it only when LocalPlay's host-app catalog policy exposes it and gamma multi-tab tests cover submit, anonymous voting, reveal, late join, and final results. Future embedded authoring can reuse the same style as Random Chit and Most Likely To.

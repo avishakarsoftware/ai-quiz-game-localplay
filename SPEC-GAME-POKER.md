@@ -18,6 +18,8 @@ Frontend display name: Party Poker
 
 Status: first playable standalone MVP implemented on June 24, 2026. The shared card engine dependency exists through the Bluff MVP, and `backend/poker_hand_evaluator.py` evaluates best 5-card Hold'em hands from 5-7 cards, handles wheel straights, tie-breaking, player ranking, and pure tests. `backend/poker_engine.py` now ships a quick no-money Hold'em tournament slice: equal play-chip stacks, fixed antes, two private hole cards, five table cards, Stay/Fold decisions, showdown, elimination, podium, private card redaction, room/socket events, organizer/player/spectator UI, and focused API/socket regression tests. Full betting rounds, blinds, raises, all-ins, side pots, and richer dealer controls remain Phase 2.
 
+Revelry bridge status: LocalPlay now marks Party Poker as a host-app-capable quick-start/settings game for Revelry. It is `can_quick_start=true`, `can_create_content=false`, `can_edit_content=false`, `supports_ai_generation=false`, and `supports_custom_content=false`. Actual Revelry visibility remains host-app policy gated and should ship only after gamma embedded QA covers start, join, spectator, reconnect, showdown, completion, and result polling. Revelry must preserve the no-money framing and must not attach sparks, rewards, buy-ins, cash-out language, or economic value to poker outcomes.
+
 - Variant: Texas Hold'em tournament. The shipped first slice is quick Hold'em with antes plus Stay/Fold decisions; full betting is Phase 2.
 - One table only in MVP.
 - 2-10 players.
@@ -558,4 +560,4 @@ Playwright:
 - Host-selected short deck or simplified party rules.
 - Omaha after Hold'em is stable.
 - Replay/highlight summary.
-- Revelry party hub exposure after standalone poker is tested and compliance copy is reviewed.
+- Revelry party hub policy enablement after embedded gamma QA and compliance copy review.

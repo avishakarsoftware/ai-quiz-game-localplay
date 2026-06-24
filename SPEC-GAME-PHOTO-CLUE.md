@@ -24,6 +24,8 @@ Working title alternatives:
 
 Status: standalone playable MVP implemented on June 24, 2026. The shared media upload/finalize platform exists, and `backend/photo_clue_engine.py` owns prompt validation, up-front prompt assignment, private clue-giver queues, photo submission state, guess normalization, scoring, reveal, podium transition, public-state redaction, and pure engine tests. LocalPlay now exposes Photo Clue in the standalone catalog with default prompts, room creation, WebSocket events, player upload/guessing UI, organizer reveal/next controls, spectator reveal UI, reconnect handling, podium flow, and focused API/socket regression tests. Remaining follow-ups are AI/manual authoring UI, moderation/review, richer media retention controls, and broader Playwright matrix coverage.
 
+Revelry bridge status: LocalPlay now marks Photo Clue as a host-app-capable quick-start/settings game for Revelry. It is `can_quick_start=true`, `can_create_content=false`, `can_edit_content=false`, `supports_ai_generation=false`, and `supports_images=true`. Actual Revelry visibility remains host-app policy gated and should ship only after gamma embedded QA covers upload/finalize, guessing, spectator reveal, reconnect, completion, and result polling. Revelry should not mirror raw submitted photos unless LocalPlay later returns an explicit safe share payload.
+
 - Host creates or AI-generates a list of words/phrases.
 - At game start, the server pre-assigns prompts to players for all planned rounds.
 - Each player receives their own private prompt queue up front, before round 1 starts.

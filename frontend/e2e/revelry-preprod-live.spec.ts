@@ -17,10 +17,21 @@ type RevelryCatalogGame = {
 };
 
 const REQUIRED_REVELRY_GAME_TYPES = [
+  'acronym',
+  'bluff',
+  'chit_pull',
   'drawing',
+  'find_someone',
   'housie',
+  'mafia',
   'musical_chairs',
+  'never_have_i_ever',
+  'party_quests',
+  'photo_clue',
+  'poker',
   'quiz',
+  'word_association',
+  'would_you_rather',
   'wmlt',
 ];
 
