@@ -22,6 +22,8 @@ test.describe('Gamma deployment smoke', () => {
     await page.goto('/');
 
     await expect(page.getByRole('heading', { name: 'Choose a Game' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Most Popular' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cards', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: /AI Quiz/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Most Likely To/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Drawing Game/ })).toBeVisible();
@@ -30,6 +32,12 @@ test.describe('Gamma deployment smoke', () => {
     await expect(page.getByRole('button', { name: /Story Chain/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Mafia/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Baby Bingo/ })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    await page.getByRole('button', { name: 'Most Popular' }).click();
+    await expect(page.getByRole('button', { name: /AI Quiz/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Drawing Game/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Caption Contest/ })).not.toBeVisible();
     await expectNoHorizontalOverflow(page);
 
     expect(pageErrors).toEqual([]);

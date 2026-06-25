@@ -49,6 +49,24 @@ curl -sS -i https://gamesapi.revelryapp.me/health
 curl -sS -i https://gamesapi-gamma.revelryapp.me/health
 ```
 
+### Gamma QA sprint — June 25, 2026
+
+Deployed commit `2cc7597` to gamma with `./scripts/deploy-gcp.sh --gamma --with-frontend`, after making backend e2e quiz generation deterministic so the default backend suite no longer depends on transient live AI provider availability. No schema migration was required.
+
+Post-deploy verification:
+
+- `.venv/bin/pytest backend/tests` passed: `918 passed`.
+- `cd frontend && npm test -- --run` passed: `226 passed`.
+- `cd frontend && npm run build` passed.
+- `cd frontend && npm run test:e2e:gamma` passed on desktop and mobile, including standalone `Most Popular` and `Cards` filter coverage.
+- `cd frontend && PREPROD_LIVE=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-live` passed: 11 live gameplay tests passed; Drawing remains the existing tracked skip until deterministic drawing seeding exists.
+- `cd frontend && npm run test:e2e:gamma:generic` passed for the 10 Generic Prompt Party games.
+- `cd frontend && PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me PREPROD_LIVE=1 TWO_TRUTHS_LIVE=1 npx playwright test e2e/gamma-smoke.spec.ts e2e/bingo-gamma-live.spec.ts e2e/bluff-gamma-live.spec.ts e2e/two-truths-live.spec.ts e2e/standalone-turns-gamma-live.spec.ts e2e/foundation-games-live.spec.ts --project chromium-desktop --workers=1` passed: 11 broader live standalone flows.
+- `cd frontend && PREPROD_UX_AUDIT=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-ux` passed and produced representative mobile screenshots for catalog, Bluff host, and Chit Pull host states.
+- With a freshly minted short-lived gamma party-games URL, `cd frontend && PREPROD_REVELRY=1 REVELRY_GAMMA_PARTY_GAMES_URL_FILE=../gamma_party_games_url.txt npm run test:e2e:preprod-revelry` passed: sorted/searchable embedded catalog plus host/player/watch launch-token routes for every launchable Revelry game. The harness now explicitly checks the embedded `Most Popular` and `Cards` filters.
+
+The Revelry preprod harness requires a fresh gamma party-games URL. Expired `gamma_party_games_url.txt` tokens fail with `401 Invalid or expired party games token`; mint a new token using the Revelry repo helper documented below, and never print or commit the token.
+
 ### Recent gamma deploy — June 24, 2026 (Generic Prompt Party engine)
 
 Deployed commit `44d38ad` via `./scripts/deploy-gcp.sh --gamma --with-frontend` to `games-backend-gamma` (prod `games-backend` untouched). Ships the shared Generic Prompt Party runtime plus ten standalone games: `hot_takes`, `this_or_that`, `caption_contest`, `pitch_battle`, `roast_toast`, `desert_island`, `memory_lane`, `rapid_fire`, `one_word_vibes`, and `emoji_story`. Verified live after deploy: `/health` returned healthy, `/catalog` contains all ten game ids with `content_schema.kind=generic_prompt_party_v1`, and `npm run test:e2e:gamma` passed on desktop and mobile. No Supabase schema migration is required. Revelry/host-app exposure remains disabled because these entries are standalone-only until a bridge/policy pass is completed.

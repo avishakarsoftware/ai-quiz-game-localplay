@@ -224,10 +224,16 @@ test.describe('Revelry pre-prod live game matrix', () => {
     await page.goto(hubUrl.toString());
     await expect(page.getByPlaceholder('Search games')).toBeVisible();
     await expect(page.getByRole('button', { name: 'All' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Most Popular' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Quiz/Trivia' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Creative' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Bingo/Housie' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cards', exact: true })).toBeVisible();
     await expectNoHorizontalOverflow(page);
+
+    await page.getByRole('button', { name: 'Most Popular' }).click();
+    await expect(page.getByRole('heading', { name: 'AI Quiz' }).first()).toBeVisible();
+    await page.getByRole('button', { name: 'All' }).click();
 
     for (const title of sortedTitles(launchableGames)) {
       await expect(page.getByRole('heading', { name: title }).first()).toBeVisible();
