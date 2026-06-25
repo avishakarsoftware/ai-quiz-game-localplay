@@ -164,6 +164,14 @@ describe('host-app mode filtering', () => {
                             creation_modes: ['manual', 'template'],
                         },
                         {
+                            id: 'caption_contest',
+                            game_type: 'caption_contest',
+                            title: 'Caption Contest',
+                            description: 'Captions',
+                            launchable: true,
+                            can_quick_start: true,
+                        },
+                        {
                             id: 'rebus',
                             game_type: 'rebus',
                             title: 'Rebus Rush',
@@ -193,6 +201,13 @@ describe('host-app mode filtering', () => {
         expect(screen.getAllByText(/ready-made or ai prompts/i)).toHaveLength(2);
         expect(screen.queryByText(/manual \/ ai/i)).not.toBeInTheDocument();
         expect(screen.queryByText(/^template$/i)).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Most Popular' }));
+        expect(screen.getByText('AI Quiz')).toBeInTheDocument();
+        expect(screen.getByText('Most Likely To')).toBeInTheDocument();
+        expect(screen.getByText('Drawing Game')).toBeInTheDocument();
+        expect(screen.getByText('Housie')).toBeInTheDocument();
+        expect(screen.queryByText('Caption Contest')).not.toBeInTheDocument();
     });
 
     it('renders guest party hub as active-game join/watch without host creation controls', async () => {

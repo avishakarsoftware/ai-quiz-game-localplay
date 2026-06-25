@@ -1,7 +1,7 @@
 import { Info, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { type GameType } from '../../types';
-import { filterGameModesForCatalog, GAME_MODE_CONFIGS, type GameModeConfig } from '../../gameModes';
+import { filterGameModesForCatalog, GAME_MODE_CONFIGS, isMostPopularGameId, mostPopularGameRank, type GameModeConfig } from '../../gameModes';
 import { ENABLE_BINGO } from '../../config';
 import GameRulesModal from '../GameRulesModal';
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../../gameRules';
@@ -11,10 +11,11 @@ interface GameSelectScreenProps {
     catalog?: CatalogGameWithRules[];
 }
 
-type GameCategory = 'all' | 'quiz' | 'creative' | 'bingo_housie' | 'cards';
+type GameCategory = 'all' | 'popular' | 'quiz' | 'creative' | 'bingo_housie' | 'cards';
 
 const CATEGORY_OPTIONS: Array<{ id: GameCategory; label: string }> = [
     { id: 'all', label: 'All' },
+    { id: 'popular', label: 'Most Popular' },
     { id: 'quiz', label: 'Quiz/Trivia' },
     { id: 'creative', label: 'Creative' },
     { id: 'bingo_housie', label: 'Bingo/Housie' },
@@ -83,12 +84,15 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
     const aiCapable = useMemo(() => new Set((catalog || []).filter((item) => item.supports_ai_generation).map((item) => item.id)), [catalog]);
     const query = searchQuery.trim().toLowerCase();
     const filteredGameModes = useMemo(() => {
-        return gameModes.filter((game) => {
-            const matchesCategory = activeCategory === 'all' || getGameCategory(game) === activeCategory;
+        const filtered = gameModes.filter((game) => {
+            const matchesCategory = activeCategory === 'all'
+                || (activeCategory === 'popular' ? isMostPopularGameId(game.id) : getGameCategory(game) === activeCategory);
             if (!matchesCategory) return false;
             if (!query) return true;
             return `${game.title} ${game.description} ${game.runtimeType}`.toLowerCase().includes(query);
         });
+        if (activeCategory !== 'popular') return filtered;
+        return [...filtered].sort((a, b) => mostPopularGameRank(a.id) - mostPopularGameRank(b.id) || a.title.localeCompare(b.title));
     }, [activeCategory, gameModes, query]);
 
     return (

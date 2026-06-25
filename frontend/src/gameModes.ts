@@ -329,8 +329,39 @@ export const GENERIC_PROMPT_GAME_IDS: GenericPromptGameType[] = [
     'this_or_that',
 ];
 
+export const MOST_POPULAR_GAME_IDS: GameType[] = [
+    'quiz',
+    'wmlt',
+    'drawing',
+    'housie',
+    'bingo',
+    'baby_bingo',
+    'musical_chairs',
+    'two_truths',
+    'story_chain',
+    'find_someone',
+    'party_quests',
+    'bluff',
+    'mafia',
+    'photo_clue',
+];
+
+const MOST_POPULAR_GAME_RANK = new Map<string, number>(
+    MOST_POPULAR_GAME_IDS.map((id, index) => [id, index]),
+);
+
 export function getGameModeConfig(gameType: GameType): GameModeConfig {
     return GAME_MODE_CONFIGS.find((item) => item.id === gameType) || GAME_MODE_CONFIGS[0];
+}
+
+export function isMostPopularGameId(gameType?: string): boolean {
+    return Boolean(gameType && MOST_POPULAR_GAME_RANK.has(gameType));
+}
+
+export function mostPopularGameRank(gameType?: string): number {
+    return gameType && MOST_POPULAR_GAME_RANK.has(gameType)
+        ? MOST_POPULAR_GAME_RANK.get(gameType)!
+        : Number.MAX_SAFE_INTEGER;
 }
 
 export function filterGameModesForCatalog(catalog: Array<{ id: string; launchable?: boolean }> | undefined): GameModeConfig[] {

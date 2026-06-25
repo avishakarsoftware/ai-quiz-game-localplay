@@ -1,7 +1,7 @@
 import { Search } from 'lucide-react';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { API_URL } from '../config';
-import { getGameModeConfig } from '../gameModes';
+import { getGameModeConfig, isMostPopularGameId, mostPopularGameRank } from '../gameModes';
 import GameRulesModal from '../components/GameRulesModal';
 import { type GameRules } from '../gameRules';
 import { returnToHostApp } from '../utils/hostAppReturn';
@@ -94,10 +94,11 @@ type SetupDraft = {
 };
 
 const PROMPT_COUNT_OPTIONS = [5, 8, 10, 15, 20];
-type PartyHubGameCategory = 'all' | 'quiz' | 'creative' | 'bingo_housie' | 'cards';
+type PartyHubGameCategory = 'all' | 'popular' | 'quiz' | 'creative' | 'bingo_housie' | 'cards';
 
 const PARTY_HUB_CATEGORY_OPTIONS: Array<{ id: PartyHubGameCategory; label: string }> = [
     { id: 'all', label: 'All' },
+    { id: 'popular', label: 'Most Popular' },
     { id: 'quiz', label: 'Quiz/Trivia' },
     { id: 'creative', label: 'Creative' },
     { id: 'bingo_housie', label: 'Bingo/Housie' },
@@ -118,10 +119,31 @@ const PARTY_HUB_CATEGORY_BY_ID: Record<string, PartyHubGameCategory> = {
     story_chain: 'creative',
     common_ground: 'creative',
     find_someone: 'creative',
+    who_am_i: 'quiz',
+    chit_pull: 'creative',
+    party_quests: 'creative',
+    survey_says: 'quiz',
+    caption_contest: 'creative',
+    desert_island: 'creative',
+    emoji_story: 'creative',
+    hot_takes: 'quiz',
+    memory_lane: 'creative',
+    one_word_vibes: 'creative',
+    pitch_battle: 'creative',
+    rapid_fire: 'quiz',
+    roast_toast: 'creative',
+    this_or_that: 'quiz',
+    would_you_rather: 'creative',
+    never_have_i_ever: 'creative',
+    word_association: 'creative',
+    acronym: 'creative',
+    photo_clue: 'creative',
     housie: 'bingo_housie',
     bingo: 'bingo_housie',
     baby_bingo: 'bingo_housie',
+    mafia: 'cards',
     bluff: 'cards',
+    poker: 'cards',
 };
 
 function gameSortTitle(game: { title?: string; game_type?: string; id?: string }) {
@@ -353,8 +375,13 @@ export default function PartyHubPage() {
     );
     const filteredCatalogGames = useMemo(() => {
         const query = catalogSearch.trim().toLowerCase();
-        return catalogGames.filter((game) => {
-            if (catalogCategory !== 'all' && categoryForCatalogGame(game) !== catalogCategory) return false;
+        const filtered = catalogGames.filter((game) => {
+            if (catalogCategory !== 'all') {
+                const matchesCategory = catalogCategory === 'popular'
+                    ? isMostPopularGameId(game.id) || isMostPopularGameId(game.game_type)
+                    : categoryForCatalogGame(game) === catalogCategory;
+                if (!matchesCategory) return false;
+            }
             if (!query) return true;
             const mode = getGameModeConfig(game.id as Parameters<typeof getGameModeConfig>[0]);
             return [
@@ -365,6 +392,12 @@ export default function PartyHubPage() {
                 game.game_type,
                 game.runtime_type,
             ].filter(Boolean).join(' ').toLowerCase().includes(query);
+        });
+        if (catalogCategory !== 'popular') return filtered;
+        return [...filtered].sort((a, b) => {
+            const aRank = Math.min(mostPopularGameRank(a.id), mostPopularGameRank(a.game_type));
+            const bRank = Math.min(mostPopularGameRank(b.id), mostPopularGameRank(b.game_type));
+            return aRank - bRank || gameSortTitle(a).localeCompare(gameSortTitle(b));
         });
     }, [catalogCategory, catalogGames, catalogSearch]);
 

@@ -34,7 +34,7 @@ Launch readiness baseline:
 - Standalone **My Quizzes** is scoped to the current LocalPlay wallet/session and must not show Revelry party-scoped content or images.
 - Host-app launches must hide standalone economy/account/library chrome unless explicitly allowed by the host-app context.
 - All user-facing labels should treat the app as a multi-game surface, not as "Revelry Quiz".
-- The standalone game picker is a catalog, not a long vertical list: show all available games sorted alphabetically by display name, include search, and filter with the product categories **All**, **Quiz/Trivia**, **Creative**, **Bingo/Housie**, and **Cards**. Do not include a generic "Social" category because all LocalPlay games are social by design. Games that support AI-generated setup/content should show a small sparkle marker after the game name.
+- The standalone game picker is a catalog, not a long vertical list: show all available games sorted alphabetically by display name, include search, and filter with the product categories **All**, **Most Popular**, **Quiz/Trivia**, **Creative**, **Bingo/Housie**, and **Cards**. Do not include a generic "Social" category because all LocalPlay games are social by design. Games that support AI-generated setup/content should show a small sparkle marker after the game name.
 - Every game must expose concise rules before play. `SPEC-GAME-RULES.md` defines the shared rules surface and Phase 1 implementation: catalog-backed rules metadata, host game-picker rules modal, organizer/player lobby access, embedded Revelry Party Hub affordance, and tests that require rules for every launchable game.
 - Backend-served SPA and service worker routing must never allow API routes to be fulfilled by cached app shell HTML.
 - PWA prompts should improve continuity without interrupting gameplay: update prompts are allowed globally, while install and notification prompts are standalone-first and suppressed in Revelry/host-app embedded surfaces.
@@ -1077,7 +1077,7 @@ Organizer states:
 Game select:
 
 - Host chooses from `frontend/src/gameModes.ts`.
-- The standalone picker renders a responsive searchable catalog. Category filters are **All**, **Quiz/Trivia**, **Creative**, **Bingo/Housie**, and **Cards**; games with AI setup/generation are visually marked with a sparkle after the title. Game cards expose stable test ids in the form `game-card-{game_id}` so Playwright can audit setup and player flows without brittle text matching.
+- The standalone picker renders a responsive searchable catalog. Category filters are **All**, **Most Popular**, **Quiz/Trivia**, **Creative**, **Bingo/Housie**, and **Cards**; games with AI setup/generation are visually marked with a sparkle after the title. Game cards expose stable test ids in the form `game-card-{game_id}` so Playwright can audit setup and player flows without brittle text matching.
 - Quiz and quiz variants go through quiz prompt/review or custom quiz authoring.
 - WMLT goes to `MLT_PROMPT` and `MLT_REVIEW`.
 - Drawing goes to `DRAWING_PROMPT` and `DRAWING_REVIEW`.

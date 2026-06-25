@@ -45,6 +45,11 @@ describe('quiz variant game modes', () => {
     it('filters games by category and search text', () => {
         render(<GameSelectScreen onSelect={() => {}} />);
 
+        fireEvent.click(screen.getByRole('button', { name: 'Most Popular' }));
+        expect(screen.getByRole('button', { name: /^⚡\s*AI Quiz/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^🎯\s*Most Likely To/ })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Caption Contest/ })).not.toBeInTheDocument();
+
         fireEvent.click(screen.getByRole('button', { name: 'Bingo/Housie' }));
         expect(screen.getByRole('button', { name: /^🎱\s*Housie/ })).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /Most Likely To/ })).not.toBeInTheDocument();
