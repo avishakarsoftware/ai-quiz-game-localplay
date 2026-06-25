@@ -1,15 +1,14 @@
 """
 Full end-to-end integration tests.
-Tests: quiz generation -> editing -> room creation -> WebSocket game flow -> reconnection.
+Tests: quiz generation boundary -> editing -> room creation -> WebSocket game flow -> reconnection.
 Also tests: export/import, custom num_questions, streak, teams, power-ups, game history,
 content ownership, token economy, WMLT game flow.
-Requires: Ollama running with qwen2.5:14b-instruct (or OLLAMA_MODEL env var) for @requires_ollama tests.
+Provider-specific AI availability belongs in provider tests; this file keeps generation deterministic.
 """
 import sys
 import os
 import time
 import uuid
-import urllib.request
 from contextlib import contextmanager
 
 import pytest
@@ -17,20 +16,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 
-def _ollama_available():
-    """Check if Ollama is running locally."""
-    try:
-        urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2)
-        return True
-    except Exception:
-        return False
-
-
-requires_ollama = pytest.mark.skipif(
-    not _ollama_available(), reason="Ollama not running locally"
-)
-
 from fastapi.testclient import TestClient
+import main
 from main import app, quizzes, quiz_images, quiz_image_assets, game_history, mlt_scenarios, content_owners, _rate_limit_store
 from media_store import media_store
 from socket_manager import socket_manager
@@ -164,6 +151,37 @@ def seed_mlt(num_rounds=3):
     return scenario_id
 
 
+def deterministic_quiz(title="E2E Deterministic Quiz", num_questions=5):
+    """Generate stable quiz data for e2e tests without calling external AI."""
+    questions = []
+    for index in range(num_questions):
+        answer_index = index % 4
+        questions.append({
+            "id": index + 1,
+            "text": f"{title} question {index + 1}?",
+            "options": [
+                f"Answer {index + 1}A",
+                f"Answer {index + 1}B",
+                f"Answer {index + 1}C",
+                f"Answer {index + 1}D",
+            ],
+            "answer_index": answer_index,
+            "image_prompt": "",
+        })
+    return {"quiz_title": title, "questions": questions}
+
+
+def fake_quiz_generator(expected_prompt=None, title="E2E Deterministic Quiz"):
+    async def fake_generate(prompt, difficulty, num_questions, provider, model_override=None, mode="classic"):
+        if expected_prompt is not None:
+            assert prompt == expected_prompt
+        assert difficulty in {"easy", "medium", "hard"}
+        assert mode == "classic"
+        return deterministic_quiz(title, num_questions)
+
+    return fake_generate
+
+
 def create_room(content_id, game_type="quiz", time_limit=30, headers=None):
     """Create a room and return (room_code, organizer_token)."""
     headers = headers or HEADERS_A
@@ -179,15 +197,20 @@ def create_room(content_id, game_type="quiz", time_limit=30, headers=None):
 
 
 # ===========================================================================
-# Full Game Flow (with Ollama)
+# Full Game Flow
 # ===========================================================================
 
-@requires_ollama
 class TestEndToEnd:
     """Full game flow: generate quiz -> edit -> create room -> play -> podium."""
 
-    def test_full_game_flow(self):
-        # Step 1: Generate quiz with Ollama
+    def test_full_game_flow(self, monkeypatch):
+        monkeypatch.setattr(
+            main.quiz_engine,
+            "generate_quiz",
+            fake_quiz_generator("5 questions about colors and shapes", "Colors and Shapes"),
+        )
+
+        # Step 1: Generate quiz with deterministic provider boundary
         print("\n--- Step 1: Generate quiz ---")
         res = client.post("/quiz/generate", json={
             "prompt": "5 questions about colors and shapes",
@@ -419,14 +442,18 @@ class TestReconnectionE2E:
 
 
 # ===========================================================================
-# Export / Import (with Ollama)
+# Export / Import
 # ===========================================================================
 
-@requires_ollama
 class TestExportImportE2E:
-    """E2E test for export/import with live Ollama-generated quiz."""
+    """E2E test for export/import with deterministic quiz generation."""
 
-    def test_generate_export_import_play(self):
+    def test_generate_export_import_play(self, monkeypatch):
+        monkeypatch.setattr(
+            main.quiz_engine,
+            "generate_quiz",
+            fake_quiz_generator("3 questions about animals", "Animal Quiz"),
+        )
         res = client.post("/quiz/generate", json={
             "prompt": "3 questions about animals",
             "difficulty": "medium",
@@ -475,14 +502,18 @@ class TestExportImportE2E:
 
 
 # ===========================================================================
-# Bonus Rounds (with Ollama)
+# Bonus Rounds
 # ===========================================================================
 
-@requires_ollama
 class TestBonusRoundsE2E:
-    """E2E test for bonus rounds with live Ollama-generated quiz."""
+    """E2E test for bonus rounds with deterministic quiz generation."""
 
-    def test_bonus_rounds_with_live_quiz(self):
+    def test_bonus_rounds_with_live_quiz(self, monkeypatch):
+        monkeypatch.setattr(
+            main.quiz_engine,
+            "generate_quiz",
+            fake_quiz_generator("6 questions about geography and world capitals", "Geography Quiz"),
+        )
         res = client.post("/quiz/generate", json={
             "prompt": "6 questions about geography and world capitals",
             "difficulty": "easy",
