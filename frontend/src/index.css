@@ -3126,6 +3126,34 @@ body {
     }
 }
 
+/* Accessibility: silence continuous and celebratory motion for users who
+   request reduced motion. These animations run on every player's phone and
+   on the shared TV, so they are the most important to gate. Entrance fades
+   are left intact elsewhere; only looping/decorative motion is stopped. */
+@media (prefers-reduced-motion: reduce) {
+    .mc-visualizer,
+    .mc-visualizer.grab,
+    .mc-player-orbit,
+    .celebration-burst,
+    .burst-particle,
+    .wrong-shake,
+    .streak-fire,
+    .streak-fire::before,
+    .crown-bounce,
+    .victory-glow,
+    .timer-number-pulse,
+    .animate-bounce,
+    .animate-pulse,
+    .animate-ping {
+        animation: none !important;
+    }
+
+    .celebration-burst,
+    .burst-particle {
+        display: none;
+    }
+}
+
 @media (max-width: 640px) {
     .housie-setup {
         padding: 18px 16px 24px;

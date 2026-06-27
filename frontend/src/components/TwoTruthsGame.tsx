@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { type TwoTruthsState } from '../types';
 
 interface TwoTruthsGameProps {
@@ -36,14 +36,27 @@ export default function TwoTruthsGame({
 }: TwoTruthsGameProps) {
     const [texts, setTexts] = useState(DEFAULT_ROWS);
     const [lieIndex, setLieIndex] = useState(2);
+    const [syncedSubmission, setSyncedSubmission] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (!state?.my_submission) return;
+    // Pre-fill the editable form with the player's own submitted answers, but
+    // only when that submission's content actually changes -- never on every
+    // broadcast. The previous effect keyed on `state.my_submission` (a fresh
+    // object on every WebSocket frame), so any other player submitting would
+    // re-run it and clobber this player's in-progress edits. Adjusting state
+    // during render keyed on the submission content is the React-recommended
+    // pattern for this and avoids cascading-render effects entirely.
+    const submissionKey = state?.my_submission
+        ? state.my_submission.statements
+            .map((item) => `${item.display_order}:${item.is_lie ? 1 : 0}:${item.text}`)
+            .join('|')
+        : null;
+    if (state?.my_submission && submissionKey !== syncedSubmission) {
         const ordered = [...state.my_submission.statements].sort((a, b) => a.display_order - b.display_order);
         setTexts(ordered.map((item) => item.text));
         const found = ordered.findIndex((item) => item.is_lie);
-        if (found >= 0) setLieIndex(found);
-    }, [state?.my_submission]);
+        setLieIndex(found >= 0 ? found : 2);
+        setSyncedSubmission(submissionKey);
+    }
 
     if (!state) {
         return (

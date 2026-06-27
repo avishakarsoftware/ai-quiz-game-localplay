@@ -217,6 +217,8 @@ export interface PokerState {
     decisions: Record<string, 'pending' | 'stay' | 'fold' | string>;
     hand_result?: {
         winner_id?: string;
+        winner_ids?: string[];
+        payouts?: Record<string, number>;
         pot?: number;
         ranked?: Array<{ player_id: string; place: number; evaluation?: { category?: string } | null }>;
         decisions?: Record<string, string>;
@@ -779,6 +781,7 @@ export interface AcronymState {
     standings?: SimpleSocialStanding[];
     your_entry_id?: string;
     your_submission?: string;
+    your_vote?: string;
     entries?: Array<{ entry_id: string; text: string }>;
     submissions?: Record<string, { entry_id: string; text: string }>;
     votes?: Record<string, string>;
@@ -790,7 +793,9 @@ export type SimpleSocialState = WouldYouRatherState | NeverHaveIEverState | Word
 
 export interface GenericPromptEntry {
     entry_id: string;
-    player_id: string;
+    // Authorship fields are redacted during blind voting; present at reveal/podium.
+    player_id?: string;
+    is_mine?: boolean;
     text: string;
     normalized?: string;
     at?: number;

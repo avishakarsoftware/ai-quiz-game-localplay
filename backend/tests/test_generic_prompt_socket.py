@@ -130,7 +130,12 @@ def test_generic_prompt_socket_submit_vote_reveal_and_podium(monkeypatch):
 
             org_ws.send_json({"type": "GENERIC_START_VOTING"})
             voting = recv_generic_sync(sockets["Ruchi"], phase=PHASE_VOTING)["generic_prompt"]
-            avi_entry = next(entry for entry in voting["entries"] if entry["player_id"] == "Avi")
+            # Voting is blind: authorship must not leak to other players.
+            for entry in voting["entries"]:
+                assert "player_id" not in entry
+                assert "normalized" not in entry
+            # Ruchi votes for the entry that is not her own (Avi's).
+            avi_entry = next(entry for entry in voting["entries"] if not entry.get("is_mine"))
             sockets["Ruchi"].send_json({"type": "GENERIC_VOTE", "entry_id": avi_entry["entry_id"]})
 
             org_ws.send_json({"type": "GENERIC_REVEAL"})

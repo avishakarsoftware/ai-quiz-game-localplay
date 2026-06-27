@@ -156,6 +156,9 @@ export default function MafiaGame({
                     </p>
                     <h2>{roleLabel(state.my_role)}</h2>
                     <p className="text-[--text-secondary]">{roleDescription(state.my_role)}</p>
+                    {state.ghost && (
+                        <p className="text-[--accent-warning] font-bold mt-3">You've been eliminated 👻 — watch quietly. You can't vote or take night actions, but stick around to see how it ends.</p>
+                    )}
                     {state.my_action?.kind === 'mafia_kill' && Boolean(state.my_action.mafia_teammates?.length) && (
                         <p className="text-[--text-secondary] mt-2">Your Mafia teammate{state.my_action.mafia_teammates!.length === 1 ? '' : 's'}: {state.my_action.mafia_teammates!.join(', ')}</p>
                     )}

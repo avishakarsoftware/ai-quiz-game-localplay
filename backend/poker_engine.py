@@ -154,12 +154,25 @@ def reveal_hand(state: dict) -> dict:
     else:
         ranked = rank_players({player_id: next_state["hole_cards"][player_id] for player_id in contenders}, next_state["community_cards"])
         winner_id = ranked[0]["player_id"]
-    next_state["stacks"][winner_id] = int(next_state["stacks"].get(winner_id, 0)) + int(next_state.get("pot", 0))
+    pot = int(next_state.get("pot", 0))
+    # Split the pot among all players tied for the best hand (place == 1). Odd
+    # chips go to the earliest-ranked winners. Awarding the whole pot to a single
+    # player on a tie silently destroyed chips that the tied players had anted.
+    winner_ids = [row["player_id"] for row in ranked if int(row.get("place", 1)) == 1] or [winner_id]
+    base_share = pot // len(winner_ids)
+    remainder = pot - base_share * len(winner_ids)
+    payouts: dict[str, int] = {}
+    for index, pid in enumerate(winner_ids):
+        award = base_share + (1 if index < remainder else 0)
+        next_state["stacks"][pid] = int(next_state["stacks"].get(pid, 0)) + award
+        payouts[pid] = award
     next_state["phase"] = PHASE_SHOWDOWN
     next_state["deadline"] = None
     next_state["hand_result"] = {
         "winner_id": winner_id,
-        "pot": int(next_state.get("pot", 0)),
+        "winner_ids": winner_ids,
+        "payouts": payouts,
+        "pot": pot,
         "ranked": ranked,
         "decisions": dict(next_state.get("decisions") or {}),
     }

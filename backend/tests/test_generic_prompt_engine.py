@@ -61,6 +61,56 @@ def test_text_vote_flow_scores_entry_author():
     assert state["rounds"][0]["result"]["vote_counts"][avi_entry] == 2
 
 
+def test_entry_ids_unique_for_nicknames_that_normalize_alike():
+    # "Bob!" and "Bob?" both normalize to "bob"; the old entry-id scheme gave
+    # them the same id, merging their vote buckets and corrupting the tally.
+    state = create_initial_state(["Bob!", "Bob?", "Cara"], "caption_contest", {"round_count": 1}, now=1)
+    state = submit_text(state, "Bob!", "First caption.")
+    state = submit_text(state, "Bob?", "Second caption.")
+    state = start_voting(state)
+
+    submissions = state["rounds"][0]["submissions"]
+    bang_entry = submissions["Bob!"]["entry_id"]
+    quest_entry = submissions["Bob?"]["entry_id"]
+    assert bang_entry != quest_entry
+
+    # Two voters back "Bob!"; only that entry should be credited.
+    state = submit_vote(state, "Bob?", bang_entry)
+    state = submit_vote(state, "Cara", bang_entry)
+    state = reveal_round(state, now=2)
+
+    assert state["scores"]["Bob!"] == 2
+    assert state["scores"]["Bob?"] == 0
+    assert state["rounds"][0]["result"]["vote_counts"][bang_entry] == 2
+    assert state["rounds"][0]["result"]["vote_counts"][quest_entry] == 0
+
+
+def test_voting_entries_are_anonymous_to_non_authors():
+    state = create_initial_state(["Avi", "Ruchi", "Ashu"], "caption_contest", {"round_count": 1}, now=1)
+    state = submit_text(state, "Avi", "The cake is doing yoga.")
+    state = submit_text(state, "Ruchi", "Structural frosting issue.")
+    state = start_voting(state)
+
+    viewer = public_state(state, "Ashu")
+    assert len(viewer["entries"]) == 2
+    for entry in viewer["entries"]:
+        # Blind voting: no author info leaks during the voting phase.
+        assert "player_id" not in entry
+        assert "normalized" not in entry
+        assert entry["is_mine"] is False
+        assert entry["text"]
+
+    # An author sees is_mine on their own entry so the UI can disable self-votes.
+    avi_view = public_state(state, "Avi")
+    mine = [e for e in avi_view["entries"] if e["is_mine"]]
+    assert len(mine) == 1
+
+    # Authorship is restored once the round is revealed.
+    state = reveal_round(state, now=2)
+    revealed = public_state(state, "Ashu")
+    assert all("player_id" in entry for entry in revealed["entries"])
+
+
 def test_text_group_scores_largest_matching_group():
     state = create_initial_state(["Avi", "Ruchi", "Ashu"], "rapid_fire", {"round_count": 3}, now=1)
 

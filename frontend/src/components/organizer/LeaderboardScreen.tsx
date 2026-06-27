@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type LeaderboardEntry } from '../../types';
 import LeaderboardBarChart from '../LeaderboardBarChart';
 
@@ -12,13 +12,30 @@ interface LeaderboardScreenProps {
     onEndQuiz?: () => void;
 }
 
-export default function LeaderboardScreen({ leaderboard, questionNumber, totalQuestions, onNextQuestion }: LeaderboardScreenProps) {
-    const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+export default function LeaderboardScreen({ leaderboard, questionNumber, totalQuestions, onNextQuestion, onEndQuiz }: LeaderboardScreenProps) {
+    const isFinal = totalQuestions > 0 && questionNumber >= totalQuestions;
+    const [secondsLeft, setSecondsLeft] = useState(Math.round(AUTO_ADVANCE_MS / 1000));
+    // Keep the latest callback in a ref so the auto-advance countdown is set up
+    // exactly once on mount and is never reset by unrelated parent re-renders
+    // (the old effect depended on `onNextQuestion`, a fresh closure each render).
+    const advanceRef = useRef(onNextQuestion);
+    useEffect(() => {
+        advanceRef.current = onNextQuestion;
+    }, [onNextQuestion]);
 
     useEffect(() => {
-        timerRef.current = setTimeout(onNextQuestion, AUTO_ADVANCE_MS);
-        return () => clearTimeout(timerRef.current);
-    }, [onNextQuestion]);
+        const interval = setInterval(() => {
+            setSecondsLeft((prev) => {
+                if (prev <= 1) {
+                    clearInterval(interval);
+                    advanceRef.current();
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        return () => clearInterval(interval);
+    }, []);
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
@@ -36,8 +53,16 @@ export default function LeaderboardScreen({ leaderboard, questionNumber, totalQu
                 <LeaderboardBarChart leaderboard={leaderboard} size="compact" />
             </div>
 
-            <div className="pb-4 flex justify-center">
-                <p className="text-sm text-[--text-tertiary]">Auto-advancing to next question…</p>
+            <div className="pb-4 space-y-2">
+                <button onClick={onNextQuestion} className="btn btn-primary btn-glow w-full">
+                    {isFinal ? 'Show Results' : 'Next Question'}
+                    {secondsLeft > 0 ? ` (${secondsLeft})` : ''}
+                </button>
+                {onEndQuiz && (
+                    <button onClick={onEndQuiz} className="btn btn-secondary w-full">
+                        End Game
+                    </button>
+                )}
             </div>
         </div>
     );

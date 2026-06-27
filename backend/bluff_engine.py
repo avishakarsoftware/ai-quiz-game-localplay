@@ -279,6 +279,21 @@ def continue_after_reveal(state: dict) -> dict:
     return next_state
 
 
+def _public_claim(claim: Optional[dict]) -> Optional[dict]:
+    """Public view of a claim with the actually-played card ids stripped.
+
+    Card ids encode rank and suit (e.g. ``0:clubs:2``), so exposing them during
+    the challenge window would let every client decode the played cards and tell
+    whether a claim is a bluff -- defeating the entire game. Clients only need
+    the claimed rank/count plus the post-challenge resolution fields.
+    """
+    if not claim:
+        return None
+    public = dict(claim)
+    public.pop("card_ids", None)
+    return public
+
+
 def public_sync(state: dict) -> dict:
     return {
         "phase": state.get("phase"),
@@ -287,7 +302,7 @@ def public_sync(state: dict) -> dict:
         "required_rank": state.get("required_rank"),
         "pile_count": len(state.get("pile", [])),
         "hands": redact_hands(state.get("hands", {}), viewer_id=None),
-        "last_claim": dict(state["last_claim"]) if state.get("last_claim") else None,
+        "last_claim": _public_claim(state.get("last_claim")),
         "revealed_cards": [dict(card) for card in state.get("revealed_cards", [])],
         "challenge_deadline": state.get("challenge_deadline"),
         "winners": [dict(winner) for winner in state.get("winners", [])],

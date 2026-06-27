@@ -167,19 +167,26 @@ export default function GenericPromptGame({
                 )}
 
                 {state.phase === 'GENERIC_VOTING' && (
-                    <div className="common-ground-scoreboard mt-5">
-                        {entries.map((entry) => (
-                            <button
-                                key={entry.entry_id}
-                                type="button"
-                                className={`btn ${state.your_vote === entry.entry_id ? 'btn-primary btn-glow' : 'btn-secondary'} text-left`}
-                                disabled={!isPlayer || entry.player_id === viewerName}
-                                onClick={() => onVote?.(entry.entry_id)}
-                            >
-                                {shortText(entry.text)}
-                            </button>
-                        ))}
-                    </div>
+                    entries.filter((entry) => !entry.is_mine && entry.entry_id !== state.your_entry_id).length === 0 ? (
+                        <p className="mt-5 hero-subtitle">Not enough entries to vote on this round.</p>
+                    ) : (
+                        <div className="common-ground-scoreboard mt-5">
+                            {entries.map((entry) => {
+                                const isMine = entry.is_mine || entry.entry_id === state.your_entry_id;
+                                return (
+                                    <button
+                                        key={entry.entry_id}
+                                        type="button"
+                                        className={`btn ${state.your_vote === entry.entry_id ? 'btn-primary btn-glow' : 'btn-secondary'} text-left`}
+                                        disabled={!isPlayer || isMine || Boolean(state.your_vote)}
+                                        onClick={() => onVote?.(entry.entry_id)}
+                                    >
+                                        {shortText(entry.text)}{isMine ? ' · your entry' : ''}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )
                 )}
 
                 {state.mode === 'text_vote' && isReveal && (
@@ -187,7 +194,7 @@ export default function GenericPromptGame({
                         {entries.map((entry) => (
                             <div key={entry.entry_id}>
                                 <strong>{entry.text}</strong>
-                                <small>{entry.player_id} · {voteCounts[entry.entry_id] || 0} vote{(voteCounts[entry.entry_id] || 0) === 1 ? '' : 's'}</small>
+                                <small>{entry.player_id || 'Anonymous'} · {voteCounts[entry.entry_id] || 0} vote{(voteCounts[entry.entry_id] || 0) === 1 ? '' : 's'}</small>
                             </div>
                         ))}
                     </div>
@@ -204,8 +211,11 @@ export default function GenericPromptGame({
                     </div>
                 )}
 
-                {isPlayer && submitted && !isReveal && !isPodium && (
+                {isPlayer && submitted && (state.phase === 'GENERIC_SUBMITTING' || state.phase === 'GENERIC_CHOICE') && (
                     <p className="mt-4 text-[--accent-primary] font-bold">Submitted. You can still change it before reveal.</p>
+                )}
+                {isPlayer && state.phase === 'GENERIC_VOTING' && state.your_vote && (
+                    <p className="mt-4 text-[--accent-primary] font-bold">Vote locked.</p>
                 )}
             </section>
 

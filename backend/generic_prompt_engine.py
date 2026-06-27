@@ -7,6 +7,7 @@ podium ranks the room.
 from __future__ import annotations
 
 import copy
+import hashlib
 import re
 import time
 import unicodedata
@@ -187,6 +188,19 @@ def _normalize(value: Any) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _entry_id(player_id: str) -> str:
+    """Stable, collision-free, anonymous entry id for a submission.
+
+    Player ids are room nicknames, so deriving the entry id from the normalized
+    nickname (the old behaviour) both collided for nicknames that normalize to
+    the same string (e.g. ``Bob!`` and ``Bob?`` -> ``entry_bob``, corrupting the
+    vote tally) and leaked the author during blind voting. A short hash of the
+    exact (already room-unique) player id is unique and reveals nothing.
+    """
+    digest = hashlib.sha1(str(player_id).encode("utf-8")).hexdigest()
+    return f"entry_{digest[:12]}"
+
+
 def _clamp_int(raw: dict, key: str, default: int, low: int, high: int) -> int:
     try:
         value = int(raw.get(key, default))
@@ -341,7 +355,7 @@ def submit_text(state: dict, player_id: str, text: str) -> dict:
         raise ValueError("Submission is required")
     next_state = _copy_state(state)
     current_round(next_state)["submissions"][player_id] = {
-        "entry_id": f"entry_{_normalize(player_id).replace(' ', '_') or len(current_round(next_state).get('submissions', {}))}",
+        "entry_id": _entry_id(player_id),
         "player_id": player_id,
         "text": clean,
         "normalized": _normalize(clean),
@@ -464,7 +478,23 @@ def public_state(state: dict, viewer_id: str | None = None, host: bool = False) 
     phase = state.get("phase")
     round_state = current_round(state) if phase != PHASE_PODIUM else {}
     submissions = list((round_state.get("submissions") or {}).values())
-    entries = submissions if phase in {PHASE_VOTING, PHASE_REVEAL, PHASE_PODIUM} or host else []
+    if phase in {PHASE_REVEAL, PHASE_PODIUM} or host:
+        # Authorship is intentionally revealed at reveal/podium and to the host.
+        entries = submissions
+    elif phase == PHASE_VOTING:
+        # Blind voting: expose the text and id to vote on, but never who wrote
+        # each entry. ``is_mine`` lets a client disable voting for its own entry
+        # without leaking other authors.
+        entries = [
+            {
+                "entry_id": entry.get("entry_id"),
+                "text": entry.get("text"),
+                "is_mine": entry.get("player_id") == viewer_id,
+            }
+            for entry in submissions
+        ]
+    else:
+        entries = []
     choices = dict(round_state.get("choices") or {})
     votes = dict(round_state.get("votes") or {})
     payload = {

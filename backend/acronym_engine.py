@@ -1,6 +1,7 @@
 """Pure Acronym Game mechanics."""
 from __future__ import annotations
 
+import hashlib
 import re
 import time
 from typing import Any, Optional
@@ -130,7 +131,10 @@ def submit_expansion(state: dict, player_id: str, expansion: str) -> dict:
     if existing and not state.get("config", {}).get("allow_submission_changes", True):
         raise ValueError("Submission changes are disabled")
     next_state = _copy_state(state)
-    entry_id = f"entry_{player_id}"
+    # Voting is blind, and ``entry_id`` is exposed to all clients during the
+    # voting phase. Deriving it from the raw nickname (the old ``entry_{name}``)
+    # leaked each author. A short hash keeps it stable and anonymous.
+    entry_id = "entry_" + hashlib.sha1(str(player_id).encode("utf-8")).hexdigest()[:12]
     current_round(next_state)["submissions"][player_id] = {"entry_id": entry_id, "text": clean}
     return next_state
 
@@ -237,6 +241,8 @@ def public_state(state: dict, viewer_id: str | None = None) -> dict:
     if viewer_id and viewer_id in submissions:
         payload["your_entry_id"] = submissions[viewer_id]["entry_id"]
         payload["your_submission"] = submissions[viewer_id]["text"]
+    if viewer_id and viewer_id in votes:
+        payload["your_vote"] = votes[viewer_id]
     if phase == PHASE_VOTING:
         payload["entries"] = entries
     if phase == PHASE_REVEAL:

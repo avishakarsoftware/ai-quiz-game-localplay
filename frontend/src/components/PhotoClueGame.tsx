@@ -155,6 +155,10 @@ export default function PhotoClueGame({
                     </div>
                 )}
 
+                {isPlayer && isClueGiver && isGuessing && (
+                    <p className="text-center opacity-70">Players are guessing your photo… sit tight.</p>
+                )}
+
                 {isPlayer && state.your_guess && (
                     <div className={`rounded-lg p-3 ${state.your_guess_correct ? 'bg-emerald-500/15' : 'bg-white/5'}`}>
                         Your guess: <strong>{state.your_guess}</strong>{state.your_guess_correct ? ' · correct' : ''}

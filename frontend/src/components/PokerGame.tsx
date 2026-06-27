@@ -92,7 +92,9 @@ export default function PokerGame({ state, role, viewerName = '', leaderboard = 
                 </div>
                 {state.hand_result && (
                     <p className="mt-4 text-[--text-secondary]">
-                        {state.hand_result.winner_id} wins {state.hand_result.pot} play chips
+                        {(state.hand_result.winner_ids && state.hand_result.winner_ids.length > 1)
+                            ? `${state.hand_result.winner_ids.join(' & ')} split ${state.hand_result.pot} play chips`
+                            : `${state.hand_result.winner_id} wins ${state.hand_result.pot} play chips`}
                         {state.hand_result.ranked?.[0]?.evaluation?.category ? ` with ${state.hand_result.ranked[0].evaluation.category.replace(/_/g, ' ')}` : ''}.
                     </p>
                 )}

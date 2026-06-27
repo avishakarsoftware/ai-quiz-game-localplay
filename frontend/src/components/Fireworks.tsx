@@ -27,6 +27,10 @@ export default function Fireworks({ duration = 12000, maxRockets = 3 }: Firework
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
+        // Respect reduced-motion: skip the fireworks animation entirely.
+        if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+            return;
+        }
         const ctx = canvas.getContext('2d')!;
         const particles: Particle[] = [];
         let animId = 0;

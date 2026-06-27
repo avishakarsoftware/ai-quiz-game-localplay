@@ -66,6 +66,29 @@ def test_active_player_can_play_and_non_active_cannot():
     assert card["id"] not in {c["id"] for c in next_state["hands"]["avi"]}
 
 
+def test_public_sync_hides_played_card_ids_during_challenge():
+    # Card ids encode rank/suit, so exposing the played card ids during the
+    # challenge window would reveal whether a claim is a bluff to everyone.
+    state = create_initial_state(["avi", "ruchi", "nia"], seed="bluff")
+    card = state["hands"]["avi"][0]
+    state = play_cards(state, "avi", [card["id"]], now=10)
+
+    assert state["phase"] == PHASE_CHALLENGE
+    # Internal state still carries the real card ids for resolution.
+    assert state["last_claim"]["card_ids"] == [card["id"]]
+
+    sync = public_sync(state)
+    assert "card_ids" not in sync["last_claim"]
+    # But the public-facing claim metadata is preserved.
+    assert sync["last_claim"]["actor_id"] == "avi"
+    assert sync["last_claim"]["claimed_rank"] == "A"
+    assert sync["last_claim"]["claimed_count"] == 1
+
+    # Other players' private views must not leak the card ids either.
+    assert "card_ids" not in private_sync(state, "ruchi")["last_claim"]
+    assert "card_ids" not in private_sync(state, "avi")["last_claim"]
+
+
 def test_pass_turn_advances_to_next_player_when_enabled():
     state = create_initial_state(["avi", "ruchi", "nia"], seed="bluff")
 

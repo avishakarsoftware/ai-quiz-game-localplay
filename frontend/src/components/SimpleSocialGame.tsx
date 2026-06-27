@@ -99,6 +99,8 @@ export default function SimpleSocialGame({
             : gameType === 'never_have_i_ever' ? Boolean(nhie.your_answer)
                 : gameType === 'word_association' ? Boolean(word.your_submission)
                     : Boolean(acro.your_submission);
+    const counts = state as { submitted_votes?: number; submitted_answers?: number; submitted_count?: number };
+    const submittedCount = counts.submitted_votes ?? counts.submitted_answers ?? counts.submitted_count ?? 0;
 
     const submitText = () => {
         const clean = text.trim();
@@ -115,7 +117,7 @@ export default function SimpleSocialGame({
                 <div>
                     <p className="text-[--text-tertiary] text-sm font-bold uppercase tracking-wide">{roundLabel(state)} · {phaseCopy(gameType, state.phase)}</p>
                     <h1 className="hero-title">{title}</h1>
-                    <p className="hero-subtitle">{players.length} players · {isPodium ? 'Game complete' : `${(state as any).submitted_votes ?? (state as any).submitted_answers ?? (state as any).submitted_count ?? 0} submitted`}</p>
+                    <p className="hero-subtitle">{players.length} players · {isPodium ? 'Game complete' : `${submittedCount} submitted`}</p>
                 </div>
             </div>
 
@@ -194,13 +196,30 @@ export default function SimpleSocialGame({
                             </div>
                         )}
                         {acro.phase === 'ACRONYM_VOTING' && (
-                            <div className="common-ground-scoreboard mt-5">
-                                {(acro.entries || []).map((entry) => (
-                                    <button key={entry.entry_id} type="button" className="btn btn-secondary text-left" disabled={!isPlayer || entry.entry_id === acro.your_entry_id} onClick={() => onAcronymVote?.(entry.entry_id)}>
-                                        {voteLabel(entry.text)}
-                                    </button>
-                                ))}
-                            </div>
+                            (acro.entries || []).filter((entry) => entry.entry_id !== acro.your_entry_id).length === 0 ? (
+                                <p className="mt-5 text-[--text-tertiary]">Not enough entries to vote on this round.</p>
+                            ) : (
+                                <div className="common-ground-scoreboard mt-5">
+                                    {(acro.entries || []).map((entry) => {
+                                        const isMine = entry.entry_id === acro.your_entry_id;
+                                        const isVoted = acro.your_vote === entry.entry_id;
+                                        return (
+                                            <button
+                                                key={entry.entry_id}
+                                                type="button"
+                                                className={`btn ${isVoted ? 'btn-primary btn-glow' : 'btn-secondary'} text-left`}
+                                                disabled={!isPlayer || isMine || Boolean(acro.your_vote)}
+                                                onClick={() => onAcronymVote?.(entry.entry_id)}
+                                            >
+                                                {voteLabel(entry.text)}{isMine ? ' · your entry' : ''}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )
+                        )}
+                        {isPlayer && acro.phase === 'ACRONYM_VOTING' && acro.your_vote && (
+                            <p className="mt-4 text-[--accent-primary] font-bold">Vote locked.</p>
                         )}
                         {acro.phase === 'ACRONYM_REVEAL' && (
                             <div className="common-ground-scoreboard mt-5">
@@ -214,13 +233,13 @@ export default function SimpleSocialGame({
                         )}
                     </>
                 )}
-                {isPlayer && submitted && !isReveal && !isPodium && <p className="mt-4 text-[--accent-primary] font-bold">Submitted. You can still change it before reveal.</p>}
+                {isPlayer && submitted && !isReveal && !isPodium && acro.phase !== 'ACRONYM_VOTING' && <p className="mt-4 text-[--accent-primary] font-bold">Submitted. You can still change it before reveal.</p>}
             </section>
 
             {isHost && !isPodium && (
                 <div className="common-ground-actions mt-5">
-                    {gameType === 'acronym' && acro.phase === 'ACRONYM_SUBMITTING' && <button type="button" className="btn btn-secondary" onClick={onStartVoting}>Start Voting</button>}
-                    {((gameType !== 'acronym' && !isReveal) || acro.phase === 'ACRONYM_VOTING') && <button type="button" className="btn btn-secondary" onClick={onReveal}>Reveal</button>}
+                    {gameType === 'acronym' && acro.phase === 'ACRONYM_SUBMITTING' && <button type="button" className="btn btn-secondary" disabled={submittedCount === 0} onClick={onStartVoting}>Start Voting</button>}
+                    {((gameType !== 'acronym' && !isReveal) || acro.phase === 'ACRONYM_VOTING') && <button type="button" className="btn btn-secondary" disabled={gameType !== 'acronym' && submittedCount === 0} onClick={onReveal}>Reveal</button>}
                     {isReveal && <button type="button" className="btn btn-primary btn-glow" onClick={onNextRound}>Next Round</button>}
                     <button type="button" className="btn btn-secondary" onClick={onEndGame}>End Game</button>
                 </div>

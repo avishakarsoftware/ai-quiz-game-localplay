@@ -880,11 +880,14 @@ export default function PlayerPage() {
             if (kickedRef.current) { kickedRef.current = false; return; }
             if (!mountedRef.current) return;
             setState((current) => {
-                if (current !== 'JOIN' && current !== 'PODIUM') {
+                // Reconnect from every in-game state, including PODIUM — a player
+                // whose phone sleeps during the final results should be able to
+                // return to the celebration (RECONNECTED restores the podium).
+                if (current !== 'JOIN') {
                     reconnectTimerRef.current = setTimeout(() => joinRoom(), 2000);
                     return 'RECONNECTING';
                 }
-                if (current === 'JOIN') setError('Unable to connect. Check your internet and try again.');
+                setError('Unable to connect. Check your internet and try again.');
                 return current;
             });
         };
@@ -893,7 +896,7 @@ export default function PlayerPage() {
     useEffect(() => {
         const reconnectAfterWake = () => {
             if (document.visibilityState === 'hidden') return;
-            if (!getSavedSession() || kickedRef.current || state === 'PODIUM') return;
+            if (!getSavedSession() || kickedRef.current) return;
             const ws = wsRef.current;
             if (ws?.readyState === WebSocket.OPEN) {
                 try {
@@ -1332,7 +1335,7 @@ export default function PlayerPage() {
                             <h1 className="hero-title">{housieLatest ? housieLatest.display : 'Waiting for first call'}</h1>
                             <span>{gameType === 'bingo' ? `${housieCalled.length} items called` : housiePlayMode === 'pro' ? 'Pro mode · mark manually' : `${housieCalled.length} numbers called`}</span>
                         </div>
-                        {housieTicket && (
+                        {housieTicket ? (
                             <div className="housie-ticket-wrap">
                                 {gameType === 'bingo' ? (
                                     <BingoCardGrid
@@ -1352,6 +1355,15 @@ export default function PlayerPage() {
                                         onToggle={(cell) => toggleHousieMark(cell.value)}
                                     />
                                 )}
+                            </div>
+                        ) : (
+                            <div className="housie-ticket-wrap">
+                                <p className="hero-subtitle text-center">Getting your card ready…</p>
+                                <div className="flex gap-1.5 mt-4 justify-center">
+                                    {[0, 1, 2].map((i) => (
+                                        <div key={i} className="w-2 h-2 bg-[--accent-primary] rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+                                    ))}
+                                </div>
                             </div>
                         )}
                         <div className="housie-runtime-panel">
@@ -1826,6 +1838,11 @@ export default function PlayerPage() {
                                     </p>
                                 )}
                             </div>
+                        ) : selectedAnswer === null && selectedVote === null ? (
+                            <>
+                                <div className="result-icon result-icon-wrong">⏱</div>
+                                <h2 className="hero-title text-[--accent-warning] mb-4" style={{ WebkitTextFillColor: 'var(--accent-warning)' }}>Time's up!</h2>
+                            </>
                         ) : (
                             <>
                                 <div className="result-icon result-icon-wrong wrong-shake">✗</div>
@@ -1926,11 +1943,13 @@ export default function PlayerPage() {
                                 <>
                                     {isCorrect ? (
                                         <div className="result-icon result-icon-correct mb-2" style={{ width: 56, height: 56, fontSize: 28 }}>✓</div>
+                                    ) : selectedAnswer === null && selectedVote === null ? (
+                                        <div className="result-icon result-icon-wrong mb-2" style={{ width: 56, height: 56, fontSize: 28 }}>⏱</div>
                                     ) : (
                                         <div className="result-icon result-icon-wrong mb-2" style={{ width: 56, height: 56, fontSize: 28 }}>✗</div>
                                     )}
-                                    <h2 className="text-2xl font-extrabold" style={{ color: isCorrect ? 'var(--accent-success)' : 'var(--accent-danger)' }}>
-                                        {isCorrect ? 'Correct!' : 'Wrong'}
+                                    <h2 className="text-2xl font-extrabold" style={{ color: isCorrect ? 'var(--accent-success)' : (selectedAnswer === null && selectedVote === null ? 'var(--accent-warning)' : 'var(--accent-danger)') }}>
+                                        {isCorrect ? 'Correct!' : (selectedAnswer === null && selectedVote === null ? "Time's up!" : 'Wrong')}
                                     </h2>
                                     {pointsEarned > 0 && (
                                         <p className="text-xl font-bold text-[--accent-success] mt-2">+{pointsEarned}</p>
