@@ -337,12 +337,12 @@ async function submitTwoTruths(player: LivePlayer, playerIndex: number) {
 async function firstVisibleVotingPlayer(players: LivePlayer[]): Promise<LivePlayer> {
   await expect.poll(async () => {
     for (const [index, player] of players.entries()) {
-      if (await player.page.locator('.two-truths-options button').first().isVisible().catch(() => false)) return index;
+      if (await player.page.locator('.two-truths-options button').first().isEnabled().catch(() => false)) return index;
     }
     return -1;
   }, { timeout: 20_000 }).not.toBe(-1);
   for (const player of players) {
-    if (await player.page.locator('.two-truths-options button').first().isVisible().catch(() => false)) {
+    if (await player.page.locator('.two-truths-options button').first().isEnabled().catch(() => false)) {
       return player;
     }
   }

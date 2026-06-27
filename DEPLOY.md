@@ -39,6 +39,15 @@ As of the SPA rollout, the VM has both LocalPlay containers deployed:
 
 The older backup containers `revelry-platform` and `revelry-gamma` may exist on the VM. They are not managed by `scripts/deploy-gcp.sh`; the LocalPlay deploy script only stops/removes `games-backend` and `games-backend-gamma`.
 
+### Recent gamma deploy — June 27, 2026 (Drawing pre-prod coverage)
+
+Deployed runtime commit `4c1ef1e` to gamma with `./scripts/deploy-gcp.sh --gamma --with-frontend`. No schema migration was required. The deploy adds deterministic `/drawing/import` seeding for pre-prod QA, fixes Drawing room start so it enters round one from `START_GAME`, and hardens organizer WebSocket close handling during first-frame auth.
+
+Post-deploy verification:
+
+- `cd frontend && npm run test:e2e:gamma` passed: `2 passed`.
+- `cd frontend && PREPROD_LIVE=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-live` passed: `12 passed`, including deterministic Drawing gameplay.
+
 Useful state checks:
 
 ```bash
