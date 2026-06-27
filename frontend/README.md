@@ -56,7 +56,7 @@ For big production pushes, run the fuller Revelry party hub matrix against the s
 PREPROD_REVELRY=1 REVELRY_GAMMA_PARTY_GAMES_URL_FILE=/path/to/gamma_party_games_url.txt npm run test:e2e:preprod-revelry
 ```
 
-This matrix loads the embedded Revelry Games hub, verifies the searchable/sorted catalog UI, then starts every launchable game returned by the live Revelry catalog. It saves deterministic party-scoped content for Quiz, Most Likely To, Drawing, and Housie, quick-starts Musical Chairs, and verifies organizer/player/spectator launch tokens for each active session. If a newly exposed Revelry game lacks a harness fixture, the test fails so bridge coverage is updated with the rollout.
+This matrix loads the embedded Revelry Games hub, verifies the searchable/sorted catalog UI and category filters, then starts every launchable game returned by the live Revelry catalog. It saves deterministic party-scoped content for Quiz, Most Likely To, Drawing, Housie, and Random Chit, quick-starts quick-start-only games, and verifies organizer/player/spectator launch tokens for each active session. If a newly exposed Revelry game lacks a harness fixture, the test fails so bridge coverage is updated with the rollout.
 
 The pre-production live regression is the heavier browser-driven safety net for big production pushes. It creates disposable rooms/content through the live API, joins real player tabs, starts the game, and verifies one meaningful action or handoff for the deterministic game runtimes. Run it with one worker against gamma unless intentionally validating prod:
 
