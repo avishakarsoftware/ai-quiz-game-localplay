@@ -1,3 +1,5 @@
+import hashlib
+
 import pytest
 
 from generic_prompt_engine import (
@@ -73,6 +75,8 @@ def test_entry_ids_unique_for_nicknames_that_normalize_alike():
     bang_entry = submissions["Bob!"]["entry_id"]
     quest_entry = submissions["Bob?"]["entry_id"]
     assert bang_entry != quest_entry
+    assert bang_entry != "entry_" + hashlib.sha1("Bob!".encode("utf-8")).hexdigest()[:12]
+    assert quest_entry != "entry_" + hashlib.sha1("Bob?".encode("utf-8")).hexdigest()[:12]
 
     # Two voters back "Bob!"; only that entry should be credited.
     state = submit_vote(state, "Bob?", bang_entry)

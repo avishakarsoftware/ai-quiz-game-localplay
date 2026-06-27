@@ -15,15 +15,15 @@ interface LeaderboardScreenProps {
 export default function LeaderboardScreen({ leaderboard, questionNumber, totalQuestions, onNextQuestion, onEndQuiz }: LeaderboardScreenProps) {
     const isFinal = totalQuestions > 0 && questionNumber >= totalQuestions;
     const [secondsLeft, setSecondsLeft] = useState(Math.round(AUTO_ADVANCE_MS / 1000));
-    // Keep the latest callback in a ref so the auto-advance countdown is set up
-    // exactly once on mount and is never reset by unrelated parent re-renders
-    // (the old effect depended on `onNextQuestion`, a fresh closure each render).
+    // Keep the latest callback in a ref so unrelated parent re-renders do not
+    // restart the countdown just because they created a fresh closure.
     const advanceRef = useRef(onNextQuestion);
     useEffect(() => {
         advanceRef.current = onNextQuestion;
     }, [onNextQuestion]);
 
     useEffect(() => {
+        setSecondsLeft(Math.round(AUTO_ADVANCE_MS / 1000));
         const interval = setInterval(() => {
             setSecondsLeft((prev) => {
                 if (prev <= 1) {
@@ -35,7 +35,7 @@ export default function LeaderboardScreen({ leaderboard, questionNumber, totalQu
             });
         }, 1000);
         return () => clearInterval(interval);
-    }, []);
+    }, [questionNumber, totalQuestions]);
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">

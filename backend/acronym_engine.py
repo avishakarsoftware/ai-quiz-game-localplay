@@ -42,6 +42,14 @@ def expansion_matches(acronym: str, expansion: str) -> bool:
     return len(words) == len(letters) and all(word[0].upper() == letter for word, letter in zip(words, letters))
 
 
+def _entry_id(player_id: str, state: dict) -> str:
+    # Voting is blind, and entry ids are exposed to all clients during the
+    # voting phase. Include room/round state as a salt so ids cannot be derived
+    # from the visible player list, while staying stable for submission edits.
+    source = f"{state.get('started_at')}:{state.get('current_round_index', 0)}:{player_id}"
+    return "entry_" + hashlib.sha1(source.encode("utf-8")).hexdigest()[:12]
+
+
 def _clamp_int(raw: dict, key: str, default: int, low: int, high: int) -> int:
     try:
         value = int(raw.get(key, default))
@@ -131,10 +139,7 @@ def submit_expansion(state: dict, player_id: str, expansion: str) -> dict:
     if existing and not state.get("config", {}).get("allow_submission_changes", True):
         raise ValueError("Submission changes are disabled")
     next_state = _copy_state(state)
-    # Voting is blind, and ``entry_id`` is exposed to all clients during the
-    # voting phase. Deriving it from the raw nickname (the old ``entry_{name}``)
-    # leaked each author. A short hash keeps it stable and anonymous.
-    entry_id = "entry_" + hashlib.sha1(str(player_id).encode("utf-8")).hexdigest()[:12]
+    entry_id = _entry_id(player_id, state)
     current_round(next_state)["submissions"][player_id] = {"entry_id": entry_id, "text": clean}
     return next_state
 

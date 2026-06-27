@@ -40,6 +40,7 @@ The engine supports three modes.
 - Players submit short text.
 - The host opens voting when submissions are ready.
 - Players vote on visible submissions; self-voting is rejected.
+- Voting payloads redact `player_id` and expose only submission text plus a stable room/round-salted `entry_id`; clients receive `is_mine`/`your_entry_id` so they can disable self-votes without revealing authors.
 - Each vote scores one point for the submission author.
 
 `text_group`:

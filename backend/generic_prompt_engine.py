@@ -188,16 +188,19 @@ def _normalize(value: Any) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _entry_id(player_id: str) -> str:
+def _entry_id(player_id: str, state: dict) -> str:
     """Stable, collision-free, anonymous entry id for a submission.
 
     Player ids are room nicknames, so deriving the entry id from the normalized
     nickname (the old behaviour) both collided for nicknames that normalize to
     the same string (e.g. ``Bob!`` and ``Bob?`` -> ``entry_bob``, corrupting the
-    vote tally) and leaked the author during blind voting. A short hash of the
-    exact (already room-unique) player id is unique and reveals nothing.
+    vote tally) and leaked the author during blind voting. Hashing the nickname
+    alone is also precomputable because the player list is visible, so include
+    room/round state as a per-game salt while keeping the id stable for edits
+    inside the same round.
     """
-    digest = hashlib.sha1(str(player_id).encode("utf-8")).hexdigest()
+    source = f"{state.get('started_at')}:{state.get('current_round_index', 0)}:{player_id}"
+    digest = hashlib.sha1(source.encode("utf-8")).hexdigest()
     return f"entry_{digest[:12]}"
 
 
@@ -355,7 +358,7 @@ def submit_text(state: dict, player_id: str, text: str) -> dict:
         raise ValueError("Submission is required")
     next_state = _copy_state(state)
     current_round(next_state)["submissions"][player_id] = {
-        "entry_id": _entry_id(player_id),
+        "entry_id": _entry_id(player_id, state),
         "player_id": player_id,
         "text": clean,
         "normalized": _normalize(clean),

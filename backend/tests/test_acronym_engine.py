@@ -1,3 +1,5 @@
+import hashlib
+
 import pytest
 
 from acronym_engine import (
@@ -86,6 +88,7 @@ def test_submit_vote_reveal_scores_and_redacts_authors_before_reveal():
     assert len(entry_ids) == 3
     for name in ("alice", "bob", "cara"):
         assert not any(name in entry_id for entry_id in entry_ids)
+        assert not any(entry_id == "entry_" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:12] for entry_id in entry_ids)
     submissions = state["rounds"][0]["submissions"]
     alice_entry = submissions["alice"]["entry_id"]
     bob_entry = submissions["bob"]["entry_id"]
