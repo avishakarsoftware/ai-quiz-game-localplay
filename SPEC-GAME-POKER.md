@@ -20,6 +20,15 @@ Status: first playable standalone MVP implemented on June 24, 2026. The shared c
 
 Revelry bridge status: LocalPlay now marks Party Poker as a host-app-capable quick-start/settings game for Revelry. It is `can_quick_start=true`, `can_create_content=false`, `can_edit_content=false`, `supports_ai_generation=false`, and `supports_custom_content=false`. Actual Revelry visibility remains host-app policy gated and should ship only after gamma embedded QA covers start, join, spectator, reconnect, showdown, completion, and result polling. Revelry must preserve the no-money framing and must not attach sparks, rewards, buy-ins, cash-out language, or economic value to poker outcomes.
 
+> **Current implementation vs. design.** Much of this spec describes the full betting Hold'em target (blinds, raises, all-ins, side pots, street-by-street phases, dealer rotation). The shipped code in `poker_engine.py` is the quick Stay/Fold slice and differs from the aspirational sections below. Ground truth for the current build:
+> - Engine variant string: `quick_holdem_tournament` (not `texas_holdem_tournament`).
+> - Phases: `POKER_DECISION`, `POKER_SHOWDOWN`, `PODIUM` only (no waiting/hand-start/betting/hand-result or PREFLOP/FLOP/TURN/RIVER streets).
+> - Player action: a single `stay`/`fold` decision via `submit_decision` (no check/call/raise/all-in).
+> - Config keys: `ante` (falls back to `big_blind`), `starting_stack`, `decision_time_seconds` (no blinds schedule, blind increases, or showdown-reveal options).
+> - Pot: a single pot. **On a tied showdown the pot is split evenly among all players tied for the best hand, with odd chips going to the earliest-ranked (best-hand-order) winners.** Side pots and all-in handling are Phase 2.
+> - Dealer button is stored but static (no rotation yet).
+> - Hand evaluator API (`poker_hand_evaluator.py`): `evaluate_best`, `compare_hands`, `rank_players` (royal flush is the top `straight_flush`, not a separate category). Evaluation results use `category`, `category_rank`, `tiebreakers`, `cards`, `rank_tuple`.
+
 - Variant: Texas Hold'em tournament. The shipped first slice is quick Hold'em with antes plus Stay/Fold decisions; full betting is Phase 2.
 - One table only in MVP.
 - 2-10 players.

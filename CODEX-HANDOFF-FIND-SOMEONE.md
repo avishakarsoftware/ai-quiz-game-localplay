@@ -6,7 +6,9 @@ Date: 2026-06-12
 
 Implemented standalone LocalPlay MVP for `find_someone` / **Find Someone Who**.
 
-Not committed.
+> **Status update (stale handoff):** This document is historical. Find Someone Who is now committed (engine `backend/find_someone_engine.py`, component `frontend/src/components/FindSomeoneGame.tsx`) and `SPEC-GAME-FIND-SOMEONE-WHO.md` is the current source of truth. The "not committed / not deployed" notes below were only true at the 2026-06-12 handoff.
+
+Not committed. _(at time of handoff — now committed)_
 Not deployed.
 Dev server was started for smoke testing and then stopped.
 

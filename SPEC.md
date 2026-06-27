@@ -745,6 +745,8 @@ Reconnection:
 
 ## WebSocket Protocol
 
+This section documents the **core quiz / WMLT / drawing** protocol plus the common lifecycle messages. Each additional game runtime (Bluff, Poker, Mafia, Bingo/Housie, Musical Chairs, Two Truths, Story Chain, Common Ground, Survey Says, Who Am I, Chit Pull, Find Someone, Party Quests, Photo Clue, Generic Prompt, simple-social) defines its own `*_` client messages and a `*_SYNC` broadcast; those are specified in the corresponding `SPEC-GAME-*.md` and implemented in `backend/socket_manager.py`. The lists here are not the complete message surface.
+
 ### Organizer Messages To Server
 
 - `AUTH`
@@ -840,6 +842,8 @@ Common:
 - `ROOM_CLOSED`
 - `ROOM_RESET`
 - `ROOM_LOCK_STATUS`
+- `KICKED` — sent when the same nickname is taken over by another tab/device.
+- `INSUFFICIENT_SPARKS` — sent to the organizer when a start/reset is attempted without enough sparks.
 - `GAME_STARTING`
 - `QUESTION`
 - `TIMER`
@@ -1084,6 +1088,8 @@ Organizer states:
 - `LEADERBOARD`
 - `PODIUM`
 
+These are the core/shared states. Each additional game adds its own setup/review/runtime states (e.g. `WHO_AM_I_PROMPT`/`WHO_AM_I_REVIEW`/`WHO_AM_I`, `BINGO_PROMPT`/`BINGO_SETUP`/`BINGO_CALLING`, `HOUSIE_SETUP`, `MUSICAL_CHAIRS_SETUP`/`MUSICAL_CHAIRS`, `PARTY_QUESTS_SETUP`/`PARTY_QUESTS`, `CHIT_PULL_PROMPT`/`CHIT_PULL_REVIEW`/`CHIT_PULL`, `BLUFF`, `POKER`, `TWO_TRUTHS`, `STORY_CHAIN`, `COMMON_GROUND`, `FIND_SOMEONE`, `MAFIA`, `SURVEY_SAYS`, `GENERIC_PROMPT`, `SIMPLE_SOCIAL`, `PHOTO_CLUE`). The authoritative union is `OrganizerState` in `frontend/src/pages/OrganizerPage.tsx`.
+
 Game select:
 
 - Host chooses from `frontend/src/gameModes.ts`.
@@ -1168,12 +1174,15 @@ Player states:
 
 - `JOIN`
 - `LOBBY`
+- `INTRO`
 - `QUESTION`
 - `WAITING`
 - `RESULT`
 - `PODIUM`
 - `RECONNECTING`
 - `GAME_IN_PROGRESS`
+
+These are the core/shared states. Each additional game adds a runtime state (`BINGO`, `MUSICAL_CHAIRS`, `BLUFF`, `POKER`, `TWO_TRUTHS`, `STORY_CHAIN`, `COMMON_GROUND`, `FIND_SOMEONE`, `WHO_AM_I`, `CHIT_PULL`, `MAFIA`, `PARTY_QUESTS`, `SURVEY_SAYS`, `GENERIC_PROMPT`, `SIMPLE_SOCIAL`, `PHOTO_CLUE`). The authoritative union is `PlayerState` in `frontend/src/pages/PlayerPage.tsx`.
 
 Join:
 

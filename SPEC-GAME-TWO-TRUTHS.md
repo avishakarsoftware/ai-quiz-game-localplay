@@ -258,11 +258,13 @@ Examples:
 - Author gets `3 * 250 = 750`.
 - Correct voters each get `500`.
 
-Tie-breakers:
+Tie-breakers (planned, not yet implemented):
 
 1. More correct guesses.
 2. More fooled-voter points.
 3. Earlier completed submission.
+
+> Current code: `final_standings` breaks ties by score then alphabetically by nickname (`correct_guesses` / `fooled_points` are reported per player but not yet used for ordering). The richer tie-breakers above are a follow-up.
 
 ## Spectator/TV UX
 

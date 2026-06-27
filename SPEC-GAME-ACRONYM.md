@@ -73,7 +73,7 @@ export interface AcronymGame {
 ## Redaction Rules
 
 - During submission, public state includes submitted count only.
-- During voting, entries are anonymous and shuffled by stable entry id.
+- During voting, entries are anonymous, identified only by a stable entry id (presented in submission order; not shuffled). The viewer's own vote is echoed back as `your_vote` so the UI can lock and highlight it.
 - A player sees their own entry id to prevent self-vote confusion.
 - During reveal, authors and vote totals become public.
 

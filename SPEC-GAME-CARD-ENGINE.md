@@ -278,9 +278,9 @@ Public sync includes:
 - Current required rank.
 - Current actor.
 - Pile card count.
-- Last claim summary.
+- Last claim summary **with the played `card_ids` stripped**. Card ids encode rank and suit (e.g. `0:clubs:2`), so exposing them during the challenge window would let any client decode whether the claim is a bluff. The public claim carries only the actor, claimed rank, and claimed count.
 - Challenge window remaining.
-- Recent revealed cards only while resolving a challenge.
+- Recent revealed cards only while resolving a challenge (this is where the actual cards become public).
 
 Private player sync includes:
 
@@ -309,21 +309,21 @@ Private player sync includes:
 }
 ```
 
-Phases:
+Engine phases (`bluff_engine.py`): `BLUFF_TURN`, `BLUFF_CHALLENGE`, `BLUFF_REVEAL`, `PODIUM`.
 
-- `BLUFF_LOBBY`: room exists, players joining.
 - `BLUFF_TURN`: active player must play or pass.
 - `BLUFF_CHALLENGE`: claim is waiting for challenge.
 - `BLUFF_REVEAL`: challenge result is shown.
-- `BLUFF_ROUND_END`: optional interstitial after a winner.
 - `PODIUM`: final results.
+
+(Lobby is the shared pre-game room state, not a bluff engine phase; there is no separate round-end interstitial phase.)
 
 ## WebSocket Events
 
-Client to server:
+Client to server (the play message is `BLUFF_PLAY`):
 
 ```json
-{ "type": "BLUFF_PLAY_CARDS", "card_ids": ["0:hearts:Q"], "claimed_count": 1 }
+{ "type": "BLUFF_PLAY", "card_ids": ["0:hearts:Q"] }
 { "type": "BLUFF_PASS" }
 { "type": "BLUFF_CHALLENGE" }
 { "type": "BLUFF_CONTINUE" }
