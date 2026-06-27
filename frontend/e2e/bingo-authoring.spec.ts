@@ -84,7 +84,7 @@ test.describe('Bingo authoring', () => {
     });
 
     await page.goto('/');
-    await page.getByRole('button', { name: /Bingo/ }).click();
+    await page.getByTestId('game-card-bingo').click();
     await expect(page.getByRole('heading', { name: 'Create Bingo' })).toBeVisible();
     await page.getByRole('button', { name: 'Custom Deck' }).click();
 
@@ -204,12 +204,12 @@ test.describe('Bingo authoring', () => {
     });
 
     await page.goto('/');
-    await page.getByRole('button', { name: /Bingo/ }).click();
+    await page.getByTestId('game-card-bingo').click();
     await page.getByTitle('Menu').click();
     await page.getByText('Home').click();
     await expect(page.getByRole('heading', { name: 'Choose a Game' })).toBeVisible();
 
-    await page.getByRole('button', { name: /Bingo/ }).click();
+    await page.getByTestId('game-card-bingo').click();
     await page.getByPlaceholder('Baby shower, office holiday party, wedding reception...').fill('baby shower');
     await page.getByRole('button', { name: 'Generate Bingo' }).click();
 

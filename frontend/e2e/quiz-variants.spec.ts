@@ -56,8 +56,13 @@ test.describe('Quiz variant organizer UX', () => {
 
     await expect(page.getByRole('heading', { name: 'Rebus Rush' })).toBeVisible();
     await expect(page.getByPlaceholder(/movies, travel, 90s hits/i)).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Generate Rebus' })).toBeDisabled();
+    // Entering a variant pre-fills a random topic, so the generate button starts enabled.
+    await expect(page.getByPlaceholder(/movies, travel, 90s hits/i)).not.toHaveValue('');
+    await expect(page.getByRole('button', { name: 'Generate Rebus' })).toBeEnabled();
 
+    // Clearing the topic disables it again; refilling re-enables.
+    await page.getByPlaceholder(/movies, travel, 90s hits/i).fill('');
+    await expect(page.getByRole('button', { name: 'Generate Rebus' })).toBeDisabled();
     await page.getByPlaceholder(/movies, travel, 90s hits/i).fill('90s movies');
     await expect(page.getByRole('button', { name: 'Generate Rebus' })).toBeEnabled();
 
@@ -104,7 +109,7 @@ test.describe('Quiz variant organizer UX', () => {
     await page.goto('/');
     await page.getByRole('button', { name: /Fact or Fiction/ }).click();
     await page.getByPlaceholder(/Science myths/i).fill('food facts');
-    await page.getByRole('button', { name: 'Generate Claims' }).click();
+    await page.getByRole('button', { name: 'Generate Questions' }).click();
 
     await expect(page.getByRole('heading', { name: 'Fact or Fiction' })).toBeVisible();
     expect(requestBody?.mode).toBe('fact_fiction');

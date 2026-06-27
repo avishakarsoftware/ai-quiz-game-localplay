@@ -4,7 +4,7 @@ import { expectNoHorizontalOverflow } from './helpers';
 const AI_PROMPT_GAMES = [
   { id: 'quiz', heading: 'Create Quiz' },
   { id: 'bingo', heading: 'Create Bingo' },
-  { id: 'chit_pull', heading: 'Chit Pull' },
+  { id: 'chit_pull', heading: 'Random Chit' },
   { id: 'drawing', heading: 'Drawing Game' },
   { id: 'emoji_charades', heading: 'Emoji Charades' },
   { id: 'fact_fiction', heading: 'Fact or Fiction' },

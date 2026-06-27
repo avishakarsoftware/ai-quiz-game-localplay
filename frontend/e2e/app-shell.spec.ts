@@ -94,6 +94,10 @@ test.describe('Standalone app shell', () => {
       await route.fallback();
     });
     await page.route('**/quiz-packs/pack-1/materialize', async (route) => {
+      // Hold the response briefly so the transient "Preparing Quiz" loading
+      // screen reliably paints — without this it can resolve before a frame
+      // renders on faster (e.g. mobile) projects, making the assertion flaky.
+      await new Promise((resolve) => setTimeout(resolve, 400));
       await route.fulfill({
         json: {
           quiz_id: 'materialized-quiz-1',

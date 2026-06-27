@@ -4895,8 +4895,11 @@ body {
         padding-top: 54px;
     }
 
+    /* The global menu trigger is fixed at the top-left (y 12–48). The back button
+       is absolutely positioned, so the header's padding-top doesn't move it — pin
+       it just below the menu so the two don't overlap on narrow screens. */
     .prompt-header-back {
-        top: 0;
+        top: 54px;
     }
 }
 
