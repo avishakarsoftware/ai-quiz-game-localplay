@@ -64,7 +64,13 @@ The pre-production live regression is the heavier browser-driven safety net for 
 PREPROD_LIVE=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-live
 ```
 
-Coverage currently includes Quiz runtime, Most Likely To, Housie, Bingo/Baby Bingo, Musical Chairs, Bluff, Two Truths and a Lie, Story Chain, Common Ground, Who Am I, and Chit Pull. Quiz variants share the Quiz runtime and remain covered by prompt/setup audits plus the Quiz live scenario. Drawing is tracked in the suite but skipped until the backend exposes a deterministic `/drawing/import` endpoint; using AI generation here would make the pre-prod suite flaky and token-dependent.
+Coverage currently includes Quiz runtime, Most Likely To, Housie, Bingo/Baby Bingo, Musical Chairs, Bluff, Two Truths and a Lie, Story Chain, Common Ground, Who Am I, Chit Pull, and Drawing. Quiz variants share the Quiz runtime and remain covered by prompt/setup audits plus the Quiz live scenario. The suite seeds deterministic content and must not depend on live AI generation.
+
+For local split-origin runs, start the backend on any free port and point both the frontend runtime and test API setup at it, for example:
+
+```bash
+VITE_API_URL=http://127.0.0.1:8001 LIVE_API_BASE_URL=http://127.0.0.1:8001 PREPROD_LIVE=1 npm run test:e2e:preprod-live
+```
 
 For a lighter visual pass over representative live mobile states, run:
 

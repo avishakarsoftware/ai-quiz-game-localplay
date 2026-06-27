@@ -1,9 +1,31 @@
 import asyncio
 
 import pytest
+from fastapi.testclient import TestClient
 
 from drawing_engine import clue_for_prompt, is_correct_guess, normalize_guess, _sanitize_drawing_game, _validate_drawing_game
+import main
+from main import app
 from socket_manager import Room, SocketManager
+
+
+client = TestClient(app)
+AUTH_HEADERS = {"X-Device-Id": "11111111-1111-4111-8111-111111111111"}
+
+
+@pytest.fixture(autouse=True)
+def clear_drawing_state():
+    main.drawing_games.clear()
+    main.drawing_timestamps.clear()
+    main.content_owners.clear()
+    main.pending_generation_charges.clear()
+    main.socket_manager.rooms.clear()
+    yield
+    main.drawing_games.clear()
+    main.drawing_timestamps.clear()
+    main.content_owners.clear()
+    main.pending_generation_charges.clear()
+    main.socket_manager.rooms.clear()
 
 
 class MockWebSocket:
@@ -64,6 +86,35 @@ def test_sanitize_and_validate_drawing_game():
     assert _validate_drawing_game(game, attempt=0)
 
 
+def test_import_drawing_sanitizes_validates_and_stores_game():
+    response = client.post("/drawing/import", json=make_drawing_game(), headers=AUTH_HEADERS)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    drawing_id = body["drawing_id"]
+    assert drawing_id in main.drawing_games
+    assert main.content_owners[drawing_id]
+    assert body["game"]["game_title"] == "Drawing Night"
+    assert body["game"]["prompts"][0]["text"] == "robot chef"
+
+    get_response = client.get(f"/drawing/{drawing_id}")
+    assert get_response.status_code == 200
+    assert get_response.json()["game_title"] == "Drawing Night"
+
+
+def test_import_drawing_rejects_unplayable_prompts():
+    response = client.post(
+        "/drawing/import",
+        json={
+            "game_title": "Bad Drawing",
+            "prompts": [{"id": 1, "text": "this drawing prompt has too many words to be playable"}],
+        },
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 422, response.text
+
+
 @pytest.mark.asyncio
 async def test_drawing_round_sends_secret_prompt_only_to_drawer():
     manager = SocketManager()
@@ -83,6 +134,25 @@ async def test_drawing_round_sends_secret_prompt_only_to_drawer():
     assert guesser_msg["drawing_clue"] == "_ _ _ _ _   _ _ _ _"
     room.timer_task.cancel()
     await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_drawing_start_game_enters_first_round_without_extra_next_message():
+    manager = SocketManager()
+    room = Room("DRAW05", make_drawing_game(), time_limit=30, game_type="drawing", billing_mode="host_app_managed")
+    room.wallet_id = "test-wallet"
+    add_player(room, "p1", "Alice")
+    add_player(room, "p2", "Bob")
+
+    await manager.handle_message(room, "organizer", {"type": "START_GAME"}, is_organizer=True)
+
+    assert room.state == "QUESTION"
+    assert room.current_question_index == 0
+    assert room.current_drawer in {"Alice", "Bob"}
+    assert any(msg.get("type") == "QUESTION" and msg.get("game_type") == "drawing" for msg in room.connections["p1"].sent_messages)
+    if room.timer_task:
+        room.timer_task.cancel()
+        await asyncio.sleep(0)
 
 
 @pytest.mark.asyncio

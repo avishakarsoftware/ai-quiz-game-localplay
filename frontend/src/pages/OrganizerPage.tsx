@@ -1447,6 +1447,7 @@ export default function OrganizerPage() {
         };
         ws.onmessage = handleWsMessage;
         ws.onclose = () => {
+            if (wsRef.current !== ws) return;
             wsRef.current = null;
             if (!mountedRef.current) return;
             const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'PARTY_QUESTS', 'SURVEY_SAYS', 'SIMPLE_SOCIAL', 'LEADERBOARD', 'PODIUM'];
@@ -1764,7 +1765,7 @@ export default function OrganizerPage() {
             wsRef.current?.send(JSON.stringify({ type: 'SET_SHOW_VOTES', show_votes: showVotes }));
         }
         wsRef.current?.send(JSON.stringify({ type: 'START_GAME' }));
-        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'musical_chairs' && gameType !== 'bluff' && gameType !== 'poker' && gameType !== 'two_truths' && gameType !== 'story_chain' && gameType !== 'common_ground' && gameType !== 'find_someone' && gameType !== 'who_am_i' && gameType !== 'chit_pull' && gameType !== 'mafia' && gameType !== 'party_quests' && gameType !== 'survey_says' && gameType !== 'would_you_rather' && gameType !== 'never_have_i_ever' && gameType !== 'word_association' && gameType !== 'acronym' && gameType !== 'photo_clue') {
+        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'drawing' && gameType !== 'musical_chairs' && gameType !== 'bluff' && gameType !== 'poker' && gameType !== 'two_truths' && gameType !== 'story_chain' && gameType !== 'common_ground' && gameType !== 'find_someone' && gameType !== 'who_am_i' && gameType !== 'chit_pull' && gameType !== 'mafia' && gameType !== 'party_quests' && gameType !== 'survey_says' && gameType !== 'would_you_rather' && gameType !== 'never_have_i_ever' && gameType !== 'word_association' && gameType !== 'acronym' && gameType !== 'photo_clue') {
             wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
         }
     };

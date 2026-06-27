@@ -904,9 +904,18 @@ class SocketManager:
                     await websocket.send_json({"type": "ERROR", "message": "Invalid organizer token"})
                     await websocket.close()
                     return
-            except (asyncio.TimeoutError, Exception):
+            except WebSocketDisconnect:
+                return
+            except asyncio.TimeoutError:
                 await websocket.send_json({"type": "ERROR", "message": "Organizer authentication required"})
                 await websocket.close()
+                return
+            except Exception:
+                try:
+                    await websocket.send_json({"type": "ERROR", "message": "Organizer authentication required"})
+                    await websocket.close()
+                except Exception:
+                    pass
                 return
 
         room.touch()
@@ -1408,6 +1417,9 @@ class SocketManager:
                         await self._broadcast_housie_sync(room)
                         if room.housie_caller_mode == "auto":
                             await self._set_housie_auto_status(room, "running")
+                    elif room.game_type == "drawing":
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": "drawing"})
+                        await self.start_question(room)
                     elif room.game_type == "musical_chairs":
                         room.state = "MC_BETWEEN_ROUNDS"
                         self._start_musical_chairs_game(room)

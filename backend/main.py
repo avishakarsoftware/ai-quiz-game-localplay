@@ -4515,6 +4515,23 @@ class DrawingUpdateRequest(BaseModel):
         return v
 
 
+@app.post("/drawing/import")
+async def import_drawing(request: DrawingUpdateRequest, req: Request):
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    drawing_data = _sanitize_drawing_game({"game_title": request.game_title, "prompts": request.prompts})
+    if not _validate_drawing_game(drawing_data, attempt=0):
+        raise HTTPException(status_code=422, detail="Drawing game needs at least 1 valid prompt with 1-5 drawable words")
+    _evict_old_content()
+    drawing_id = str(uuid.uuid4())
+    drawing_games[drawing_id] = drawing_data
+    drawing_timestamps[drawing_id] = time.time()
+    content_owners[drawing_id] = wallet_id
+    logger.info("DrawingGame imported: %s ('%s') owner=%s", drawing_id, drawing_data.get("game_title", "Untitled"), wallet_id[:8])
+    return {"drawing_id": drawing_id, "game": drawing_data}
+
+
 @app.put("/drawing/{drawing_id}")
 async def update_drawing(drawing_id: str, request: DrawingUpdateRequest, req: Request):
     wallet_id = tokens.get_wallet_id(req)
@@ -4524,6 +4541,8 @@ async def update_drawing(drawing_id: str, request: DrawingUpdateRequest, req: Re
         raise HTTPException(status_code=404, detail="Drawing game not found")
     _check_content_owner(drawing_id, wallet_id)
     drawing_data = _sanitize_drawing_game({"game_title": request.game_title, "prompts": request.prompts})
+    if not _validate_drawing_game(drawing_data, attempt=0):
+        raise HTTPException(status_code=422, detail="Drawing game needs at least 1 valid prompt with 1-5 drawable words")
     drawing_games[drawing_id] = drawing_data
     logger.info("DrawingGame updated: %s ('%s'), %d prompts", drawing_id, drawing_data["game_title"], len(drawing_data["prompts"]))
     return {"drawing_id": drawing_id, "game": drawing_games[drawing_id]}

@@ -1342,7 +1342,7 @@ The backend test suite includes API validation, game logic, WebSocket flows, pow
 Launch-readiness checks should include:
 
 - Desktop and mobile screenshots of the standalone game catalog, menu, each setup/review flow, lobby, player join, and TV/spectator entry.
-- For major production game/runtime changes, run the pre-prod live regression against gamma before promoting. Current deterministic coverage includes Quiz runtime, Most Likely To, Housie, Bingo/Baby Bingo, Musical Chairs, Bluff, Two Truths and a Lie, Story Chain, Common Ground, Who Am I, and Random Chit. Quiz variants share the Quiz runtime and are separately covered by prompt/setup audits. Drawing is intentionally marked as a tracked gap until a deterministic Drawing import endpoint exists; the suite should not depend on AI generation.
+- For major production game/runtime changes, run the pre-prod live regression against gamma before promoting. Current deterministic coverage includes Quiz runtime, Most Likely To, Housie, Bingo/Baby Bingo, Musical Chairs, Bluff, Two Truths and a Lie, Story Chain, Common Ground, Who Am I, Random Chit, and Drawing. Quiz variants share the Quiz runtime and are separately covered by prompt/setup audits. The suite must seed deterministic content and must not depend on live AI generation.
 - Saved quiz library flow: list, start, prepare copy, review, Home return, edit, delete.
 - Host-app flow: party hub, create game, save setup, start saved game, replacement confirmation, lobby, player join, completion, return.
 - Host-app callback mirror flow: save or update party-scoped quiz, WMLT, and Drawing content; verify `content.created` / `content.updated` safe `payload.content` can update the prepared-games mirror even if follow-up metadata fetch fails.

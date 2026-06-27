@@ -59,7 +59,7 @@ Post-deploy verification:
 - `cd frontend && npm test -- --run` passed: `226 passed`.
 - `cd frontend && npm run build` passed.
 - `cd frontend && npm run test:e2e:gamma` passed on desktop and mobile, including standalone `Most Popular` and `Cards` filter coverage.
-- `cd frontend && PREPROD_LIVE=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-live` passed: 11 live gameplay tests passed; Drawing remains the existing tracked skip until deterministic drawing seeding exists.
+- `cd frontend && PREPROD_LIVE=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-live` passed at the time with 11 live gameplay tests. Current pre-prod coverage now also includes deterministic Drawing seeding through `/drawing/import`.
 - `cd frontend && npm run test:e2e:gamma:generic` passed for the 10 Generic Prompt Party games.
 - `cd frontend && PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me PREPROD_LIVE=1 TWO_TRUTHS_LIVE=1 npx playwright test e2e/gamma-smoke.spec.ts e2e/bingo-gamma-live.spec.ts e2e/bluff-gamma-live.spec.ts e2e/two-truths-live.spec.ts e2e/standalone-turns-gamma-live.spec.ts e2e/foundation-games-live.spec.ts --project chromium-desktop --workers=1` passed: 11 broader live standalone flows.
 - `cd frontend && PREPROD_UX_AUDIT=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-ux` passed and produced representative mobile screenshots for catalog, Bluff host, and Chit Pull host states.
@@ -1601,7 +1601,9 @@ cd frontend
 PREPROD_LIVE=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-live
 ```
 
-This is intentionally heavier than the gamma smoke: it creates disposable deterministic content and rooms, opens multiple real browser player contexts, starts each covered game family, performs one meaningful action or turn handoff, and checks host/player UI state. Run it with one worker and treat failures as production-blocking until triaged. Current coverage includes Quiz runtime, Most Likely To, Housie, Bingo/Baby Bingo, Musical Chairs, Bluff, Two Truths and a Lie, Story Chain, Common Ground, Who Am I, and Chit Pull. Drawing is a tracked skipped case until `/drawing/import` exists; do not make this pre-prod suite depend on live AI generation.
+This is intentionally heavier than the gamma smoke: it creates disposable deterministic content and rooms, opens multiple real browser player contexts, starts each covered game family, performs one meaningful action or turn handoff, and checks host/player UI state. Run it with one worker and treat failures as production-blocking until triaged. Current coverage includes Quiz runtime, Most Likely To, Housie, Bingo/Baby Bingo, Musical Chairs, Bluff, Two Truths and a Lie, Story Chain, Common Ground, Who Am I, Chit Pull, and Drawing. The suite must seed deterministic content and must not depend on live AI generation.
+
+For local split-origin QA, run the backend on a free port and pass both `VITE_API_URL` and `LIVE_API_BASE_URL` to the Playwright command. This avoids assuming port `8000` is available when other local projects are running.
 
 For a representative mobile screenshot audit of live states, run:
 

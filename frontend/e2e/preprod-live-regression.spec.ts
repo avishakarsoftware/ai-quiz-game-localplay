@@ -5,6 +5,7 @@ import {
   createRoomViaApi,
   deterministicBingoDeck,
   deterministicChitPull,
+  deterministicDrawing,
   deterministicMlt,
   deterministicQuiz,
   deterministicWhoAmI,
@@ -285,8 +286,41 @@ test.describe('Pre-production live game regression', () => {
     }
   });
 
-  test('Drawing live gameplay is tracked but awaits deterministic seeding', async () => {
-    test.skip(true, 'Drawing has only /drawing/generate today; add /drawing/import before this can be reliable pre-prod coverage.');
+  test('Drawing imports prompts, assigns a drawer, and accepts a correct guess', async ({ page, browser, request }) => {
+    const deviceId = liveDeviceId('drawing');
+    const { drawing_id: drawingId } = await postJson<{ drawing_id: string }>(request, '/drawing/import', deterministicDrawing, deviceId);
+    const room = await createRoomViaApi(request, deviceId, {
+      game_type: 'drawing',
+      drawing_id: drawingId,
+      time_limit: 30,
+      drawing_auto_advance: false,
+    });
+    await openOrganizerFromRoom(page, room);
+
+    const players = await joinPlayers(browser, room.roomCode, ['Alice', 'Bob', 'Cara']);
+    try {
+      await startLobbyGame(page, players.length);
+      await expect(page.getByText(/Drawer:/)).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText(/Clue:/)).toBeVisible({ timeout: 20_000 });
+
+      const drawerIndexes: number[] = [];
+      for (const [index, player] of players.entries()) {
+        if (await player.page.getByText('You are drawing').isVisible({ timeout: 5_000 }).catch(() => false)) {
+          drawerIndexes.push(index);
+        }
+      }
+      expect(drawerIndexes).toHaveLength(1);
+      const guesser = players.find((_, index) => index !== drawerIndexes[0])!;
+      await expect(guesser.page.getByLabel('Drawing clue')).toContainText('_', { timeout: 20_000 });
+      await expect(guesser.page.getByText('robot chef')).toHaveCount(0);
+      await guesser.page.getByPlaceholder('Type your guess').fill('robot cook');
+      await guesser.page.getByRole('button', { name: 'Guess' }).click();
+      await expect(guesser.page.getByText('Correct!')).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText(/1 of 2 guessed|1 guessed/i)).toBeVisible({ timeout: 20_000 });
+      await expectNoHorizontalOverflow(page);
+    } finally {
+      await closePlayers(players);
+    }
   });
 });
 

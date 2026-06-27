@@ -15,6 +15,12 @@ export interface LiveRoom {
 }
 
 export const liveBaseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:5173';
+const liveApiBaseURL = process.env.LIVE_API_BASE_URL || '';
+
+function liveApiPath(path: string): string {
+  if (!liveApiBaseURL) return path;
+  return new URL(path, liveApiBaseURL).toString();
+}
 
 export function liveDeviceId(prefix: string): string {
   void prefix;
@@ -38,7 +44,7 @@ export async function postJson<T>(
   body: unknown,
   deviceId: string,
 ): Promise<T> {
-  const response = await request.post(path, {
+  const response = await request.post(liveApiPath(path), {
     data: body,
     headers: liveApiHeaders(deviceId),
   });
@@ -98,7 +104,12 @@ export async function closePlayers(players: LivePlayer[]) {
 
 export async function startLobbyGame(page: Page, playerCount: number) {
   await expect(page.getByText(`${playerCount} players`)).toBeVisible({ timeout: 25_000 });
-  await page.getByRole('button', { name: 'Start Game' }).click();
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('close-settings')));
+  await page.keyboard.press('Escape').catch(() => {});
+  const startButton = page.getByRole('button', { name: 'Start Game' });
+  await expect(startButton).toBeEnabled({ timeout: 10_000 });
+  await startButton.scrollIntoViewIfNeeded();
+  await startButton.evaluate((button) => (button as HTMLButtonElement).click());
 }
 
 export async function findPlayerWithVisibleButton(players: LivePlayer[], name: string | RegExp): Promise<LivePlayer> {
@@ -210,5 +221,14 @@ export const deterministicChitPull = {
     { id: 'chit_3', text: 'Give the room a tiny victory dance.', category: 'action', safe_level: 'family' },
     { id: 'chit_4', text: 'Say one kind thing about the person on your left.', category: 'group', safe_level: 'family' },
     { id: 'chit_5', text: 'Pretend to be a game show host for ten seconds.', category: 'mini_challenge', safe_level: 'family' },
+  ],
+};
+
+export const deterministicDrawing = {
+  game_title: 'Preprod Drawing',
+  prompts: [
+    { id: 1, text: 'robot chef', aliases: ['robot cook'], difficulty: 'easy' },
+    { id: 2, text: 'flying car', aliases: ['hover car'], difficulty: 'easy' },
+    { id: 3, text: 'birthday cake', aliases: ['cake'], difficulty: 'easy' },
   ],
 };
