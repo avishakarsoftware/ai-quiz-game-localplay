@@ -1941,6 +1941,7 @@ class SocketManager:
                             "question_number": room.current_question_index + 1,
                             "total_questions": room.total_rounds(),
                             "avatar": saved.get("avatar", avatar),
+                            "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
                         }
                         if room.game_type in ("housie", "bingo"):
                             state_info["bingo"] = self._housie_player_state(room, nickname)
@@ -2055,6 +2056,7 @@ class SocketManager:
                             "question_number": room.current_question_index + 1,
                             "total_questions": room.total_rounds(),
                             "avatar": player_data.get("avatar", ""),
+                            "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
                         }
                         if room.game_type in ("housie", "bingo"):
                             state_info["bingo"] = self._housie_player_state(room, player_data["nickname"])

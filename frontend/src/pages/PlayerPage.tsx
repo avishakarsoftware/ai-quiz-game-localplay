@@ -63,6 +63,22 @@ function normalizeRoomCode(value: string | null | undefined): string {
     return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
 }
 
+// Player-friendly copy for backend join errors, plus which ones are terminal
+// (close the socket and return to JOIN rather than looping reconnects).
+const FRIENDLY_JOIN_ERRORS: Record<string, string> = {
+    'Room not found': "We couldn't find that room — double-check the code with your host.",
+    'Room is full': 'This room is full. Ask the host to start a new one.',
+    'Room is locked by the host': 'The game has already started — ask the host to unlock the room to join.',
+    'Nickname is taken': 'That nickname is taken — try a different one.',
+    'Game content not found. Please generate a new game.': 'This game is no longer available. Ask the host to start a new one.',
+    "You don't have permission to use this content.": 'This game is no longer available. Ask the host to start a new one.',
+};
+const TERMINAL_JOIN_ERRORS = new Set(Object.keys(FRIENDLY_JOIN_ERRORS));
+
+function friendlyJoinError(message: string): string {
+    return FRIENDLY_JOIN_ERRORS[message] || message;
+}
+
 export default function PlayerPage() {
     const [searchParams] = useSearchParams();
     const { code: urlCode } = useParams();
@@ -89,6 +105,7 @@ export default function PlayerPage() {
     const [teamLeaderboard, setTeamLeaderboard] = useState<TeamLeaderboardEntry[]>([]);
     const [myRank, setMyRank] = useState(0);
     const [error, setError] = useState('');
+    const [claimFeedback, setClaimFeedback] = useState('');
     const [hostAppReturnUrl, setHostAppReturnUrl] = useState('');
     const [hostAppTerminalError, setHostAppTerminalError] = useState(false);
     const [launchResolving, setLaunchResolving] = useState(() => searchParams.has('launch_token'));
@@ -193,6 +210,9 @@ export default function PlayerPage() {
     const kickedRef = useRef(false);
     const mountedRef = useRef(true);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Counts retries of a "Nickname is taken" reply during our own reconnect, so
+    // a transient stale-connection race doesn't permanently bounce us to JOIN.
+    const nicknameReconnectRetriesRef = useRef(0);
     useEffect(() => () => {
         mountedRef.current = false;
         if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
@@ -257,10 +277,27 @@ export default function PlayerPage() {
             let msg: any;
             try { msg = JSON.parse(event.data); } catch { return; }
             if (msg.type === 'ERROR') {
-                setError(msg.message as string);
-                // If room doesn't exist, stop reconnection attempts
-                if (msg.message === 'Room not found' || msg.message === 'Room is full' || msg.message === 'Room is locked by the host' || msg.message === 'Nickname is taken') {
-                    if (hostAppMode && msg.message !== 'Nickname is taken') {
+                const errMsg = msg.message as string;
+                // "Nickname is taken" during our OWN reconnect is usually a race:
+                // the backend hasn't yet released our previous connection. Retry a
+                // couple of times (keeping the saved session) before giving up,
+                // instead of dumping the player back to JOIN and losing their seat.
+                if (errMsg === 'Nickname is taken') {
+                    const saved = getSavedSession();
+                    const isOwnReconnect = Boolean(saved?.sessionToken) && saved?.nickname === nickname && saved?.roomCode === roomCode;
+                    if (isOwnReconnect && nicknameReconnectRetriesRef.current < 2) {
+                        nicknameReconnectRetriesRef.current += 1;
+                        wsRef.current?.close();
+                        wsRef.current = null;
+                        setState('RECONNECTING');
+                        reconnectTimerRef.current = setTimeout(() => joinRoom(), 1500);
+                        return;
+                    }
+                }
+                setError(friendlyJoinError(errMsg));
+                // Terminal join errors: stop the reconnect loop and return to JOIN.
+                if (TERMINAL_JOIN_ERRORS.has(errMsg)) {
+                    if (hostAppMode && errMsg !== 'Nickname is taken') {
                         setHostAppTerminalError(true);
                     }
                     kickedRef.current = true;
@@ -286,6 +323,7 @@ export default function PlayerPage() {
                 return;
             }
             if (msg.type === 'JOINED_ROOM') {
+                nicknameReconnectRetriesRef.current = 0;
                 sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode, nickname, team, avatar, sessionToken: msg.session_token || '' }));
                 if (msg.game_type === 'common_ground' && msg.common_ground) {
                     setGameType('common_ground');
@@ -336,6 +374,8 @@ export default function PlayerPage() {
                 }
             }
             if (msg.type === 'RECONNECTED') {
+                nicknameReconnectRetriesRef.current = 0;
+                if (msg.players) setLobbyPlayers(msg.players as PlayerInfo[]);
                 const token = (msg.session_token as string) || getSavedSession()?.sessionToken || '';
                 sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode, nickname, team, avatar, sessionToken: token }));
                 setQuestionNumber(msg.question_number as number);
@@ -967,6 +1007,8 @@ export default function PlayerPage() {
         setError('');
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'BINGO_CLAIM', pattern_id: patternId }));
+        setClaimFeedback('Claim sent — checking…');
+        setTimeout(() => setClaimFeedback(''), 2500);
     };
 
     const submitMusicalChairsGrab = () => {
@@ -1370,6 +1412,9 @@ export default function PlayerPage() {
                             <h2>Claim a prize</h2>
                             {error && (
                                 <div className="status-pill status-error animate-shake">{error}</div>
+                            )}
+                            {claimFeedback && !error && (
+                                <div className="status-pill">{claimFeedback}</div>
                             )}
                             {gameType === 'bingo'
                                 ? <BingoClaimButtons patterns={housiePatterns} winners={housieWinners} onClaim={submitHousieClaim} />

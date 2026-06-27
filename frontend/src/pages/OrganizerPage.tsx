@@ -52,7 +52,7 @@ import PodiumScreen from '../components/organizer/PodiumScreen';
 import BonusSplash from '../components/BonusSplash';
 import ErrorModal from '../components/ErrorModal';
 import { useRemoteConfigContext } from '../context/RemoteConfigContext';
-import { GENERIC_PROMPT_GAME_IDS, getGameModeConfig, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
+import { GENERIC_PROMPT_GAME_IDS, getGameModeConfig, getMinPlayers, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
@@ -774,9 +774,11 @@ export default function OrganizerPage() {
         else if (msg.type === 'ERROR') {
             const message = msg.message as string || 'Unknown error';
             console.error('Organizer error:', message);
-            // Non-fatal errors (e.g. min players) — show alert, stay in current state
+            // Non-fatal errors (e.g. min players) — show a dismissable modal and
+            // stay in the current state. The lobby already disables Start below the
+            // minimum, so this is a rare fallback (e.g. a player left mid-press).
             if (message.includes('players')) {
-                alert(message);
+                setErrorModal({ title: 'Not enough players', message });
             } else {
                 clearOrganizerSession();
                 if (hostAppMode) {
@@ -2305,6 +2307,7 @@ export default function OrganizerPage() {
                         joinUrl={joinUrl}
                         playerCount={playerCount}
                         players={players}
+                        minPlayers={getMinPlayers(gameType)}
                         locked={roomLocked}
                         hostAppMode={hostAppMode}
                         hostAppJoinUrl={hostAppJoinUrl}

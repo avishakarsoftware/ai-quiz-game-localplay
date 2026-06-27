@@ -39,6 +39,7 @@ export default function FindSomeoneGame({
 }: FindSomeoneGameProps) {
     const [selectedCell, setSelectedCell] = useState<FindSomeoneCell | null>(null);
     const [matchedPlayer, setMatchedPlayer] = useState('');
+    const [requestSent, setRequestSent] = useState(false);
     const isPlayer = controls === 'player';
     const isHost = controls === 'host';
     const title = state?.config?.game_title || 'Find Someone Who';
@@ -65,6 +66,11 @@ export default function FindSomeoneGame({
         onMarkCell(selectedCell.prompt_id, matchedPlayer);
         setSelectedCell(null);
         setMatchedPlayer('');
+        const honorMode = state?.config?.confirmation_mode === 'honor';
+        if (!honorMode) {
+            setRequestSent(true);
+            setTimeout(() => setRequestSent(false), 2800);
+        }
     };
 
     return (
@@ -101,6 +107,10 @@ export default function FindSomeoneGame({
                 </section>
             )}
 
+            {requestSent && (
+                <p className="text-[--accent-primary] font-bold text-center">Request sent — waiting for them to confirm ✓</p>
+            )}
+
             {isPlayer && state.my_card && (
                 <section className="common-ground-panel">
                     <h2>Your card</h2>
@@ -117,7 +127,9 @@ export default function FindSomeoneGame({
                                         ? 'border-[--accent] bg-[rgba(247,43,126,0.22)]'
                                         : cell.confirmation_status === 'pending'
                                             ? 'border-[--warning] bg-[rgba(255,196,87,0.12)]'
-                                            : 'border-[--panel-border] bg-[rgba(255,255,255,0.04)]'
+                                            : cell.confirmation_status === 'denied'
+                                                ? 'border-[rgba(255,90,90,0.5)] bg-[rgba(255,90,90,0.12)]'
+                                                : 'border-[--panel-border] bg-[rgba(255,255,255,0.04)]'
                                 }`}
                                 onClick={() => !cell.free && !cell.marked && setSelectedCell(cell)}
                                 disabled={cell.free || cell.marked || state.phase === 'PODIUM'}

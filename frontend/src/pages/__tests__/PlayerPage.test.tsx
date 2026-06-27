@@ -182,10 +182,34 @@ describe('PlayerPage', () => {
             // Simulate the error
             simulateWsMessage({ type: 'ERROR', message: 'Nickname is taken' });
 
-            // Should show the error on the JOIN screen
-            expect(screen.getByText('Nickname is taken')).toBeInTheDocument();
+            // Should show the friendly error on the JOIN screen
+            expect(screen.getByText('That nickname is taken — try a different one.')).toBeInTheDocument();
             // Should still be on JOIN (join button visible)
             expect(screen.getByRole('button', { name: 'Join' })).toBeInTheDocument();
+        });
+
+        it('retries instead of clearing the session when our own reconnect races "Nickname is taken"', () => {
+            render(<PlayerPage />);
+
+            // A real established session (has a sessionToken) for this room+nickname.
+            sessionStorage.setItem('localplay_session', JSON.stringify({
+                roomCode: 'ROOM',
+                nickname: 'TakenName',
+                team: '',
+                avatar: '🐶',
+                sessionToken: 'tok_existing_123',
+            }));
+
+            fillAndJoin('ROOM', 'TakenName');
+            const ws = getLatestWs();
+            act(() => { ws.onopen?.(); });
+
+            simulateWsMessage({ type: 'ERROR', message: 'Nickname is taken' });
+
+            // Stale-connection race during our own reconnect: keep the session and
+            // retry rather than bouncing the player back to JOIN.
+            expect(sessionStorage.getItem('localplay_session')).not.toBeNull();
+            expect(screen.getByText('Reconnecting...')).toBeInTheDocument();
         });
 
         it('nickname taken clears saved session', () => {

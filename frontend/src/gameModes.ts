@@ -354,6 +354,40 @@ export function getGameModeConfig(gameType: GameType): GameModeConfig {
     return GAME_MODE_CONFIGS.find((item) => item.id === gameType) || GAME_MODE_CONFIGS[0];
 }
 
+// Minimum players each runtime needs to start, mirroring the backend
+// MIN_*_PLAYERS constants (backend/config.py). Keep these in sync — the backend
+// is authoritative and rejects an early START, but the lobby uses these to
+// disable/explain the Start button so the host never hits that rejection.
+const MIN_PLAYERS_BY_RUNTIME: Partial<Record<GameModeConfig['runtimeType'], number>> = {
+    quiz: 1,
+    wmlt: 2,
+    drawing: 2,
+    housie: 2,
+    bingo: 2,
+    musical_chairs: 3,
+    bluff: 3,
+    poker: 2,
+    two_truths: 3,
+    story_chain: 3,
+    common_ground: 4,
+    find_someone: 1,
+    who_am_i: 2,
+    chit_pull: 3,
+    mafia: 6,
+    party_quests: 1,
+    survey_says: 2,
+    would_you_rather: 2,
+    never_have_i_ever: 2,
+    word_association: 2,
+    acronym: 2,
+    photo_clue: 2,
+};
+
+// Generic-prompt party games (caption_contest, hot_takes, …) all require 2.
+export function getMinPlayers(gameType: GameType): number {
+    return MIN_PLAYERS_BY_RUNTIME[getGameModeConfig(gameType).runtimeType] ?? 2;
+}
+
 export function isMostPopularGameId(gameType?: string): boolean {
     return Boolean(gameType && MOST_POPULAR_GAME_RANK.has(gameType));
 }

@@ -716,6 +716,8 @@ Add a global reduced-motion policy:
 
 For gameplay-critical moments, prefer replacing motion with static state changes rather than hiding information. Timer countdowns and score changes must still be visible.
 
+Implementation note: in addition to the global transition/animation damping above, `frontend/src/index.css` has explicit reduced-motion rules that fully stop looping and celebratory effects that run continuously on player phones and the TV — Musical Chairs visualizer pulse/orbit, confetti/celebration bursts, error shakes, and bouncing loading dots. Canvas/JS-driven effects are not reachable by CSS, so the `Fireworks` component guards on `window.matchMedia('(prefers-reduced-motion: reduce)')` and renders nothing when reduced motion is requested. Any new continuous or celebratory animation must be added to the reduced-motion rule (CSS) or guarded directly (canvas/JS).
+
 ---
 
 ## Phase 6: Screen-by-Screen Migration Checklist

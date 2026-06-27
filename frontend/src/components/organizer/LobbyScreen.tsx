@@ -11,6 +11,7 @@ interface LobbyScreenProps {
     joinUrl: string;
     playerCount: number;
     players: PlayerInfo[];
+    minPlayers?: number;
     locked: boolean;
     onStartGame: () => void;
     onToggleLock: () => void;
@@ -25,6 +26,7 @@ export default function LobbyScreen({
     joinUrl,
     playerCount,
     players,
+    minPlayers = 1,
     locked,
     onStartGame,
     onToggleLock,
@@ -173,9 +175,16 @@ export default function LobbyScreen({
                 </button>
             )}
 
-            <button onClick={onStartGame} disabled={playerCount === 0} className="btn btn-primary btn-glow w-full">
+            <button onClick={onStartGame} disabled={playerCount < minPlayers} className="btn btn-primary btn-glow w-full">
                 Start Game
             </button>
+            {playerCount < minPlayers && (
+                <p className="text-[--text-tertiary] text-sm mt-2 text-center">
+                    {playerCount === 0
+                        ? `Needs at least ${minPlayers} player${minPlayers === 1 ? '' : 's'} to start`
+                        : `Need ${minPlayers - playerCount} more player${minPlayers - playerCount === 1 ? '' : 's'} to start (${playerCount}/${minPlayers})`}
+                </p>
+            )}
         </div>
     );
 }

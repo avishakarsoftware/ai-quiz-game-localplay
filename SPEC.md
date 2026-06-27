@@ -365,6 +365,16 @@ Creative sequential games need private-turn queue infrastructure. `SPEC-GAME-STO
 
 `musical_chairs` is a standalone-first runtime family, not a quiz variant. `SPEC-GAME-MUSICAL-CHAIRS.md` defines the implementation-ready MVP. A host configures gameplay mode plus timing/music mode, creates a room, and starts with at least 3 connected players. Physical mode is the default: LocalPlay starts/stops rounds randomly while players use real chairs, then the host selects who is out. Digital mode uses phone taps: the stop signal opens a grab window, players tap once, and the slowest/no-tap player is eliminated automatically. MVP built-in mode provides server-randomized stop timing plus visual rhythm; procedural Web Audio is a later phase. Revelry/host-app launch remains deferred until a bridge contract is added and tested.
 
+### Per-Game UX And Hidden-Information Conventions
+
+These conventions apply across the game runtimes and are enforced server-side where they affect fairness:
+
+- **Hidden-information redaction is server-authoritative.** Public/spectator syncs must never expose information a client could exploit. Bluff's public sync strips the actually-played `card_ids` (card ids encode rank/suit) during the challenge window, exposing only the claimed rank/count; per-viewer hand redaction hides other players' cards. Poker hole cards are redacted per viewer and only revealed at showdown/podium.
+- **Blind voting hides authorship.** In vote-style prompt games (Generic Prompt `text_vote`, Acronym), the voting payload exposes entry text and a stable, non-identifying `entry_id` plus an `is_mine`/`your_entry_id` marker so a client can disable self-votes, but never the author. Authorship is revealed only at reveal/podium (and to the host). Entry ids are derived from a hash of the room-unique player id, so two nicknames that normalize to the same string no longer collide or corrupt the tally.
+- **Vote/submission feedback.** After voting, the chosen entry is highlighted and the list locks with a "Vote locked." confirmation. Editable submissions show "Submitted — you can still change it" only during the submission phase. When there are too few entries to vote on, the UI shows an explicit empty state instead of an empty/greyed list. Hosts cannot **Reveal** a round with zero submissions.
+- **Tie handling.** Poker splits the pot evenly among all players tied for the best hand (odd chips to the earliest-ranked), instead of awarding the whole pot to one; the UI shows "X & Y split N play chips".
+- **Per-action and waiting feedback.** Actions that wait on others give immediate feedback: Find Someone shows "Request sent — waiting for them to confirm" (and styles denied cells distinctly), Bingo/Housie claims show a transient "Claim sent — checking…" pill (success surfaces the winner overlay, failure the error pill). Roles with nothing to do in a phase get an explicit waiting/elimination state rather than a blank or silently-dimmed screen (e.g. Photo Clue clue-giver "Players are guessing… sit tight", Mafia ghost "You've been eliminated — watch quietly", Bingo/Housie "Getting your card ready…" before the ticket arrives).
+
 ## LLM Generation Pattern
 
 Generation engines follow the same pattern:
@@ -820,7 +830,7 @@ Common:
 - `PING`
 - `ROOM_CREATED`
 - `JOINED_ROOM`
-- `RECONNECTED`
+- `RECONNECTED` — includes the current `players` roster so a reconnecting player can immediately render the lobby/player list instead of seeing only themselves.
 - `PLAYER_JOINED`
 - `PLAYER_LEFT`
 - `PLAYER_DISCONNECTED`
@@ -1117,6 +1127,11 @@ Room creation:
 - Opens organizer WebSocket with `organizer=true`.
 - Sends first-frame `AUTH`.
 
+Lobby:
+
+- The lobby disables **Start Game** until the room meets the selected game's minimum player count and shows how many more players are needed (e.g. "Need 2 more players to start (1/3)"). Minimums are mirrored from the backend `MIN_*_PLAYERS` constants via `getMinPlayers()` in `frontend/src/gameModes.ts`; the backend remains authoritative and rejects an early `START_GAME`.
+- If a minimum-player rejection still arrives (e.g. a player left mid-press), it is shown in a dismissable modal that keeps the host in the lobby — never a raw `alert()`.
+
 Game start:
 
 - Plays start sound.
@@ -1130,6 +1145,7 @@ Round progression:
 - `ANSWER_COUNT` and `VOTE_COUNT` update progress.
 - Drawing `DRAW_OP`, `GUESS_LOG`, and `GUESS_ACCEPTED` update live drawing/guess state.
 - `QUESTION_OVER` moves host to `LEADERBOARD`.
+- The quiz `LEADERBOARD` screen gives the host explicit controls — a primary advance button (**Next Question**, or **Show Results** on the final round) that also shows the auto-advance countdown, plus **End Game** — consistent with the WMLT/Drawing leaderboards. Auto-advance is set up once on mount (via a callback ref) so it is not reset by unrelated re-renders.
 - `PODIUM` moves host to final results.
 
 Play again:
@@ -1166,6 +1182,17 @@ Join:
 - Saved sessions auto-rejoin after refresh.
 - Organizer room credentials are stored locally after room creation or host-app launch. Refreshing the host lobby or an active host screen must reconnect as organizer and restore the same room instead of returning to the game catalog while players remain in the old lobby.
 
+Join error handling:
+
+- Join/room errors are shown with friendly, player-facing copy (e.g. "Room not found" → "We couldn't find that room — double-check the code with your host."). The raw backend message is used as a fallback for unmapped errors.
+- Terminal join errors (room not found/full/locked, nickname taken, content not found, permission denied) close the socket and return the player to `JOIN` rather than entering a reconnect loop.
+- "Nickname is taken" during the player's **own** reconnect (a saved session with a session token for the same room+nickname) is treated as a transient stale-connection race: the client keeps the session and retries the rejoin up to twice before giving up, instead of discarding the session and bouncing to `JOIN`.
+
+Reconnect:
+
+- Reconnect is attempted from every in-game state, **including `PODIUM`** (`RECONNECTED` restores the podium), so a player whose phone sleeps during the finale returns to the celebration.
+- `RECONNECTED` (and `ROOM_RESET`) seed the lobby player list so a reconnected/returning player sees everyone in the room immediately instead of only themselves.
+
 Quiz round UI:
 
 - Displays question text, optional image, timer, progress, answer options, streak, bonus, and power-ups.
@@ -1187,7 +1214,7 @@ Drawing round UI:
 
 Results:
 
-- Quiz result shows correctness, points, rank, and leaderboard.
+- Quiz result shows correctness, points, rank, and leaderboard. A player who ran out of time without answering sees a distinct "Time's up!" state (warning color) rather than the same "Wrong" treatment as an incorrect answer.
 - WMLT result shows winner(s), vote count, majority feedback, and vote podium.
 - Drawing result shows prompt, drawer, correct guessers, points, rank, and leaderboard.
 
@@ -1365,6 +1392,9 @@ Historical review notes were consolidated into this section and the platform spe
 - **Reset-room tests:** Older tests once sent `RESET_ROOM` with inline `quiz_data`; current backend expects a valid `content_id`. Keep reset-room tests aligned with the content-id flow.
 - **Remote config announcement shape:** Historical review notes called out partial normalization of announcement entries. If remote config banners are expanded, normalize `type`, `dismissible`, and defaults explicitly.
 - **Quick play polish:** Add one-tap quick play for games that can start from default/template content, especially Drawing and WMLT. Current setup-first behavior is safer, but too slow for some live party moments.
+- **Shared host action bar (deferred):** Each game's in-game host controls (Bluff, Poker, Chit Pull, Mafia, Photo Clue, etc.) use their own button vocabulary, ordering, and disabled-vs-hidden policy. A shared host action-bar primitive (primary "advance" action + consistently-placed destructive "End Game", uniform disabled policy) would reduce host cognitive load across games. Deferred as a cross-cutting refactor; do it as one focused pass rather than per-game drift.
+- **Spectator social-game results:** Verified that the TV/spectator surface renders each social/prompt game (including its reveal phase) via the per-game `*_SYNC` messages with `controls="spectator"`, so the big screen advances to results rather than sitting on a stale prompt. If a new social game is added, confirm its component renders a spectator reveal/standings view.
+- **Reduced motion:** Looping/celebratory animations honor `prefers-reduced-motion` (Musical Chairs pulse/orbit, confetti bursts, shakes, loading dots are stopped; the canvas fireworks are skipped via a JS `matchMedia` guard). When adding new continuous/celebratory animation, add it to the reduced-motion rule in `frontend/src/index.css` (or guard canvas/JS animation directly).
 - **TV/cast polish:** Chromecast support is fragile as a primary user story. Use one shared game link with a clear **Join to Play** / **Join to Watch** choice, keep `/tv/{room_code}` as a reliable typed-TV fallback, and add a host-facing helper that opens/copies the spectator watch URL before platform casting. Browser Cast/Screen Mirroring mirrors the current tab, so hosts should cast the watch tab, not the organizer controls. Backlog first-class Chromecast/Google Cast, Apple TV/AirPlay, and platform receiver support as native-cast enhancements rather than the only TV path.
 - **Result sharing polish:** Add shareable result cards/thumbnails and a "one more round" path from completed games.
 - **Late join policy:** Decide and implement per-game late-join behavior after a game starts: spectate, join with missed-round penalty, or block until next round.
