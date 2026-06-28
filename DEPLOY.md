@@ -39,11 +39,18 @@ As of the SPA rollout, the VM has both LocalPlay containers deployed:
 
 The older backup containers `revelry-platform` and `revelry-gamma` may exist on the VM. They are not managed by `scripts/deploy-gcp.sh`; the LocalPlay deploy script only stops/removes `games-backend` and `games-backend-gamma`.
 
+### Recent gamma deploy — June 28, 2026 (Revelry callback event-loop hardening)
+
+Deployed runtime commit `1170215` to gamma with `./scripts/deploy-gcp.sh --gamma --with-frontend`. No schema migration was required. The deploy includes LocalPlay-side Revelry session/callback timing instrumentation and moves runtime WebSocket lifecycle callbacks (`game.started`, `game.completed`, cancellation/expiration) through a worker thread so synchronous HTTP retry/backoff cannot block the asyncio event loop for other rooms and players.
+
+Post-deploy verification:
+
+- `https://gamesapi-gamma.revelryapp.me/health` returned `{"status":"healthy"}`.
+- `https://gamesapi-gamma.revelryapp.me/catalog?host_app=revelry` returned the host-app game catalog.
+
 ### Recent gamma deploy — June 27, 2026 (Drawing pre-prod coverage)
 
 Deployed runtime commit `4c1ef1e` to gamma with `./scripts/deploy-gcp.sh --gamma --with-frontend`. No schema migration was required. The deploy adds deterministic `/drawing/import` seeding for pre-prod QA, fixes Drawing room start so it enters round one from `START_GAME`, and hardens organizer WebSocket close handling during first-frame auth.
-
-Commit `ce30a20` adds LocalPlay-side Revelry session/callback timing instrumentation and related specs. It is committed and pushed, but has not yet been deployed to gamma/prod.
 
 Post-deploy verification:
 
