@@ -43,6 +43,8 @@ The older backup containers `revelry-platform` and `revelry-gamma` may exist on 
 
 Deployed runtime commit `4c1ef1e` to gamma with `./scripts/deploy-gcp.sh --gamma --with-frontend`. No schema migration was required. The deploy adds deterministic `/drawing/import` seeding for pre-prod QA, fixes Drawing room start so it enters round one from `START_GAME`, and hardens organizer WebSocket close handling during first-frame auth.
 
+Commit `ce30a20` adds LocalPlay-side Revelry session/callback timing instrumentation and related specs. It is committed and pushed, but has not yet been deployed to gamma/prod.
+
 Post-deploy verification:
 
 - `cd frontend && npm run test:e2e:gamma` passed: `2 passed`.
@@ -1680,7 +1682,7 @@ If a Revelry-hosted Start or replay feels slow, check LocalPlay logs before chan
 
 ```bash
 gcloud compute ssh revelry-backend --zone us-central1-a --command \
-  "docker logs games-backend-gamma --since 2h | grep -E 'revelry_party_game_start_timing|revelry_sessions_create_timing|revelry_session_create_timing|revelry_callback_timing|integration_callback_timing'"
+  "docker logs games-backend-gamma --since 2h | grep -E 'revelry_party_game_start_timing|revelry_sessions_create_timing|revelry_session_create_timing|revelry_superseded_room_close_timing|revelry_callback_timing|integration_callback_timing'"
 ```
 
 For same-content replay, prefer the organizer's in-place `RESET_ROOM` / Play Again path when the room socket is still alive. That avoids session replacement, signed callbacks, and a full organizer reload. If timing logs show genuine new-session starts are blocked by inline callbacks, the safe follow-up is a durable callback outbox with retries and Revelry idempotency, not fire-and-forget callback delivery.
