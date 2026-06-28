@@ -5919,9 +5919,18 @@ class SocketManager:
         current_leaderboard = self.get_leaderboard_with_changes(room)
         is_final = room.current_question_index >= room.total_rounds() - 1
 
+        # Reveal the correct answer at round end. The index has always been sent;
+        # answer_text makes the reveal self-contained for clients that reconnect
+        # or late-join during the reveal window. (The answer is never included in
+        # the QUESTION broadcast, which strips answer_index — no pre-reveal leak.)
+        options = question.get("options") or []
+        answer_index = question["answer_index"]
+        answer_text = options[answer_index] if isinstance(answer_index, int) and 0 <= answer_index < len(options) else ""
+
         await room.broadcast({
             "type": "QUESTION_OVER",
-            "answer": question["answer_index"],
+            "answer": answer_index,
+            "answer_text": answer_text,
             "leaderboard": current_leaderboard,
             "previous_leaderboard": room.previous_leaderboard,
             "is_final": is_final

@@ -41,6 +41,7 @@ This is Phase 0 for these games. If a variant later needs custom scoring or type
 - Generated games should charge the same generation spark cost as quiz.
 - Starting rooms should charge the same room spark cost as quiz.
 - Existing import/export remains regular quiz JSON.
+- Because every variant shares the quiz runtime (`options` + `answer_index`), the end-of-round **answer reveal** (correct answer shown on player, host, and spectator screens) applies uniformly to all variants. See "Answer Reveal" under Quiz Gameplay in `SPEC.md`.
 
 ## Game 1: Rebus Rush
 

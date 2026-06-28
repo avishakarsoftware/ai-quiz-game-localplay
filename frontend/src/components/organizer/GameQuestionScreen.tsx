@@ -14,15 +14,18 @@ interface GameQuestionScreenProps {
     isBonus?: boolean;
     onNextQuestion?: () => void;
     onEndQuiz?: () => void;
+    onContinue?: () => void;
+    revealAnswerIndex?: number | null;
     gameType?: GameType;
     statementText?: string;
 }
 
 export default function GameQuestionScreen({
     question, questionNumber, totalQuestions, timeRemaining, timeLimit, imageUrl,
-    answeredCount, playerCount, isBonus, onNextQuestion, onEndQuiz,
+    answeredCount, playerCount, isBonus, onNextQuestion, onEndQuiz, onContinue, revealAnswerIndex,
     gameType, statementText,
 }: GameQuestionScreenProps) {
+    const revealing = revealAnswerIndex !== undefined && revealAnswerIndex !== null;
     const timerPct = timeLimit > 0 ? (timeRemaining / timeLimit) * 100 : 0;
     const timerColor = timeRemaining <= 5 ? 'var(--accent-danger)'
         : timeRemaining <= 10 ? 'var(--accent-warning)'
@@ -42,24 +45,30 @@ export default function GameQuestionScreen({
                     <span className="text-[--text-tertiary] text-lg font-bold">{roundLabel}{questionNumber}/{totalQuestions}</span>
                     <div className="flex items-center gap-2">
                         {isBonus && <span className="bonus-badge">2X BONUS</span>}
-                        <span className={`font-extrabold tabular-nums text-2xl ${timeRemaining <= 5 ? 'timer-number-pulse' : ''}`}
-                            style={{ color: timerColor }}>
-                            {timeRemaining}s
-                        </span>
+                        {revealing ? (
+                            <span className="font-extrabold text-2xl" style={{ color: 'var(--accent-success)' }}>✓ Answer</span>
+                        ) : (
+                            <span className={`font-extrabold tabular-nums text-2xl ${timeRemaining <= 5 ? 'timer-number-pulse' : ''}`}
+                                style={{ color: timerColor }}>
+                                {timeRemaining}s
+                            </span>
+                        )}
                     </div>
                 </div>
-                <div className="question-timer-bar">
-                    <div
-                        className="question-timer-fill"
-                        style={{
-                            width: `${timerPct}%`,
-                            background: timerColor,
-                        }}
-                    />
-                </div>
+                {!revealing && (
+                    <div className="question-timer-bar">
+                        <div
+                            className="question-timer-fill"
+                            style={{
+                                width: `${timerPct}%`,
+                                background: timerColor,
+                            }}
+                        />
+                    </div>
+                )}
             </div>
 
-            {answeredCount !== undefined && playerCount !== undefined && playerCount > 0 && (
+            {!revealing && answeredCount !== undefined && playerCount !== undefined && playerCount > 0 && (
                 <div className="flex items-center justify-center gap-3 mb-4 stagger-in" style={{ animationDelay: '0.05s' }}>
                     <span className="text-sm text-[--text-tertiary]">
                         {answeredCount} of {playerCount} {progressLabel}
@@ -89,18 +98,37 @@ export default function GameQuestionScreen({
                     </div>
 
                     <div className={question.options.length === 2 ? 'answer-grid-tf' : 'answer-grid'}>
-                        {question.options.map((opt, i) => (
-                            <div key={i} className={`answer-btn answer-stagger ${ANSWER_STYLES[i].className}`}
-                                style={{ animationDelay: `${0.2 + i * 0.08}s` }}>
-                                <span className="answer-label">{String.fromCharCode(65 + i)}</span>
-                                <span className={hasEmoji(opt) ? 'emoji-answer-text' : ''}>{opt}</span>
-                            </div>
-                        ))}
+                        {question.options.map((opt, i) => {
+                            const isAnswer = revealing && revealAnswerIndex === i;
+                            return (
+                                <div key={i} className={`answer-btn answer-stagger ${ANSWER_STYLES[i].className}`}
+                                    style={{
+                                        animationDelay: `${0.2 + i * 0.08}s`,
+                                        ...(revealing ? { opacity: isAnswer ? 1 : 0.35, outline: isAnswer ? '4px solid var(--accent-success)' : undefined, outlineOffset: isAnswer ? 2 : undefined } : {}),
+                                    }}>
+                                    <span className="answer-label">{String.fromCharCode(65 + i)}</span>
+                                    <span className={hasEmoji(opt) ? 'emoji-answer-text' : ''}>{opt}{isAnswer ? ' ✓' : ''}</span>
+                                </div>
+                            );
+                        })}
                     </div>
                 </>
             ) : null}
 
-            {(onNextQuestion || onEndQuiz) && (
+            {revealing ? (
+                <div className="mt-auto pb-6 space-y-3" style={{ paddingTop: 32 }}>
+                    {onContinue && (
+                        <button onClick={onContinue} className="btn btn-game-next w-full" style={{ height: 56, fontSize: 18 }}>
+                            Show Scores &rarr;
+                        </button>
+                    )}
+                    {onEndQuiz && (
+                        <button onClick={onEndQuiz} className="btn btn-game-end w-full" style={{ height: 56, fontSize: 18 }}>
+                            End Game
+                        </button>
+                    )}
+                </div>
+            ) : (onNextQuestion || onEndQuiz) && (
                 <div className="mt-auto pb-6 space-y-3" style={{ paddingTop: 32 }}>
                     {onNextQuestion && (
                         <button onClick={onNextQuestion} className="btn btn-game-next w-full" style={{ height: 56, fontSize: 18 }}>

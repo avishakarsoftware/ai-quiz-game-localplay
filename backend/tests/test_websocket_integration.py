@@ -636,6 +636,43 @@ class TestStreakBonusWS:
 
 
 # ---------------------------------------------------------------------------
+# Answer Reveal Integration Tests
+# ---------------------------------------------------------------------------
+
+class TestAnswerRevealWS:
+    """The correct answer is revealed at round end but never leaked in QUESTION."""
+
+    def test_question_over_reveals_answer_text_and_question_does_not_leak(self):
+        quiz_id = seed_quiz(num_questions=2)  # options ["A","B","C","D"], answer_index 0
+        room_code, org_token = create_room(quiz_id)
+
+        with org_connect(room_code, org_token) as org_ws:
+            org_ws.receive_json()
+            with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
+                p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
+                p_ws.receive_json()  # JOINED_ROOM
+                recv_until(org_ws, "PLAYER_JOINED")
+                recv_until(p_ws, "PLAYER_JOINED")
+
+                org_ws.send_json({"type": "START_GAME"})
+                org_ws.send_json({"type": "NEXT_QUESTION"})
+
+                # The question the player receives must NOT carry the answer.
+                q = recv_until(p_ws, "QUESTION")
+                assert "answer_index" not in q
+                assert "answer" not in q
+                recv_until(org_ws, "QUESTION")
+
+                p_ws.send_json({"type": "ANSWER", "answer_index": 1})  # wrong on purpose
+                recv_until(p_ws, "ANSWER_RESULT")
+
+                # QUESTION_OVER reveals both the index and the resolved text.
+                qo = recv_until(p_ws, "QUESTION_OVER")
+                assert qo["answer"] == 0
+                assert qo["answer_text"] == "A"
+
+
+# ---------------------------------------------------------------------------
 # Power-ups Integration Tests
 # ---------------------------------------------------------------------------
 

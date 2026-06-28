@@ -73,6 +73,7 @@ export default function SpectatorPage() {
     const [question, setQuestion] = useState<SpectatorQuestion | null>(null);
     const [questionNumber, setQuestionNumber] = useState(0);
     const [totalQuestions, setTotalQuestions] = useState(0);
+    const [revealedAnswer, setRevealedAnswer] = useState<number | null>(null);
     const [timeRemaining, setTimeRemaining] = useState(0);
     const [timeLimit, setTimeLimit] = useState(15);
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -145,6 +146,7 @@ export default function SpectatorPage() {
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectDelayRef = useRef(2000);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const revealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const roomClosedRef = useRef(false);
     const [roomClosed, setRoomClosed] = useState(false);
     const mountedRef = useRef(true);
@@ -154,6 +156,7 @@ export default function SpectatorPage() {
         mountedRef.current = true;
         return () => {
             mountedRef.current = false;
+            if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
         };
     }, []);
 
@@ -552,6 +555,7 @@ export default function SpectatorPage() {
                 setGameType('musical_chairs');
             }
             else if (msg.type === 'QUESTION') {
+                if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
                 if (msg.game_type) setGameType(msg.game_type);
                 setQuestionNumber(msg.question_number);
                 setTotalQuestions(msg.total_questions);
@@ -607,6 +611,15 @@ export default function SpectatorPage() {
                     });
                 } else {
                     setWmltRoundResult(null);
+                    // Quiz-runtime: reveal the correct answer on the TV, then move
+                    // to the leaderboard (or wait for PODIUM on the final round).
+                    if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+                    setRevealedAnswer(typeof msg.answer === 'number' ? msg.answer : null);
+                    setGameState('ANSWER_REVEAL');
+                    if (!msg.is_final) {
+                        revealTimerRef.current = setTimeout(() => setGameState('LEADERBOARD'), 5000);
+                    }
+                    return;
                 }
                 if (!msg.is_final) {
                     setGameState('LEADERBOARD');
@@ -614,6 +627,7 @@ export default function SpectatorPage() {
                 // When is_final, stay on current screen until PODIUM arrives
             }
             else if (msg.type === 'PODIUM') {
+                if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
                 setLeaderboard(msg.leaderboard);
                 setTeamLeaderboard(msg.team_leaderboard || []);
                 if (msg.find_someone) setFindSomeoneState(msg.find_someone);
@@ -643,6 +657,7 @@ export default function SpectatorPage() {
                 setGameState('DISCONNECTED');
             }
             else if (msg.type === 'ROOM_RESET') {
+                if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
                 setPlayers(msg.players || []);
                 setPlayerCount(msg.player_count);
                 setIsBonus(false);
@@ -1068,7 +1083,7 @@ export default function SpectatorPage() {
                         />
                     )}
 
-                    {gameState === 'QUESTION' && (question || currentStatement || gameType === 'drawing') && (
+                    {(gameState === 'QUESTION' || gameState === 'ANSWER_REVEAL') && (question || currentStatement || gameType === 'drawing') && (
                         showBonusSplash ? (
                             <BonusSplash onComplete={() => setShowBonusSplash(false)} />
                         ) : (
@@ -1161,17 +1176,25 @@ export default function SpectatorPage() {
                                         </p>
                                     </div>
                                     <div className={question.options.length === 2 ? 'answer-grid-tf' : 'answer-grid'} style={{ gap: '16px' }}>
-                                        {question.options.map((opt, i) => (
-                                            <div key={i} className={`answer-btn ${ANSWER_STYLES[i].className}`} style={{ height: 100, fontSize: 20, overflow: 'hidden' }}>
-                                                <span className="answer-label">{String.fromCharCode(65 + i)}</span>
-                                                <span
-                                                    className={hasEmoji(opt) ? 'emoji-answer-text' : ''}
-                                                    style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                                >
-                                                    {opt}
-                                                </span>
-                                            </div>
-                                        ))}
+                                        {question.options.map((opt, i) => {
+                                            const revealing = gameState === 'ANSWER_REVEAL';
+                                            const isAnswer = revealing && revealedAnswer === i;
+                                            return (
+                                                <div key={i} className={`answer-btn ${ANSWER_STYLES[i].className}`}
+                                                    style={{
+                                                        height: 100, fontSize: 20, overflow: 'hidden',
+                                                        ...(revealing ? { opacity: isAnswer ? 1 : 0.35, outline: isAnswer ? '4px solid var(--accent-success)' : undefined, outlineOffset: isAnswer ? 2 : undefined } : {}),
+                                                    }}>
+                                                    <span className="answer-label">{String.fromCharCode(65 + i)}</span>
+                                                    <span
+                                                        className={hasEmoji(opt) ? 'emoji-answer-text' : ''}
+                                                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                                    >
+                                                        {opt}{isAnswer ? ' ✓' : ''}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </>
                             ) : null}

@@ -926,6 +926,21 @@ Server broadcasts `QUESTION_OVER`:
 - `previous_leaderboard`
 - `is_final`
 
+### Answer Reveal
+
+After each quiz round closes, the **correct answer** is shown on all three surfaces — player, host, and spectator — for every quiz-runtime game (`quiz` and the variants `rebus`, `emoji_charades`, `fact_fiction`, `timeline`, `odd_one_out`, which all share the quiz runtime and the `options` + `answer_index` content shape, so one mechanism covers them all).
+
+Anti-leak invariant: the correct answer is only sent at round end. `QUESTION_OVER` carries `answer` (index) and `answer_text` (resolved option string); the `QUESTION` broadcast strips `answer_index` and must never include the answer.
+
+Behavior per surface:
+
+- **Player (`RESULT`):** when the player was wrong or timed out, shows "Correct answer: {option text}" (highlighted). Uses `answer_text` when present, else `currentQuestion.options[answer]`. Pairs with the "Time's up!" state for unanswered rounds.
+- **Host + Spectator (`ANSWER_REVEAL` step):** on `QUESTION_OVER`, before the leaderboard, both render the question card with the **correct option highlighted** (reusing `ANSWER_STYLES`/the answer grid, dimming the other options, keeping the image for image questions). The host advances with a **Show Scores** control (then the existing leaderboard + auto-advance); the spectator auto-advances to the leaderboard after a short beat (`revealTimerRef`, cleared on the next `QUESTION`/`PODIUM`/`ROOM_RESET` so a stale timer can't override a new round). `ANSWER_REVEAL` is included in the host reconnect active-states. WMLT and Drawing skip this step — they keep their own per-round result screens and go straight to the leaderboard.
+
+Edge cases handled: image questions (image kept, correct option highlighted); timed-out players (reveal + "Time's up!"); the reveal never appears before the round closes (driven by `QUESTION_OVER`); `answer_text` keeps the reveal renderable for clients that reconnect/late-join.
+
+Tested by: `tests/test_websocket_integration.py::TestAnswerRevealWS` (asserts `QUESTION_OVER` carries `answer`/`answer_text` and `QUESTION` does not); `GameQuestionScreen.test.tsx` (host reveal highlights the correct option, shows Show Scores, hides Next); `PlayerPage.test.tsx` "Answer reveal" (RESULT shows the correct answer when unanswered).
+
 ## WMLT Gameplay
 
 ### Start Constraint

@@ -56,7 +56,7 @@ import { GENERIC_PROMPT_GAME_IDS, getGameModeConfig, getMinPlayers, isQuizRuntim
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
-type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'WHO_AM_I_PROMPT' | 'WHO_AM_I_REVIEW' | 'CHIT_PULL_PROMPT' | 'CHIT_PULL_REVIEW' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'PARTY_QUESTS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'POKER' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'PARTY_QUESTS' | 'SURVEY_SAYS' | 'GENERIC_PROMPT' | 'SIMPLE_SOCIAL' | 'PHOTO_CLUE' | 'LEADERBOARD' | 'PODIUM';
+type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'WHO_AM_I_PROMPT' | 'WHO_AM_I_REVIEW' | 'CHIT_PULL_PROMPT' | 'CHIT_PULL_REVIEW' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'PARTY_QUESTS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'POKER' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'MAFIA' | 'PARTY_QUESTS' | 'SURVEY_SAYS' | 'GENERIC_PROMPT' | 'SIMPLE_SOCIAL' | 'PHOTO_CLUE' | 'ANSWER_REVEAL' | 'LEADERBOARD' | 'PODIUM';
 
 function isGenericPromptGame(type: GameType): type is GenericPromptGameType {
     return (GENERIC_PROMPT_GAME_IDS as string[]).includes(type);
@@ -140,6 +140,7 @@ export default function OrganizerPage() {
     const [playerCount, setPlayerCount] = useState(0);
     const [currentQuestion, setCurrentQuestion] = useState(0);
     const [totalQuestions, setTotalQuestions] = useState(0);
+    const [revealedAnswer, setRevealedAnswer] = useState<number | null>(null);
     const [timeRemaining, setTimeRemaining] = useState(15);
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
     const [teamLeaderboard, setTeamLeaderboard] = useState<TeamLeaderboardEntry[]>([]);
@@ -458,8 +459,11 @@ export default function OrganizerPage() {
             } else {
                 setWmltRoundResult(null);
                 setDrawingRoundResult(null);
+                setRevealedAnswer(typeof msg.answer === 'number' ? (msg.answer as number) : null);
             }
-            setState('LEADERBOARD');
+            // Quiz-runtime games reveal the correct answer before the leaderboard;
+            // WMLT/Drawing have their own result screens and go straight to it.
+            setState(msg.game_type === 'wmlt' || msg.game_type === 'drawing' ? 'LEADERBOARD' : 'ANSWER_REVEAL');
         }
         else if (msg.type === 'PODIUM') {
             setLeaderboard(msg.leaderboard as LeaderboardEntry[]);
@@ -1450,7 +1454,7 @@ export default function OrganizerPage() {
             if (wsRef.current !== ws) return;
             wsRef.current = null;
             if (!mountedRef.current) return;
-            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'PARTY_QUESTS', 'SURVEY_SAYS', 'SIMPLE_SOCIAL', 'LEADERBOARD', 'PODIUM'];
+            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'PARTY_QUESTS', 'SURVEY_SAYS', 'SIMPLE_SOCIAL', 'ANSWER_REVEAL', 'LEADERBOARD', 'PODIUM'];
             if (roomCodeRef.current && activeStates.includes(stateRef.current)) {
                 if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                 reconnectTimerRef.current = setTimeout(() => connectWsRef.current(roomCodeRef.current), 2000);
@@ -2593,6 +2597,21 @@ export default function OrganizerPage() {
                             <button type="button" onClick={endQuiz} className="btn btn-secondary">End Game</button>
                         </div>
                     </div>
+                )}
+
+                {state === 'ANSWER_REVEAL' && currentQ && (
+                    <GameQuestionScreen
+                        question={currentQ}
+                        questionNumber={currentQuestion}
+                        totalQuestions={totalQuestions}
+                        timeRemaining={0}
+                        timeLimit={timeLimit}
+                        imageUrl={currentImageUrl}
+                        isBonus={isBonus}
+                        revealAnswerIndex={revealedAnswer}
+                        onContinue={() => setState('LEADERBOARD')}
+                        onEndQuiz={endQuiz}
+                    />
                 )}
 
                 {state === 'LEADERBOARD' && (

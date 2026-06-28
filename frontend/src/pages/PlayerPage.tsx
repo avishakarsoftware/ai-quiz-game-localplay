@@ -100,7 +100,8 @@ export default function PlayerPage() {
     const [pointsEarned, setPointsEarned] = useState(0);
     const [streak, setStreak] = useState(0);
     const [multiplier, setMultiplier] = useState(1.0);
-    const [, setCorrectAnswer] = useState<number | null>(null);
+    const [correctAnswer, setCorrectAnswer] = useState<number | null>(null);
+    const [correctAnswerText, setCorrectAnswerText] = useState<string>('');
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
     const [teamLeaderboard, setTeamLeaderboard] = useState<TeamLeaderboardEntry[]>([]);
     const [myRank, setMyRank] = useState(0);
@@ -828,6 +829,7 @@ export default function PlayerPage() {
                     });
                 } else {
                     setCorrectAnswer(msg.answer as number);
+                    setCorrectAnswerText((msg.answer_text as string) || '');
                 }
                 setLeaderboard(msg.leaderboard as LeaderboardEntry[]);
                 setMyRank((msg.leaderboard as LeaderboardEntry[]).findIndex((p) => p.nickname === nickname) + 1);
@@ -1998,6 +2000,11 @@ export default function PlayerPage() {
                                     </h2>
                                     {pointsEarned > 0 && (
                                         <p className="text-xl font-bold text-[--accent-success] mt-2">+{pointsEarned}</p>
+                                    )}
+                                    {!isCorrect && (correctAnswerText || (correctAnswer !== null && currentQuestion?.options?.[correctAnswer])) && (
+                                        <p className="mt-3 text-[--text-secondary]">
+                                            Correct answer: <strong style={{ color: 'var(--accent-success)' }}>{correctAnswerText || currentQuestion?.options?.[correctAnswer as number]}</strong>
+                                        </p>
                                     )}
                                 </>
                             )}

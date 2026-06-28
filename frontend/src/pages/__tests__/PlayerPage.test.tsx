@@ -234,6 +234,30 @@ describe('PlayerPage', () => {
         });
     });
 
+    describe('Answer reveal', () => {
+        it('shows the correct answer on RESULT when the player did not answer', () => {
+            render(<PlayerPage />);
+            fillAndJoin('ROOM', 'Eve');
+            const ws = getLatestWs();
+            act(() => { ws.onopen?.(); });
+            simulateWsMessage({ type: 'JOINED_ROOM', session_token: 'tok' });
+            simulateWsMessage({
+                type: 'QUESTION',
+                question: { text: 'Capital of France?', options: ['London', 'Paris', 'Rome', 'Berlin'] },
+                question_number: 1,
+                total_questions: 3,
+                time_limit: 20,
+            });
+            // Round ends without an answer from this player.
+            simulateWsMessage({ type: 'QUESTION_OVER', answer: 1, answer_text: 'Paris', leaderboard: [], is_final: false });
+
+            expect(screen.getByText("Time's up!")).toBeInTheDocument();
+            const answer = screen.getByText('Paris');
+            expect(answer.tagName).toBe('STRONG');
+            expect(answer.parentElement?.textContent).toContain('Correct answer:');
+        });
+    });
+
     // --- 50/50 Reconnect (Fix 2) ---
 
     describe('50/50 Reconnect', () => {
