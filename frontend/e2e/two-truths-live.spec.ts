@@ -61,7 +61,7 @@ test.describe('Two Truths live flow', () => {
     ]);
 
     try {
-      await expect(page.getByText('3 players')).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText(/3\s+connected players?/i)).toBeVisible({ timeout: 20_000 });
       await page.getByRole('button', { name: 'Start Game' }).click();
       await expect(page.getByText('0 of 3 players ready')).toBeVisible({ timeout: 20_000 });
 

@@ -47,7 +47,7 @@ test.describe('Standalone live turn handoff on gamma', () => {
     ]);
 
     try {
-      await expect(page.getByText('3 players')).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText(/3\s+connected players?/i)).toBeVisible({ timeout: 20_000 });
       await page.getByRole('button', { name: 'Start Game' }).click();
       await expect(page.getByRole('heading', { name: 'Story Chain' })).toBeVisible({ timeout: 20_000 });
 

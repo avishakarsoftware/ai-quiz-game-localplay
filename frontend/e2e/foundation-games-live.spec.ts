@@ -202,7 +202,7 @@ test.describe('Foundation games live regression', () => {
 });
 
 async function startAndExpect(page: LivePlayer['page'], players: LivePlayer[], heading: string | RegExp) {
-  await expect(page.getByText(`${players.length} players`)).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByText(new RegExp(`${players.length}\\s+connected players?`, 'i'))).toBeVisible({ timeout: 25_000 });
   await page.getByRole('button', { name: 'Start Game' }).click();
   await expect(page.getByRole('heading', { name: heading })).toBeVisible({ timeout: 20_000 });
 }

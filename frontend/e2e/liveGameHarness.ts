@@ -103,7 +103,7 @@ export async function closePlayers(players: LivePlayer[]) {
 }
 
 export async function startLobbyGame(page: Page, playerCount: number) {
-  await expect(page.getByText(`${playerCount} players`)).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByText(new RegExp(`${playerCount}\\s+connected players?`, 'i'))).toBeVisible({ timeout: 25_000 });
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('close-settings')));
   await page.keyboard.press('Escape').catch(() => {});
   const startButton = page.getByRole('button', { name: 'Start Game' });
