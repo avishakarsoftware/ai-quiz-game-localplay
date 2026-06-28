@@ -63,6 +63,10 @@ from host_app_catalog_policy import clear_policy_cache, effective_catalog, is_ga
 
 logger = logging.getLogger(__name__)
 
+
+def _elapsed_ms(start: float) -> int:
+    return int((time.perf_counter() - start) * 1000)
+
 FRONTEND_DIST_DIR = Path(config.FRONTEND_DIST_DIR)
 API_PREFIXES = (
     "/admin",
@@ -2772,6 +2776,7 @@ def _safe_result_summary(result: Optional[dict[str, Any]]) -> Optional[dict[str,
 async def _send_revelry_callback(event_type: str, payload: dict[str, Any]) -> None:
     if not config.REVELRY_CALLBACK_URL:
         return
+    callback_started = time.perf_counter()
     event_type = _callback_event_type(event_type)
     session = payload.get("session") if isinstance(payload.get("session"), dict) else {}
     result_summary = _safe_result_summary(payload.get("result_summary") or payload.get("result"))
@@ -2823,19 +2828,43 @@ async def _send_revelry_callback(event_type: str, payload: dict[str, Any]) -> No
         headers["X-LocalPlay-Signature"] = f"sha256={signature}"
     async with httpx.AsyncClient(timeout=5.0) as client:
         for attempt in range(3):
+            attempt_started = time.perf_counter()
             try:
                 response = await client.post(config.REVELRY_CALLBACK_URL, content=raw, headers=headers)
                 response.raise_for_status()
+                logger.info(
+                    "revelry_callback_timing event_type=%s session_id=%s content_id=%s status=%s attempt=%s attempt_ms=%s total_ms=%s",
+                    event_type,
+                    session_id or "",
+                    content_id or "",
+                    getattr(response, "status_code", "unknown"),
+                    attempt + 1,
+                    _elapsed_ms(attempt_started),
+                    _elapsed_ms(callback_started),
+                )
                 return
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
                 if status not in (429, 500, 502, 503, 504) or attempt == 2:
-                    logger.warning("Revelry callback failed for %s: %s", event_type, exc)
+                    logger.warning(
+                        "Revelry callback failed for %s after %sms attempt=%s status=%s: %s",
+                        event_type,
+                        _elapsed_ms(callback_started),
+                        attempt + 1,
+                        status,
+                        exc,
+                    )
                     return
                 await asyncio.sleep(_callback_retry_delay(exc.response, attempt))
             except httpx.HTTPError as exc:
                 if attempt == 2:
-                    logger.warning("Revelry callback failed for %s: %s", event_type, exc)
+                    logger.warning(
+                        "Revelry callback failed for %s after %sms attempt=%s: %s",
+                        event_type,
+                        _elapsed_ms(callback_started),
+                        attempt + 1,
+                        exc,
+                    )
                     return
                 await asyncio.sleep(_callback_retry_delay(None, attempt))
 
@@ -3079,8 +3108,11 @@ def _create_revelry_session_from_context(
         raise HTTPException(status_code=422, detail="Unsupported host_app")
     _require_host_app_game_allowed(context, game_type, actor)
 
+    started = time.perf_counter()
+    active_lookup_started = time.perf_counter()
     active = db.get_active_game_session(context.host_app, context.external_container_id)
     active = _sync_session_runtime_availability(active)
+    active_lookup_ms = _elapsed_ms(active_lookup_started)
     if active and active.get("status") not in ("lobby", "active", "paused"):
         active = None
     if active and not replacement_confirmed:
@@ -3126,11 +3158,16 @@ def _create_revelry_session_from_context(
             )
 
     title = context.external_container_title or next((g["title"] for g in GAME_CATALOG if g["game_type"] == game_type), "LocalPlay Game")
+    content_started = time.perf_counter()
     content_id, game_data = _resolve_revelry_runtime_content(context, game_type, str(settings.get("content_id") or ""), title)
+    content_ms = _elapsed_ms(content_started)
     time_limit = int(settings.get("time_limit") or game_data.get("time_limit") or _default_time_limit_for_game(game_type))
     time_limit = max(5, min(60, time_limit))
     wallet_id = f"revelry:{context.host_user_id or actor.external_user_id or context.external_container_id}"
+    wallet_started = time.perf_counter()
     db.get_or_create_wallet(wallet_id, signup_bonus=False)
+    wallet_ms = _elapsed_ms(wallet_started)
+    room_started = time.perf_counter()
     room_code, organizer_token = _create_runtime_room(
         game_type,
         content_id,
@@ -3139,11 +3176,13 @@ def _create_revelry_session_from_context(
         time_limit,
         billing_mode="host_app_managed",
     )
+    room_ms = _elapsed_ms(room_started)
 
     now = _now_ts()
     session_id = f"lp_{uuid.uuid4().hex}"
     base_url = _public_base_url(req)
     game_title = game_data.get("quiz_title") or game_data.get("game_title") or title
+    session_db_started = time.perf_counter()
     session = db.create_game_session({
         "id": session_id,
         "host_app": context.host_app,
@@ -3166,7 +3205,10 @@ def _create_revelry_session_from_context(
         "last_activity_at": now,
         "updated_at": now,
     })
+    session_db_ms = _elapsed_ms(session_db_started)
+    supersede_db_ms = 0
     if active:
+        supersede_db_started = time.perf_counter()
         superseded = db.update_game_session(active["id"], {
             "status": "superseded",
             "joinable": False,
@@ -3174,7 +3216,23 @@ def _create_revelry_session_from_context(
             "closed_message": "The host started a newer game.",
             "superseded_by_session_id": session_id,
         })
+        supersede_db_ms = _elapsed_ms(supersede_db_started)
         session["_superseded_session"] = superseded or db.get_game_session(active["id"]) or active
+    logger.info(
+        "revelry_session_create_timing session_id=%s external_container_id=%s game_type=%s content_id=%s active_session_id=%s total_ms=%s active_lookup_ms=%s content_ms=%s wallet_ms=%s room_ms=%s session_db_ms=%s supersede_db_ms=%s",
+        session_id,
+        context.external_container_id,
+        game_type,
+        content_id,
+        active.get("id", "") if active else "",
+        _elapsed_ms(started),
+        active_lookup_ms,
+        content_ms,
+        wallet_ms,
+        room_ms,
+        session_db_ms,
+        supersede_db_ms,
+    )
     return session
 
 
@@ -3184,10 +3242,17 @@ async def _close_superseded_runtime_session(superseded: Optional[dict]) -> None:
     room_code = superseded.get("room_code") or ""
     if not room_code:
         return
+    started = time.perf_counter()
     await socket_manager.close_room(
         room_code,
         reason="superseded",
         message="The host started a newer game.",
+    )
+    logger.info(
+        "revelry_superseded_room_close_timing session_id=%s room_code=%s total_ms=%s",
+        superseded.get("id", ""),
+        room_code,
+        _elapsed_ms(started),
     )
 
 
@@ -3647,12 +3712,14 @@ async def get_revelry_party_workspace(
 
 @app.post("/integrations/revelry/party-games/start")
 async def start_revelry_party_game(request: RevelryPartyGameStartRequest, req: Request):
+    endpoint_started = time.perf_counter()
     launch_context = _resolve_party_games_token(request.party_games_token)
     capabilities = set(launch_context.get("capabilities") or [])
     if "operate_game" not in capabilities and "manage_games" not in capabilities:
         raise HTTPException(status_code=403, detail="Missing capability to start games")
     context = _external_context_from_launch_context(launch_context)
     actor = _actor_from_launch_context(launch_context)
+    create_started = time.perf_counter()
     session = _create_revelry_session_from_context(
         context,
         actor,
@@ -3662,15 +3729,22 @@ async def start_revelry_party_game(request: RevelryPartyGameStartRequest, req: R
         replacement_confirmed=request.replacement_confirmed,
         replace_session_id=request.replace_session_id,
     )
+    create_ms = _elapsed_ms(create_started)
     superseded = session.pop("_superseded_session", None)
+    close_started = time.perf_counter()
     await _close_superseded_runtime_session(superseded)
+    close_ms = _elapsed_ms(close_started)
+    superseded_callback_ms = 0
     if superseded:
+        callback_started = time.perf_counter()
         await _send_revelry_callback("session.superseded", {
             "host_app": context.host_app,
             "external_container_type": context.external_container_type,
             "external_container_id": context.external_container_id,
             "session": _format_session(superseded),
         })
+        superseded_callback_ms = _elapsed_ms(callback_started)
+    token_started = time.perf_counter()
     return_token, _return_expires, return_context = _create_party_games_token(
         context,
         actor,
@@ -3691,6 +3765,8 @@ async def start_revelry_party_game(request: RevelryPartyGameStartRequest, req: R
         },
     )
     base_url = _public_base_url(req)
+    token_ms = _elapsed_ms(token_started)
+    created_callback_started = time.perf_counter()
     await _send_revelry_callback("session.created", {
         "host_app": context.host_app,
         "external_container_type": context.external_container_type,
@@ -3698,6 +3774,21 @@ async def start_revelry_party_game(request: RevelryPartyGameStartRequest, req: R
         "session": _format_session(session),
         "actor": _safe_actor_payload(actor),
     })
+    created_callback_ms = _elapsed_ms(created_callback_started)
+    logger.info(
+        "revelry_party_game_start_timing session_id=%s external_container_id=%s game_type=%s content_id=%s superseded_session_id=%s total_ms=%s create_ms=%s close_ms=%s superseded_callback_ms=%s token_ms=%s created_callback_ms=%s",
+        session["id"],
+        context.external_container_id,
+        request.game_type,
+        request.content_id,
+        superseded.get("id", "") if superseded else "",
+        _elapsed_ms(endpoint_started),
+        create_ms,
+        close_ms,
+        superseded_callback_ms,
+        token_ms,
+        created_callback_ms,
+    )
     return {
         "session": _format_session(session),
         "launch_url": f"{base_url}/organizer?session_id={session['id']}&launch_token={token}&embed=1",
@@ -3853,8 +3944,10 @@ async def delete_revelry_party_game_content(content_id: str, request: RevelryPar
 
 @app.post("/integrations/revelry/sessions")
 async def create_revelry_session(request: RevelrySessionCreateRequest, req: Request):
+    endpoint_started = time.perf_counter()
     _require_revelry_auth(req, request.handoff_token)
     context = request.external_context
+    create_started = time.perf_counter()
     session = _create_revelry_session_from_context(
         context,
         request.actor,
@@ -3864,15 +3957,22 @@ async def create_revelry_session(request: RevelrySessionCreateRequest, req: Requ
         replacement_confirmed=request.replacement_confirmed,
         replace_session_id=request.replace_session_id,
     )
+    create_ms = _elapsed_ms(create_started)
     superseded = session.pop("_superseded_session", None)
+    close_started = time.perf_counter()
     await _close_superseded_runtime_session(superseded)
+    close_ms = _elapsed_ms(close_started)
+    superseded_callback_ms = 0
     if superseded:
+        callback_started = time.perf_counter()
         await _send_revelry_callback("session.superseded", {
             "host_app": context.host_app,
             "external_container_type": context.external_container_type,
             "external_container_id": context.external_container_id,
             "session": _format_session(superseded),
         })
+        superseded_callback_ms = _elapsed_ms(callback_started)
+    created_callback_started = time.perf_counter()
     await _send_revelry_callback("session.created", {
         "host_app": context.host_app,
         "external_container_type": context.external_container_type,
@@ -3880,6 +3980,20 @@ async def create_revelry_session(request: RevelrySessionCreateRequest, req: Requ
         "session": _format_session(session),
         "actor": _safe_actor_payload(request.actor),
     })
+    created_callback_ms = _elapsed_ms(created_callback_started)
+    logger.info(
+        "revelry_sessions_create_timing session_id=%s external_container_id=%s game_type=%s content_id=%s superseded_session_id=%s total_ms=%s create_ms=%s close_ms=%s superseded_callback_ms=%s created_callback_ms=%s",
+        session["id"],
+        context.external_container_id,
+        request.game_type,
+        request.settings.get("content_id") or "",
+        superseded.get("id", "") if superseded else "",
+        _elapsed_ms(endpoint_started),
+        create_ms,
+        close_ms,
+        superseded_callback_ms,
+        created_callback_ms,
+    )
     return _format_session(session)
 
 

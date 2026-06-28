@@ -1676,6 +1676,15 @@ The test verifies:
 
 If the test shows `Invalid or expired party games token`, mint a fresh gamma URL and rerun. If image upload fails with `403 bad_signature`, verify `games-backend-gamma` `MEDIA_UPLOAD_SECRET` matches `~/revelryapp/media/apps/localplay/.upload_secret` on IONOS, then redeploy gamma. If completion succeeds in LocalPlay but Revelry never shows a completed session, verify gamma has `REVELRY_CALLBACK_URL=https://api-gamma.revelryapp.me/api/games/localplay/callback` and redeploy gamma.
 
+If a Revelry-hosted Start or replay feels slow, check LocalPlay logs before changing the callback contract:
+
+```bash
+gcloud compute ssh revelry-backend --zone us-central1-a --command \
+  "docker logs games-backend-gamma --since 2h | grep -E 'revelry_party_game_start_timing|revelry_sessions_create_timing|revelry_session_create_timing|revelry_callback_timing|integration_callback_timing'"
+```
+
+For same-content replay, prefer the organizer's in-place `RESET_ROOM` / Play Again path when the room socket is still alive. That avoids session replacement, signed callbacks, and a full organizer reload. If timing logs show genuine new-session starts are blocked by inline callbacks, the safe follow-up is a durable callback outbox with retries and Revelry idempotency, not fire-and-forget callback delivery.
+
 Do not run this against production. For production, create a separate explicitly approved smoke plan using a disposable prod party.
 
 #### Manual auth/payment checks

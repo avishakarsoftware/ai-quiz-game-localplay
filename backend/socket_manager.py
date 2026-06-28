@@ -5658,6 +5658,7 @@ class SocketManager:
     def _send_integration_callback(self, event_type: str, session: dict, result_summary: Optional[dict] = None):
         if not config.REVELRY_CALLBACK_URL or session.get("host_app") != "revelry":
             return
+        callback_started = time.perf_counter()
         event_type = self._callback_event_type(event_type)
         session_id = session.get("id")
         result_summary = self._safe_result_summary(result_summary) if result_summary else None
@@ -5703,19 +5704,42 @@ class SocketManager:
             headers["X-LocalPlay-Signature"] = f"sha256={signature}"
         with httpx.Client(timeout=5.0) as client:
             for attempt in range(3):
+                attempt_started = time.perf_counter()
                 try:
                     response = client.post(config.REVELRY_CALLBACK_URL, content=raw, headers=headers)
                     response.raise_for_status()
+                    logger.info(
+                        "integration_callback_timing event_type=%s session_id=%s status=%s attempt=%s attempt_ms=%s total_ms=%s",
+                        event_type,
+                        session_id or "",
+                        getattr(response, "status_code", "unknown"),
+                        attempt + 1,
+                        int((time.perf_counter() - attempt_started) * 1000),
+                        int((time.perf_counter() - callback_started) * 1000),
+                    )
                     return
                 except httpx.HTTPStatusError as exc:
                     status = exc.response.status_code
                     if status not in (429, 500, 502, 503, 504) or attempt == 2:
-                        logger.warning("Integration callback failed for %s: %s", event_type, exc)
+                        logger.warning(
+                            "Integration callback failed for %s after %sms attempt=%s status=%s: %s",
+                            event_type,
+                            int((time.perf_counter() - callback_started) * 1000),
+                            attempt + 1,
+                            status,
+                            exc,
+                        )
                         return
                     time.sleep(self._callback_retry_delay(exc.response, attempt))
                 except httpx.HTTPError as exc:
                     if attempt == 2:
-                        logger.warning("Integration callback failed for %s: %s", event_type, exc)
+                        logger.warning(
+                            "Integration callback failed for %s after %sms attempt=%s: %s",
+                            event_type,
+                            int((time.perf_counter() - callback_started) * 1000),
+                            attempt + 1,
+                            exc,
+                        )
                         return
                     time.sleep(self._callback_retry_delay(None, attempt))
 
