@@ -808,7 +808,7 @@ class SocketManager:
                         if room.timer_task:
                             room.timer_task.cancel()
                         await room.close_all_connections()
-                        self._mark_game_session_closed(room, "expired", "This game expired. Ask the host to start a new one.")
+                        await self._mark_game_session_closed(room, "expired", "This game expired. Ask the host to start a new one.")
                     logger.info("Cleaned up expired room %s", code)
             except asyncio.CancelledError:
                 break
@@ -826,7 +826,7 @@ class SocketManager:
                 if room.timer_task:
                     room.timer_task.cancel()
                 await room.close_all_connections()
-                self._mark_game_session_closed(room, "cancelled", "The host left this game.")
+                await self._mark_game_session_closed(room, "cancelled", "The host left this game.")
                 logger.info("Room %s deleted (organizer did not reconnect within %ds)", room_code, delay)
         except asyncio.CancelledError:
             pass
@@ -1408,7 +1408,7 @@ class SocketManager:
                     room.locked = True
                     if room.game_type == "quiz":
                         self._select_bonus_questions(room)
-                    self._mark_game_session_started(room)
+                    await self._mark_game_session_started(room)
                     if room.game_type in ("housie", "bingo"):
                         room.locked = True
                         room.state = "BINGO_CALLING"
@@ -1737,7 +1737,7 @@ class SocketManager:
                         game_history.append(summary)
                         if len(game_history) > config.MAX_GAME_HISTORY:
                             del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-                        self._mark_game_session_complete(room, summary)
+                        await self._mark_game_session_complete(room, summary)
                     except Exception:
                         logger.warning("Could not save game history for room %s", room.room_code)
 
@@ -2867,7 +2867,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Bluff history for room %s", room.room_code)
 
@@ -3000,7 +3000,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Two Truths history for room %s", room.room_code)
 
@@ -3112,7 +3112,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Party Poker history for room %s", room.room_code)
 
@@ -3242,7 +3242,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Photo Clue history for room %s", room.room_code)
 
@@ -3403,7 +3403,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save %s history for room %s", room.game_type, room.room_code)
 
@@ -3602,7 +3602,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save %s history for room %s", room.game_type, room.room_code)
 
@@ -3721,7 +3721,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Story Chain history for room %s", room.room_code)
 
@@ -3877,7 +3877,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Common Ground history for room %s", room.room_code)
 
@@ -4025,7 +4025,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Find Someone Who history for room %s", room.room_code)
 
@@ -4167,7 +4167,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Who Am I? history for room %s", room.room_code)
 
@@ -4305,7 +4305,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Random Chit history for room %s", room.room_code)
 
@@ -4494,7 +4494,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Mafia history for room %s", room.room_code)
 
@@ -4636,7 +4636,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Party Quests history for room %s", room.room_code)
 
@@ -4808,7 +4808,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Survey Says history for room %s", room.room_code)
 
@@ -5030,7 +5030,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Musical Chairs history for room %s", room.room_code)
 
@@ -5260,7 +5260,7 @@ class SocketManager:
             game_history.append(summary)
             if len(game_history) > config.MAX_GAME_HISTORY:
                 del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-            self._mark_game_session_complete(room, summary)
+            await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Housie history for room %s", room.room_code)
 
@@ -5633,7 +5633,10 @@ class SocketManager:
         actor = {key: value for key, value in actor.items() if value}
         return actor or None
 
-    def _mark_game_session_complete(self, room: Room, summary: dict):
+    async def _mark_game_session_complete(self, room: Room, summary: dict):
+        await asyncio.to_thread(self._mark_game_session_complete_blocking, room, summary)
+
+    def _mark_game_session_complete_blocking(self, room: Room, summary: dict):
         """Attach completed result metadata to an integration session, if present."""
         try:
             import db
@@ -5743,7 +5746,10 @@ class SocketManager:
                         return
                     time.sleep(self._callback_retry_delay(None, attempt))
 
-    def _mark_game_session_started(self, room: Room):
+    async def _mark_game_session_started(self, room: Room):
+        await asyncio.to_thread(self._mark_game_session_started_blocking, room)
+
+    def _mark_game_session_started_blocking(self, room: Room):
         try:
             import db
             session = db.get_game_session_by_room(room.room_code)
@@ -5760,7 +5766,10 @@ class SocketManager:
         except Exception:
             logger.warning("Could not mark game session started for room %s", room.room_code)
 
-    def _mark_game_session_closed(self, room: Room, reason: str, message: str):
+    async def _mark_game_session_closed(self, room: Room, reason: str, message: str):
+        await asyncio.to_thread(self._mark_game_session_closed_blocking, room, reason, message)
+
+    def _mark_game_session_closed_blocking(self, room: Room, reason: str, message: str):
         try:
             import db
             session = db.get_game_session_by_room(room.room_code)
@@ -5824,7 +5833,7 @@ class SocketManager:
                 game_history.append(summary)
                 if len(game_history) > config.MAX_GAME_HISTORY:
                     del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
-                self._mark_game_session_complete(room, summary)
+                await self._mark_game_session_complete(room, summary)
                 logger.info("Game history saved for room %s", room.room_code)
             except Exception:
                 logger.warning("Could not save game history for room %s", room.room_code)

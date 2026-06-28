@@ -1687,6 +1687,8 @@ gcloud compute ssh revelry-backend --zone us-central1-a --command \
 
 For same-content replay, prefer the organizer's in-place `RESET_ROOM` / Play Again path when the room socket is still alive. That avoids session replacement, signed callbacks, and a full organizer reload. If timing logs show genuine new-session starts are blocked by inline callbacks, the safe follow-up is a durable callback outbox with retries and Revelry idempotency, not fire-and-forget callback delivery.
 
+Runtime game callbacks from WebSocket paths are awaited through a worker thread so synchronous HTTP retries and backoff do not block the event loop. If a callback is slow, the relevant game flow may still wait for its own lifecycle callback, but other rooms, joins, answers, timers, and socket traffic should keep moving.
+
 Do not run this against production. For production, create a separate explicitly approved smoke plan using a disposable prod party.
 
 #### Manual auth/payment checks
