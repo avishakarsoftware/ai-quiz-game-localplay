@@ -357,7 +357,7 @@ Social icebreakers should be their own lightweight runtime family when they are 
 `SPEC-GAME-PARTY-QUESTS.md` defines a long-running ambient party game where players complete mingling tasks throughout the event, collect tap/QR confirmations from other players, and gather later for a final reveal and podium.
 `SPEC-GAME-MAFIA.md` defines and now implements the standalone Mafia flow: secret role assignment, private Mafia/Detective/Doctor night actions, Night Reads for every living player so action roles are not socially exposed, public-safe dawn narration, day discussion, vote elimination, role reveal on elimination, and Town/Mafia win conditions. Revelry exposure remains disabled until standalone multi-device QA is complete.
 
-`SPEC-GAME-PARTY-QUESTS.md` defines and now implements the Party Quests MVP: ambient party-long quest boards, curated host-selectable packs, editable quest text, duration/board-size/confirmation/late-join settings, tap-confirm or honor completions, late-join board assignment, organizer/player/spectator sync, final reveal, and safe aggregate result summaries. The static LocalPlay catalog declares it host-app-compatible and quick-startable for Revelry, but embedded custom authoring, AI quest generation, pair-code confirmation, and broad Revelry exposure remain behind policy/QA follow-up.
+`SPEC-GAME-PARTY-QUESTS.md` defines and now implements the Party Quests MVP: ambient party-long quest boards, curated host-selectable packs, AI-generated quest blocks, editable/reorderable numbered quest cards, duration/board-size/confirmation/late-join settings, tap-confirm or honor completions, late-join board assignment, organizer/player/spectator sync, final reveal, and safe aggregate result summaries. The static LocalPlay catalog declares it host-app-compatible and quick-startable for Revelry, but embedded custom authoring inside Revelry, pair-code confirmation, and broad Revelry exposure remain behind policy/QA follow-up.
 
 Creative sequential games need private-turn queue infrastructure. `SPEC-GAME-STORY-CHAIN.md` defines a collaborative writing game where each player adds one sentence and the TV reveals the final story sentence by sentence. It is separate from Chinese Whispers because the goal is shared story escalation rather than distortion/guessing.
 
@@ -739,9 +739,16 @@ Player join validation:
 Reconnection:
 
 - Mid-game player disconnects preserve score, rank, streak, avatar, and answered state.
+- Lobby disconnects are soft by default: LocalPlay keeps the player seat, avatar, team, nickname ownership token, and visible roster entry for a long grace window, marks the player as offline/reconnecting, and restores them silently if the same session token returns. This is required for real parties where phones sleep, in-app browsers suspend WebSockets, and guests may scan early then get distracted before the host starts.
 - Session tokens prevent nickname hijacking.
 - Organizer disconnect starts a short cleanup grace period.
 - Organizer reconnect receives a full room sync.
+- Implementation-ready connection contract:
+  - Player roster entries may include `status: "connected" | "reconnecting" | "offline"`.
+  - `player_count` in lobby and start-gate messages is the count of connected/start-ready players, not the count of preserved offline seats.
+  - `players` in lobby and roster messages includes both connected and preserved offline seats so the host can see who joined earlier.
+  - `LOBBY_RECONNECT_GRACE_SECONDS` controls how long a disconnected lobby seat is preserved before age-out cleanup; default target is long enough for real party pauses (90 minutes).
+  - Backend start checks must prune expired offline seats, count only connected players for minimums, and never materialize offline seats into a started game.
 
 ## WebSocket Protocol
 
@@ -1155,6 +1162,12 @@ Lobby:
 - The lobby disables **Start Game** until the room meets the selected game's minimum player count and shows how many more players are needed (e.g. "Need 2 more players to start (1/3)"). Minimums are mirrored from the backend `MIN_*_PLAYERS` constants via `getMinPlayers()` in `frontend/src/gameModes.ts`; the backend remains authoritative and rejects an early `START_GAME`.
 - The lobby shares one navigation and rules surface across every game type. Quiz, quiz-variant, Bingo/Housie, card, social, drawing, Musical Chairs, and future games must not fork their own lobby without the same **Back to games**, optional pre-start edit, **Rules**, share/join, lock, minimum-player, and TV/display affordances.
 - If a minimum-player rejection still arrives (e.g. a player left mid-press), it is shown in a dismissable modal that keeps the host in the lobby — never a raw `alert()`.
+- Party-scale lobby continuity requirement: a transient WebSocket close in `LOBBY` must not mean "this guest intentionally left." The shared lobby should preserve disconnected guests as offline seats for a configurable grace period, display connection status to the host, include preserved seats in restart/replay reconciliation, and let the same device/session reclaim its nickname without a confusing "nickname taken" or fresh-join path. Hosts may still remove a guest explicitly, and stale offline seats may be pruned before start only after the grace window or through a host-owned cleanup action.
+- Required lobby messages:
+  - `PLAYER_DISCONNECTED` is used for transport loss and includes the full roster with status fields.
+  - `PLAYER_RECONNECTED` is used when a preserved seat is reclaimed.
+  - `PLAYER_LEFT` remains reserved for semantic leave/removal or age-out cleanup.
+  - Existing clients that ignore `status` should still render a usable roster; newer clients should dim/offline-label preserved seats.
 
 Game start:
 
@@ -1180,7 +1193,7 @@ Play again:
 - If no reusable content id/socket is available, `Play Again` may fall back to the same behavior as `Choose Another Game`.
 - `RESET_ROOM` validates the content id, charges the room-start cost, clears round-specific state, and broadcasts `ROOM_RESET` so players return to lobby with the same room code.
 - In host-app/Revelry mode, replaying the same content with the same connected players should prefer the in-place `RESET_ROOM` path whenever the organizer socket is still available. Re-entering the Revelry Games hub and pressing Start creates or replaces a durable session, emits lifecycle callbacks, and reloads the organizer route; that path is correct for a new game or lost socket, but it is intentionally slower than in-place replay.
-- Dead socket cleanup is a shared room-lifecycle rule for all games. If `ROOM_RESET`, a lobby broadcast, a per-player runtime sync, or a drawing question broadcast discovers a dead player socket, the server removes that player and emits a corrected `PLAYER_LEFT` / `PLAYER_DISCONNECTED` roster update. The organizer's displayed player count must match the server roster used by start-game minimum-player checks.
+- Dead socket cleanup is a shared room-lifecycle rule for all games. If `ROOM_RESET`, a lobby broadcast, a per-player runtime sync, or a drawing question broadcast discovers a dead player socket, the server preserves lobby seats as offline, moves active-game players into reconnectable state, and emits a corrected `PLAYER_DISCONNECTED` roster update. The organizer's displayed connected-player count must match the server roster used by start-game minimum-player checks.
 - Before any minimum-player-gated game starts, the server probes/prunes dead player sockets and then evaluates the minimum-player rule. This applies to WMLT, Drawing, Housie, Bingo, and future games with player-count requirements.
 - Revelry replacement starts must close the superseded runtime room and notify old sockets before exposing the newer session as the party's active game. Superseded/cancelled/expired sessions must not later be overwritten as completed by stale runtime callbacks.
 - Durable Revelry session rows are not sufficient proof that a LocalPlay runtime room still exists. On party workspace resolve, launch-token mint/resolve, session status, and replacement checks, LocalPlay must reconcile `lobby` / `active` / `paused` sessions against the in-memory runtime room map. If the session points to a missing room after a deploy/restart or cleanup, mark it `expired`, set `joinable = false`, use `closed_reason = "runtime_unavailable"` when not simply past expiry, and stop presenting it as the party's active game. Hosts should then be able to start a fresh game without replacement confirmation.
@@ -1206,7 +1219,7 @@ These are the core/shared states. Each additional game adds a runtime state (`BI
 Join:
 
 - Player enters room code, nickname, optional team, and avatar.
-- Session info is stored in `sessionStorage` under `localplay_session`.
+- Session info is stored in `sessionStorage` under `localplay_session`. Target behavior for party-scale mobile reliability is to also keep a TTL-bound copy in durable browser storage so a mobile tab recreation, external-open handoff, or in-app browser recovery can still reclaim the same room participant identity. The durable copy must remain room/session scoped and must not create a cross-party profile.
 - Saved sessions auto-rejoin after refresh.
 - Organizer room credentials are stored locally after room creation or host-app launch. Refreshing the host lobby or an active host screen must reconnect as organizer and restore the same room instead of returning to the game catalog while players remain in the old lobby.
 
@@ -1220,6 +1233,7 @@ Reconnect:
 
 - Reconnect is attempted from every in-game state, **including `PODIUM`** (`RECONNECTED` restores the podium), so a player whose phone sleeps during the finale returns to the celebration.
 - `RECONNECTED` (and `ROOM_RESET`) seed the lobby player list so a reconnected/returning player sees everyone in the room immediately instead of only themselves.
+- Lobby reconnect should be as strong as in-game reconnect. A player whose phone sleeps before start should return to `LOBBY` with the same nickname/avatar/team and any game-specific lobby assignment, not be counted as a new guest. If many guests reconnect at once after a lull, the server should reconcile by session token and throttle/batch roster broadcasts enough to avoid a thundering-herd UX.
 
 Quiz round UI:
 

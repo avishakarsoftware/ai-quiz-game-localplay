@@ -242,11 +242,12 @@ class TestRoomCodeGeneration:
 # ---------------------------------------------------------------------------
 
 class TestDisconnectHandling:
-    def test_remove_player_on_disconnect(self):
+    def test_lobby_disconnect_marks_player_offline(self):
         room = make_room()
         room.players["p1"] = {"nickname": "Alice", "score": 100, "prev_rank": 0}
         room._remove_connection("p1")
-        assert "p1" not in room.players
+        assert "p1" in room.players
+        assert room.players["p1"]["connection_status"] == "offline"
 
     def test_remove_organizer_on_disconnect(self):
         room = make_room()
@@ -375,13 +376,14 @@ class TestSocketManager:
 # ---------------------------------------------------------------------------
 
 class TestReconnection:
-    def test_disconnect_in_lobby_removes_player(self):
-        """In LOBBY state, disconnect should fully remove the player."""
+    def test_disconnect_in_lobby_preserves_player_seat(self):
+        """In LOBBY state, disconnect should preserve the player seat as offline."""
         room = make_room()
         room.state = "LOBBY"
         room.players["p1"] = {"nickname": "Alice", "score": 0, "prev_rank": 0}
         room._remove_connection("p1")
-        assert "p1" not in room.players
+        assert "p1" in room.players
+        assert room.players["p1"]["connection_status"] == "offline"
         assert "Alice" not in room.disconnected_players
 
     def test_disconnect_in_game_preserves_data(self):
@@ -469,15 +471,22 @@ class TestPlayerListBroadcast:
         players = [p["nickname"] for p in room.players.values()]
         assert set(players) == {"Alice", "Bob"}
 
-    def test_player_list_after_lobby_disconnect(self):
-        """Player list should shrink when a player leaves in LOBBY."""
+    def test_connected_player_list_after_lobby_disconnect(self):
+        """Public connected player list should shrink while lobby roster preserves seats."""
         room = make_room()
         room.state = "LOBBY"
         room.players["p1"] = {"nickname": "Alice", "score": 0, "prev_rank": 0}
         room.players["p2"] = {"nickname": "Bob", "score": 0, "prev_rank": 0}
+        room.connections["p1"] = object()
+        room.connections["p2"] = object()
         room._remove_connection("p1")
-        players = [p["nickname"] for p in room.players.values()]
+        players = [p["nickname"] for p in room.player_public_list()]
         assert players == ["Bob"]
+        roster = room.lobby_roster()
+        assert roster == [
+            {"nickname": "Alice", "avatar": "", "status": "offline"},
+            {"nickname": "Bob", "avatar": "", "status": "connected"},
+        ]
 
     def test_player_list_stable_during_game_disconnect(self):
         """During game, disconnected player data is preserved separately."""

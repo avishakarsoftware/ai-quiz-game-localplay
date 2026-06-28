@@ -282,6 +282,10 @@ who_am_i_timestamps: Dict[str, float] = {}
 chit_pull_games: Dict[str, dict] = {}  # chit_pull_id -> {game_title, chits, settings}
 chit_pull_timestamps: Dict[str, float] = {}
 
+# Party Quests generated setup cache
+party_quests_generations: Dict[str, dict] = {}
+party_quests_timestamps: Dict[str, float] = {}
+
 # Content ownership: content_id -> wallet_id of creator
 content_owners: Dict[str, str] = {}
 pending_generation_charges: Dict[str, str] = {}  # content_id -> wallet_id to charge when first room is created
@@ -430,6 +434,19 @@ def _evict_old_content():
                 chit_pull_timestamps.pop(cid, None)
                 content_owners.pop(cid, None)
                 pending_generation_charges.pop(cid, None)
+
+    # Evict generated Party Quests drafts used for idempotent retries.
+    expired_quests = [pid for pid, ts in party_quests_timestamps.items()
+                      if now - ts > config.QUIZ_TTL_SECONDS]
+    for pid in expired_quests:
+        party_quests_generations.pop(pid, None)
+        party_quests_timestamps.pop(pid, None)
+    if len(party_quests_generations) >= config.MAX_QUIZZES:
+        for pid in sorted(party_quests_timestamps, key=party_quests_timestamps.get):
+            if len(party_quests_generations) < config.MAX_QUIZZES:
+                break
+            party_quests_generations.pop(pid, None)
+            party_quests_timestamps.pop(pid, None)
 
 def generate_room_code() -> str:
     """Generate a unique 6-character room code, checking for collisions."""
@@ -5066,6 +5083,185 @@ async def update_chit_pull(chit_pull_id: str, request: ChitPullUpdateRequest, re
         raise HTTPException(status_code=422, detail="Random Chit needs at least 5 valid chits")
     chit_pull_games[chit_pull_id] = game_data
     return {"chit_pull_id": chit_pull_id, "game": game_data}
+
+
+class PartyQuestsGenerateRequest(BaseModel):
+    prompt: str
+    theme: str = "mingling"
+    num_quests: int = 10
+    quests_per_player: int = 8
+    duration_minutes: int = 90
+    confirmation_mode: str = "tap_confirm"
+    provider: str = ""
+
+    @field_validator('prompt')
+    @classmethod
+    def validate_prompt(cls, v: str) -> str:
+        return _sanitize_authoring_prompt(v)
+
+    @field_validator('theme')
+    @classmethod
+    def validate_theme(cls, v: str) -> str:
+        value = re.sub(r"[^a-z0-9_\- ]", "", (v or "mingling").lower()).strip().replace(" ", "_")
+        return value[:40] or "mingling"
+
+    @field_validator('num_quests')
+    @classmethod
+    def validate_num_quests(cls, v: int) -> int:
+        if v < 5 or v > 40:
+            raise ValueError('Number of quests must be 5-40')
+        return v
+
+    @field_validator('quests_per_player')
+    @classmethod
+    def validate_quests_per_player(cls, v: int) -> int:
+        if v < 3 or v > 25:
+            raise ValueError('Quests per player must be 3-25')
+        return v
+
+    @field_validator('duration_minutes')
+    @classmethod
+    def validate_duration_minutes(cls, v: int) -> int:
+        if v < 10 or v > 240:
+            raise ValueError('Duration must be 10-240 minutes')
+        return v
+
+    @field_validator('confirmation_mode')
+    @classmethod
+    def validate_confirmation_mode(cls, v: str) -> str:
+        value = (v or "tap_confirm").strip().lower()
+        if value not in {"tap_confirm", "honor"}:
+            raise ValueError('Confirmation mode must be tap_confirm or honor')
+        return value
+
+
+def _normalize_party_quests_generated(raw: dict, request: PartyQuestsGenerateRequest) -> dict:
+    quests = raw.get("quests") if isinstance(raw, dict) else []
+    normalized = []
+    if isinstance(quests, list):
+        for item in quests:
+            if isinstance(item, str):
+                display = item
+                category = request.theme
+                points = 100
+            elif isinstance(item, dict):
+                display = item.get("display") or item.get("text") or item.get("quest") or ""
+                category = item.get("category") or request.theme
+                points = item.get("points") or 100
+            else:
+                continue
+            display = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(display or ""))
+            display = re.sub(r"<[^>]+>", "", display)
+            display = re.sub(r"\s+", " ", display).strip()[:180]
+            if not display:
+                continue
+            try:
+                point_value = int(points or 100)
+            except (TypeError, ValueError):
+                point_value = 100
+            normalized.append({
+                "display": display,
+                "category": str(category or request.theme)[:40],
+                "points": 150 if point_value > 100 else 100,
+            })
+    if len(normalized) < 5:
+        raise ValueError("Generated Party Quests deck needs at least 5 playable quests")
+    title = str((raw or {}).get("game_title") or "Party Quests").strip()[:120] or "Party Quests"
+    return validate_party_quests_config({
+        "game_title": title,
+        "theme": request.theme,
+        "duration_minutes": request.duration_minutes,
+        "quests_per_player": min(request.quests_per_player, len(normalized)),
+        "confirmation_mode": request.confirmation_mode,
+        "allow_late_join": True,
+        "auto_start_on_first_checkin": True,
+        "quests": normalized[:request.num_quests],
+    })
+
+
+async def generate_party_quests_content(
+    request: PartyQuestsGenerateRequest,
+    provider: str,
+    *,
+    model_override: str = "",
+) -> dict:
+    prompt_text = f"""
+Generate a Party Quests deck for an ambient live party game.
+Theme/category: {request.theme}
+Number of quests: {request.num_quests}
+Quests per player: {request.quests_per_player}
+
+Rules:
+- Every quest must make guests mingle, talk, compare preferences, or collect a lightweight confirmation from another guest.
+- Quests must be doable at a party without leaving the venue, buying anything, drinking, touching, recording strangers, or revealing private/sensitive information.
+- Keep each quest under 120 characters.
+- Avoid protected-class targeting, age/health/body/finance/legal questions, humiliating dares, explicit sexual content, profanity, and anything unsafe for a mixed group.
+- Write varied quests. Do not repeat the same structure more than twice.
+- Prefer concrete, friendly actions: "Find someone who...", "Ask someone...", "Meet someone...", "Take a group photo with...".
+- Return JSON only:
+{{
+  "game_title": "string",
+  "theme": "{request.theme}",
+  "quests": [
+    {{"display": "string", "category": "{request.theme}", "points": 100}}
+  ]
+}}
+
+--- BEGIN HOST THEME ---
+{request.prompt}
+--- END HOST THEME ---
+"""
+    raw = await _generate_json_content(provider, model_override, prompt_text)
+    return _normalize_party_quests_generated(raw or {}, request)
+
+
+@app.post("/party-quests/generate")
+async def generate_party_quests(request: PartyQuestsGenerateRequest, req: Request):
+    client_ip = _get_client_ip(req)
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait before generating.")
+    device_id = tokens.get_device_id(req)
+    if not device_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    idem_key = tokens.get_idempotency_key(req)
+    if idem_key:
+        cached_id = db.check_idempotency(idem_key, device_id)
+        if cached_id:
+            if cached_id in party_quests_generations:
+                return {"party_quests_id": cached_id, "game": party_quests_generations[cached_id]}
+            raise HTTPException(status_code=409, detail="Request was already processed, but the generated quest deck is no longer available. Please start a new request.")
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    tokens.ensure_wallet(wallet_id)
+    if not tokens.can_generate(wallet_id):
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate.")
+    if not _check_llm_budget():
+        raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
+    await remote_config.get_config()
+    provider = request.provider or remote_config.get_provider()
+    model_override = remote_config.get_paid_model() if tokens.use_premium_model(wallet_id) else remote_config.get_free_model()
+    try:
+        game_data = await generate_party_quests_content(request, provider, model_override=model_override)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (403, 429):
+            raise HTTPException(status_code=503, detail="Free tier limit reached. Upgrade for unlimited games.")
+        raise HTTPException(status_code=500, detail="Failed to generate Party Quests")
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    except Exception:
+        logger.exception("Party Quests generation failed")
+        raise HTTPException(status_code=500, detail="Failed to generate Party Quests")
+    charged, _balance = tokens.spend_generate(wallet_id)
+    if not charged:
+        raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate.")
+    _evict_old_content()
+    party_quests_id = str(uuid.uuid4())
+    party_quests_generations[party_quests_id] = game_data
+    party_quests_timestamps[party_quests_id] = time.time()
+    if idem_key:
+        db.record_idempotency(idem_key, device_id, party_quests_id)
+    return {"party_quests_id": party_quests_id, "game": game_data}
 
 
 @app.delete("/drawing/{drawing_id}/prompt/{prompt_id}")

@@ -227,6 +227,14 @@ Fields:
 
 Player identity should not require a LocalPlay account. Fast anonymous join must remain core to the product.
 
+Party-scale continuity requirement:
+
+- A participant's room identity is a session-scoped product identity, not merely the lifetime of one WebSocket object.
+- A mobile browser sleeping, the Revelry in-app browser suspending, a tab being recreated, or a brief network drop should move the participant to an offline/reconnecting state, not immediately remove them from the party.
+- Lobby participants need the same preservation guarantees as in-game participants. The lobby is often where real parties pause while the host announces, guests talk, or people scan the QR early.
+- Runtime identity should be backed by a participant/session token that can survive normal mobile recovery. Browser storage should be scoped to the room/session and have an expiry; it must not become a global LocalPlay profile.
+- Hosts should see enough status to understand who is connected, reconnecting, or offline, and should have explicit cleanup/kick controls for genuinely stale seats.
+
 ### Host / Organizer
 
 The organizer controls:
@@ -358,6 +366,15 @@ Shared states:
 - Round.
 - Round results.
 - Final results.
+
+Shared connection lifecycle:
+
+- `connected`: active WebSocket and recent heartbeat.
+- `reconnecting`: known participant lost transport recently; keep seat and state.
+- `offline`: participant has been gone longer than the short reconnect window but is still inside the configurable lobby/game preservation window.
+- `left`: participant intentionally left, was removed by host, or aged out after the preservation window.
+
+The server should distinguish transport loss from semantic leave. This matters most in lobbies and ambient party games, where a ten-minute lull is normal behavior rather than abandonment.
 
 Shared host actions:
 

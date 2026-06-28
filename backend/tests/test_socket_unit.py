@@ -198,37 +198,50 @@ def make_poker_room():
 # ===========================================================================
 
 class TestRemoveConnectionLobby:
-    """Removing a player in LOBBY should fully delete them and clean up teams/power_ups."""
+    """Transport loss in LOBBY should preserve the seat for reconnect."""
 
-    def test_player_removed_from_players_dict(self):
+    def test_player_marked_offline_in_players_dict(self):
         room = make_room()
         add_player(room, "p1", "Alice")
         room.state = "LOBBY"
         room._remove_connection("p1")
-        assert "p1" not in room.players
+        assert "p1" in room.players
+        assert room.players["p1"]["connection_status"] == "offline"
+        assert room.connected_player_count() == 0
 
-    def test_teams_cleaned_on_lobby_leave(self):
+    def test_teams_preserved_on_lobby_disconnect(self):
         room = make_room()
         add_player(room, "p1", "Alice", team="Red")
         room.state = "LOBBY"
         assert "Alice" in room.teams
         room._remove_connection("p1")
-        assert "Alice" not in room.teams
+        assert room.teams["Alice"] == "Red"
 
-    def test_power_ups_cleaned_on_lobby_leave(self):
+    def test_power_ups_preserved_on_lobby_disconnect(self):
         room = make_room()
         add_player(room, "p1", "Alice")
         room.state = "LOBBY"
         assert "Alice" in room.power_ups
         room._remove_connection("p1")
-        assert "Alice" not in room.power_ups
+        assert "Alice" in room.power_ups
 
-    def test_player_event_set_to_left(self):
+    def test_player_event_set_to_disconnected(self):
         room = make_room()
         add_player(room, "p1", "Alice")
         room.state = "LOBBY"
         room._remove_connection("p1")
-        assert room._player_event == ("left", "Alice")
+        assert room._player_event == ("disconnected", "Alice")
+
+    def test_prune_expired_lobby_player_removes_seat(self):
+        room = make_room()
+        add_player(room, "p1", "Alice", team="Red")
+        room.state = "LOBBY"
+        room._remove_connection("p1")
+        removed = room.prune_expired_lobby_players(force=True)
+        assert removed == ["Alice"]
+        assert "p1" not in room.players
+        assert "Alice" not in room.teams
+        assert "Alice" not in room.power_ups
 
 
 class TestRemoveConnectionDuringGame:
@@ -380,6 +393,38 @@ class TestStateGuardStartGame:
         room.state = "PODIUM"
         await sm.handle_message(room, "org-1", {"type": "START_GAME"}, is_organizer=True)
         assert room.state == "PODIUM"
+
+
+class TestLobbyReconnect:
+    @pytest.mark.asyncio
+    async def test_lobby_disconnect_can_reclaim_seat_with_session_token(self):
+        room = make_room()
+        sm = SocketManager()
+        org_ws = add_organizer(room, "org-1")
+
+        first_ws = MockWebSocket()
+        room.connections["p1"] = first_ws
+        await sm.handle_message(room, "p1", {"type": "JOIN", "nickname": "Alice", "avatar": "T"}, is_organizer=False)
+        token = first_ws.last("JOINED_ROOM")["session_token"]
+
+        room._remove_connection("p1")
+        assert room.players["p1"]["connection_status"] == "offline"
+        assert room.connected_player_count() == 0
+
+        second_ws = MockWebSocket()
+        room.connections["p2"] = second_ws
+        await sm.handle_message(room, "p2", {"type": "JOIN", "nickname": "Alice", "avatar": "T", "session_token": token}, is_organizer=False)
+
+        reconnected = second_ws.last("RECONNECTED")
+        assert reconnected is not None
+        assert reconnected["state"] == "LOBBY"
+        assert "p1" not in room.players
+        assert room.players["p2"]["connection_status"] == "connected"
+        assert room.connected_player_count() == 1
+        update = org_ws.last("PLAYER_RECONNECTED")
+        assert update is not None
+        assert update["player_count"] == 1
+        assert update["players"] == [{"nickname": "Alice", "avatar": "T", "status": "connected"}]
 
 
 class TestSimpleSocialGames:
@@ -1333,13 +1378,17 @@ class TestBroadcastRouting:
 
         await room.broadcast({"type": "ROOM_RESET", "player_count": 2, "players": []})
 
-        assert "p1" not in room.players
+        assert "p1" in room.players
+        assert room.players["p1"]["connection_status"] == "offline"
         assert "p2" in room.players
-        update = org_ws.last("PLAYER_LEFT")
+        update = org_ws.last("PLAYER_DISCONNECTED")
         assert update is not None
         assert update["nickname"] == "Alice"
         assert update["player_count"] == 1
-        assert update["players"] == [{"nickname": "Bob", "avatar": ""}]
+        assert update["players"] == [
+            {"nickname": "Alice", "avatar": "", "status": "offline"},
+            {"nickname": "Bob", "avatar": "", "status": "connected"},
+        ]
 
     @pytest.mark.asyncio
     async def test_housie_sync_dead_player_sends_updated_roster(self):
@@ -1428,14 +1477,33 @@ class TestSparkChargingStartGame:
 
         spend_room.assert_not_called()
         assert room.state == "LOBBY"
-        assert "p1" not in room.players
+        assert "p1" in room.players
+        assert room.players["p1"]["connection_status"] == "offline"
         assert "p2" in room.players
-        roster = org_ws.last("PLAYER_LEFT")
+        roster = org_ws.last("PLAYER_DISCONNECTED")
         assert roster is not None
         assert roster["player_count"] == 1
         error = org_ws.last("ERROR")
         assert error is not None
         assert "at least" in error["message"]
+
+    @pytest.mark.asyncio
+    async def test_start_game_drops_offline_lobby_seats_before_materializing_game(self):
+        room = make_room()
+        sm = SocketManager()
+        add_organizer(room, "org-1")
+        add_player(room, "p1", "Alice")
+        add_player(room, "p2", "Bob")
+        room.state = "LOBBY"
+        room._remove_connection("p1")
+
+        with patch("socket_manager.token_module.spend_room", return_value=(True, 10)):
+            await sm.handle_message(room, "org-1", {"type": "START_GAME"}, is_organizer=True)
+
+        assert room.state == "INTRO"
+        assert "p1" not in room.players
+        assert "p2" in room.players
+        assert room.player_nicknames() == ["Bob"]
 
     @pytest.mark.asyncio
     async def test_start_game_no_wallet_sends_error(self):

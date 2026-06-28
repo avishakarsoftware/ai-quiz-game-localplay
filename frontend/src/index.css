@@ -2089,6 +2089,40 @@ body {
     animation: countBump 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.lobby-offline-summary {
+    margin-bottom: 12px;
+    text-align: center;
+    color: var(--text-tertiary);
+    font-size: 0.875rem;
+}
+
+.lobby-player-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 9999px;
+    background: var(--bg-secondary);
+    border: 1px solid transparent;
+}
+
+.lobby-player-pill.is-offline {
+    opacity: 0.62;
+    border-color: var(--glass-border);
+}
+
+.lobby-player-pill-name {
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.lobby-player-status {
+    color: var(--text-tertiary);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
 /* Join toast */
 @keyframes toastSlideIn {
     from {
@@ -4598,6 +4632,83 @@ body {
     padding-top: 18px;
 }
 
+.party-quest-ai-card {
+    display: grid;
+    gap: 12px;
+}
+
+.party-quest-ai-input {
+    min-height: 108px;
+    resize: vertical;
+}
+
+.party-quest-card-grid {
+    display: grid;
+    gap: 14px;
+}
+
+.party-quest-edit-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(248, 234, 211, 0.045);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.party-quest-edit-card__number {
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--bg-primary);
+    font-weight: 1000;
+    font-size: 1.05rem;
+}
+
+.party-quest-edit-card__input {
+    width: 100%;
+    min-height: 84px;
+    padding: 12px;
+    border: 1px solid rgba(248, 234, 211, 0.16);
+    border-radius: 8px;
+    background: rgba(2, 0, 12, 0.5);
+    color: var(--text-primary);
+    font: inherit;
+    font-weight: 750;
+    resize: vertical;
+}
+
+.party-quest-edit-card__input:focus {
+    outline: 2px solid rgba(94, 165, 255, 0.85);
+    outline-offset: 2px;
+}
+
+.party-quest-edit-card__actions {
+    grid-column: 2;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.party-quest-edit-card__actions .btn {
+    min-height: 40px;
+    padding: 0 10px;
+    font-size: 0.9rem;
+}
+
+.party-quest-list-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 16px;
+}
+
 .game-select-arrow {
     align-self: center;
     font-size: 1.45rem;
@@ -4909,15 +5020,10 @@ body {
         font-size: 0.9rem;
     }
 
-    .prompt-header {
-        padding-top: 54px;
-    }
-
-    /* The global menu trigger is fixed at the top-left (y 12–48). The back button
-       is absolutely positioned, so the header's padding-top doesn't move it — pin
-       it just below the menu so the two don't overlap on narrow screens. */
     .prompt-header-back {
-        top: 54px;
+        left: 34px;
+        top: 0;
+        min-width: 76px;
     }
 
     /* The lobby Back/Edit action row spans full width, so on narrow screens its
@@ -4926,6 +5032,19 @@ body {
        both pieces of fixed chrome. */
     .lobby-top-actions {
         padding-top: 54px;
+    }
+
+    .party-quest-edit-card {
+        grid-template-columns: 1fr;
+    }
+
+    .party-quest-edit-card__actions {
+        grid-column: auto;
+    }
+
+    .party-quest-list-footer {
+        align-items: stretch;
+        flex-direction: column;
     }
 }
 

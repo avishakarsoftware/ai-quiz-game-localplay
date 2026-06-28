@@ -127,7 +127,8 @@ export default function BingoSetupScreen({
 
     return (
         <div className="housie-setup min-h-dvh flex flex-col safe-top safe-bottom animate-in">
-            <div className="housie-setup-hero">
+            <div className="housie-setup-hero prompt-header">
+                <button type="button" onClick={onBack} className="btn btn-secondary prompt-header-back">Back</button>
                 <div className="hero-icon mb-4">▦</div>
                 <h1 className="hero-title">Set Up Bingo</h1>
                 <p>Create a custom board with words, emojis, or photos.</p>

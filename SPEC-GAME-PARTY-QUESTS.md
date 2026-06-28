@@ -25,15 +25,15 @@ Find someone who has visited a city you want to visit.
 
 ## Current Implementation Status
 
-Status: LocalPlay MVP implemented on June 18, 2026.
+Status: LocalPlay MVP implemented on June 18, 2026; AI quest-block authoring and reorderable quest cards added on June 28, 2026.
 
 - Standalone LocalPlay host setup is implemented.
 - Host can choose a curated pack: Mingling, Birthday, Wedding, Work-safe, or Family.
-- Host can edit the quest text list before room creation.
+- Host can AI-generate a quest block from a party/theme prompt, then review it before room creation.
+- Host can edit, add, remove, and reorder numbered quest cards before room creation.
 - Host can choose duration, quests per player, confirmation mode, and late-join support.
 - Revelry/host-app catalog support is implemented as quick-start/default-content capable (`host_app_supported=true`, `can_quick_start=true`).
 - Embedded Revelry custom authoring is deferred; LocalPlay exposes a safe quick-start path first.
-- AI quest generation is deferred; the backend config and safety rules are ready for it.
 - Every player receives a personal quest board/list.
 - Quests are completed by selecting another player and requesting confirmation.
 - Confirmation modes:
@@ -103,6 +103,14 @@ AI generation instruction:
 ```text
 Generate only light, voluntary, inclusive party mingling tasks. Avoid sensitive personal data, protected-class targeting, exact ages, full birth dates, politics, medical/legal/financial topics, and anything humiliating or sexual.
 ```
+
+Implemented AI authoring:
+
+- Endpoint: `POST /party-quests/generate`.
+- Inputs: bounded host prompt, theme, quest count, quests per player, duration, confirmation mode, provider.
+- Output: normalized `party_quests` setup config with host-reviewable quests.
+- Token behavior: Party Quests generated blocks are not durable saved content ids, so generation spends the AI spark immediately and caches the response only for idempotent retry.
+- Host review is required before launch; generated cards are editable and reorderable in the setup UI.
 
 ## Setup
 
@@ -357,8 +365,9 @@ Low interruption:
 Setup:
 
 - Choose template/theme.
-- AI generate quests.
-- Manual edit.
+- AI generate a quest block from a short party/theme prompt.
+- Review generated quests as numbered cards.
+- Manual edit, add, remove, and reorder quest cards.
 - Choose confirmation mode.
 - Choose duration.
 - Start room.
@@ -538,10 +547,14 @@ Backend tests:
 - Confirmed completions score correctly.
 - Public sync excludes full personal quest boards and denied confirmations.
 - Final standings tie-breakers are deterministic.
+- Generated AI quest blocks normalize to safe `party_quests` config before host review.
 
 Frontend tests:
 
 - Quest board/list renders on mobile.
+- Setup renders numbered quest cards.
+- Quest cards can be reordered before launch.
+- Generated AI quest blocks replace the editable card list for host review.
 - Roster picker submits confirmation request.
 - Incoming confirmation request accepts/denies.
 - Pair-code entry works when enabled.

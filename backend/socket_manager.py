@@ -630,13 +630,54 @@ class Room:
 
     def player_nicknames(self) -> List[str]:
         """List of active player nicknames."""
-        return [p["nickname"] for p in self.players.values()]
+        return [p["nickname"] for cid, p in self.players.items() if self.is_player_connected(cid)]
 
     def player_avatar_map(self) -> Dict[str, str]:
-        return {p["nickname"]: p.get("avatar", "") for p in self.players.values()}
+        return {p["nickname"]: p.get("avatar", "") for cid, p in self.players.items() if self.is_player_connected(cid)}
 
-    def player_public_list(self) -> List[dict]:
-        return [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in self.players.values()]
+    def is_player_connected(self, client_id: str) -> bool:
+        player = self.players.get(client_id)
+        return bool(player and client_id in self.connections and player.get("connection_status", "connected") == "connected")
+
+    def connected_player_count(self) -> int:
+        return sum(1 for client_id in self.players if self.is_player_connected(client_id))
+
+    def _player_public_entry(self, client_id: str, player: dict, include_status: bool = False) -> dict:
+        status = player.get("connection_status", "connected")
+        if status == "connected" and client_id not in self.connections:
+            status = "offline"
+        entry = {"nickname": player["nickname"], "avatar": player.get("avatar", "")}
+        if include_status:
+            entry["status"] = status
+        return entry
+
+    def player_public_list(self, include_offline: bool = False, include_status: bool = False) -> List[dict]:
+        entries = []
+        for client_id, player in self.players.items():
+            if include_offline or self.is_player_connected(client_id):
+                entries.append(self._player_public_entry(client_id, player, include_status=include_status))
+        return entries
+
+    def lobby_roster(self) -> List[dict]:
+        return self.player_public_list(include_offline=True, include_status=True)
+
+    def prune_expired_lobby_players(self, *, force: bool = False) -> List[str]:
+        if self.state != "LOBBY":
+            return []
+        now = time.time()
+        removed: List[str] = []
+        for client_id, player in list(self.players.items()):
+            if self.is_player_connected(client_id):
+                continue
+            disconnected_at = float(player.get("disconnected_at") or now)
+            if force or now - disconnected_at > config.LOBBY_RECONNECT_GRACE_SECONDS:
+                nickname = player["nickname"]
+                removed.append(nickname)
+                self.players.pop(client_id, None)
+                self.teams.pop(nickname, None)
+                self.power_ups.pop(nickname, None)
+                self.player_tokens.pop(nickname, None)
+        return removed
 
     def mc_public_state(self) -> dict:
         avatars = self.player_avatar_map()
@@ -671,12 +712,13 @@ class Room:
         if client_id in self.players:
             nickname = self.players[client_id]["nickname"]
             if self.state in ("LOBBY",):
-                # In lobby, fully remove the player
-                del self.players[client_id]
-                self.teams.pop(nickname, None)
-                self.power_ups.pop(nickname, None)
-                self._player_event = ("left", nickname)
-                logger.info("Player '%s' left room %s", nickname, self.room_code)
+                # In lobby, preserve the seat for mobile sleep / in-app browser
+                # suspends. The same session token can reclaim it without a
+                # nickname conflict; expired offline seats are pruned before start.
+                self.players[client_id]["connection_status"] = "offline"
+                self.players[client_id]["disconnected_at"] = time.time()
+                self._player_event = ("disconnected", nickname)
+                logger.info("Player '%s' disconnected from lobby %s (seat preserved)", nickname, self.room_code)
             else:
                 # During active game, preserve data for reconnection
                 self.disconnected_players[nickname] = {
@@ -750,11 +792,8 @@ class Room:
         await self.broadcast({
             "type": msg_type,
             "nickname": nickname,
-            "player_count": len(self.players),
-            "players": [
-                {"nickname": p["nickname"], "avatar": p.get("avatar", "")}
-                for p in self.players.values()
-            ],
+            "player_count": self.connected_player_count(),
+            "players": self.lobby_roster() if self.state == "LOBBY" else self.player_public_list(),
         })
 
     async def broadcast_to_players(self, message: dict):
@@ -929,8 +968,8 @@ class SocketManager:
                     "room_code": room_code,
                     "state": room.state,
                     "game_type": room.game_type,
-                    "player_count": len(room.players),
-                    "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
+                    "player_count": room.connected_player_count(),
+                    "players": room.lobby_roster() if room.state == "LOBBY" else room.player_public_list(),
                     "question_number": room.current_question_index + 1,
                     "total_questions": room.total_rounds(),
                     "leaderboard": self.get_leaderboard(room),
@@ -1102,8 +1141,8 @@ class SocketManager:
                 await room.broadcast({
                     "type": msg_type,
                     "nickname": nickname,
-                    "player_count": len(room.players),
-                    "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
+                    "player_count": room.connected_player_count(),
+                    "players": room.lobby_roster() if room.state == "LOBBY" else room.player_public_list(),
                 })
                 # Re-evaluate all_answered: if remaining players have all answered,
                 # end the question instead of waiting for the full timer
@@ -1118,11 +1157,8 @@ class SocketManager:
             "room_code": room.room_code,
             "state": room.state,
             "game_type": room.game_type,
-            "player_count": len(room.players),
-            "players": [
-                {"nickname": p["nickname"], "avatar": p.get("avatar", "")}
-                for p in room.players.values()
-            ],
+            "player_count": room.connected_player_count(),
+            "players": room.lobby_roster() if room.state == "LOBBY" else room.player_public_list(),
             "question_number": room.current_question_index + 1,
             "total_questions": room.total_rounds(),
             "leaderboard": self.get_leaderboard(room),
@@ -1205,6 +1241,7 @@ class SocketManager:
                     if room.state != "LOBBY":
                         return
                     await self._prune_dead_player_connections(room)
+                    room.prune_expired_lobby_players()
                     # Charge sparks to start the game
                     if not room.wallet_id:
                         await self._send_to_client(room, client_id, {
@@ -1214,7 +1251,7 @@ class SocketManager:
                         return
                     # WMLT requires minimum players — check before charging
                     if room.game_type == "wmlt":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_WMLT_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1222,7 +1259,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "drawing":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_DRAWING_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1230,7 +1267,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "housie":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_HOUSIE_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1238,7 +1275,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "bingo":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_BINGO_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1246,7 +1283,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "musical_chairs":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_MUSICAL_CHAIRS_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1254,7 +1291,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "bluff":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_BLUFF_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1262,7 +1299,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "two_truths":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_TWO_TRUTHS_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1270,7 +1307,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "story_chain":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_STORY_CHAIN_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1278,7 +1315,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "common_ground":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_COMMON_GROUND_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1286,7 +1323,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "find_someone":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_FIND_SOMEONE_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1294,7 +1331,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "who_am_i":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_WHO_AM_I_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1302,7 +1339,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "chit_pull":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_CHIT_PULL_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1310,7 +1347,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "mafia":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_MAFIA_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1318,7 +1355,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "party_quests":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_PARTY_QUESTS_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1326,7 +1363,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "survey_says":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_SURVEY_SAYS_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1334,7 +1371,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type in GENERIC_PROMPT_GAME_TYPES:
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < 2:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1342,7 +1379,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "would_you_rather":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_WOULD_YOU_RATHER_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1350,7 +1387,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "never_have_i_ever":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_NEVER_HAVE_I_EVER_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1358,7 +1395,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "word_association":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_WORD_ASSOCIATION_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1366,7 +1403,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "acronym":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_ACRONYM_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1374,7 +1411,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "photo_clue":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_PHOTO_CLUE_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1382,7 +1419,7 @@ class SocketManager:
                             })
                             return
                     elif room.game_type == "poker":
-                        player_count = len([p for p in room.players.values() if p.get("nickname")])
+                        player_count = room.connected_player_count()
                         if player_count < config.MIN_POKER_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
@@ -1395,6 +1432,7 @@ class SocketManager:
                                 "message": "Party Poker supports up to 10 players",
                             })
                             return
+                    room.prune_expired_lobby_players(force=True)
                     if room.billing_mode == "host_app_managed":
                         spent = True
                     else:
@@ -1936,6 +1974,7 @@ class SocketManager:
                         "prev_rank": saved["prev_rank"],
                         "streak": saved.get("streak", 0),
                         "avatar": saved.get("avatar", avatar),
+                        "connection_status": "connected",
                     }
                     # Transfer answered status to new client_id
                     old_cid = saved.get("_answered_client_id")
@@ -1953,7 +1992,7 @@ class SocketManager:
                             "question_number": room.current_question_index + 1,
                             "total_questions": room.total_rounds(),
                             "avatar": saved.get("avatar", avatar),
-                            "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
+                            "players": room.player_public_list(),
                         }
                         if room.game_type in ("housie", "bingo"):
                             state_info["bingo"] = self._housie_player_state(room, nickname)
@@ -2019,8 +2058,8 @@ class SocketManager:
                     await room.broadcast({
                         "type": "PLAYER_RECONNECTED",
                         "nickname": nickname,
-                        "player_count": len(room.players),
-                        "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
+                        "player_count": room.connected_player_count(),
+                        "players": room.player_public_list(),
                     })
                     return
 
@@ -2052,6 +2091,8 @@ class SocketManager:
                             pass
                     # Transfer player data and answered status to new client_id
                     player_data = room.players.pop(existing_id)
+                    player_data["connection_status"] = "connected"
+                    player_data.pop("disconnected_at", None)
                     room.players[client_id] = player_data
                     if existing_id in room.answered_players:
                         room.answered_players.discard(existing_id)
@@ -2068,7 +2109,7 @@ class SocketManager:
                             "question_number": room.current_question_index + 1,
                             "total_questions": room.total_rounds(),
                             "avatar": player_data.get("avatar", ""),
-                            "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
+                            "players": room.lobby_roster() if room.state == "LOBBY" else room.player_public_list(),
                         }
                         if room.game_type in ("housie", "bingo"):
                             state_info["bingo"] = self._housie_player_state(room, player_data["nickname"])
@@ -2133,6 +2174,12 @@ class SocketManager:
                             "fifty_fifty": room.power_ups.get(nickname, {}).get("fifty_fifty", False),
                         }
                         await ws.send_json(state_info)
+                    await room.broadcast({
+                        "type": "PLAYER_RECONNECTED",
+                        "nickname": player_data["nickname"],
+                        "player_count": room.connected_player_count(),
+                        "players": room.lobby_roster() if room.state == "LOBBY" else room.player_public_list(),
+                    })
                     return
 
                 active_common_ground_join = (
@@ -2176,7 +2223,7 @@ class SocketManager:
                     return
 
                 if active_common_ground_join:
-                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
+                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar, "connection_status": "connected"}
                     room.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
                     player_session_token = secrets.token_urlsafe(16)
                     room.player_tokens[nickname] = player_session_token
@@ -2202,7 +2249,7 @@ class SocketManager:
                     return
 
                 if active_find_someone_join:
-                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
+                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar, "connection_status": "connected"}
                     room.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
                     player_session_token = secrets.token_urlsafe(16)
                     room.player_tokens[nickname] = player_session_token
@@ -2228,7 +2275,7 @@ class SocketManager:
                     return
 
                 if active_party_quests_join:
-                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
+                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar, "connection_status": "connected"}
                     room.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
                     player_session_token = secrets.token_urlsafe(16)
                     room.player_tokens[nickname] = player_session_token
@@ -2254,7 +2301,7 @@ class SocketManager:
                     return
 
                 if active_survey_says_join:
-                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
+                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar, "connection_status": "connected"}
                     room.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
                     player_session_token = secrets.token_urlsafe(16)
                     room.player_tokens[nickname] = player_session_token
@@ -2280,7 +2327,7 @@ class SocketManager:
                     return
 
                 if active_generic_prompt_join:
-                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
+                    room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar, "connection_status": "connected"}
                     room.power_ups[nickname] = {"double_points": True, "fifty_fifty": True}
                     player_session_token = secrets.token_urlsafe(16)
                     room.player_tokens[nickname] = player_session_token
@@ -2325,7 +2372,7 @@ class SocketManager:
                         await conn.close()
                     return
 
-                room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar}
+                room.players[client_id] = {"nickname": nickname, "score": 0, "prev_rank": 0, "streak": 0, "avatar": avatar, "connection_status": "connected"}
                 # Assign team if provided
                 if team:
                     room.teams[nickname] = team
@@ -2341,8 +2388,8 @@ class SocketManager:
                 await room.broadcast({
                     "type": "PLAYER_JOINED",
                     "nickname": nickname,
-                    "player_count": len(room.players),
-                    "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()]
+                    "player_count": room.connected_player_count(),
+                    "players": room.lobby_roster()
                 })
 
             elif msg_type == "VOTE" and room.game_type == "wmlt":

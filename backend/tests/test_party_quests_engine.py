@@ -14,6 +14,7 @@ from party_quests_engine import (
     start_final_call,
     validate_config,
 )
+from main import PartyQuestsGenerateRequest, _normalize_party_quests_generated
 
 
 def test_validate_config_adds_default_quests_and_clamps_settings():
@@ -109,3 +110,28 @@ def test_honor_mode_confirms_without_pending_request():
     assert request is None
     assert state["quest_boards_by_player"]["Avi"][0]["status"] == "confirmed"
     assert state["phase"] == PHASE_ACTIVE
+
+
+def test_generated_party_quests_are_normalized_for_review():
+    request = PartyQuestsGenerateRequest(
+        prompt="family birthday",
+        theme="birthday",
+        num_quests=5,
+        quests_per_player=3,
+    )
+    result = _normalize_party_quests_generated({
+        "game_title": "Birthday Quest Block",
+        "quests": [
+            {"display": "Find someone who can recommend a party song.", "points": 100},
+            {"display": "Ask someone for a tiny toast idea.", "points": 100},
+            {"display": "Meet someone who knows the guest of honor well.", "points": 150},
+            {"display": "Find someone wearing a bright color.", "points": 100},
+            {"display": "Ask someone about a favorite dessert.", "points": 100},
+        ],
+    }, request)
+
+    assert result["game_title"] == "Birthday Quest Block"
+    assert result["theme"] == "birthday"
+    assert result["quests_per_player"] == 3
+    assert [quest["id"] for quest in result["quests"]] == ["quest_1", "quest_2", "quest_3", "quest_4", "quest_5"]
+    assert result["quests"][2]["points"] == 150

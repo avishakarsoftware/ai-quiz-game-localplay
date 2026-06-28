@@ -871,7 +871,10 @@ SUPABASE_URL=https://hosbtyylacluziugwjfd.supabase.co
 SUPABASE_SERVICE_KEY=<service-role-key>
 SUPABASE_ANON_KEY=<anon-key>     # optional, not used at runtime
 SUPABASE_TIMEOUT_SECONDS=10
+LOBBY_RECONNECT_GRACE_SECONDS=5400
 ```
+
+`LOBBY_RECONNECT_GRACE_SECONDS` preserves disconnected lobby seats for mobile party continuity. The default is 5400 seconds (90 minutes). Connected-player counts and start gates still count only live sockets; preserved offline seats are pruned before the game materializes.
 
 ### Table prefix isolation
 

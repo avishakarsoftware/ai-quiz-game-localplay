@@ -1837,6 +1837,57 @@ export default function OrganizerPage() {
         setGameType('party_quests');
         await createRoom(undefined, 'party_quests', defaultTimeLimitForGame('party_quests'), config as unknown as Record<string, unknown>);
     };
+
+    const generatePartyQuests = async (request: {
+        prompt: string;
+        theme: string;
+        numQuests: number;
+        questsPerPlayer: number;
+        durationMinutes: number;
+        confirmationMode: PartyQuestSetupConfig['confirmation_mode'];
+        provider: string;
+    }): Promise<PartyQuestSetupConfig | null> => {
+        if (remoteConfig.operations.kill_generate) {
+            setErrorModal({ title: 'Temporarily Unavailable', message: 'Game generation is temporarily disabled. Please try again later.' });
+            return null;
+        }
+        try {
+            const res = await fetch(apiUrl('/party-quests/generate'), {
+                method: 'POST',
+                headers: apiHeaders({ 'X-Idempotency-Key': generateIdempotencyKey() }),
+                body: JSON.stringify({
+                    prompt: request.prompt,
+                    theme: request.theme,
+                    num_quests: request.numQuests,
+                    quests_per_player: request.questsPerPlayer,
+                    duration_minutes: request.durationMinutes,
+                    confirmation_mode: request.confirmationMode,
+                    provider: request.provider,
+                }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Failed to generate quests' }));
+                setErrorModal({
+                    title: res.status === 402 ? 'Not Enough Sparks' : 'Generation Failed',
+                    message: err.detail || 'Failed to generate Party Quests. Please try a different theme.',
+                    upgradeAvailable: !hostAppMode && res.status === 402,
+                });
+                return null;
+            }
+            const data = await res.json();
+            if (!data.game) {
+                setErrorModal({ title: 'Generation Failed', message: 'Failed to generate Party Quests. Please try a different theme.' });
+                return null;
+            }
+            window.dispatchEvent(new CustomEvent('refresh-sparks'));
+            track('party_quests_generated', { theme: request.theme, num_quests: request.numQuests, provider: request.provider });
+            return data.game as PartyQuestSetupConfig;
+        } catch {
+            setErrorModal({ title: 'Connection Error', message: 'Could not reach the server. Check your internet connection.' });
+            return null;
+        }
+    };
+
     const createWhoAmIAndRoom = async () => {
         try {
             const game = whoAmIGame || starterWhoAmIGame();
@@ -2336,6 +2387,10 @@ export default function OrganizerPage() {
                 {state === 'PARTY_QUESTS_SETUP' && (
                     <PartyQuestsSetupScreen
                         initialConfig={partyQuestsConfig}
+                        provider={provider}
+                        setProvider={setProvider}
+                        providers={providers}
+                        onGenerateQuests={generatePartyQuests}
                         onCreate={(config) => void createPartyQuestsAndRoom(config)}
                         onBack={() => setState('SELECT_GAME')}
                     />
@@ -2391,6 +2446,7 @@ export default function OrganizerPage() {
                     <LobbyScreen
                         roomCode={roomCode}
                         joinUrl={joinUrl}
+                        gameTitle={getGameModeConfig(gameType).title}
                         playerCount={playerCount}
                         players={players}
                         minPlayers={getMinPlayers(gameType)}

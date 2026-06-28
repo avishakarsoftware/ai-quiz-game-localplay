@@ -51,12 +51,37 @@ interface PlayerQuestion {
     image_url?: string;
 }
 
-function getSavedSession() {
+type SavedPlayerSession = { roomCode: string; nickname: string; team: string; avatar: string; sessionToken?: string; savedAt?: number };
+const PLAYER_SESSION_KEY = 'localplay_session';
+const PLAYER_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
+function readSavedSessionFrom(storage: Storage | undefined): SavedPlayerSession | null {
     try {
-        const raw = sessionStorage.getItem('localplay_session');
-        if (raw) return JSON.parse(raw) as { roomCode: string; nickname: string; team: string; avatar: string; sessionToken?: string };
+        const raw = storage?.getItem(PLAYER_SESSION_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as SavedPlayerSession;
+        if (parsed.savedAt && Date.now() - parsed.savedAt > PLAYER_SESSION_TTL_MS) {
+            storage?.removeItem(PLAYER_SESSION_KEY);
+            return null;
+        }
+        return parsed;
     } catch { /* corrupted session data */ }
     return null;
+}
+
+function getSavedSession() {
+    return readSavedSessionFrom(sessionStorage) || readSavedSessionFrom(localStorage);
+}
+
+function savePlayerSession(session: SavedPlayerSession) {
+    const payload = JSON.stringify({ ...session, savedAt: Date.now() });
+    try { sessionStorage.setItem(PLAYER_SESSION_KEY, payload); } catch { /* storage may be unavailable */ }
+    try { localStorage.setItem(PLAYER_SESSION_KEY, payload); } catch { /* storage may be unavailable */ }
+}
+
+function clearPlayerSession() {
+    try { sessionStorage.removeItem(PLAYER_SESSION_KEY); } catch { /* storage may be unavailable */ }
+    try { localStorage.removeItem(PLAYER_SESSION_KEY); } catch { /* storage may be unavailable */ }
 }
 
 function normalizeRoomCode(value: string | null | undefined): string {
@@ -304,7 +329,7 @@ export default function PlayerPage() {
                     kickedRef.current = true;
                     wsRef.current?.close();
                     wsRef.current = null;
-                    sessionStorage.removeItem('localplay_session');
+                    clearPlayerSession();
                     setState('JOIN');
                 }
                 return;
@@ -325,7 +350,7 @@ export default function PlayerPage() {
             }
             if (msg.type === 'JOINED_ROOM') {
                 nicknameReconnectRetriesRef.current = 0;
-                sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode, nickname, team, avatar, sessionToken: msg.session_token || '' }));
+                savePlayerSession({ roomCode, nickname, team, avatar, sessionToken: msg.session_token || '' });
                 if (msg.game_type === 'common_ground' && msg.common_ground) {
                     setGameType('common_ground');
                     setCommonGroundState(msg.common_ground as CommonGroundState);
@@ -378,7 +403,7 @@ export default function PlayerPage() {
                 nicknameReconnectRetriesRef.current = 0;
                 if (msg.players) setLobbyPlayers(msg.players as PlayerInfo[]);
                 const token = (msg.session_token as string) || getSavedSession()?.sessionToken || '';
-                sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode, nickname, team, avatar, sessionToken: token }));
+                savePlayerSession({ roomCode, nickname, team, avatar, sessionToken: token });
                 setQuestionNumber(msg.question_number as number);
                 setTotalQuestions(msg.total_questions as number);
                 if (msg.game_type) setGameType(msg.game_type as GameType);
@@ -859,7 +884,7 @@ export default function PlayerPage() {
                 wsRef.current?.close();
                 wsRef.current = null;
                 kickedRef.current = true; // prevent auto-reconnect
-                sessionStorage.removeItem('localplay_session');
+                clearPlayerSession();
                 if (hostAppMode) setHostAppTerminalError(true);
                 setState('JOIN');
                 setError('The host has left and the room was closed');

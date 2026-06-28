@@ -15,6 +15,11 @@ const baseProps = {
 };
 
 describe('LobbyScreen min-player gating', () => {
+    it('uses the selected game name in the lobby heading', () => {
+        render(<LobbyScreen {...baseProps} gameTitle="Party Quests" playerCount={0} minPlayers={1} />);
+        expect(screen.getByRole('heading', { name: 'Party Quests Lobby' })).toBeInTheDocument();
+    });
+
     it('disables Start and explains how many more players are needed', () => {
         render(<LobbyScreen {...baseProps} playerCount={1} minPlayers={3} />);
         expect(screen.getByRole('button', { name: 'Start Game' })).toBeDisabled();
@@ -30,6 +35,26 @@ describe('LobbyScreen min-player gating', () => {
         render(<LobbyScreen {...baseProps} playerCount={0} minPlayers={2} />);
         expect(screen.getByRole('button', { name: 'Start Game' })).toBeDisabled();
         expect(screen.getByText('Needs at least 2 players to start')).toBeInTheDocument();
+    });
+
+    it('shows preserved offline seats separately from connected player count', () => {
+        render(
+            <LobbyScreen
+                {...baseProps}
+                playerCount={1}
+                minPlayers={2}
+                players={[
+                    { nickname: 'Avi', avatar: 'A', status: 'connected' },
+                    { nickname: 'Ruchi', avatar: 'R', status: 'offline' },
+                ]}
+            />,
+        );
+
+        expect(screen.getByText('1')).toBeInTheDocument();
+        expect(screen.getByText('connected player')).toBeInTheDocument();
+        expect(screen.getByText('1 player reconnecting')).toBeInTheDocument();
+        expect(screen.getByText('offline')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Start Game' })).toBeDisabled();
     });
 
     it('offers a clear path back to the game list when provided', async () => {

@@ -9,6 +9,7 @@ import { AVATAR_COLORS } from '../LeaderboardBarChart.constants';
 interface LobbyScreenProps {
     roomCode: string;
     joinUrl: string;
+    gameTitle?: string;
     playerCount: number;
     players: PlayerInfo[];
     minPlayers?: number;
@@ -27,6 +28,7 @@ interface LobbyScreenProps {
 export default function LobbyScreen({
     roomCode,
     joinUrl,
+    gameTitle = 'Game',
     playerCount,
     players,
     minPlayers = 1,
@@ -47,6 +49,7 @@ export default function LobbyScreen({
     const qrUrl = hostAppMode ? hostAppJoinUrl : joinUrl;
     const showQr = Boolean(qrUrl) && (!hostAppMode || Boolean(hostAppJoinUrl));
     const showHostAppShare = hostAppMode && Boolean(hostAppJoinUrl);
+    const offlineCount = players.filter((player) => player.status === 'offline' || player.status === 'reconnecting').length;
 
     useEffect(() => {
         if (playerCount > prevCountRef.current) {
@@ -115,7 +118,7 @@ export default function LobbyScreen({
             )}
 
             <div className="screen-hero">
-                <h1 className="hero-title">Game Lobby</h1>
+                <h1 className="hero-title">{gameTitle} Lobby</h1>
                 <p className="hero-subtitle">{hostAppMode ? (hostAppJoinUrl ? hostAppJoinLabel : 'Players can join from Revelry') : 'Share the code below to invite players'}</p>
             </div>
 
@@ -152,7 +155,7 @@ export default function LobbyScreen({
 
             {/* Players section */}
             <div className="w-full mb-3">
-                {playerCount === 0 ? (
+                {players.length === 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '8px 0' }}>
                         <p className="text-[--text-secondary] font-medium mb-3 animate-pulse">Waiting for players...</p>
                         <div style={{ display: 'flex', gap: 6 }}>
@@ -164,21 +167,30 @@ export default function LobbyScreen({
                     </div>
                 ) : (
                     <>
-                        <p className={`text-center mb-3 ${justJoined ? 'lobby-count-bump' : ''}`} key={playerCount}>
+                        <p className={`text-center mb-2 ${justJoined ? 'lobby-count-bump' : ''}`} key={playerCount}>
                             <span className="text-2xl font-bold">{playerCount}</span>{' '}
-                            <span className="text-[--text-secondary] font-medium">player{playerCount !== 1 ? 's' : ''}</span>
+                            <span className="text-[--text-secondary] font-medium">connected player{playerCount !== 1 ? 's' : ''}</span>
                         </p>
+                        {offlineCount > 0 && (
+                            <p className="lobby-offline-summary">
+                                {offlineCount} player{offlineCount === 1 ? '' : 's'} reconnecting
+                            </p>
+                        )}
                         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
-                            {players.map((player, i) => (
-                                <div key={player.nickname} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderRadius: 9999, background: 'var(--bg-secondary)' }}>
-                                    <div
-                                        style={{ width: 36, height: 36, minWidth: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }}
-                                    >
-                                        <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>{player.avatar || player.nickname.slice(0, 2).toUpperCase()}</span>
+                            {players.map((player, i) => {
+                                const isOffline = player.status === 'offline' || player.status === 'reconnecting';
+                                return (
+                                    <div key={player.nickname} className={`lobby-player-pill ${isOffline ? 'is-offline' : ''}`}>
+                                        <div
+                                            style={{ width: 36, height: 36, minWidth: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length] }}
+                                        >
+                                            <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>{player.avatar || player.nickname.slice(0, 2).toUpperCase()}</span>
+                                        </div>
+                                        <span className="lobby-player-pill-name">{player.nickname}</span>
+                                        {isOffline && <span className="lobby-player-status">offline</span>}
                                     </div>
-                                    <span style={{ fontSize: '1rem', fontWeight: 500 }}>{player.nickname}</span>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </>
                 )}

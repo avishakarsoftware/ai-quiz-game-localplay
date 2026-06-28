@@ -38,6 +38,7 @@ export interface QuizPack {
 export interface PlayerInfo {
     nickname: string;
     avatar: string;
+    status?: 'connected' | 'reconnecting' | 'offline';
 }
 
 export interface LeaderboardEntry {

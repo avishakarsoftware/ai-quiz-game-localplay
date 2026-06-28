@@ -51,7 +51,8 @@ export default function HousieSetupScreen({
 
     return (
         <div className="housie-setup min-h-dvh flex flex-col safe-top safe-bottom animate-in">
-            <div className="housie-setup-hero">
+            <div className="housie-setup-hero prompt-header">
+                <button type="button" onClick={onBack} className="btn btn-secondary prompt-header-back">Back</button>
                 <div className="hero-icon mb-4">🎱</div>
                 <h1 className="hero-title">Set Up Housie</h1>
                 <p>Classic 90-ball tickets with prize claims.</p>

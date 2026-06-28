@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { SHOW_PROVIDER_SELECTOR } from '../../config';
+import { type AIProvider } from './PromptScreen';
 
 export interface PartyQuestSetupConfig {
     game_title: string;
@@ -12,6 +14,18 @@ export interface PartyQuestSetupConfig {
 
 interface PartyQuestsSetupScreenProps {
     initialConfig?: PartyQuestSetupConfig;
+    provider: string;
+    setProvider: (value: string) => void;
+    providers: AIProvider[];
+    onGenerateQuests: (request: {
+        prompt: string;
+        theme: string;
+        numQuests: number;
+        questsPerPlayer: number;
+        durationMinutes: number;
+        confirmationMode: PartyQuestSetupConfig['confirmation_mode'];
+        provider: string;
+    }) => Promise<PartyQuestSetupConfig | null>;
     onCreate: (config: PartyQuestSetupConfig) => void;
     onBack: () => void;
 }
@@ -106,17 +120,72 @@ function buildConfig(theme = 'mingling'): PartyQuestSetupConfig {
 
 export const defaultPartyQuestsConfig = buildConfig;
 
-export default function PartyQuestsSetupScreen({ initialConfig, onCreate, onBack }: PartyQuestsSetupScreenProps) {
+export default function PartyQuestsSetupScreen({
+    initialConfig,
+    provider,
+    setProvider,
+    providers,
+    onGenerateQuests,
+    onCreate,
+    onBack,
+}: PartyQuestsSetupScreenProps) {
     const [config, setConfig] = useState<PartyQuestSetupConfig>(initialConfig || buildConfig());
-    const [questText, setQuestText] = useState(() => config.quests.map((item) => item.display).join('\n'));
+    const [questDrafts, setQuestDrafts] = useState(() => config.quests.map((item) => item.display));
+    const [aiPrompt, setAiPrompt] = useState('friendly party mingling quests');
+    const [generating, setGenerating] = useState(false);
 
-    const parsedQuests = useMemo(() => questText.split('\n').map((line) => line.trim()).filter(Boolean), [questText]);
+    const parsedQuests = useMemo(() => questDrafts.map((line) => line.trim()).filter(Boolean), [questDrafts]);
     const canCreate = parsedQuests.length >= 3;
 
     const applyTheme = (theme: string) => {
         const next = buildConfig(theme);
         setConfig((current) => ({ ...current, theme, quests: next.quests }));
-        setQuestText(next.quests.map((item) => item.display).join('\n'));
+        setQuestDrafts(next.quests.map((item) => item.display));
+    };
+
+    const generateQuests = async () => {
+        const prompt = aiPrompt.trim();
+        if (!prompt || generating) return;
+        setGenerating(true);
+        try {
+            const generated = await onGenerateQuests({
+                prompt,
+                theme: config.theme,
+                numQuests: Math.max(10, parsedQuests.length || 10),
+                questsPerPlayer: config.quests_per_player,
+                durationMinutes: config.duration_minutes,
+                confirmationMode: config.confirmation_mode,
+                provider,
+            });
+            if (generated) {
+                setConfig(generated);
+                setQuestDrafts(generated.quests.map((item) => item.display));
+            }
+        } finally {
+            setGenerating(false);
+        }
+    };
+
+    const updateQuest = (index: number, value: string) => {
+        setQuestDrafts((current) => current.map((quest, i) => (i === index ? value : quest)));
+    };
+
+    const addQuest = () => {
+        setQuestDrafts((current) => [...current, '']);
+    };
+
+    const removeQuest = (index: number) => {
+        setQuestDrafts((current) => current.filter((_, i) => i !== index));
+    };
+
+    const moveQuest = (index: number, direction: -1 | 1) => {
+        setQuestDrafts((current) => {
+            const nextIndex = index + direction;
+            if (nextIndex < 0 || nextIndex >= current.length) return current;
+            const next = [...current];
+            [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+            return next;
+        });
     };
 
     const submit = () => {
@@ -133,8 +202,8 @@ export default function PartyQuestsSetupScreen({ initialConfig, onCreate, onBack
 
     return (
         <div className="container-responsive safe-top safe-bottom animate-in">
-            <button type="button" className="btn btn-secondary mb-8" onClick={onBack}>Back</button>
-            <div className="screen-hero">
+            <div className="text-center mb-7 prompt-header">
+                <button type="button" className="btn btn-secondary prompt-header-back" onClick={onBack}>Back</button>
                 <div className="hero-icon mb-4">🗺️</div>
                 <h1 className="hero-title">Party Quests</h1>
                 <p className="hero-subtitle">Choose a quest pack guests can play throughout the party.</p>
@@ -153,6 +222,31 @@ export default function PartyQuestsSetupScreen({ initialConfig, onCreate, onBack
                             {label}
                         </button>
                     ))}
+                </div>
+            </section>
+
+            <section className="common-ground-panel">
+                <h2>AI quest block</h2>
+                <p className="mt-2 text-[--text-secondary]">Describe the party, guest mix, or vibe. You can edit and reorder every generated quest before launch.</p>
+                <div className="party-quest-ai-card mt-4">
+                    <textarea
+                        className="input-field party-quest-ai-input"
+                        value={aiPrompt}
+                        onChange={(event) => setAiPrompt(event.target.value.slice(0, 300))}
+                        placeholder="Example: outdoor birthday, cousins and school friends, silly but family friendly"
+                    />
+                    {SHOW_PROVIDER_SELECTOR && providers.length > 0 && (
+                        <select value={provider} onChange={(event) => setProvider(event.target.value)} className="input-field">
+                            {providers.map((item) => (
+                                <option key={item.id} value={item.id} disabled={!item.available}>
+                                    {item.name}{item.available ? '' : ' (unavailable)'}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                    <button type="button" className="btn btn-primary" onClick={generateQuests} disabled={generating || !aiPrompt.trim()}>
+                        {generating ? 'Generating...' : 'Generate Quest Block'}
+                    </button>
                 </div>
             </section>
 
@@ -203,12 +297,30 @@ export default function PartyQuestsSetupScreen({ initialConfig, onCreate, onBack
 
             <section className="common-ground-panel">
                 <h2>Quest list</h2>
-                <textarea
-                    className="input-field min-h-[260px] mt-4"
-                    value={questText}
-                    onChange={(event) => setQuestText(event.target.value)}
-                />
-                <p className="mt-3 text-[--text-secondary]">{parsedQuests.length} quests available</p>
+                <p className="mt-2 text-[--text-secondary]">Starter quests are editable. Each player receives a random board from this list.</p>
+                <div className="party-quest-card-grid mt-4">
+                    {questDrafts.map((quest, index) => (
+                        <div key={index} className="party-quest-edit-card">
+                            <div className="party-quest-edit-card__number">{index + 1}</div>
+                            <textarea
+                                className="party-quest-edit-card__input"
+                                aria-label={`Quest ${index + 1}`}
+                                value={quest}
+                                onChange={(event) => updateQuest(index, event.target.value.slice(0, 180))}
+                                placeholder="Write a party quest"
+                            />
+                            <div className="party-quest-edit-card__actions">
+                                <button type="button" className="btn btn-secondary" onClick={() => moveQuest(index, -1)} disabled={index === 0}>Up</button>
+                                <button type="button" className="btn btn-secondary" onClick={() => moveQuest(index, 1)} disabled={index === questDrafts.length - 1}>Down</button>
+                                <button type="button" className="btn btn-secondary" onClick={() => removeQuest(index)} disabled={questDrafts.length <= 3}>Remove</button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <div className="party-quest-list-footer">
+                    <p className="text-[--text-secondary]">{parsedQuests.length} quests available</p>
+                    <button type="button" className="btn btn-secondary" onClick={addQuest}>Add quest</button>
+                </div>
             </section>
 
             <button type="button" className="btn btn-primary w-full" disabled={!canCreate} onClick={submit}>
