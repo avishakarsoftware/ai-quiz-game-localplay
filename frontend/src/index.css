@@ -2056,6 +2056,20 @@ body {
 }
 
 /* Lobby join animations */
+.lobby-top-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-start;
+    margin-bottom: 16px;
+}
+
+.lobby-back-button {
+    min-width: 132px;
+    height: 44px;
+    padding: 0 18px;
+}
+
 .lobby-player-count {
     text-align: center;
     padding: 16px;

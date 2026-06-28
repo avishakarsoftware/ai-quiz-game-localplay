@@ -288,7 +288,7 @@ export default function OrganizerPage() {
                 'DRAWING_REVIEW',
                 'GENERATING_IMAGES',
             ];
-            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'PARTY_QUESTS', 'SURVEY_SAYS', 'GENERIC_PROMPT', 'SIMPLE_SOCIAL', 'PHOTO_CLUE'];
+            const homeActiveStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'POKER', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'PARTY_QUESTS', 'SURVEY_SAYS', 'GENERIC_PROMPT', 'SIMPLE_SOCIAL', 'PHOTO_CLUE', 'ANSWER_REVEAL', 'LEADERBOARD', 'PODIUM'];
             if (homeSafeStates.includes(stateRef.current)) {
                 flowEpochRef.current += 1;
                 clearOrganizerSession();
@@ -1454,7 +1454,7 @@ export default function OrganizerPage() {
             if (wsRef.current !== ws) return;
             wsRef.current = null;
             if (!mountedRef.current) return;
-            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'PARTY_QUESTS', 'SURVEY_SAYS', 'SIMPLE_SOCIAL', 'ANSWER_REVEAL', 'LEADERBOARD', 'PODIUM'];
+            const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'POKER', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'MAFIA', 'PARTY_QUESTS', 'SURVEY_SAYS', 'GENERIC_PROMPT', 'SIMPLE_SOCIAL', 'PHOTO_CLUE', 'ANSWER_REVEAL', 'LEADERBOARD', 'PODIUM'];
             if (roomCodeRef.current && activeStates.includes(stateRef.current)) {
                 if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                 reconnectTimerRef.current = setTimeout(() => connectWsRef.current(roomCodeRef.current), 2000);
@@ -1930,6 +1930,87 @@ export default function OrganizerPage() {
         });
     };
 
+    const closeCurrentLobbyRoom = (nextState?: OrganizerState) => {
+        flowEpochRef.current += 1;
+        clearOrganizerSession();
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
+        const ws = wsRef.current;
+        wsRef.current = null;
+        roomCodeRef.current = '';
+        if (nextState) stateRef.current = nextState;
+        ws?.close();
+        setRoomCode('');
+        setPlayerCount(0);
+        setPlayers([]);
+    };
+
+    const getLobbyEditTarget = (): OrganizerState | null => {
+        if (isQuizRuntimeGame(gameType) && quiz) return 'REVIEW';
+        if (gameType === 'wmlt' && mltGame) return 'MLT_REVIEW';
+        if (gameType === 'drawing' && drawingGame) return 'DRAWING_REVIEW';
+        if (gameType === 'who_am_i' && whoAmIGame) return 'WHO_AM_I_REVIEW';
+        if (gameType === 'chit_pull' && chitPullGame) return 'CHIT_PULL_REVIEW';
+        if (gameType === 'housie') return 'HOUSIE_SETUP';
+        if (gameType === 'bingo' || gameType === 'baby_bingo') return 'BINGO_SETUP';
+        if (gameType === 'musical_chairs') return 'MUSICAL_CHAIRS_SETUP';
+        if (gameType === 'party_quests') return 'PARTY_QUESTS_SETUP';
+        return null;
+    };
+
+    const getLobbyEditLabel = (): string => {
+        if (isQuizRuntimeGame(gameType)) return 'Edit questions';
+        if (gameType === 'wmlt' || gameType === 'drawing') return 'Edit prompts';
+        if (gameType === 'who_am_i') return 'Edit clues';
+        if (gameType === 'chit_pull') return 'Edit chits';
+        if (gameType === 'party_quests') return 'Edit quests';
+        return 'Edit setup';
+    };
+
+    const editLobbySetup = () => {
+        const target = getLobbyEditTarget();
+        if (!target) return;
+        const confirmed = window.confirm('Editing setup will close this lobby. Connected players will need to rejoin the new room after you save changes. Continue?');
+        if (!confirmed) return;
+        closeCurrentLobbyRoom(target);
+        setState(target);
+    };
+
+    const leaveLobbyForGameList = () => {
+        if (!hostAppMode) {
+            window.dispatchEvent(new CustomEvent('navigate-home'));
+            return;
+        }
+        const confirmed = window.confirm('Going home will leave this active room. Players may be interrupted if the game is in progress. Continue?');
+        if (!confirmed) return;
+        closeCurrentLobbyRoom();
+        setQuiz(null);
+        setMltGame(null);
+        setDrawingGame(null);
+        setHousieCalled([]);
+        setHousieLatest(null);
+        setHousieCanUndoLastCall(false);
+        setHousieWinners([]);
+        setTwoTruthsState(null);
+        setStoryChainState(null);
+        setCommonGroundState(null);
+        setFindSomeoneState(null);
+        setWhoAmIState(null);
+        setWhoAmIGame(null);
+        setChitPullState(null);
+        setChitPullGame(null);
+        setMafiaState(null);
+        setPartyQuestsState(null);
+        setSurveySaysState(null);
+        setGenericPromptState(null);
+        setEditingPackId(undefined);
+        setContentId('');
+        setQuestionImages({});
+        returnToHostApp();
+    };
+
     // In Capacitor, window.location.origin is capacitor://localhost — use the web URL instead
     const isCapacitor = window.location.protocol === 'capacitor:' || window.location.hostname === 'localhost' && !window.location.port;
     const baseUrl = isCapacitor
@@ -2319,6 +2400,9 @@ export default function OrganizerPage() {
                         hostAppJoinLabel={hostAppJoinLabel}
                         onStartGame={startGame}
                         onToggleLock={() => wsRef.current?.send(JSON.stringify({ type: 'TOGGLE_LOCK' }))}
+                        onBackToGames={leaveLobbyForGameList}
+                        onEditSetup={!hostAppMode && getLobbyEditTarget() ? editLobbySetup : undefined}
+                        editSetupLabel={getLobbyEditLabel()}
                         onShowRules={() => setActiveRules(rulesForGame(gameType, catalog))}
                     />
                 )}

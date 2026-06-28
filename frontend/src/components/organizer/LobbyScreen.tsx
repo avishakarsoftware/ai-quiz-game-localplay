@@ -15,6 +15,9 @@ interface LobbyScreenProps {
     locked: boolean;
     onStartGame: () => void;
     onToggleLock: () => void;
+    onBackToGames?: () => void;
+    onEditSetup?: () => void;
+    editSetupLabel?: string;
     onShowRules?: () => void;
     hostAppMode?: boolean;
     hostAppJoinUrl?: string;
@@ -30,6 +33,9 @@ export default function LobbyScreen({
     locked,
     onStartGame,
     onToggleLock,
+    onBackToGames,
+    onEditSetup,
+    editSetupLabel = 'Edit setup',
     onShowRules,
     hostAppMode = false,
     hostAppJoinUrl = '',
@@ -95,6 +101,19 @@ export default function LobbyScreen({
 
     return (
         <div className="min-h-dvh flex flex-col items-center justify-center container-responsive safe-top safe-bottom animate-in">
+            {onBackToGames && (
+                <div className="w-full lobby-top-actions">
+                    <button type="button" onClick={onBackToGames} className="btn btn-secondary lobby-back-button">
+                        Back to games
+                    </button>
+                    {onEditSetup && (
+                        <button type="button" onClick={onEditSetup} className="btn btn-secondary lobby-back-button">
+                            {editSetupLabel}
+                        </button>
+                    )}
+                </div>
+            )}
+
             <div className="screen-hero">
                 <h1 className="hero-title">Game Lobby</h1>
                 <p className="hero-subtitle">{hostAppMode ? (hostAppJoinUrl ? hostAppJoinLabel : 'Players can join from Revelry') : 'Share the code below to invite players'}</p>

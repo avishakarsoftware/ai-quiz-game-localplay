@@ -1113,7 +1113,9 @@ Game select:
 - WMLT goes to `MLT_PROMPT` and `MLT_REVIEW`.
 - Drawing goes to `DRAWING_PROMPT` and `DRAWING_REVIEW`.
 - **My Quizzes** opens `QUIZ_LIBRARY`; starting a saved pack materializes it and enters normal review.
-- Home/menu navigation must reset safely from setup, loading, review, library, and terminal states.
+- Home/menu navigation must reset safely from setup, loading, review, library, lobby, active gameplay, and terminal states.
+- The organizer lobby must expose an obvious **Back to games** action in addition to the hamburger menu. It uses the same shared home-navigation behavior as the menu: setup/review states reset directly, while lobby/active gameplay/result states warn that leaving the room may interrupt connected players before returning to the game list.
+- For games with editable pre-start content or setup, the lobby may also expose **Edit questions**, **Edit prompts**, **Edit setup**, or equivalent. Because a lobby room already exists, this action must warn the host that the lobby will close and connected players will need to rejoin a new room after changes are saved.
 - Entering a new organizer state or switching game type must reset page scroll to the top so setup/review screens never open partially scrolled from the previous catalog or editor position.
 
 Generation:
@@ -1151,6 +1153,7 @@ Room creation:
 Lobby:
 
 - The lobby disables **Start Game** until the room meets the selected game's minimum player count and shows how many more players are needed (e.g. "Need 2 more players to start (1/3)"). Minimums are mirrored from the backend `MIN_*_PLAYERS` constants via `getMinPlayers()` in `frontend/src/gameModes.ts`; the backend remains authoritative and rejects an early `START_GAME`.
+- The lobby shares one navigation and rules surface across every game type. Quiz, quiz-variant, Bingo/Housie, card, social, drawing, Musical Chairs, and future games must not fork their own lobby without the same **Back to games**, optional pre-start edit, **Rules**, share/join, lock, minimum-player, and TV/display affordances.
 - If a minimum-player rejection still arrives (e.g. a player left mid-press), it is shown in a dismissable modal that keeps the host in the lobby — never a raw `alert()`.
 
 Game start:
