@@ -100,6 +100,13 @@ test.describe('Lobby navigation actions', () => {
     const mm = await openLobby(browser, mcMobile, { width: 393, height: 851 });
     await mm.page.screenshot({ path: 'test-results/lobby-nav-musical-chairs-mobile.png', fullPage: true });
     await mm.context.close();
+
+    // Long game title on mobile — the centered "{title} Lobby" heading must not
+    // collide with the fixed menu (left) or sparks badge (right).
+    const nhie = await createRoomViaApi(request, liveDeviceId('nav-shot-nhie-m'), { game_type: 'never_have_i_ever' });
+    const nm = await openLobby(browser, nhie, { width: 393, height: 851 });
+    await nm.page.screenshot({ path: 'test-results/lobby-nav-nhie-mobile.png', fullPage: true });
+    await nm.context.close();
   });
 
   test('Back to games returns to the game catalog', async ({ browser, request }) => {
