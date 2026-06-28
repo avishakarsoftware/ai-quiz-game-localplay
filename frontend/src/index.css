@@ -4919,6 +4919,14 @@ body {
     .prompt-header-back {
         top: 54px;
     }
+
+    /* The lobby Back/Edit action row spans full width, so on narrow screens its
+       left button slid under the fixed menu (top-left) and its right button under
+       the sparks badge (top-right). Reserve the same 54px top zone so it clears
+       both pieces of fixed chrome. */
+    .lobby-top-actions {
+        padding-top: 54px;
+    }
 }
 
 /* ===== Professional-Grade Screen Styles ===== */
