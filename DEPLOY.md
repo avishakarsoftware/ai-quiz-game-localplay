@@ -39,6 +39,16 @@ As of the SPA rollout, the VM has both LocalPlay containers deployed:
 
 The older backup containers `revelry-platform` and `revelry-gamma` may exist on the VM. They are not managed by `scripts/deploy-gcp.sh`; the LocalPlay deploy script only stops/removes `games-backend` and `games-backend-gamma`.
 
+### Recent PROD deploy — June 28, 2026 (post-podium room reuse roster fix)
+
+Promoted runtime commit `3f029c8` to gamma and prod. No schema migration required.
+
+- **Gamma:** `./scripts/deploy-gcp.sh --gamma --with-frontend` → `games-backend-gamma` (Supabase `games_gamma_`); health passed.
+- **Prod backend + fallback SPA:** `./scripts/deploy-gcp.sh --with-frontend` → `games-backend` (Supabase `games_`). DB backed up to `revelry-backups/revelry_20260628_224734.db`; health passed.
+- **Public frontend (IONOS `games.revelryapp.me`):** `VITE_BASE_PATH=/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_WEB_URL=https://games.revelryapp.me/ VITE_CAST_APP_ID=1BC9ACD8 npx vite build`, then additive `scp -r dist/*` + `rsync dist/.htaccess` (no `--delete`). Live index serves bundle `index-BwaAlYKl.js`.
+- Ships: post-podium room reuse no longer shows a stale roster — `RESET_ROOM` is gated to genuinely finished rooms, `ROOM_CREATED` clears the roster on a fresh room, and config-driven games (Musical Chairs, Party Quests) can reset in place via `runtime_config`. Adds `utils/roomReuse` + unit test for reset eligibility.
+- **Verified:** backend 867 + 46 ws; frontend 258; gamma smoke (desktop+mobile), lobby-nav sweep (5), preprod-live (12 gameplay-to-podium), Revelry Drawing + custom-quiz chooser flows; prod smoke on `gamesapi.revelryapp.me` and `games.revelryapp.me` (desktop+mobile).
+
 ### Recent PROD deploy — June 28, 2026 (Revelry quiz authoring stale-state fix)
 
 Promoted runtime commit `e285c92` to gamma and prod. No schema migration required.
