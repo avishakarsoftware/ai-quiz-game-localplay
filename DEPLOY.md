@@ -39,6 +39,16 @@ As of the SPA rollout, the VM has both LocalPlay containers deployed:
 
 The older backup containers `revelry-platform` and `revelry-gamma` may exist on the VM. They are not managed by `scripts/deploy-gcp.sh`; the LocalPlay deploy script only stops/removes `games-backend` and `games-backend-gamma`.
 
+### Recent PROD deploy — June 28, 2026 (Revelry quiz authoring stale-state fix)
+
+Promoted runtime commit `e285c92` to gamma and prod. No schema migration required.
+
+- **Gamma:** `./scripts/deploy-gcp.sh --gamma --with-frontend` → `games-backend-gamma` (Supabase `games_gamma_`). DB backed up to `revelry-backups-gamma/revelry_20260628_190704.db`; health passed.
+- **Prod backend + fallback SPA:** `./scripts/deploy-gcp.sh --with-frontend` → `games-backend` (Supabase `games_`). DB backed up to `revelry-backups/revelry_20260628_190839.db`; health passed.
+- **Public frontend (IONOS `games.revelryapp.me`):** rebuilt with `VITE_API_URL=https://gamesapi.revelryapp.me` and uploaded additively with `scp -r dist/*` plus `rsync dist/.htaccess`. Live index serves bundle `index-DrC122EO.js`.
+- Ships: embedded Revelry quiz authoring no longer carries an AI-generated quiz into the Custom quiz path after returning to the AI/custom chooser.
+- **Verified:** `npm test -- RevelryAuthoringPage --run` passed; `npm run build` passed; `npm run test:e2e:gamma` passed on desktop+mobile against gamma; `PLAYWRIGHT_BASE_URL=https://gamesapi.revelryapp.me npm exec playwright test e2e/gamma-smoke.spec.ts` passed on desktop+mobile; `PLAYWRIGHT_BASE_URL=https://games.revelryapp.me npm exec playwright test e2e/gamma-smoke.spec.ts` passed on desktop+mobile.
+
 ### Recent PROD deploy — June 28, 2026 (lobby continuity + answer reveal + lobby nav)
 
 Promoted the gamma-validated RC (runtime commit `b3b9542`; repo HEAD `f794e07` adds only test-only commits) to **prod**. No schema migration required.
