@@ -227,6 +227,10 @@ export default function SettingsDrawer() {
         setSignInLoading(true);
         setSignInError('');
         try {
+            // Native: ask RevenueCat to re-deliver past transactions first (re-fires webhooks),
+            // then reconcile via the backend. Consumed Spark packs are not re-credited (expected).
+            const { restoreNative } = await import('../utils/iap');
+            await restoreNative();
             const { apiFetch } = await import('../utils/api');
             const res = await apiFetch('/purchases/restore', { method: 'POST' });
             if (!res.ok) {

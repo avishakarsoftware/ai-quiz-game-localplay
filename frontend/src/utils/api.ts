@@ -3,21 +3,7 @@
  */
 import { API_URL } from '../config';
 import { getDeviceId, getSessionToken } from './storage';
-
-function getPlatform(): string {
-    // Only report ios/android for native Capacitor apps.
-    // Mobile Safari/Chrome users are "web" — they should use Stripe, not IAP.
-    const win = window as unknown as Record<string, unknown>;
-    if (win.Capacitor) {
-        const cap = win.Capacitor as Record<string, unknown>;
-        if (typeof cap.isNativePlatform === 'function' && (cap.isNativePlatform as () => boolean)()) {
-            const platform = cap.getPlatform ? (cap.getPlatform as () => string)() : '';
-            if (platform === 'ios') return 'ios';
-            if (platform === 'android') return 'android';
-        }
-    }
-    return 'web';
-}
+import { getPlatform } from './platform';
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.0.0';
 const APP_BUILD = import.meta.env.VITE_APP_BUILD || '1';

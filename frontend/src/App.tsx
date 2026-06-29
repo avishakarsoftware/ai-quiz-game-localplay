@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import './index.css';
+import { initIAP } from './utils/iap';
 import OrganizerPage from './pages/OrganizerPage';
 import PlayerPage from './pages/PlayerPage';
 import SpectatorPage from './pages/SpectatorPage';
@@ -16,6 +18,9 @@ import { isHostAppSurfaceLocation } from './utils/hostAppMode';
 
 function AppShell() {
   const isHostAppSurface = isHostAppSurfaceLocation(window.location.pathname, window.location.search);
+
+  // Configure native IAP once at startup (no-op on web / when unconfigured).
+  useEffect(() => { initIAP(); }, []);
 
   return (
     <>

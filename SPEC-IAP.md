@@ -720,18 +720,23 @@ Backend (DONE 2026-06-29):
       platform guard (ios+android), tiered `/checkout/create`, Stripe webhook cap. Full backend suite 937 passing.
 - [x] (no schema migration — Supabase gamma/prod schema already matches.)
 
-Frontend:
-- [ ] `frontend/package.json` — add `@revenuecat/purchases-capacitor`.
-- [ ] `frontend/src/utils/platform.ts` — shared `getPlatform()`/`isNativePlatform()`; update `api.ts` and
-      `SettingsDrawer.tsx` to use it.
-- [ ] `frontend/src/utils/iap.ts` — init, purchase, restore, offerings unwrap + product match, poll-balance.
-- [ ] `frontend/src/components/SparkPurchaseModal.tsx` — show 3 tiers, web/native branching, loading/error states.
-- [ ] `frontend/src/pages/OrganizerPage.tsx` / `ErrorModal` upgrade path — open `SparkPurchaseModal`; web sends
-      `sku` to `/checkout/create`, native calls `buySparksNative(sku)` instead of the `/checkout/create`+403 dead-end.
-- [ ] `frontend/src/components/SettingsDrawer.tsx` — native `restorePurchases()` before `/purchases/restore`.
-- [ ] `frontend/src/App.tsx` / `frontend/src/context/AuthContext.tsx` — call `initIAP()` once; wire
-      `Purchases.logIn/logOut` into the sign-in/out flow.
-- [ ] Native price display + buy-button gating when RC unconfigured.
+Frontend (DONE 2026-06-29, except the native plugin install):
+- [ ] `frontend/package.json` — add `@revenuecat/purchases-capacitor` (**pending — user to install before native build**;
+      `iap.ts` loads it via an indirect dynamic import so web build/tests don't require it).
+- [x] `frontend/src/utils/platform.ts` — shared `getPlatform()`/`isNativePlatform()`; `api.ts` now imports it.
+      (`SettingsDrawer.tsx` keeps its local `isNativePlatform`; `analytics.ts` intentionally separate.)
+- [x] `frontend/src/utils/iap.ts` — initIAP, iapLogIn/Out, getNativePrices, buySparksNative, restoreNative;
+      offerings unwrap + rc/store/suffix product match; graceful no-op when plugin/keys absent.
+- [x] `frontend/src/utils/sparkPacks.ts` — client catalog mirroring backend `SPARK_PRODUCTS`.
+- [x] `frontend/src/components/SparkPurchaseModal.tsx` — 3 tiers, web checkout+poll / native buy+poll-balance,
+      native price display, gating, loading/error states.
+- [x] `frontend/src/pages/OrganizerPage.tsx` — ErrorModal upgrade path opens `SparkPurchaseModal`; removed the
+      inline iOS-403 dead-end and the duplicated checkout poll.
+- [x] `frontend/src/components/SettingsDrawer.tsx` — native `restoreNative()` before `/purchases/restore`.
+- [x] `frontend/src/App.tsx` / `frontend/src/context/AuthContext.tsx` — `initIAP()` on mount; `iapLogIn/Out`
+      on sign-in/out.
+- [x] Tests: `platform.test.ts`, `sparkPacks.test.ts`, `SparkPurchaseModal.test.tsx`; full vitest 268 passing,
+      tsc clean, web `vite build` clean (RevenueCat stays external).
 
 Docs/config:
 - [ ] `DEPLOY.md` — RevenueCat setup section, native build env vars, IAP test procedure, gamma+prod webhook URLs.

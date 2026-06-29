@@ -3,6 +3,7 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 import { getUserProfile, getSessionToken, type UserProfile } from '../utils/storage';
 import { signInWithBackend, fetchUserProfile, signOut as storageSignOut } from '../utils/auth';
 import { track } from '../utils/analytics';
+import { iapLogIn, iapLogOut } from '../utils/iap';
 
 interface AuthState {
     user: UserProfile | null;
@@ -44,6 +45,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
             const result = await signInWithBackend(provider, idToken);
             setUser(result.user);
+            // Tie RevenueCat purchases to the user wallet (best-effort, native only).
+            if (result.user?.id) void iapLogIn(result.user.id);
             track('signed_in', { provider });
         } catch (err) {
             // Clean up any partial state from failed sign-in
@@ -56,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const signOut = useCallback(() => {
         storageSignOut();
         setUser(null);
+        void iapLogOut();  // revert RevenueCat to the device-scoped wallet (best-effort, native only)
         track('signed_out');
     }, []);
 

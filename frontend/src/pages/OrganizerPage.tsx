@@ -3,7 +3,7 @@ import { API_URL, WS_URL } from '../config';
 import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type GenericPromptGameType, type GenericPromptState, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type WhoAmIGameContent, type ChitPullCategory, type ChitPullGameContent, type ChitPullSafeLevel, type ChitPullState, type MafiaState, type PartyQuestsState, type SurveySaysState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
-import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending, saveOrganizerSession, getSavedOrganizerSession, clearOrganizerSession } from '../utils/storage';
+import { getDeviceId, getCheckoutPending, clearCheckoutPending, saveOrganizerSession, getSavedOrganizerSession, clearOrganizerSession } from '../utils/storage';
 import { apiHeaders, apiUrl, generateIdempotencyKey } from '../utils/api';
 import { mediaUrl } from '../utils/media';
 import { canResetFinishedRoomWithGame } from '../utils/roomReuse';
@@ -52,6 +52,7 @@ import LeaderboardBarChart from '../components/LeaderboardBarChart';
 import PodiumScreen from '../components/organizer/PodiumScreen';
 import BonusSplash from '../components/BonusSplash';
 import ErrorModal from '../components/ErrorModal';
+import SparkPurchaseModal from '../components/SparkPurchaseModal';
 import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import { GENERIC_PROMPT_GAME_IDS, getGameModeConfig, getMinPlayers, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
@@ -210,6 +211,7 @@ export default function OrganizerPage() {
     const [reviewPeekOpen, setReviewPeekOpen] = useState(false);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean; returnToHostApp?: boolean } | null>(null);
+    const [showPurchase, setShowPurchase] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
     const stateRef = useRef<OrganizerState>('SELECT_GAME');
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2962,64 +2964,27 @@ export default function OrganizerPage() {
                         setErrorModal(null);
                         if (hostAppMode && shouldReturn) returnToHostApp();
                     }}
-                    onUpgrade={async () => {
+                    onUpgrade={() => {
                         if (hostAppMode) return;
                         track('upgrade_clicked', { source: 'error_modal' });
                         setErrorModal(null);
-                        if (checkoutPollRef.current) return; // Prevent double-click
                         if (remoteConfig.operations.kill_payments) {
                             setErrorModal({ title: 'Payments Unavailable', message: 'Payments are temporarily disabled. Please try again later.' });
                             return;
                         }
-                        try {
-                            const res = await fetch(apiUrl('/checkout/create'), {
-                                method: 'POST',
-                                headers: apiHeaders(),
-                                body: JSON.stringify({ device_id: getDeviceId(), promo_id: remoteConfig.pricing.promo?.id || '' }),
-                            });
-                            if (res.status === 403) {
-                                setErrorModal({ title: 'Use In-App Purchase', message: 'Please use the in-app purchase option on iOS.' });
-                                return;
-                            }
-                            if (!res.ok) {
-                                setErrorModal({ title: 'Oops', message: 'Payments are not available yet. Try again later!' });
-                                return;
-                            }
-                            const { checkout_url, session_id } = await res.json();
-                            setCheckoutPending(session_id);
-                            window.open(checkout_url, '_blank');
-                            // Poll for token after Stripe redirect
-                            let attempts = 0;
-                            if (checkoutPollRef.current) clearInterval(checkoutPollRef.current);
-                            checkoutPollRef.current = setInterval(async () => {
-                                attempts++;
-                                if (attempts > 30 || !mountedRef.current) {
-                                    if (checkoutPollRef.current) clearInterval(checkoutPollRef.current);
-                                    checkoutPollRef.current = null;
-                                    return;
-                                }
-                                try {
-                                    const tokenRes = await fetch(apiUrl('/checkout/token'), { headers: apiHeaders() });
-                                    if (tokenRes.ok) {
-                                        const data = await tokenRes.json();
-                                        clearCheckoutPending();
-                                        if (checkoutPollRef.current) clearInterval(checkoutPollRef.current);
-                                        checkoutPollRef.current = null;
-                                        track('tokens_purchased', { source: 'stripe', tokens_added: data.tokens_added });
-                                        window.dispatchEvent(new CustomEvent('refresh-sparks'));
-                                        setErrorModal({ title: 'Sparks Added!', message: `+${data.tokens_added} sparks added to your balance. Enjoy!` });
-                                    } else if (tokenRes.status >= 500) {
-                                        // Server error — stop polling, don't wait 60s
-                                        clearCheckoutPending();
-                                        if (checkoutPollRef.current) clearInterval(checkoutPollRef.current);
-                                        checkoutPollRef.current = null;
-                                        setErrorModal({ title: 'Checkout Issue', message: 'There was a server error processing your purchase. Your payment is safe — sparks will be added shortly.' });
-                                    }
-                                } catch { /* network error — keep polling */ }
-                            }, 2000);
-                        } catch {
-                            setErrorModal({ title: 'Connection Error', message: 'Could not reach the server.' });
-                        }
+                        setShowPurchase(true);
+                    }}
+                />
+            )}
+            {showPurchase && (
+                <SparkPurchaseModal
+                    onClose={() => setShowPurchase(false)}
+                    onSuccess={(added) => {
+                        setShowPurchase(false);
+                        window.dispatchEvent(new CustomEvent('refresh-sparks'));
+                        setErrorModal(added != null
+                            ? { title: 'Sparks Added!', message: `+${added} sparks added to your balance. Enjoy!` }
+                            : { title: 'Purchase Complete', message: 'Your sparks will appear in your balance shortly.' });
                     }}
                 />
             )}
