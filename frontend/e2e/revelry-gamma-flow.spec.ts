@@ -237,6 +237,10 @@ test.describe('Revelry gamma embedded flow', () => {
     await expect(page.getByRole('button', { name: 'Create quiz' })).toBeVisible();
     await page.getByRole('button', { name: 'Create quiz' }).click();
 
+    // Two-step authoring: choose the custom path before the editor appears.
+    await expect(page.getByRole('heading', { name: 'Create a quiz' })).toBeVisible({ timeout: 15000 });
+    await page.getByRole('button', { name: /Custom quiz/ }).click();
+
     await expect(page.getByRole('heading', { name: 'Create Your Own' })).toBeVisible({ timeout: 15000 });
     await page.getByLabel('Quiz title').fill(quizTitle);
     await page.getByLabel('Question text').fill('Which icon did the gamma upload test attach?');

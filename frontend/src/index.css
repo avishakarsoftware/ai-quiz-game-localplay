@@ -5573,6 +5573,60 @@ body {
     line-height: 1.35;
 }
 
+/* Two-step authoring chooser (AI vs custom) */
+.revelry-authoring-back {
+    justify-self: start;
+    min-height: 44px;
+    padding: 0 18px;
+}
+
+.revelry-authoring-choice-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+}
+
+.revelry-authoring-choice-card {
+    display: grid;
+    gap: 8px;
+    justify-items: start;
+    text-align: left;
+    padding: 24px;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    background: var(--glass-bg);
+    box-shadow: var(--shadow-soft);
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+
+.revelry-authoring-choice-card:hover {
+    border-color: var(--accent-primary);
+    box-shadow: var(--glow-accent);
+}
+
+.revelry-authoring-choice-card:active {
+    transform: scale(0.99);
+}
+
+.revelry-authoring-choice-card strong {
+    font-size: 1.35rem;
+    font-weight: 1000;
+    color: var(--ink);
+}
+
+.revelry-authoring-choice-card span {
+    color: var(--text-secondary);
+    font-weight: 700;
+    font-size: 0.92rem;
+    line-height: 1.35;
+}
+
+.revelry-authoring-choice-emoji {
+    font-size: 2rem;
+    line-height: 1;
+}
+
 .revelry-ai-authoring-grid {
     display: grid;
     grid-template-columns: minmax(220px, 1fr) minmax(130px, 170px) minmax(110px, 140px) minmax(170px, 220px) auto;

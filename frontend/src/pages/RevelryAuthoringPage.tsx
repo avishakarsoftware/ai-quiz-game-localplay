@@ -42,6 +42,9 @@ export default function RevelryAuthoringPage() {
     const [generationWarning, setGenerationWarning] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    // Two-step authoring: pick AI vs custom before showing detailed inputs.
+    // Editing an existing saved quiz skips the chooser (handled in render).
+    const [authoringMode, setAuthoringMode] = useState<'choose' | 'ai' | 'custom'>('choose');
 
     useEffect(() => {
         let cancelled = false;
@@ -234,12 +237,44 @@ export default function RevelryAuthoringPage() {
     );
     const canGenerateAiImages = imageGenerationAvailable && hostAppImageGenerationAllowed;
 
+    const editingExisting = Boolean(resolved.content?.quiz);
+    const effectiveMode = editingExisting ? 'custom' : authoringMode;
+    const containerLabel = resolved.launch_context.display?.container_label || resolved.launch_context.external_container_title || 'Revelry Games';
+    const editorBack = editingExisting ? () => returnToRevelry() : () => setAuthoringMode('choose');
+
+    // Step 1 — choose AI vs custom (only for brand-new content).
+    if (effectiveMode === 'choose') {
+        return (
+            <section className="revelry-ai-authoring-panel container-responsive safe-top">
+                <button type="button" className="btn btn-secondary revelry-authoring-back" onClick={() => returnToRevelry()}>‹ Back</button>
+                <div>
+                    <p>{containerLabel}</p>
+                    <h1>Create a quiz</h1>
+                    <span>Choose how you want to build this quiz.</span>
+                </div>
+                <div className="revelry-authoring-choice-grid">
+                    <button type="button" className="revelry-authoring-choice-card" onClick={() => setAuthoringMode('ai')}>
+                        <span className="revelry-authoring-choice-emoji" aria-hidden="true">✨</span>
+                        <strong>AI quiz</strong>
+                        <span>Generate questions from a topic, then edit before saving.</span>
+                    </button>
+                    <button type="button" className="revelry-authoring-choice-card" onClick={() => setAuthoringMode('custom')}>
+                        <span className="revelry-authoring-choice-emoji" aria-hidden="true">✍️</span>
+                        <strong>Custom quiz</strong>
+                        <span>Write your own questions.</span>
+                    </button>
+                </div>
+            </section>
+        );
+    }
+
     return (
         <>
-            {!resolved.content?.quiz && (
+            {effectiveMode === 'ai' && (
                 <section className="revelry-ai-authoring-panel container-responsive safe-top">
+                    <button type="button" className="btn btn-secondary revelry-authoring-back" onClick={() => setAuthoringMode('choose')}>‹ Back</button>
                     <div>
-                        <p>{resolved.launch_context.display?.container_label || resolved.launch_context.external_container_title || 'Revelry Games'}</p>
+                        <p>{containerLabel}</p>
                         <h1>Create an AI quiz</h1>
                         <span>Generate questions, edit anything, then save it to this party.</span>
                         <p className="revelry-ai-authoring-note">AI can make mistakes, and generated questions or images may not fit every age group. Please review before saving.</p>
@@ -294,17 +329,19 @@ export default function RevelryAuthoringPage() {
                     {generationWarning && <p className="revelry-ai-authoring-warning">{generationWarning}</p>}
                 </section>
             )}
-            <CustomQuizEditor
-                key={`${editorScope}:${generatedVersion}`}
-                initialQuiz={initialQuiz}
-                packId={currentContentId || resolved.localplay_content_id || undefined}
-                authToken={authoringToken}
-                draftStorageKey={`localplay_revelry_quiz_draft_v2:${containerScope}:${draftScope}:${generatedVersion}`}
-                contextLabel={resolved.launch_context.display?.container_label || resolved.launch_context.external_container_title || 'Revelry Games'}
-                onBack={() => returnToRevelry()}
-                onSave={saveQuiz}
-                onReview={saveAndReturn}
-            />
+            {(effectiveMode === 'custom' || (effectiveMode === 'ai' && generatedQuiz)) && (
+                <CustomQuizEditor
+                    key={`${editorScope}:${generatedVersion}`}
+                    initialQuiz={initialQuiz}
+                    packId={currentContentId || resolved.localplay_content_id || undefined}
+                    authToken={authoringToken}
+                    draftStorageKey={`localplay_revelry_quiz_draft_v2:${containerScope}:${draftScope}:${generatedVersion}`}
+                    contextLabel={containerLabel}
+                    onBack={editorBack}
+                    onSave={saveQuiz}
+                    onReview={saveAndReturn}
+                />
+            )}
         </>
     );
 }
