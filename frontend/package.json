@@ -24,6 +24,7 @@
     "@capacitor/haptics": "^8.0.1",
     "@capacitor/ios": "^8.1.0",
     "@capacitor/share": "^8.0.1",
+    "@revenuecat/purchases-capacitor": "^12.3.2",
     "clsx": "^2.1.1",
     "lucide-react": "^0.563.0",
     "posthog-js": "^1.352.0",
