@@ -1070,7 +1070,12 @@ class SocketManager:
             if room.current_question_index >= 0 or len(room.players) > 0:
                 await self._send_organizer_sync(room)
             else:
-                await websocket.send_json({"type": "ROOM_CREATED", "room_code": room_code})
+                await websocket.send_json({
+                    "type": "ROOM_CREATED",
+                    "room_code": room_code,
+                    "player_count": 0,
+                    "players": [],
+                })
         else:
             # Don't send JOINED_ROOM yet — wait until JOIN validation succeeds
             # to avoid the client entering LOBBY before nickname is accepted
@@ -1787,6 +1792,9 @@ class SocketManager:
                     raw_game_type = message.get("game_type", room.game_type)
                     new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker") or raw_game_type in GENERIC_PROMPT_GAME_TYPES else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
+                    runtime_config = message.get("runtime_config")
+                    if not isinstance(runtime_config, dict):
+                        runtime_config = {}
 
                     # Validate time_limit
                     try:
@@ -1805,6 +1813,8 @@ class SocketManager:
                         new_game_data = housie_games.get(new_content_id)
                     elif new_game_type == "bingo":
                         new_game_data = bingo_games.get(new_content_id)
+                    elif new_game_type == "musical_chairs":
+                        new_game_data = validate_musical_chairs_config(runtime_config)
                     elif new_game_type == "bluff":
                         new_game_data = validate_bluff_config({})
                     elif new_game_type == "two_truths":
@@ -1824,7 +1834,7 @@ class SocketManager:
                     elif new_game_type == "mafia":
                         new_game_data = validate_mafia_config({})
                     elif new_game_type == "party_quests":
-                        new_game_data = validate_party_quests_config({})
+                        new_game_data = validate_party_quests_config(runtime_config)
                     elif new_game_type == "survey_says":
                         new_game_data = validate_survey_says_config({})
                     elif new_game_type in GENERIC_PROMPT_GAME_TYPES:

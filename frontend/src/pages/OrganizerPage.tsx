@@ -81,6 +81,32 @@ function defaultTimeLimitForGame(type: GameType): number {
     return type === 'drawing' ? 30 : 15;
 }
 
+const RESETTABLE_DEFAULT_GAME_TYPES = new Set<GameType>([
+    'musical_chairs',
+    'bluff',
+    'poker',
+    'two_truths',
+    'story_chain',
+    'common_ground',
+    'find_someone',
+    'who_am_i',
+    'chit_pull',
+    'mafia',
+    'party_quests',
+    'survey_says',
+    'would_you_rather',
+    'never_have_i_ever',
+    'word_association',
+    'acronym',
+    'photo_clue',
+]);
+
+function canResetFinishedRoomWithGame(type: GameType, contentId?: string): boolean {
+    if (contentId) return true;
+    if (isGenericPromptGame(type)) return true;
+    return RESETTABLE_DEFAULT_GAME_TYPES.has(type);
+}
+
 const STARTER_BINGO_ITEMS = [
     'Dance floor', 'Group photo', 'Someone laughs', 'Snack table', 'Party playlist',
     'Inside joke', 'A toast', 'Late arrival', 'New friend', 'Dessert',
@@ -217,6 +243,7 @@ export default function OrganizerPage() {
     const mountedRef = useRef(true);
     const connectWsRef = useRef<(code: string) => void>(() => {});
     const gameTypeRef = useRef<GameType>('quiz');
+    const finishedRoomCanResetRef = useRef(false);
     const checkoutPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const hostAppMode = useMemo(() => {
         const params = new URLSearchParams(window.location.search);
@@ -397,12 +424,20 @@ export default function OrganizerPage() {
     const handleWsMessage = useCallback((event: MessageEvent) => {
         let msg: Record<string, unknown>;
         try { msg = JSON.parse(event.data); } catch { return; }
-        if (msg.type === 'PLAYER_JOINED') {
+        if (msg.type === 'ROOM_CREATED') {
+            finishedRoomCanResetRef.current = false;
+            setRoomCode(msg.room_code as string || roomCodeRef.current);
+            setPlayerCount((msg.player_count as number | undefined) || 0);
+            setPlayers((msg.players as PlayerInfo[] | undefined) || []);
+            setRoomLocked(false);
+        }
+        else if (msg.type === 'PLAYER_JOINED') {
             setPlayerCount(msg.player_count as number);
             setPlayers(msg.players as PlayerInfo[] || []);
             soundManager.play('playerJoin');
         }
         else if (msg.type === 'QUESTION') {
+            finishedRoomCanResetRef.current = false;
             // First question means game just started (sparks were charged)
             if (!hostAppMode && msg.question_number === 1) {
                 window.dispatchEvent(new CustomEvent('refresh-sparks'));
@@ -466,6 +501,7 @@ export default function OrganizerPage() {
             setState(msg.game_type === 'wmlt' || msg.game_type === 'drawing' ? 'LEADERBOARD' : 'ANSWER_REVEAL');
         }
         else if (msg.type === 'PODIUM') {
+            finishedRoomCanResetRef.current = true;
             setLeaderboard(msg.leaderboard as LeaderboardEntry[]);
             setTeamLeaderboard(msg.team_leaderboard as TeamLeaderboardEntry[] || []);
             if (msg.housie_winners) setHousieWinners(msg.housie_winners as HousieWinner[]);
@@ -481,6 +517,7 @@ export default function OrganizerPage() {
             soundManager.play('fanfare');
         }
         else if (msg.type === 'BINGO_SYNC') {
+            finishedRoomCanResetRef.current = false;
             const bingo = msg.bingo as { called_items?: Array<{ value: number | string; display: string; kind?: string; image_url?: string; alt_text?: string }>; latest_item?: { value: number | string; display: string; kind?: string; image_url?: string; alt_text?: string } | null; can_undo_last_call?: boolean; terminal_claim_pending?: boolean; patterns?: HousiePattern[]; winners?: HousieWinner[]; play_mode?: 'beginner' | 'pro'; caller_mode?: 'manual' | 'auto'; auto_status?: 'running' | 'paused' | 'stopped'; auto_interval_seconds?: number; auto_pause_on_claim?: boolean } | undefined;
             if (msg.game_type === 'bingo') setGameType('bingo');
             else setGameType('housie');
@@ -528,6 +565,7 @@ export default function OrganizerPage() {
             setHousieTerminalClaimPending(false);
         }
         else if (msg.type === 'MC_SYNC' || msg.type === 'MC_ROUND_START' || msg.type === 'MC_MUSIC_STOP' || msg.type === 'MC_GRAB_COUNT' || msg.type === 'MC_ROUND_OVER') {
+            finishedRoomCanResetRef.current = false;
             setGameType('musical_chairs');
             setMusicalChairsState(msg.musical_chairs as MusicalChairsState);
             setState('MUSICAL_CHAIRS');
@@ -536,59 +574,69 @@ export default function OrganizerPage() {
             setGameType('musical_chairs');
         }
         else if (msg.type === 'BLUFF_SYNC') {
+            finishedRoomCanResetRef.current = false;
             setGameType('bluff');
             setBluffState(msg.bluff as BluffState);
             setState('BLUFF');
         }
         else if (msg.type === 'TT_SYNC') {
+            finishedRoomCanResetRef.current = false;
             setGameType('two_truths');
             setTwoTruthsState(msg.two_truths as TwoTruthsState);
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('TWO_TRUTHS');
         }
         else if (msg.type === 'STORY_SYNC') {
+            finishedRoomCanResetRef.current = false;
             setGameType('story_chain');
             setStoryChainState(msg.story_chain as StoryChainState);
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('STORY_CHAIN');
         }
         else if (msg.type === 'COMMON_SYNC') {
+            finishedRoomCanResetRef.current = false;
             setGameType('common_ground');
             setCommonGroundState(msg.common_ground as CommonGroundState);
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('COMMON_GROUND');
         }
         else if (msg.type === 'FIND_SYNC') {
+            finishedRoomCanResetRef.current = false;
             setGameType('find_someone');
             setFindSomeoneState(msg.find_someone as FindSomeoneState);
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('FIND_SOMEONE');
         }
         else if (msg.type === 'WHOAMI_SYNC') {
+            finishedRoomCanResetRef.current = false;
             setGameType('who_am_i');
             setWhoAmIState(msg.who_am_i as WhoAmIState);
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('WHO_AM_I');
         }
         else if (msg.type === 'CHIT_SYNC') {
+            finishedRoomCanResetRef.current = false;
             setGameType('chit_pull');
             setChitPullState(msg.chit_pull as ChitPullState);
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('CHIT_PULL');
         }
         else if (msg.type === 'MAFIA_SYNC') {
+            finishedRoomCanResetRef.current = false;
             setGameType('mafia');
             setMafiaState(msg.mafia as MafiaState);
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('MAFIA');
         }
         else if (msg.type === 'QUESTS_SYNC') {
+            finishedRoomCanResetRef.current = false;
             setGameType('party_quests');
             setPartyQuestsState(msg.party_quests as PartyQuestsState);
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('PARTY_QUESTS');
         }
         else if (msg.type === 'SURVEY_SYNC') {
+            finishedRoomCanResetRef.current = false;
             setGameType('survey_says');
             setSurveySaysState(msg.survey_says as SurveySaysState);
             setPlayers(msg.players as PlayerInfo[] || []);
@@ -598,6 +646,7 @@ export default function OrganizerPage() {
             setState('SURVEY_SAYS');
         }
         else if (msg.type === 'GENERIC_PROMPT_SYNC') {
+            finishedRoomCanResetRef.current = false;
             const incomingGameType = msg.game_type as GenericPromptGameType;
             setGameType(incomingGameType);
             setGenericPromptState(msg.generic_prompt as GenericPromptState);
@@ -607,6 +656,7 @@ export default function OrganizerPage() {
             setState('GENERIC_PROMPT');
         }
         else if (msg.type === 'SIMPLE_SOCIAL_SYNC') {
+            finishedRoomCanResetRef.current = false;
             const incomingGameType = msg.game_type as SimpleSocialGameType;
             const payload = (msg[incomingGameType] || null) as SimpleSocialState | null;
             setGameType(incomingGameType);
@@ -617,6 +667,7 @@ export default function OrganizerPage() {
             setState('SIMPLE_SOCIAL');
         }
         else if (msg.type === 'PHOTO_CLUE_SYNC') {
+            finishedRoomCanResetRef.current = false;
             setGameType('photo_clue');
             setPhotoClueState(msg.photo_clue as PhotoClueState);
             setPlayers(msg.players as PlayerInfo[] || []);
@@ -625,6 +676,7 @@ export default function OrganizerPage() {
             setState('PHOTO_CLUE');
         }
         else if (msg.type === 'POKER_SYNC') {
+            finishedRoomCanResetRef.current = false;
             setGameType('poker');
             setPokerState(msg.poker as PokerState);
             setPlayers(msg.players as PlayerInfo[] || []);
@@ -641,6 +693,11 @@ export default function OrganizerPage() {
             setPlayers(msg.players as PlayerInfo[] || []);
         }
         else if (msg.type === 'ROOM_RESET') {
+            finishedRoomCanResetRef.current = false;
+            if (msg.game_type) {
+                setGameType(msg.game_type as GameType);
+                persistOrganizerSession({ gameType: msg.game_type as string, contentId: '' });
+            }
             setPlayerCount(msg.player_count as number);
             setPlayers(msg.players as PlayerInfo[] || []);
             setRoomLocked(false);
@@ -721,8 +778,10 @@ export default function OrganizerPage() {
                 }
             }
             if (msg.state === 'LOBBY' || msg.state === 'INTRO') {
+                finishedRoomCanResetRef.current = false;
                 setState('ROOM');
             } else if (msg.state === 'QUESTION') {
+                finishedRoomCanResetRef.current = false;
                 setCurrentQuestion(msg.question_number as number);
                 setTimeRemaining((msg.time_remaining ?? msg.time_limit) as number);
                 setAnsweredCount((msg.answered_count ?? msg.voted_count ?? 0) as number);
@@ -733,38 +792,54 @@ export default function OrganizerPage() {
                 }
                 setState('QUESTION');
             } else if (msg.state === 'LEADERBOARD') {
+                finishedRoomCanResetRef.current = false;
                 setCurrentQuestion(msg.question_number as number);
                 setState('LEADERBOARD');
             } else if (msg.state === 'PODIUM') {
+                finishedRoomCanResetRef.current = true;
                 setState('PODIUM');
                 soundManager.play('fanfare');
             } else if (String(msg.state || '').startsWith('MC_')) {
+                finishedRoomCanResetRef.current = false;
                 setState('MUSICAL_CHAIRS');
             } else if (String(msg.state || '').startsWith('BLUFF_')) {
+                finishedRoomCanResetRef.current = false;
                 setState('BLUFF');
             } else if (String(msg.state || '').startsWith('POKER_')) {
+                finishedRoomCanResetRef.current = false;
                 setState('POKER');
             } else if (String(msg.state || '').startsWith('TT_')) {
+                finishedRoomCanResetRef.current = false;
                 setState('TWO_TRUTHS');
             } else if (String(msg.state || '').startsWith('STORY_')) {
+                finishedRoomCanResetRef.current = false;
                 setState('STORY_CHAIN');
             } else if (String(msg.state || '').startsWith('COMMON_')) {
+                finishedRoomCanResetRef.current = false;
                 setState('COMMON_GROUND');
             } else if (String(msg.state || '').startsWith('FIND_')) {
+                finishedRoomCanResetRef.current = false;
                 setState('FIND_SOMEONE');
             } else if (String(msg.state || '').startsWith('CHIT_')) {
+                finishedRoomCanResetRef.current = false;
                 setState('CHIT_PULL');
             } else if (String(msg.state || '').startsWith('WHOAMI_')) {
+                finishedRoomCanResetRef.current = false;
                 setState('WHO_AM_I');
             } else if (String(msg.state || '').startsWith('MAFIA_')) {
+                finishedRoomCanResetRef.current = false;
                 setState('MAFIA');
             } else if (String(msg.state || '').startsWith('QUESTS_')) {
+                finishedRoomCanResetRef.current = false;
                 setState('PARTY_QUESTS');
             } else if (String(msg.state || '').startsWith('SURVEY_')) {
+                finishedRoomCanResetRef.current = false;
                 setState('SURVEY_SAYS');
             } else if (String(msg.state || '').startsWith('GENERIC_')) {
+                finishedRoomCanResetRef.current = false;
                 setState('GENERIC_PROMPT');
             } else if (String(msg.state || '').startsWith('PHOTO_')) {
+                finishedRoomCanResetRef.current = false;
                 setState('PHOTO_CLUE');
             } else if (
                 String(msg.state || '').startsWith('WYR_') ||
@@ -772,6 +847,7 @@ export default function OrganizerPage() {
                 String(msg.state || '').startsWith('WORD_ASSOC_') ||
                 String(msg.state || '').startsWith('ACRONYM_')
             ) {
+                finishedRoomCanResetRef.current = false;
                 setState('SIMPLE_SOCIAL');
             }
         }
@@ -1537,23 +1613,35 @@ export default function OrganizerPage() {
         const selectedContentId = contentOverride ?? contentId;
         const effectiveGameType = gameTypeOverride;
         const effectiveTimeLimit = timeLimitOverride;
-        // Play Again path: reuse existing room via RESET_ROOM
-        if (roomCode && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            if (selectedContentId) {
-                wsRef.current.send(JSON.stringify({
-                    type: 'RESET_ROOM',
-                    content_id: selectedContentId,
-                    time_limit: effectiveTimeLimit,
-                    game_type: runtimeGameType(effectiveGameType),
-                    drawing_auto_advance: drawingAutoAdvance,
-                    drawing_inter_round_seconds: 5,
-                }));
-                return;
-            }
+        const resetRuntimeConfig =
+            effectiveGameType === 'musical_chairs' ? musicalChairsConfig :
+            effectiveGameType === 'party_quests' ? (runtimeConfigOverride || partyQuestsConfig) :
+            undefined;
+        // Play Again / choose another path: reuse a finished room so connected
+        // players on the final-results screen receive ROOM_RESET and move forward.
+        if (
+            finishedRoomCanResetRef.current &&
+            roomCode &&
+            wsRef.current?.readyState === WebSocket.OPEN &&
+            canResetFinishedRoomWithGame(effectiveGameType, selectedContentId)
+        ) {
+            wsRef.current.send(JSON.stringify({
+                type: 'RESET_ROOM',
+                content_id: selectedContentId,
+                time_limit: effectiveTimeLimit,
+                game_type: runtimeGameType(effectiveGameType),
+                drawing_auto_advance: drawingAutoAdvance,
+                drawing_inter_round_seconds: 5,
+                ...(resetRuntimeConfig ? { runtime_config: resetRuntimeConfig } : {}),
+            }));
+            return;
         }
 
         // First-time room creation
         try {
+            finishedRoomCanResetRef.current = false;
+            setPlayerCount(0);
+            setPlayers([]);
             const body: Record<string, unknown> = {
                 time_limit: effectiveTimeLimit,
                 game_type: runtimeGameType(effectiveGameType),
@@ -1983,6 +2071,7 @@ export default function OrganizerPage() {
 
     const closeCurrentLobbyRoom = (nextState?: OrganizerState) => {
         flowEpochRef.current += 1;
+        finishedRoomCanResetRef.current = false;
         clearOrganizerSession();
         if (reconnectTimerRef.current) {
             clearTimeout(reconnectTimerRef.current);

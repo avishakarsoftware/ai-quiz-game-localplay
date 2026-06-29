@@ -746,6 +746,28 @@ class TestStateGuardResetRoom:
             quizzes.pop("test-reset-quiz", None)
 
     @pytest.mark.asyncio
+    async def test_reset_room_to_default_game_keeps_connected_players(self):
+        room = make_room()
+        sm = SocketManager()
+        org_ws = add_organizer(room, "org-1")
+        player_ws = add_player(room, "p1", "Alice")
+        add_player(room, "p2", "Bob")
+        room.state = "PODIUM"
+
+        await sm.handle_message(room, "org-1", {
+            "type": "RESET_ROOM",
+            "content_id": "",
+            "game_type": "two_truths",
+            "time_limit": 30,
+        }, is_organizer=True)
+
+        assert room.state == "LOBBY"
+        assert room.game_type == "two_truths"
+        assert len(room.players) == 2
+        assert org_ws.last("ROOM_RESET")["player_count"] == 2
+        assert player_ws.last("ROOM_RESET")["game_type"] == "two_truths"
+
+    @pytest.mark.asyncio
     async def test_reset_room_rejects_missing_content(self):
         room = make_room()
         sm = SocketManager()
