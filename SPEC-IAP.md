@@ -1,6 +1,6 @@
 # SPEC-IAP — Native In-App Purchases (Apple StoreKit + Google Play Billing)
 
-Status: **Implementation-ready draft** (2026-06-29)
+Status: **Implementation-ready** (2026-06-29)
 Owner: Avi
 Related: `SPEC.md` (spark economy), `token_economy_migration.md`, `DEPLOY.md`, VibePix `SPEC.md`/`server.js` (reference implementation)
 
@@ -17,7 +17,7 @@ Let the **native iOS and Android apps** sell Sparks through the platform stores,
 
 This spec adds native IAP for **both** stores and closes the Android-uses-Stripe hole.
 
-**In scope:** consumable Spark packs on iOS + Android, server-side fulfillment, idempotency, refund/chargeback clawback, restore semantics, the platform guard fix, store/console setup, env, testing, rollout. **Also re-prices the web Stripe pack onto the same three-tier ladder** (single-tier → 50/200/500) so all three surfaces sell identical packs — the Stripe `/checkout/create` change is in §5.7.
+**In scope:** consumable Spark packs on iOS + Android, server-side fulfillment, idempotency, refund/chargeback clawback, restore semantics, the platform guard fix, store/console setup, env, testing, rollout. **Also re-prices the web Stripe pack onto the same three-tier ladder** (single-tier → 50/200/500) so all three surfaces sell identical packs — the Stripe `/checkout/create` change is in §5.6.
 
 **Out of scope (explicit non-goals for v1):** subscriptions, non-consumable entitlements (watermark/day-pass — those are VibePix concepts LocalPlay does not have), promotional offers/intro pricing.
 
@@ -38,6 +38,41 @@ There are two ways to do server-side IAP validation:
 - No Apple/Google verification libraries enter the Python backend; the only new dependency is the RevenueCat **client** SDK.
 
 Everything below assumes Approach A. (Appendix C sketches the direct-verification fallback in case we ever drop RevenueCat.)
+
+### 2.1 VibePix reference implementation
+
+Use VibePix as the reference implementation, but port only the spark-pack/RevenueCat patterns that fit
+LocalPlay's spark economy:
+
+Reference files:
+- `/Users/Avi/Desktop/dev/antigravity/gamesworkspace/vibepix/server.js`
+  - `PRODUCTS` spark tiers (`spark_pack_50/200/500`) and `RC_PRODUCT_MAP`.
+  - `/api/revenuecat/webhook` auth, event parsing, product mapping, unknown-product acknowledgement, purchase
+    idempotency, and webhook retry behavior.
+  - `/api/checkout/session` SKU-driven Stripe path.
+- `/Users/Avi/Desktop/dev/antigravity/gamesworkspace/vibepix/public/app.js`
+  - `SKU_TO_RC_PRODUCT` / `SKU_TO_STORE_PRODUCT`.
+  - `handleNativePurchase(sku)` offering unwrap, product/package matching, purchase cancellation handling, and
+    8 x 2s polling for fulfillment.
+  - `updateNativePrices(Purchases)` localized store price replacement.
+  - native `restorePurchases()` and RevenueCat initialization flow.
+- `/Users/Avi/Desktop/dev/antigravity/gamesworkspace/vibepix/tests/api/endpoints.test.js`
+  - RevenueCat webhook auth/product-map tests and webhook route-structure tests.
+
+Port these patterns:
+- Product ids map through a server-owned catalog; spark grants never trust client/webhook amounts.
+- Match native packages by RevenueCat id, fully qualified store id, then SKU suffix fallback with a warning.
+- Treat RevenueCat user cancellation as a no-op.
+- Poll the server-side balance after native purchase because fulfillment is webhook-driven.
+- Acknowledge unknown products with 200 to avoid infinite RevenueCat retries, but do not credit anything.
+- Use `transaction_id || store_transaction_id` and `event.id || rc_<transaction>` as the dedupe key source.
+
+Do **not** port these VibePix-specific concepts:
+- `remove_watermark`, `day_pass_24h`, `pro_monthly`, `pro_annual`, subscription renewals, billing issues, or
+  no-watermark entitlements.
+- VibePix's `purchases` status table/locking model unless we later discover LocalPlay's existing
+  `webhook_events` + `credit_purchase(reference_id)` double-idempotency is insufficient. LocalPlay should start
+  with the simpler existing wallet primitives.
 
 ---
 
@@ -67,13 +102,13 @@ Everything below assumes Approach A. (Appendix C sketches the direct-verificatio
      2. dedup: webhook_events(event_id)                             │
      3. map product_id → spark amount (PRODUCTS catalog)            │
      4. wallet_id = event.app_user_id                               │
-     5. credit_purchase(wallet_id, amount, reference_id=txn_id)     │  idempotent
+     5. credit_purchase(wallet_id, amount, reference_id=iap:store:txn)│ idempotent
      6. record entitlements.apple_transaction_id/google_order_id    │
-     7. store pending-token notification for client polling         │
+     7. optionally store pending-token notification for UX polling  │
                                          │                          │
                                          ▼                          │
-   Client polls GET /checkout/token (existing) ─────────────────────┘
-     → {tokens_added, new_balance} → refresh sparks UI
+   Native client polls GET /tokens/balance after purchase ─────────┘
+     → refreshed balance; web Stripe still polls /checkout/token
 ```
 
 **Why `app_user_id == wallet_id`:** RevenueCat's `appUserID` is set to the LocalPlay wallet id (the
@@ -97,7 +132,7 @@ re-pricing/re-mapping exercise.
 > **retired** in favor of the three tiers below, so web (Stripe) and native (IAP) sell identical packs at
 > identical prices. The catalog (§4.1) is the single source of truth for spark amounts on every surface;
 > per-surface it just carries a different price/product handle (Stripe price id vs store product id). The
-> Stripe `/checkout/create` changes for this are in §5.7.
+> Stripe `/checkout/create` changes for this are in §5.6.
 
 ### 4.1 Server catalog (`backend/config.py` or a new `backend/iap_products.py`)
 
@@ -202,47 +237,59 @@ async def revenuecat_webhook(req: Request):
         raise HTTPException(401, "Unauthorized")
 
     body = await req.json()
-    event = body.get("event", {})
-    event_id = event.get("id", "")
-    event_type = event.get("type", "")
+    event = body.get("event") or {}
+    if not isinstance(event, dict):
+        raise HTTPException(400, "Missing event")
+    event_type = (event.get("type") or "").upper()
 
-    # Idempotency: skip already-processed events (survives restarts)
+    wallet_id = (event.get("app_user_id") or "").strip()
+    product_id = (event.get("product_id") or "").strip()
+    store = (event.get("store") or "").upper()       # "APP_STORE" | "PLAY_STORE"
+    txn_id = (event.get("transaction_id") or event.get("store_transaction_id") or "").strip()
+    event_id = (event.get("id") or (f"rc_{store}_{txn_id}" if txn_id else "")).strip()
+    if not event_id:
+        raise HTTPException(400, "Missing event identifier")
+    if not wallet_id:
+        raise HTTPException(400, "Missing app_user_id")
+
+    # Idempotency: skip already-processed events (survives restarts).
+    # A later event with a new id but the same transaction id is still protected by credit_purchase.
     if event_id and db.is_webhook_event_processed(event_id):
         return {"status": "ok", "detail": "already processed"}
 
-    wallet_id = event.get("app_user_id", "")
-    product_id = event.get("product_id", "")
-    store = (event.get("store", "") or "").upper()         # "APP_STORE" | "PLAY_STORE"
-    txn_id = event.get("transaction_id", "")
     sku = config.SPARK_PRODUCT_BY_ANY_ID.get(product_id)
+    reference_id = f"iap:{store or 'UNKNOWN'}:{txn_id}"
 
     if event_type in ("INITIAL_PURCHASE", "NON_RENEWING_PURCHASE"):
         # consumable grant
-        if not (wallet_id and sku and txn_id):
-            logger.error("revenuecat grant missing fields: wallet=%s sku=%s txn=%s",
-                         bool(wallet_id), sku, bool(txn_id))
-            return {"status": "error", "detail": "missing fields"}
+        if not sku:
+            logger.warning("RevenueCat unknown product: %s", product_id)
+            db.mark_webhook_event_processed(event_id)
+            return {"status": "ok", "detail": "unknown product"}
+        if not txn_id:
+            raise HTTPException(400, "Missing transaction_id")
         sparks = config.SPARK_PRODUCTS[sku]["sparks"]
 
         # reference_id = store transaction id → credit_purchase is idempotent on it
-        _, new_balance = db.credit_purchase(
-            wallet_id, sparks, txn_id,
+        credited, new_balance = db.credit_purchase(
+            wallet_id, sparks, reference_id,
             metadata=json.dumps({"source": "iap", "store": store, "product_id": product_id}),
         )
         # Best-effort: record the store transaction id for restore/audit (unique index dedups)
         _record_iap_entitlement(wallet_id, store, txn_id)
-        # Notify the polling client (device_id == wallet_id for guests; for signed-in, see §5.4)
-        db.store_pending_token(wallet_id, json.dumps(
-            {"tokens_added": sparks, "new_balance": new_balance}))
+        if credited:
+            # Optional UX notification for guest/device wallets. Native signed-in clients poll balance (§5.4).
+            db.store_pending_token(wallet_id, json.dumps(
+                {"tokens_added": sparks, "new_balance": new_balance}))
 
     elif event_type in ("REFUND", "CANCELLATION"):
         # Clawback — mirror the Stripe charge.refunded path (debit_tokens, idempotent)
-        if wallet_id and sku and txn_id:
-            already = db.get_refund_debits_for_session(txn_id)
+        if sku and txn_id:
+            already = db.get_refund_debits_for_session(reference_id)
             owed = config.SPARK_PRODUCTS[sku]["sparks"]
             refund_tokens = max(0, owed - already)
             if refund_tokens:
-                db.debit_tokens(wallet_id, refund_tokens, "refund", txn_id)
+                db.debit_tokens(wallet_id, refund_tokens, "refund", reference_id)
 
     # else: TEST, TRANSFER, etc. → ack and ignore
 
@@ -252,13 +299,48 @@ async def revenuecat_webhook(req: Request):
 ```
 
 Notes:
-- **Idempotency is double-layered:** `webhook_events(event_id)` (skips event replays) **and**
-  `credit_purchase(reference_id=txn_id)` (the existing `(wallet_id, reference_id, reason='purchase')`
-  unique index prevents a second credit even if RevenueCat sends a different event id for the same txn).
+- **Idempotency is double-layered:** `webhook_events(event_id)` (skips exact event replays) **and**
+  `credit_purchase(reference_id=f"iap:{store}:{txn_id}")` (the existing `(wallet_id, reference_id, reason='purchase')`
+  unique index prevents a second credit even if RevenueCat sends a different event id for the same transaction).
 - **Amounts come from the server catalog**, never from the webhook body — same anti-tamper stance as Stripe.
 - **`store_pending_token` keying:** the existing Stripe flow stores the notification under `device_id`.
   For IAP the `app_user_id` is the wallet id. For guests `wallet_id == device_id`, so polling works as-is.
   For signed-in users, see §5.4.
+
+#### 5.1.1 RevenueCat event handling rules
+
+Implement this exact response policy so RevenueCat retries only when retrying is useful:
+
+| Condition | HTTP | Mark `webhook_events`? | Behavior |
+|---|---:|---|---|
+| Backend missing `REVENUECAT_WEBHOOK_SECRET` | 503 | No | Misconfiguration; operator fixes env. |
+| Bad/missing bearer token | 401 | No | Log auth failure. |
+| Missing/non-object `event` | 400 | No | Malformed payload. |
+| Missing both `event.id` and transaction id | 400 | No | Cannot dedupe safely. |
+| Missing `app_user_id` | 400 | No | Cannot choose wallet. |
+| Unknown `product_id` | 200 | Yes | Ack and ignore to avoid infinite retries. |
+| Unsupported event type (`TEST`, `TRANSFER`, renewal/subscription-only events) | 200 | Yes | Ack and ignore. |
+| Grant/refund DB error | 500 | No | Let RevenueCat retry. |
+
+Allowed grant event types for v1 are `INITIAL_PURCHASE` and `NON_RENEWING_PURCHASE`. Treat `RENEWAL`,
+`EXPIRATION`, `BILLING_ISSUE`, and subscription lifecycle events as unsupported/ignored because LocalPlay v1 has
+no subscriptions.
+
+#### 5.1.2 `_record_iap_entitlement`
+
+Add a helper in `backend/main.py` or `backend/db.py`:
+
+```python
+def _record_iap_entitlement(wallet_id: str, store: str, transaction_id: str) -> None:
+    # Best effort audit/restore marker only. Spark credit is authoritative in token_transactions.
+    # Store "APP_STORE" transactions in apple_transaction_id and "PLAY_STORE" in google_order_id.
+    # For signed-in users wallet_id is user_id; for guests wallet_id is device_id.
+    # Swallow unique-conflict duplicates because credit_purchase is the authoritative idempotency gate.
+```
+
+Implementation may call the existing `db.create_entitlement(...)` with `games_remaining=0` and a neutral
+status such as `iap_consumed`, or add a small explicit DB helper. Do not make restored legacy entitlements
+grant games again for these rows; they are audit markers, not active game-pass entitlements.
 
 ### 5.2 Fix the platform guard (block Android too)
 
@@ -316,7 +398,7 @@ legacy single price), then remove once clients are updated. Add a startup warnin
 `main.py:135`) if native builds are shipped but `REVENUECAT_WEBHOOK_SECRET` is unset, and if no
 `STRIPE_PRICE_SPARK_*` are configured while Stripe is otherwise enabled.
 
-### 5.7 Web Stripe checkout — move to the tiered ladder (`/checkout/create`)
+### 5.6 Web Stripe checkout — move to the tiered ladder (`/checkout/create`)
 
 Today `/checkout/create` (`main.py:5736`) sells one pack: a single `STRIPE_PRICE_ID`, amount
 `TOKEN_PACK_AMOUNT`/`PROMO_TOKEN_AMOUNT` in metadata. Change it to take a **sku** and drive the price +
@@ -350,16 +432,19 @@ $0.99 price can be archived once the new tiers are live.
 **Frontend web buy UI** shows the same three tiers and sends `sku` in the `/checkout/create` body
 (`OrganizerPage.tsx:2969`).
 
-### 5.6 Tests (`backend/tests/`)
+### 5.7 Backend tests (`backend/tests/`)
 
 Add `test_iap_webhook.py` mirroring the Stripe webhook tests:
-- auth: missing/!= bearer → 401; missing secret → 503.
+- auth: missing/!= bearer → 401; missing secret → 503; malformed/missing event → 400.
 - `INITIAL_PURCHASE` credits the mapped sparks once; **replaying the same `event_id` does not double-credit**;
-  a **different `event_id` with the same `transaction_id` does not double-credit** (reference_id dedup).
+  a **different `event_id` with the same `transaction_id` does not double-credit** (`iap:{store}:{txn_id}` reference-id dedup).
 - unknown `product_id` → no credit, 200 ack.
 - `REFUND` debits the granted amount once; second refund event does not double-debit (`get_refund_debits_for_session`).
 - amount is taken from the server catalog, not from a tampered `price`/amount field in the body.
-- `app_user_id` missing → no credit, logged.
+- `app_user_id` missing → 400, no credit.
+- `/checkout/create` blocks both `X-Platform: ios` and `X-Platform: android`, while `X-Platform: web` remains allowed.
+- `/checkout/create` accepts `sku`, chooses the matching Stripe price id, and writes `sku` + tier amount into metadata.
+- Stripe webhook caps metadata grants to `max(p["sparks"] for p in SPARK_PRODUCTS.values())`.
 
 ---
 
@@ -368,7 +453,8 @@ Add `test_iap_webhook.py` mirroring the Stripe webhook tests:
 ### 6.1 Dependency
 
 Add `@revenuecat/purchases-capacitor` (VibePix uses `^12.3.0`; match Capacitor major — LocalPlay is on
-Capacitor `^8.x`, confirm plugin compatibility, else pin the version VibePix shipped).
+Capacitor `^8.x`, confirm plugin compatibility before implementation; if needed, pin the latest version that
+supports Capacitor 8 rather than blindly copying VibePix's version).
 
 LocalPlay's frontend is bundled with **Vite** (unlike VibePix, which had no bundler and needed a hand-written
 UMD wrapper at `public/libs/capacitor-purchases.js`). With Vite we can `import { Purchases } from
@@ -377,7 +463,24 @@ build, fall back to dynamic `import()` as the codebase already does for `../util
 
 ### 6.2 Initialization (native only)
 
-In a new `frontend/src/utils/iap.ts`, called once at app start when `getPlatform() !== 'web'`:
+First extract the private `getPlatform()` helper from `frontend/src/utils/api.ts` into a shared
+`frontend/src/utils/platform.ts`:
+
+```ts
+export type LocalPlayPlatform = 'web' | 'ios' | 'android';
+export function getPlatform(): LocalPlayPlatform {
+  // Same behavior as current api.ts: only native Capacitor reports ios/android.
+  // Mobile Safari/Chrome remains "web" and uses Stripe.
+}
+export function isNativePlatform() {
+  return getPlatform() === 'ios' || getPlatform() === 'android';
+}
+```
+
+Then update `api.ts`, `SettingsDrawer.tsx`, and the new IAP helper to import this shared function so the
+platform decision is consistent.
+
+Create `frontend/src/utils/iap.ts`, called once at app start when `getPlatform() !== 'web'`:
 
 ```ts
 import { Purchases } from '@revenuecat/purchases-capacitor';
@@ -398,9 +501,12 @@ function getWalletAppUserId(): string {
 }
 ```
 
-On **sign-in/out**, call `Purchases.logIn(user_id)` / `Purchases.logOut()` so RC's `app_user_id` tracks the
-same wallet id the backend uses. The existing `merge_wallet` reconciles any device-scoped sparks bought
-before sign-in.
+Concrete wiring:
+- In `App.tsx`, add a small `IAPBootstrap` component inside `AuthProvider` that calls `initIAP()` once on mount.
+- In `AuthContext.tsx`, after `signInWithBackend` succeeds and `result.user.id` is known, call
+  `iapLogIn(result.user.id)` best-effort. On sign-out, call `iapLogOut()` best-effort before/after
+  `storageSignOut()`. IAP failures must not block auth.
+- The existing `merge_wallet` reconciles device-scoped sparks bought before sign-in.
 
 ### 6.3 Purchase flow (replace the iOS 403 dead-end)
 
@@ -423,7 +529,17 @@ The native buy UI shows the **three tiers** (50 / 200 / 500) with store-localize
 rc_id → fully-qualified store id → suffix fallback (log a warning on suffix match), and treat
 purchase-cancel as a silent no-op.
 
-Web keeps calling `/checkout/create` exactly as today.
+Web keeps calling `/checkout/create`, but now passes the selected `sku`.
+
+Concrete UI change:
+- Add a reusable `frontend/src/components/SparkPurchaseModal.tsx`.
+- `ErrorModal`'s upgrade action should open `SparkPurchaseModal` instead of immediately starting checkout.
+- The modal shows the three packs, disabled/loading state per pack, and copy like "Sparks are used to generate
+  and host games." It hides entirely on host-app/Revelry surfaces.
+- On native, prices come from RevenueCat offerings. On web, prices can use static catalog copy until Stripe
+  price lookup is added.
+- Native unconfigured state: show a non-purchase message ("Purchases are not available in this build") and no
+  broken buy button.
 
 ### 6.4 Native price display & store gating
 
@@ -438,6 +554,9 @@ Web keeps calling `/checkout/create` exactly as today.
 `Purchases.restorePurchases()` first, then re-fetch balance/entitlements (VibePix `app.js:2462`). Show
 "Purchases restored" / "Nothing to restore". Copy should set expectations that consumed Spark packs aren't
 re-credited (§5.3).
+
+Implementation detail: keep the button only on native builds with a configured RevenueCat key. Web restore stays
+hidden because Stripe purchases are fulfilled by webhook and visible through the wallet balance.
 
 ### 6.6 Client env (`.env` / Vite)
 
@@ -517,7 +636,7 @@ Native client build (Vite, native builds only):
 
 ## 9. Testing plan
 
-1. **Backend unit tests** (`test_iap_webhook.py`, §5.6) — run in the normal `pytest` set; do NOT require RevenueCat.
+1. **Backend unit tests** (`test_iap_webhook.py`, §5.7) — run in the normal `pytest` set; do NOT require RevenueCat.
 2. **Gamma webhook smoke:** from RevenueCat, send a **test event** to the gamma webhook; assert
    `webhook_events` row created and (for a synthetic INITIAL_PURCHASE) sparks credited to a test wallet.
    A scripted variant: `curl -H "Authorization: Bearer $GAMMA_RC_SECRET" -d @sample_initial_purchase.json
@@ -548,7 +667,24 @@ Native client build (Vite, native builds only):
 
 ---
 
-## 11. Rollout / deploy steps
+## 11. Implementation order, rollout, and deploy steps
+
+Implementation should land in this order so each step is testable:
+
+1. **Backend catalog + guards:** add `SPARK_PRODUCTS`, block Android/iOS Stripe checkout, add SKU validation to
+   `/checkout/create`, update Stripe cap logic, and cover with unit tests.
+2. **RevenueCat webhook:** add `/webhook/revenuecat`, `_record_iap_entitlement`, idempotency/refund tests, and
+   local curl fixtures. This can ship to gamma before any native UI is enabled.
+3. **Frontend purchase surface:** add `SparkPurchaseModal`, web tier selection, shared platform helper, and tests
+   for web/native branching with the RevenueCat module mocked.
+4. **Native RevenueCat integration:** add plugin, `iap.ts`, app bootstrap, auth login/logout hooks, native restore,
+   and native build env.
+5. **Console setup + gamma smoke:** configure RevenueCat/store products and test webhooks, iOS sandbox, Android
+   internal testing.
+6. **Production rollout:** set prod secrets/webhooks, deploy backend/frontend, submit native builds, and archive the
+   legacy Stripe price only after the three-tier web flow is live.
+
+Deploy steps:
 
 1. Land backend (`/webhook/revenuecat`, platform-guard fix, config, tests) + client (iap.ts, purchase wiring)
    on master.
@@ -571,21 +707,25 @@ Backend:
 - [ ] `backend/config.py` — `SPARK_PRODUCTS`, `SPARK_PRODUCT_BY_ANY_ID`, `STRIPE_PRICE_BY_SKU`,
       `REVENUECAT_WEBHOOK_SECRET`, `STRIPE_PRICE_SPARK_50/200/500`, startup warnings.
 - [ ] `backend/main.py` — `POST /webhook/revenuecat`; widen platform guard at `:5739` to include `android`.
-- [ ] `backend/main.py` — `/checkout/create` takes `sku`, resolves price+sparks from the catalog (§5.7);
+- [ ] `backend/main.py` — `/checkout/create` takes `sku`, resolves price+sparks from the catalog (§5.6);
       `/webhook/stripe` cap updated to the max catalog amount.
 - [ ] `backend/main.py` — helper `_record_iap_entitlement(wallet_id, store, txn_id)` writing
       `entitlements.apple_transaction_id`/`google_order_id` (reuse `create_entitlement`).
-- [ ] `backend/tests/test_iap_webhook.py` — full coverage per §5.6; extend `test_*checkout*`/Stripe webhook
+- [ ] `backend/tests/test_iap_webhook.py` — full coverage per §5.7; extend `test_*checkout*`/Stripe webhook
       tests for the per-sku price/amount path.
 - [ ] (no schema migration — verify gamma/prod schema already matches; it does as of 2026-06-29.)
 
 Frontend:
 - [ ] `frontend/package.json` — add `@revenuecat/purchases-capacitor`.
+- [ ] `frontend/src/utils/platform.ts` — shared `getPlatform()`/`isNativePlatform()`; update `api.ts` and
+      `SettingsDrawer.tsx` to use it.
 - [ ] `frontend/src/utils/iap.ts` — init, purchase, restore, offerings unwrap + product match, poll-balance.
-- [ ] `frontend/src/pages/OrganizerPage.tsx` — show 3 tiers; web sends `sku` to `/checkout/create`, native
-      calls `buySparksNative(sku)` instead of the `/checkout/create`+403 dead-end.
+- [ ] `frontend/src/components/SparkPurchaseModal.tsx` — show 3 tiers, web/native branching, loading/error states.
+- [ ] `frontend/src/pages/OrganizerPage.tsx` / `ErrorModal` upgrade path — open `SparkPurchaseModal`; web sends
+      `sku` to `/checkout/create`, native calls `buySparksNative(sku)` instead of the `/checkout/create`+403 dead-end.
 - [ ] `frontend/src/components/SettingsDrawer.tsx` — native `restorePurchases()` before `/purchases/restore`.
-- [ ] App-start hook — call `initIAP()` once; wire `Purchases.logIn/logOut` into the sign-in/out flow.
+- [ ] `frontend/src/App.tsx` / `frontend/src/context/AuthContext.tsx` — call `initIAP()` once; wire
+      `Purchases.logIn/logOut` into the sign-in/out flow.
 - [ ] Native price display + buy-button gating when RC unconfigured.
 
 Docs/config:
@@ -595,21 +735,23 @@ Docs/config:
 
 ---
 
-## 13. Open decisions
+## 13. External setup decisions
 
 1. **Catalog:** **RESOLVED** — all three surfaces (web Stripe + iOS + Android) use VibePix's tiers
    (50 / 200 / 500 @ $1.99 / $4.99 / $9.99) with identical SKUs/RC-ids to enable a future economy merge
-   (§4.3). The legacy web pack (110 @ $0.99) is retired; web moves to the ladder via §5.7.
-2. **RevenueCat project:** new standalone project vs. an app inside the existing VibePix org. *Recommend: new app in the existing org to reuse billing/credentials.*
-3. **Apple IAP key:** generate a fresh In-App Purchase .p8 for Revelry Quiz (the VibePix `.p8` is app-scoped). *Recommend: fresh key.*
-4. **Android off-Draft:** the Play app must reach at least internal testing before IAP can be tested; confirm timing with the launch plan.
-5. **Ad reward on native:** out of scope here, but confirm AdMob/native ad SDK plans don't overlap the IAP build.
+   (§4.3). The legacy web pack (110 @ $0.99) is retired; web moves to the ladder via §5.6.
+2. **RevenueCat project:** use the existing RevenueCat org, create a new LocalPlay/Revelry Quiz app/project unless
+   RevenueCat support recommends a different structure.
+3. **Apple IAP key:** generate a fresh In-App Purchase .p8 for Revelry Quiz; do not reuse the VibePix app-scoped key.
+4. **Android off-Draft:** the Play app must reach at least internal testing before IAP can be tested.
+5. **Ad reward on native:** out of scope; it must not block IAP implementation.
 
 ---
 
 ## Appendix A — RevenueCat webhook event fields used
 `event.id`, `event.type` (`INITIAL_PURCHASE`/`NON_RENEWING_PURCHASE`/`REFUND`/`CANCELLATION`/`TEST`),
-`event.app_user_id`, `event.product_id`, `event.store` (`APP_STORE`/`PLAY_STORE`), `event.transaction_id`.
+`event.app_user_id`, `event.product_id`, `event.store` (`APP_STORE`/`PLAY_STORE`), `event.transaction_id`,
+and fallback `event.store_transaction_id`.
 
 ## Appendix B — Why no subscriptions
 LocalPlay's economy is purely consumable Sparks spent per generation/room (`COST_GENERATE`, `COST_ROOM`).
@@ -623,6 +765,6 @@ tier is ever introduced (the schema's `subscriptions` concepts would need adding
 - **Google:** `androidpublisher` (`purchases.products.get`) with the service-account JSON; consume/acknowledge
   the purchase token; subscribe to RTDN via Pub/Sub.
 - New endpoint `POST /purchases/iap-complete` taking `{platform, product_id, transaction_id, receipt}` and
-  fulfilling through the same `credit_purchase(reference_id=transaction_id)` path. Strictly more code and key
-  management than Appendix-A; only pursue if RevenueCat's revenue share or dependency becomes unacceptable.
-```
+  fulfilling through the same `credit_purchase(reference_id=f"iap:{store}:{transaction_id}")` path. Strictly
+  more code and key management than RevenueCat; only pursue if RevenueCat's revenue share or dependency becomes
+  unacceptable.
