@@ -6,6 +6,7 @@ import { track } from '../utils/analytics';
 import { getDeviceId, setCheckoutPending, getCheckoutPending, clearCheckoutPending, saveOrganizerSession, getSavedOrganizerSession, clearOrganizerSession } from '../utils/storage';
 import { apiHeaders, apiUrl, generateIdempotencyKey } from '../utils/api';
 import { mediaUrl } from '../utils/media';
+import { canResetFinishedRoomWithGame } from '../utils/roomReuse';
 import GameSelectScreen from '../components/organizer/GameSelectScreen';
 import PromptScreen, { randomQuizTopic, type AIProvider } from '../components/organizer/PromptScreen';
 import QuizVariantPromptScreen from '../components/organizer/QuizVariantPromptScreen';
@@ -79,32 +80,6 @@ function defaultTimeLimitForGame(type: GameType): number {
     if (isGenericPromptGame(type)) return 30;
     if (type === 'would_you_rather' || type === 'never_have_i_ever' || type === 'word_association' || type === 'acronym' || type === 'photo_clue') return 30;
     return type === 'drawing' ? 30 : 15;
-}
-
-const RESETTABLE_DEFAULT_GAME_TYPES = new Set<GameType>([
-    'musical_chairs',
-    'bluff',
-    'poker',
-    'two_truths',
-    'story_chain',
-    'common_ground',
-    'find_someone',
-    'who_am_i',
-    'chit_pull',
-    'mafia',
-    'party_quests',
-    'survey_says',
-    'would_you_rather',
-    'never_have_i_ever',
-    'word_association',
-    'acronym',
-    'photo_clue',
-]);
-
-function canResetFinishedRoomWithGame(type: GameType, contentId?: string): boolean {
-    if (contentId) return true;
-    if (isGenericPromptGame(type)) return true;
-    return RESETTABLE_DEFAULT_GAME_TYPES.has(type);
 }
 
 const STARTER_BINGO_ITEMS = [
