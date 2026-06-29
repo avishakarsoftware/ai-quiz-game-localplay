@@ -86,7 +86,11 @@ MAX_PROMPT_LENGTH = 140
 MAX_NICKNAME_LENGTH = 20
 ROOM_TTL_SECONDS = int(os.getenv("ROOM_TTL_SECONDS", "1800"))
 ORGANIZER_RECONNECT_GRACE_SECONDS = int(os.getenv("ORGANIZER_RECONNECT_GRACE_SECONDS", "600"))
-LOBBY_RECONNECT_GRACE_SECONDS = int(os.getenv("LOBBY_RECONNECT_GRACE_SECONDS", "5400"))
+# How long a disconnected lobby seat is preserved before the periodic cleanup
+# prunes it. 10 min covers real party pauses (phone sleep, in-app browser
+# suspend) while staying <= ROOM_TTL_SECONDS. The cleanup loop applies this
+# mid-lobby, not just at game start.
+LOBBY_RECONNECT_GRACE_SECONDS = int(os.getenv("LOBBY_RECONNECT_GRACE_SECONDS", "600"))
 MAX_ROOM_CODE_ATTEMPTS = 10
 DEFAULT_TIME_LIMIT = 15
 DEFAULT_NUM_QUESTIONS = 10

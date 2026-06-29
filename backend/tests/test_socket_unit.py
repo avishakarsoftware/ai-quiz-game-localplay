@@ -243,6 +243,24 @@ class TestRemoveConnectionLobby:
         assert "Alice" not in room.teams
         assert "Alice" not in room.power_ups
 
+    def test_prune_expired_lobby_player_respects_grace_window(self):
+        import time as _time
+        import config
+        room = make_room()
+        add_player(room, "p1", "Stale")
+        add_player(room, "p2", "Fresh")
+        add_player(room, "p3", "Online")
+        room.state = "LOBBY"
+        room._remove_connection("p1")
+        room._remove_connection("p2")
+        # Age the first seat past the grace window; keep the second recent.
+        room.players["p1"]["disconnected_at"] = _time.time() - config.LOBBY_RECONNECT_GRACE_SECONDS - 1
+        removed = room.prune_expired_lobby_players()  # non-force: grace applies
+        assert removed == ["Stale"]
+        assert "p1" not in room.players          # aged out
+        assert "p2" in room.players              # within grace, preserved
+        assert "p3" in room.players              # still connected, preserved
+
 
 class TestRemoveConnectionDuringGame:
     """Removing a player during game should preserve data for reconnection."""

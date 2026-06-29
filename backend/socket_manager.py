@@ -849,6 +849,20 @@ class SocketManager:
                         await room.close_all_connections()
                         await self._mark_game_session_closed(room, "expired", "This game expired. Ask the host to start a new one.")
                     logger.info("Cleaned up expired room %s", code)
+                # Prune long-offline lobby seats so the reconnect grace actually
+                # reclaims them mid-lobby, not only at game start.
+                for room in list(self.rooms.values()):
+                    if room.state != "LOBBY":
+                        continue
+                    pruned = room.prune_expired_lobby_players()
+                    if pruned:
+                        await room.broadcast({
+                            "type": "PLAYER_LEFT",
+                            "nickname": pruned[-1],
+                            "player_count": room.connected_player_count(),
+                            "players": room.lobby_roster(),
+                        })
+                        logger.info("Pruned %d expired lobby seat(s) from room %s", len(pruned), room.room_code)
             except asyncio.CancelledError:
                 break
             except Exception:
