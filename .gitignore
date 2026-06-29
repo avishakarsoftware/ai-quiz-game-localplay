@@ -30,6 +30,18 @@ backend/static/*
 model_comparison_results.json
 backend/model_comparison_results.json
 
+# Secrets / credentials — never commit
+*.p8
+SubscriptionKey_*.p8
+revelryapp-*.json
+*-service-account*.json
+*serviceaccount*.json
+*.pem
+.env
+.env.*
+!.env.example
+!.env*.template
+
 # Backup files
 *.bak
 
