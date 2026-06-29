@@ -1,0 +1,628 @@
+# SPEC-IAP — Native In-App Purchases (Apple StoreKit + Google Play Billing)
+
+Status: **Implementation-ready draft** (2026-06-29)
+Owner: Avi
+Related: `SPEC.md` (spark economy), `token_economy_migration.md`, `DEPLOY.md`, VibePix `SPEC.md`/`server.js` (reference implementation)
+
+---
+
+## 1. Goal & scope
+
+Let the **native iOS and Android apps** sell Sparks through the platform stores, the same way the
+**web** app sells them through Stripe. Today:
+
+- Web checkout (Stripe) is fully built (`/checkout/create`, `/webhook/stripe`) — only missing live keys.
+- The native iOS app **blocks** Stripe (`platform == "ios"` → `403`) but has **no IAP path** to fulfill the purchase, so iOS cannot sell anything.
+- The native Android app would currently **fall through to Stripe** — a Google Play policy violation, because Sparks are digital goods consumed in-app. (Mitigated only by the fact that the Play build is still in Draft.)
+
+This spec adds native IAP for **both** stores and closes the Android-uses-Stripe hole.
+
+**In scope:** consumable Spark packs on iOS + Android, server-side fulfillment, idempotency, refund/chargeback clawback, restore semantics, the platform guard fix, store/console setup, env, testing, rollout. **Also re-prices the web Stripe pack onto the same three-tier ladder** (single-tier → 50/200/500) so all three surfaces sell identical packs — the Stripe `/checkout/create` change is in §5.7.
+
+**Out of scope (explicit non-goals for v1):** subscriptions, non-consumable entitlements (watermark/day-pass — those are VibePix concepts LocalPlay does not have), promotional offers/intro pricing.
+
+---
+
+## 2. Key decision — use RevenueCat (mirror VibePix)
+
+There are two ways to do server-side IAP validation:
+
+| Approach | What the backend does | Effort | Risk |
+|---|---|---|---|
+| **A. RevenueCat (RECOMMENDED)** | Trust one bearer-authed webhook from RevenueCat; RevenueCat validates Apple+Google receipts. | Low — one webhook handler, one client SDK. Reuses existing idempotent `credit_purchase`. | Low — battle-tested; VibePix already runs it in prod on the same Apple/GCP accounts. |
+| B. Direct verification | Implement Apple App Store Server API (JWS/`signedTransactionInfo` via the App Store Server Library) **and** Google Play Developer API (`androidpublisher` service account) **and** their server notifications (ASSN v2 + RTDN/Pub-Sub). | High — two independent receipt-validation stacks, key management (.p8, service-account JSON), notification plumbing. | Higher — more surface area to get wrong; LocalPlay would be the first project to maintain it. |
+
+**Decision: Approach A (RevenueCat).** Rationale:
+- VibePix (same developer accounts: Apple key `655WPHCMD7`, GCP project `revelryapp`, service account `revenuecat-play@revelryapp.iam.gserviceaccount.com`) already validated this path end-to-end in production — we reuse the playbook and the RevenueCat account.
+- The LocalPlay backend already has everything RevenueCat fulfillment needs: idempotent `credit_purchase(reference_id)`, `webhook_events` dedup, `entitlements.apple_transaction_id`/`google_order_id` unique columns.
+- No Apple/Google verification libraries enter the Python backend; the only new dependency is the RevenueCat **client** SDK.
+
+Everything below assumes Approach A. (Appendix C sketches the direct-verification fallback in case we ever drop RevenueCat.)
+
+---
+
+## 3. Architecture & data flow
+
+```
+                          ┌─────────────────────────────────────────┐
+  iOS / Android native    │  RevenueCat Capacitor SDK                │
+  app (Capacitor shell,   │  @revenuecat/purchases-capacitor         │
+  appId me.revelryapp.quiz)│  - configure(apiKey per platform)        │
+                          │  - logIn(appUserID = LocalPlay wallet_id)│
+                          │  - getOfferings() / purchasePackage()    │
+                          └───────────────┬─────────────────────────┘
+                                          │ purchase
+                                          ▼
+                        Apple App Store / Google Play  ──────────┐
+                                          │ receipt                │
+                                          ▼                        │
+                                  ┌───────────────┐                │
+                                  │  RevenueCat    │  validates     │
+                                  │  (cloud)       │  receipt       │
+                                  └──────┬────────┘                 │
+                                         │ webhook (Bearer secret)  │
+                                         ▼                          │
+   LocalPlay backend  POST /webhook/revenuecat                      │
+     1. auth: Authorization == "Bearer <REVENUECAT_WEBHOOK_SECRET>" │
+     2. dedup: webhook_events(event_id)                             │
+     3. map product_id → spark amount (PRODUCTS catalog)            │
+     4. wallet_id = event.app_user_id                               │
+     5. credit_purchase(wallet_id, amount, reference_id=txn_id)     │  idempotent
+     6. record entitlements.apple_transaction_id/google_order_id    │
+     7. store pending-token notification for client polling         │
+                                         │                          │
+                                         ▼                          │
+   Client polls GET /checkout/token (existing) ─────────────────────┘
+     → {tokens_added, new_balance} → refresh sparks UI
+```
+
+**Why `app_user_id == wallet_id`:** RevenueCat's `appUserID` is set to the LocalPlay wallet id (the
+signed-in `user_id` if present, else the `device_id`). The webhook then carries the wallet id directly —
+no checkout metadata round-trip needed (unlike Stripe, where we stuff `wallet_id` into session metadata).
+On sign-in we call `Purchases.logIn(user_id)` so future purchases attach to the user wallet; past
+device-scoped purchases are reconciled by the existing `merge_wallet(device_id, user_id)` on sign-in.
+
+---
+
+## 4. Product catalog
+
+LocalPlay sells **consumable Spark packs only**. We deliberately **mirror VibePix's spark-pack tier ladder**
+(50 / 200 / 500 sparks at $1.99 / $4.99 / $9.99) — same SKU names, same RevenueCat product IDs, same spark
+amounts and prices. This is intentional: the two apps may **merge their spark economies** into a shared
+wallet later (see §4.3), and identical SKUs/RC IDs/amounts make that merge a backend join rather than a
+re-pricing/re-mapping exercise.
+
+> **One ladder across all surfaces:** the **web** Stripe pack is also moved onto this same ladder. The
+> legacy single web pack (110 sparks @ $0.99, `TOKEN_PACK_AMOUNT` = 110, product `prod_UCI5z14xGpyjhu`) is
+> **retired** in favor of the three tiers below, so web (Stripe) and native (IAP) sell identical packs at
+> identical prices. The catalog (§4.1) is the single source of truth for spark amounts on every surface;
+> per-surface it just carries a different price/product handle (Stripe price id vs store product id). The
+> Stripe `/checkout/create` changes for this are in §5.7.
+
+### 4.1 Server catalog (`backend/config.py` or a new `backend/iap_products.py`)
+
+This is the **single source of truth for spark amounts on every surface** (web Stripe + iOS + Android).
+Each sku carries the spark grant plus the per-surface product handle.
+
+```python
+# Amounts/SKUs/RC-ids deliberately mirror VibePix (server.js PRODUCTS) so the economies can merge later.
+# Keep `sparks` authoritative here; never trust client- or webhook-body-supplied amounts.
+SPARK_PRODUCTS = {
+    # sku (== VibePix sku): {sparks, rc_id, ios, android, stripe_price_env}
+    "spark_pack_50": {
+        "sparks": 50,
+        "rc_id": "rc_spark_pack_50",
+        "ios": "me.revelryapp.quiz.sparks_50",
+        "android": "me.revelryapp.quiz.sparks_50",
+        "stripe_price_env": "STRIPE_PRICE_SPARK_50",   # $1.99
+    },
+    "spark_pack_200": {
+        "sparks": 200,
+        "rc_id": "rc_spark_pack_200",
+        "ios": "me.revelryapp.quiz.sparks_200",
+        "android": "me.revelryapp.quiz.sparks_200",
+        "stripe_price_env": "STRIPE_PRICE_SPARK_200",  # $4.99
+    },
+    "spark_pack_500": {
+        "sparks": 500,
+        "rc_id": "rc_spark_pack_500",
+        "ios": "me.revelryapp.quiz.sparks_500",
+        "android": "me.revelryapp.quiz.sparks_500",
+        "stripe_price_env": "STRIPE_PRICE_SPARK_500",  # $9.99
+    },
+}
+
+# Stripe price id per sku, resolved from env at import (None if unset → that tier is web-unavailable)
+STRIPE_PRICE_BY_SKU = {sku: os.getenv(p["stripe_price_env"], "") for sku, p in SPARK_PRODUCTS.items()}
+
+# Reverse lookup: any store/rc/stripe-price id → sku (built at import time)
+SPARK_PRODUCT_BY_ANY_ID = {}
+for _sku, _p in SPARK_PRODUCTS.items():
+    for _key in ("rc_id", "ios", "android"):
+        SPARK_PRODUCT_BY_ANY_ID[_p[_key]] = _sku
+    if STRIPE_PRICE_BY_SKU.get(_sku):
+        SPARK_PRODUCT_BY_ANY_ID[STRIPE_PRICE_BY_SKU[_sku]] = _sku
+```
+
+(The map is named `SPARK_PRODUCTS` rather than `IAP_PRODUCTS` because it now also drives the web Stripe
+path. The webhook handlers reference `SPARK_PRODUCT_BY_ANY_ID` for product→sku resolution.)
+
+> Note: with a multi-tier catalog the per-purchase grant is keyed off the **product id → sku → sparks**
+> lookup, not off the single `TOKEN_PACK_AMOUNT`. `MAX_TOKEN_BALANCE` (default 1000) must be ≥ the largest
+> single pack (500) — it is. The webhook still caps to the catalog amount, never a client/body value.
+
+### 4.2 Store + RevenueCat IDs (matches VibePix tiers)
+
+| SKU (== VibePix) | Sparks | Price | App Store / Play product ID | RevenueCat ID |
+|---|---|---|---|---|
+| `spark_pack_50` | 50 | $1.99 (Tier 2) | `me.revelryapp.quiz.sparks_50` | `rc_spark_pack_50` |
+| `spark_pack_200` | 200 | $4.99 (Tier 5) | `me.revelryapp.quiz.sparks_200` | `rc_spark_pack_200` |
+| `spark_pack_500` | 500 | $9.99 (Tier 10) | `me.revelryapp.quiz.sparks_500` | `rc_spark_pack_500` |
+
+- **Type:** Consumable (iOS "Consumable", Android "In-app product / consumable").
+- SKUs, RevenueCat IDs, spark amounts, and prices are **identical to VibePix** (`server.js:199-207`); only the
+  store product id prefix differs (`me.revelryapp.quiz.*` vs VibePix's `com.avishkarsoftware.vibepix.*`),
+  because store products are bundle-scoped and cannot be literally shared across apps.
+- Bundle id is `me.revelryapp.quiz` (from `frontend/capacitor.config.ts`).
+
+### 4.3 Designing for a future economy merge
+
+Mirroring VibePix is the cheap insurance for merging the wallets later. To keep that path open:
+- **Identical SKUs + RC product IDs + amounts** (done above) — a merged backend can treat a
+  `rc_spark_pack_200` from either app as "200 sparks" with no per-app branching.
+- The wallet/`token_transactions` model is already shared in shape between the apps (both Supabase, both
+  `wallet_id = user_id || device_id`, both idempotent on `reference_id`). A merge would unify on
+  `user_id` and reconcile device wallets via the existing `merge_wallet` mechanism.
+- Do **not** bake `vibepix`/`localplay` assumptions into the spark amount or the webhook; the only
+  app-specific values are the store product-id prefix and the RevenueCat app/keys.
+- VibePix's non-spark products (`remove_watermark`, `day_pass_24h`, `pro_monthly`, `pro_annual`) are **not**
+  adopted — LocalPlay has no watermark/day-pass/subscription concept (Appendix B). A merge would keep those
+  VibePix-only.
+
+---
+
+## 5. Backend changes
+
+All changes are additive. **No schema migration is required** — the Supabase prod/gamma schema already
+has `entitlements.apple_transaction_id`/`google_order_id` (partial-unique), `token_transactions.reference_id`
+dedup, the `webhook_events` table, and the `credit_purchase`/`debit_tokens` RPCs.
+
+### 5.1 New endpoint: `POST /webhook/revenuecat`
+
+Mirror `webhook/stripe` (`backend/main.py:5786`). Pseudocode:
+
+```python
+@app.post("/webhook/revenuecat")
+async def revenuecat_webhook(req: Request):
+    if not config.REVENUECAT_WEBHOOK_SECRET:
+        raise HTTPException(503, "IAP not configured")
+    auth = req.headers.get("authorization", "")
+    if auth != f"Bearer {config.REVENUECAT_WEBHOOK_SECRET}":
+        logger.warning("RevenueCat webhook auth failure from %s", _get_client_ip(req))
+        raise HTTPException(401, "Unauthorized")
+
+    body = await req.json()
+    event = body.get("event", {})
+    event_id = event.get("id", "")
+    event_type = event.get("type", "")
+
+    # Idempotency: skip already-processed events (survives restarts)
+    if event_id and db.is_webhook_event_processed(event_id):
+        return {"status": "ok", "detail": "already processed"}
+
+    wallet_id = event.get("app_user_id", "")
+    product_id = event.get("product_id", "")
+    store = (event.get("store", "") or "").upper()         # "APP_STORE" | "PLAY_STORE"
+    txn_id = event.get("transaction_id", "")
+    sku = config.SPARK_PRODUCT_BY_ANY_ID.get(product_id)
+
+    if event_type in ("INITIAL_PURCHASE", "NON_RENEWING_PURCHASE"):
+        # consumable grant
+        if not (wallet_id and sku and txn_id):
+            logger.error("revenuecat grant missing fields: wallet=%s sku=%s txn=%s",
+                         bool(wallet_id), sku, bool(txn_id))
+            return {"status": "error", "detail": "missing fields"}
+        sparks = config.SPARK_PRODUCTS[sku]["sparks"]
+
+        # reference_id = store transaction id → credit_purchase is idempotent on it
+        _, new_balance = db.credit_purchase(
+            wallet_id, sparks, txn_id,
+            metadata=json.dumps({"source": "iap", "store": store, "product_id": product_id}),
+        )
+        # Best-effort: record the store transaction id for restore/audit (unique index dedups)
+        _record_iap_entitlement(wallet_id, store, txn_id)
+        # Notify the polling client (device_id == wallet_id for guests; for signed-in, see §5.4)
+        db.store_pending_token(wallet_id, json.dumps(
+            {"tokens_added": sparks, "new_balance": new_balance}))
+
+    elif event_type in ("REFUND", "CANCELLATION"):
+        # Clawback — mirror the Stripe charge.refunded path (debit_tokens, idempotent)
+        if wallet_id and sku and txn_id:
+            already = db.get_refund_debits_for_session(txn_id)
+            owed = config.SPARK_PRODUCTS[sku]["sparks"]
+            refund_tokens = max(0, owed - already)
+            if refund_tokens:
+                db.debit_tokens(wallet_id, refund_tokens, "refund", txn_id)
+
+    # else: TEST, TRANSFER, etc. → ack and ignore
+
+    if event_id:
+        db.mark_webhook_event_processed(event_id)
+    return {"status": "ok"}
+```
+
+Notes:
+- **Idempotency is double-layered:** `webhook_events(event_id)` (skips event replays) **and**
+  `credit_purchase(reference_id=txn_id)` (the existing `(wallet_id, reference_id, reason='purchase')`
+  unique index prevents a second credit even if RevenueCat sends a different event id for the same txn).
+- **Amounts come from the server catalog**, never from the webhook body — same anti-tamper stance as Stripe.
+- **`store_pending_token` keying:** the existing Stripe flow stores the notification under `device_id`.
+  For IAP the `app_user_id` is the wallet id. For guests `wallet_id == device_id`, so polling works as-is.
+  For signed-in users, see §5.4.
+
+### 5.2 Fix the platform guard (block Android too)
+
+`backend/main.py:5739` currently blocks only iOS. Native platforms must use IAP, not Stripe:
+
+```python
+# before
+if platform == "ios":
+    raise HTTPException(403, "Use in-app purchase on iOS")
+# after
+if platform in ("ios", "android"):
+    raise HTTPException(403, "Use in-app purchase on native platforms")
+```
+
+This matches VibePix (`server.js:2207`). Web is unaffected.
+
+### 5.3 Restore semantics
+
+Consumables are generally **not restorable** by the stores once consumed — Apple/Google won't re-deliver a
+consumed consumable, and RevenueCat won't re-fire a grant for it. So for Sparks, restore is effectively a
+no-op. Keep the existing `POST /purchases/restore` (`main.py:5955`) for the legacy entitlement path; on the
+client, `Purchases.restorePurchases()` covers any future non-consumable/subscription SKU. **Document that
+"Restore" will not re-credit already-consumed Spark packs** — this is expected store behavior, not a bug.
+
+### 5.4 Signed-in vs guest notification delivery (small follow-up)
+
+`store_pending_token`/`pop_pending_token` are keyed by `device_id`. When a signed-in user buys, the
+webhook's `app_user_id` is the `user_id`, but the client polls `/checkout/token` with its `X-Device-Id`.
+Two options:
+- **(Recommended, simplest)** On the client, after a successful `purchasePackage`, **re-fetch the balance**
+  (`GET /tokens/balance`) on the 2s poll instead of relying solely on `/checkout/token`. Balance reflects
+  the credited sparks regardless of keying. This also matches VibePix's "poll fetchSparks()" approach and
+  avoids backend keying changes.
+- (Alt) Have the webhook also write the pending-token under the user's current `device_id` (requires a
+  user→device lookup). More code; not needed if the client polls balance.
+
+Spec adopts the recommended option: **client polls `/tokens/balance` after purchase**; `/checkout/token`
+remains the Stripe path.
+
+### 5.5 Config / env additions (`backend/config.py`)
+
+```python
+REVENUECAT_WEBHOOK_SECRET = os.getenv("REVENUECAT_WEBHOOK_SECRET", "")
+# (RevenueCat client keys are NOT backend secrets — they're public SDK keys baked into the app build, §6.4)
+
+# Per-tier Stripe price ids (web). The catalog (§4.1) reads these via stripe_price_env.
+STRIPE_PRICE_SPARK_50  = os.getenv("STRIPE_PRICE_SPARK_50", "")
+STRIPE_PRICE_SPARK_200 = os.getenv("STRIPE_PRICE_SPARK_200", "")
+STRIPE_PRICE_SPARK_500 = os.getenv("STRIPE_PRICE_SPARK_500", "")
+```
+
+`TOKEN_PACK_AMOUNT` and the single `STRIPE_PRICE_ID` are **deprecated** by this change. Keep them defined
+for one release as a fallback (if a `sku` is omitted by an old client, `/checkout/create` falls back to the
+legacy single price), then remove once clients are updated. Add a startup warning (near the Stripe one at
+`main.py:135`) if native builds are shipped but `REVENUECAT_WEBHOOK_SECRET` is unset, and if no
+`STRIPE_PRICE_SPARK_*` are configured while Stripe is otherwise enabled.
+
+### 5.7 Web Stripe checkout — move to the tiered ladder (`/checkout/create`)
+
+Today `/checkout/create` (`main.py:5736`) sells one pack: a single `STRIPE_PRICE_ID`, amount
+`TOKEN_PACK_AMOUNT`/`PROMO_TOKEN_AMOUNT` in metadata. Change it to take a **sku** and drive the price +
+spark amount from the catalog:
+
+```python
+class CheckoutRequest(BaseModel):
+    device_id: str
+    sku: str = "spark_pack_50"     # NEW — which tier; default keeps old clients working
+    promo_id: str = ""
+
+# in create_checkout, after the platform guard + device match:
+sku = request.sku if request.sku in config.SPARK_PRODUCTS else "spark_pack_50"
+price_id = config.STRIPE_PRICE_BY_SKU.get(sku) or config.STRIPE_PRICE_ID   # fallback during transition
+spark_amount = config.SPARK_PRODUCTS[sku]["sparks"]
+if not config.STRIPE_SECRET_KEY or not price_id:
+    raise HTTPException(503, "Payments not configured")
+# ... stripe.checkout.Session.create(line_items=[{"price": price_id, "quantity": 1}], ...)
+# metadata: {"device_id", "wallet_id", "token_amount": spark_amount, "sku": sku, "promo_id"}
+```
+
+The **Stripe webhook** (`/webhook/stripe`, `main.py:5806`) already reads `token_amount` from session
+metadata and caps it; update the cap to `max(spark amounts in SPARK_PRODUCTS)` (500) instead of
+`max(TOKEN_PACK_AMOUNT, PROMO_TOKEN_AMOUNT)`. Refund proration already keys off the session's stored
+`token_amount`, so it carries over unchanged.
+
+**Stripe dashboard:** create three Prices on the existing "Spark Pack" product (or three products) at
+$1.99 / $4.99 / $9.99 and put their ids in `STRIPE_PRICE_SPARK_50/200/500`. The legacy
+$0.99 price can be archived once the new tiers are live.
+
+**Frontend web buy UI** shows the same three tiers and sends `sku` in the `/checkout/create` body
+(`OrganizerPage.tsx:2969`).
+
+### 5.6 Tests (`backend/tests/`)
+
+Add `test_iap_webhook.py` mirroring the Stripe webhook tests:
+- auth: missing/!= bearer → 401; missing secret → 503.
+- `INITIAL_PURCHASE` credits the mapped sparks once; **replaying the same `event_id` does not double-credit**;
+  a **different `event_id` with the same `transaction_id` does not double-credit** (reference_id dedup).
+- unknown `product_id` → no credit, 200 ack.
+- `REFUND` debits the granted amount once; second refund event does not double-debit (`get_refund_debits_for_session`).
+- amount is taken from the server catalog, not from a tampered `price`/amount field in the body.
+- `app_user_id` missing → no credit, logged.
+
+---
+
+## 6. Client (Capacitor) changes — `frontend/`
+
+### 6.1 Dependency
+
+Add `@revenuecat/purchases-capacitor` (VibePix uses `^12.3.0`; match Capacitor major — LocalPlay is on
+Capacitor `^8.x`, confirm plugin compatibility, else pin the version VibePix shipped).
+
+LocalPlay's frontend is bundled with **Vite** (unlike VibePix, which had no bundler and needed a hand-written
+UMD wrapper at `public/libs/capacitor-purchases.js`). With Vite we can `import { Purchases } from
+'@revenuecat/purchases-capacitor'` directly — **no UMD shim needed.** (If the plugin's ESM trips up the
+build, fall back to dynamic `import()` as the codebase already does for `../utils/api`.)
+
+### 6.2 Initialization (native only)
+
+In a new `frontend/src/utils/iap.ts`, called once at app start when `getPlatform() !== 'web'`:
+
+```ts
+import { Purchases } from '@revenuecat/purchases-capacitor';
+
+export async function initIAP() {
+  const platform = getPlatform();                  // 'ios' | 'android' | 'web'
+  if (platform === 'web') return;
+  const apiKey = platform === 'ios'
+    ? import.meta.env.VITE_REVENUECAT_IOS_KEY
+    : import.meta.env.VITE_REVENUECAT_ANDROID_KEY;
+  if (!apiKey) return;                             // not configured → IAP disabled, UI hides buy on native
+  await Purchases.configure({ apiKey, appUserID: getWalletAppUserId() });
+}
+
+// appUserID = signed-in user_id if available else device_id (mirrors backend wallet_id resolution)
+function getWalletAppUserId(): string {
+  return getUserId() /* from session */ || getDeviceId();
+}
+```
+
+On **sign-in/out**, call `Purchases.logIn(user_id)` / `Purchases.logOut()` so RC's `app_user_id` tracks the
+same wallet id the backend uses. The existing `merge_wallet` reconciles any device-scoped sparks bought
+before sign-in.
+
+### 6.3 Purchase flow (replace the iOS 403 dead-end)
+
+Today `OrganizerPage.tsx:2969` calls `/checkout/create` and shows "Use the in-app purchase option on iOS"
+when it gets a 403. Replace that branch: when `getPlatform() !== 'web'`, **do not call `/checkout/create`** —
+call the native flow instead:
+
+```ts
+async function buySparksNative(sku: 'spark_pack_50' | 'spark_pack_200' | 'spark_pack_500') {
+  const offerings = unwrap(await Purchases.getOfferings());   // RC wraps as {offerings:...}
+  const pkg = findPackage(offerings, sku);                    // match by rc_id / store id / suffix
+  await Purchases.purchasePackage({ aPackage: pkg });         // throws on user cancel (code 1)
+  // Fulfillment is server-side via webhook; poll balance for up to ~16s
+  await pollForSparkCredit();                                 // GET /tokens/balance every 2s
+}
+```
+
+The native buy UI shows the **three tiers** (50 / 200 / 500) with store-localized prices from
+`getOfferings()`. Reuse VibePix's hardening: unwrap the `{offerings}` envelope, match each product by
+rc_id → fully-qualified store id → suffix fallback (log a warning on suffix match), and treat
+purchase-cancel as a silent no-op.
+
+Web keeps calling `/checkout/create` exactly as today.
+
+### 6.4 Native price display & store gating
+
+- Fetch live store prices via `getOfferings()` and render the localized price string (don't hardcode $0.99
+  in the native UI — stores localize/currency-convert).
+- If RC isn't configured (no API key) or `getOfferings()` returns nothing, **hide the buy button on native**
+  and fall back to ad-reward/daily-bonus only. Never show a buy button that can't transact.
+
+### 6.5 Restore button
+
+`SettingsDrawer.tsx:226` already calls `POST /purchases/restore`. On native, **also** call
+`Purchases.restorePurchases()` first, then re-fetch balance/entitlements (VibePix `app.js:2462`). Show
+"Purchases restored" / "Nothing to restore". Copy should set expectations that consumed Spark packs aren't
+re-credited (§5.3).
+
+### 6.6 Client env (`.env` / Vite)
+
+Public RevenueCat SDK keys (these are **publishable**, safe to bake into the build):
+
+```
+VITE_REVENUECAT_IOS_KEY=appl_xxx
+VITE_REVENUECAT_ANDROID_KEY=goog_xxx
+```
+
+Add to the relevant `vite build` invocations in `DEPLOY.md` (native builds only; the IONOS web build does
+not need them).
+
+---
+
+## 7. Store & RevenueCat console setup (one-time)
+
+### 7.1 RevenueCat dashboard
+1. Create a **new RevenueCat project** "LocalPlay/Revelry Quiz" (or a new app within the existing org).
+2. Add an **App Store app** (bundle `me.revelryapp.quiz`) and a **Play Store app** (package `me.revelryapp.quiz`).
+3. **Apple credential:** upload the **In-App Purchase key** (.p8). The existing VibePix key
+   `SubscriptionKey_655WPHCMD7.p8` is app-specific to VibePix — generate a **new In-App Purchase key** for
+   the Revelry Quiz app in App Store Connect → Users and Access → Integrations → In-App Purchase.
+4. **Google credential:** reuse the GCP service account `revenuecat-play@revelryapp.iam.gserviceaccount.com`
+   (project `revelryapp`) — grant it access to the Play Console app. Ensure APIs are enabled:
+   ```bash
+   gcloud services enable androidpublisher.googleapis.com --project revelryapp
+   gcloud services enable pubsub.googleapis.com --project revelryapp
+   ```
+   > Gotcha from VibePix: "Credentials need attention / could not validate inappproducts API permissions"
+   > is almost always `androidpublisher.googleapis.com` not being enabled — fix that first.
+5. Create the **products/offerings** in RevenueCat: products `rc_spark_pack_50` / `rc_spark_pack_200` /
+   `rc_spark_pack_500`, each mapped to its App Store and Play store product
+   (`me.revelryapp.quiz.sparks_50` / `_200` / `_500`); put all three in the default Offering.
+6. **Webhook:** Integrations → Webhooks → add `https://gamesapi.revelryapp.me/webhook/revenuecat` (prod) and
+   `https://gamesapi-gamma.revelryapp.me/webhook/revenuecat` (gamma) with the Authorization header
+   `Bearer <REVENUECAT_WEBHOOK_SECRET>`. Use **separate** secrets per environment.
+7. Get the **public SDK keys** (Apple `appl_…`, Google `goog_…`) → into the native Vite build env.
+
+### 7.2 App Store Connect (Apple)
+1. Create three **Consumable** IAPs: `me.revelryapp.quiz.sparks_50` (Tier 2, $1.99, "50 Sparks"),
+   `…sparks_200` (Tier 5, $4.99, "200 Sparks"), `…sparks_500` (Tier 10, $9.99, "500 Sparks").
+2. Fill each IAP's metadata + review screenshot (Apple requires a review screenshot **per IAP**).
+3. Create a **Sandbox tester** (Users and Access → Sandbox → Testers).
+4. IAPs must be in "Ready to Submit" (draft) state to work in sandbox.
+
+### 7.3 Google Play Console
+1. The app must be on at least an **internal testing** track (currently Draft — needs an internal build).
+2. Create three **in-app products** `me.revelryapp.quiz.sparks_50` / `_200` / `_500` (consumable),
+   $1.99 / $4.99 / $9.99, and activate them.
+3. Add **license testers** (Settings → License testing) — their purchases are free.
+4. Server-side: nothing extra beyond the RevenueCat service-account binding.
+
+---
+
+## 8. Environment variables summary
+
+Backend (GCP, gamma + prod `.env`/`.env.gamma`) — set via the existing deploy upsert mechanism:
+
+| Var | Where | Notes |
+|---|---|---|
+| `REVENUECAT_WEBHOOK_SECRET` | gamma + prod | **distinct per env**; never printed/committed |
+| `STRIPE_PRICE_SPARK_50` | gamma + prod | Stripe price id for the $1.99 / 50-spark tier (web) |
+| `STRIPE_PRICE_SPARK_200` | gamma + prod | Stripe price id for the $4.99 / 200-spark tier (web) |
+| `STRIPE_PRICE_SPARK_500` | gamma + prod | Stripe price id for the $9.99 / 500-spark tier (web) |
+
+Native client build (Vite, native builds only):
+
+| Var | Notes |
+|---|---|
+| `VITE_REVENUECAT_IOS_KEY` | publishable `appl_…` |
+| `VITE_REVENUECAT_ANDROID_KEY` | publishable `goog_…` |
+
+(No Apple `.p8` or GCP service-account JSON lives in the LocalPlay backend — RevenueCat holds those.)
+
+---
+
+## 9. Testing plan
+
+1. **Backend unit tests** (`test_iap_webhook.py`, §5.6) — run in the normal `pytest` set; do NOT require RevenueCat.
+2. **Gamma webhook smoke:** from RevenueCat, send a **test event** to the gamma webhook; assert
+   `webhook_events` row created and (for a synthetic INITIAL_PURCHASE) sparks credited to a test wallet.
+   A scripted variant: `curl -H "Authorization: Bearer $GAMMA_RC_SECRET" -d @sample_initial_purchase.json
+   https://gamesapi-gamma.revelryapp.me/webhook/revenuecat` (sample body in `frontend/e2e/fixtures/`).
+3. **iOS sandbox (gamma build):** build the iOS app pointing at gamma (`VITE_API_URL=gamesapi-gamma…` +
+   RC keys), sign in with a Sandbox tester, buy a pack (e.g. `spark_pack_50`), confirm balance increments and a
+   `token_transactions` purchase row appears. **Must be a bundled build, not live-reload** (webhooks need a
+   publicly reachable server — VibePix lesson, `DEPLOY.md`).
+4. **Android internal-testing build:** signed release build on the internal track, license tester buys
+   a pack (free for testers), confirm credit. Emulator/debug builds won't transact.
+5. **Idempotency/refund:** issue a sandbox refund (or re-send the webhook) → assert no double-credit and a
+   single clawback debit.
+6. **Platform guard:** assert native `X-Platform: android`/`ios` → `/checkout/create` returns 403; web → 200.
+7. **Restore:** confirm restore is a clean no-op for consumed consumables and doesn't error.
+
+---
+
+## 10. Security considerations
+
+- Webhook authenticated by a per-env bearer secret; auth failures logged with hashed IP (mirror Stripe).
+- Spark amounts are **server-authoritative** (catalog lookup), never trusted from the webhook body.
+- Double idempotency (event id + transaction-id reference) prevents replay/double-grant.
+- `app_user_id` is the wallet id; a malicious client could in principle log in as another wallet id — but
+  RC `app_user_id` is set from the device/session the same way the backend resolves the wallet, and crediting
+  someone else's wallet only *gives them* sparks (no theft vector). Signed-in users are bound via the
+  session-derived `user_id`.
+- Keep the existing WS/HTTP rate limits; the webhook is exempt from per-device limits but bearer-gated.
+
+---
+
+## 11. Rollout / deploy steps
+
+1. Land backend (`/webhook/revenuecat`, platform-guard fix, config, tests) + client (iap.ts, purchase wiring)
+   on master.
+2. Configure RevenueCat (gamma webhook + products + credentials) and store consoles (§7).
+3. Set `REVENUECAT_WEBHOOK_SECRET` on **gamma**, deploy gamma (`./scripts/deploy-gcp.sh --gamma --with-frontend`).
+4. Run the gamma webhook smoke + iOS sandbox + Android internal-testing tests (§9).
+5. Set `REVENUECAT_WEBHOOK_SECRET` on **prod**, add the prod webhook in RevenueCat, deploy prod backend.
+6. Submit the iOS app + IAP for App Store review; promote the Android build off Draft to a testing track,
+   then production.
+7. **Web Stripe tiers:** create the three Stripe Prices, set `STRIPE_PRICE_SPARK_50/200/500` on gamma+prod,
+   and (separately, per `launch_feature_gaps.md`) add live Stripe keys so web sells the same ladder. Archive
+   the legacy $0.99 price once the tiers are live.
+8. Record the deploy in `DEPLOY.md`.
+
+---
+
+## 12. File-change checklist (implementation)
+
+Backend:
+- [ ] `backend/config.py` — `SPARK_PRODUCTS`, `SPARK_PRODUCT_BY_ANY_ID`, `STRIPE_PRICE_BY_SKU`,
+      `REVENUECAT_WEBHOOK_SECRET`, `STRIPE_PRICE_SPARK_50/200/500`, startup warnings.
+- [ ] `backend/main.py` — `POST /webhook/revenuecat`; widen platform guard at `:5739` to include `android`.
+- [ ] `backend/main.py` — `/checkout/create` takes `sku`, resolves price+sparks from the catalog (§5.7);
+      `/webhook/stripe` cap updated to the max catalog amount.
+- [ ] `backend/main.py` — helper `_record_iap_entitlement(wallet_id, store, txn_id)` writing
+      `entitlements.apple_transaction_id`/`google_order_id` (reuse `create_entitlement`).
+- [ ] `backend/tests/test_iap_webhook.py` — full coverage per §5.6; extend `test_*checkout*`/Stripe webhook
+      tests for the per-sku price/amount path.
+- [ ] (no schema migration — verify gamma/prod schema already matches; it does as of 2026-06-29.)
+
+Frontend:
+- [ ] `frontend/package.json` — add `@revenuecat/purchases-capacitor`.
+- [ ] `frontend/src/utils/iap.ts` — init, purchase, restore, offerings unwrap + product match, poll-balance.
+- [ ] `frontend/src/pages/OrganizerPage.tsx` — show 3 tiers; web sends `sku` to `/checkout/create`, native
+      calls `buySparksNative(sku)` instead of the `/checkout/create`+403 dead-end.
+- [ ] `frontend/src/components/SettingsDrawer.tsx` — native `restorePurchases()` before `/purchases/restore`.
+- [ ] App-start hook — call `initIAP()` once; wire `Purchases.logIn/logOut` into the sign-in/out flow.
+- [ ] Native price display + buy-button gating when RC unconfigured.
+
+Docs/config:
+- [ ] `DEPLOY.md` — RevenueCat setup section, native build env vars, IAP test procedure, gamma+prod webhook URLs.
+- [ ] `SPEC.md` — cross-link this spec from the monetization section.
+- [ ] `.env`/`.env.gamma` (GCP) — `REVENUECAT_WEBHOOK_SECRET` (per env).
+
+---
+
+## 13. Open decisions
+
+1. **Catalog:** **RESOLVED** — all three surfaces (web Stripe + iOS + Android) use VibePix's tiers
+   (50 / 200 / 500 @ $1.99 / $4.99 / $9.99) with identical SKUs/RC-ids to enable a future economy merge
+   (§4.3). The legacy web pack (110 @ $0.99) is retired; web moves to the ladder via §5.7.
+2. **RevenueCat project:** new standalone project vs. an app inside the existing VibePix org. *Recommend: new app in the existing org to reuse billing/credentials.*
+3. **Apple IAP key:** generate a fresh In-App Purchase .p8 for Revelry Quiz (the VibePix `.p8` is app-scoped). *Recommend: fresh key.*
+4. **Android off-Draft:** the Play app must reach at least internal testing before IAP can be tested; confirm timing with the launch plan.
+5. **Ad reward on native:** out of scope here, but confirm AdMob/native ad SDK plans don't overlap the IAP build.
+
+---
+
+## Appendix A — RevenueCat webhook event fields used
+`event.id`, `event.type` (`INITIAL_PURCHASE`/`NON_RENEWING_PURCHASE`/`REFUND`/`CANCELLATION`/`TEST`),
+`event.app_user_id`, `event.product_id`, `event.store` (`APP_STORE`/`PLAY_STORE`), `event.transaction_id`.
+
+## Appendix B — Why no subscriptions
+LocalPlay's economy is purely consumable Sparks spent per generation/room (`COST_GENERATE`, `COST_ROOM`).
+VibePix layered subscriptions (`pro_monthly`/`pro_annual`) and entitlements (`no_watermark`) on top — LocalPlay
+deliberately does not, so the webhook only handles consumable grants + clawbacks. Revisit if a "Revelry Pro"
+tier is ever introduced (the schema's `subscriptions` concepts would need adding then).
+
+## Appendix C — Direct-verification fallback (only if dropping RevenueCat)
+- **Apple:** App Store Server Library (Python) to verify `signedTransactionInfo` JWS; subscribe to App Store
+  Server Notifications V2. Requires the In-App Purchase .p8, issuer id, key id, bundle id.
+- **Google:** `androidpublisher` (`purchases.products.get`) with the service-account JSON; consume/acknowledge
+  the purchase token; subscribe to RTDN via Pub/Sub.
+- New endpoint `POST /purchases/iap-complete` taking `{platform, product_id, transaction_id, receipt}` and
+  fulfilling through the same `credit_purchase(reference_id=transaction_id)` path. Strictly more code and key
+  management than Appendix-A; only pursue if RevenueCat's revenue share or dependency becomes unacceptable.
+```
