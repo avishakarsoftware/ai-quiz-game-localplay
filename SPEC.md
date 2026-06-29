@@ -747,9 +747,9 @@ Reconnection:
   - Player roster entries may include `status: "connected" | "reconnecting" | "offline"`.
   - `player_count` in lobby and start-gate messages is the count of connected/start-ready players, not the count of preserved offline seats.
   - `players` in lobby and roster messages includes both connected and preserved offline seats so the host can see who joined earlier.
-  - `LOBBY_RECONNECT_GRACE_SECONDS` controls how long a disconnected lobby seat is preserved before age-out cleanup; default target is long enough for real party pauses (90 minutes).
+  - `LOBBY_RECONNECT_GRACE_SECONDS` (default **600 = 10 min**, `<= ROOM_TTL_SECONDS`) controls how long a disconnected lobby seat is preserved before it is pruned.
   - Backend start checks must prune expired offline seats, count only connected players for minimums, and never materialize offline seats into a started game.
-  - **Current implementation note (timing reality):** `prune_expired_lobby_players()` is only invoked at `START_GAME` — first a grace-based pass, then a `force=True` pass that drops *all* remaining offline seats (so a started game never includes offline seats, regardless of grace). There is no periodic/background age-out task and the reconnect/reclaim path does not check the grace, so `LOBBY_RECONNECT_GRACE_SECONDS` is largely vestigial as wired. The effective backstops that actually reclaim an abandoned lobby are the room's own `ROOM_TTL_SECONDS` (30 min inactivity, swept by `_cleanup_expired_rooms`) and `ORGANIZER_RECONNECT_GRACE_SECONDS` (10 min after the host disconnects) — both well under 90 min. To make the lobby grace meaningful (and to allow a shorter value like 10 min), add a periodic offline-seat prune; otherwise the durable client session TTL only usefully spans the room's ~30-min life.
+  - **Implementation note (timing):** the grace is enforced in two places. At `START_GAME`, `prune_expired_lobby_players()` runs a grace-based pass then a `force=True` pass that drops all remaining offline seats (a started game never includes offline seats). Separately, the room cleanup loop (`_cleanup_expired_rooms`, every 60s) prunes offline lobby seats older than the grace mid-lobby and broadcasts a roster update, so an abandoned seat is actually reclaimed ~10 min after disconnect rather than lingering until the room's own `ROOM_TTL_SECONDS` (30 min) or `ORGANIZER_RECONNECT_GRACE_SECONDS` (10 min after the host leaves) sweep the whole room.
 
 ## WebSocket Protocol
 
@@ -1123,7 +1123,8 @@ Game select:
 - **My Quizzes** opens `QUIZ_LIBRARY`; starting a saved pack materializes it and enters normal review.
 - Home/menu navigation must reset safely from setup, loading, review, library, lobby, active gameplay, and terminal states.
 - The organizer lobby must expose an obvious **Back to games** action in addition to the hamburger menu. It uses the same shared home-navigation behavior as the menu: setup/review states reset directly, while lobby/active gameplay/result states warn that leaving the room may interrupt connected players before returning to the game list.
-- For games with editable pre-start content or setup, the lobby may also expose **Edit questions**, **Edit prompts**, **Edit setup**, or equivalent. Because a lobby room already exists, this action must warn the host that the lobby will close and connected players will need to rejoin a new room after changes are saved.
+- Quiz lobbies expose **Review questions** — a read-only peek that opens the questions over the lobby and returns to the SAME room without teardown (the room/socket and code are unchanged). The peek itself offers **Edit questions (restarts the room)** for actual edits.
+- For other games with editable pre-start setup (WMLT/Drawing/Housie/Bingo/Musical Chairs/Party Quests/Who Am I/Chit Pull), the lobby exposes **Edit setup** (or **Edit prompts**, etc.). Because a lobby room already exists, the *edit* path warns the host that the lobby will close and connected players will rejoin a new room after changes are saved. The read-only review peek does not close the room.
 - Entering a new organizer state or switching game type must reset page scroll to the top so setup/review screens never open partially scrolled from the previous catalog or editor position.
 
 Generation:
@@ -1134,7 +1135,7 @@ Generation:
 - Successful generation moves to review.
 - Provider-picking UI is a local/gamma diagnostic affordance only. Production standalone and production backend-served surfaces must hide raw provider selectors such as "Google AI"; production still uses the configured backend/default provider and remote config.
 - AI Quiz, quiz variants, WMLT, Bingo, Drawing, Who Am I, and Random Chit prompt screens must include a visible random-topic/theme dice control with an accessible label and a mobile-friendly tap target. The textarea must reserve space for that control so typed prompt text does not sit underneath it.
-- AI Quiz, quiz variants, and Drawing-style prompt screens must include a consistent back control positioned with the header/icon area so hosts can return to the game catalog without using the global menu.
+- Every organizer setup/prompt/review/editor screen renders the same shared top-left back control (`ScreenBackButton`, a "‹ Back" pill) so back navigation is consistent across all games. It is flowed at the top-left of the screen and reserves a 54px top zone on narrow screens to clear the fixed menu (top-left) and sparks badge (top-right). Back returns to the previous step (review → prompt/editor, prompt/setup → game catalog).
 - AI-generated setup screens must keep visible vertical separation between count selectors and the final generate action. The primary action should not visually attach to the last selector row.
 - `402`, `429`, and `503` are surfaced in an error modal.
 - In host-app party hub mode, prompt-list setup games such as WMLT and Drawing may call `/integrations/revelry/party-games/prompts/generate` with a party-scoped token. Generated prompts populate the editable setup form and are not persisted until the host saves the setup.

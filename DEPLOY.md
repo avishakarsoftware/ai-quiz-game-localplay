@@ -1668,7 +1668,16 @@ Screenshots default to `/private/tmp/localplay-preprod-ux-audit`; override with 
 
 This is the repeatable gamma-only test for the LocalPlay/Revelry embedded party hub. It is intentionally desktop-only and stateful because it mutates one disposable gamma party.
 
-1. Mint a fresh gamma `party_games_url` for the disposable Revelry gamma party. The token must have host capabilities: `manage_games`, `author_content`, and `operate_game`. The current repeatable path uses the Revelry repo script and the gamma LocalPlay/Revelry integration secret:
+1. Mint a fresh gamma `party_games_url` for the disposable Revelry gamma party. The token must have host capabilities: `manage_games`, `author_content`, and `operate_game`.
+
+   **Preferred (LocalPlay-side helper, no local gcloud-secrets setup):** `scripts/mint-gamma-revelry-url.sh` pulls `REVELRY_INTEGRATION_SECRET` from the running gamma container over SSH (the secret never leaves the VM; only the URL is written locally) and mints against the real seeded party `bc87a6df-9f2e-4ac3-acbf-b89dc82f127e` ("Gamma Full Flow Test Party") so the mirror-results-back test resolves on Revelry:
+
+```bash
+./scripts/mint-gamma-revelry-url.sh                 # writes ./gamma_party_games_url.txt, 1h TTL
+./scripts/mint-gamma-revelry-url.sh 3600 /tmp/x.txt # custom ttl_seconds + output path
+```
+
+   **Alternative (Revelry repo script + Secret Manager):**
 
 ```bash
 export LOCALPLAY_GAMMA_INTEGRATION_SECRET="$(gcloud secrets versions access latest --project revelryapp --secret revelry-gamma-localplay-integration-secret)"
@@ -1677,7 +1686,7 @@ export LOCALPLAY_GAMMA_INTEGRATION_SECRET="$(gcloud secrets versions access late
   --output ./gamma_party_games_url.txt >/dev/null
 ```
 
-The script is gamma-only and writes the full URL to `gamma_party_games_url.txt`, which must stay ignored. Do not print the URL or token in chat, logs, or committed files. Mint fresh before each run; a short TTL such as `0.05` days, about 72 minutes, is enough for normal E2E. LocalPlay honors the script's `ttl_seconds` request outside production only, capped at 30 days; production rejects custom party-games token TTLs. Use a longer gamma-only TTL, up to 30 days, only while actively debugging across sessions.
+Both scripts are gamma-only and write the full URL to `gamma_party_games_url.txt`, which must stay ignored. Do not print the URL or token in chat, logs, or committed files. Mint fresh before each run; a short TTL such as `0.05` days, about 72 minutes, is enough for normal E2E. LocalPlay honors the script's `ttl_seconds` request outside production only, capped at 30 days; production rejects custom party-games token TTLs. Use a longer gamma-only TTL, up to 30 days, only while actively debugging across sessions.
 
 2. Verify only the shape/expiry, not the token:
 
