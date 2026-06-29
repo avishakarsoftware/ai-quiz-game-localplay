@@ -478,7 +478,12 @@ export function isNativePlatform() {
 ```
 
 Then update `api.ts`, `SettingsDrawer.tsx`, and the new IAP helper to import this shared function so the
-platform decision is consistent.
+payment/IAP platform decision is consistent.
+
+> **Do NOT fold `utils/analytics.ts`'s own `getPlatform()` into this helper.** It deliberately returns
+> finer labels (`pwa` for standalone web, `native` as a fallback) for telemetry only; collapsing it into the
+> strict `ios|android|web` payment-gating helper would change analytics semantics and lose the `pwa` bucket.
+> The two are separate on purpose — only the `api.ts` copy moves to `platform.ts`.
 
 Create `frontend/src/utils/iap.ts`, called once at app start when `getPlatform() !== 'web'`:
 
