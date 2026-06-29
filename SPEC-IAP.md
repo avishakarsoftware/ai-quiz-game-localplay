@@ -739,9 +739,9 @@ Frontend (DONE 2026-06-29, except the native plugin install):
       tsc clean, web `vite build` clean (RevenueCat stays external).
 
 Docs/config:
-- [ ] `DEPLOY.md` — RevenueCat setup section, native build env vars, IAP test procedure, gamma+prod webhook URLs.
-- [ ] `SPEC.md` — cross-link this spec from the monetization section.
-- [ ] `.env`/`.env.gamma` (GCP) — `REVENUECAT_WEBHOOK_SECRET` (per env).
+- [x] `DEPLOY.md` — §3c RevenueCat setup, native build env vars, plugin install, gamma+prod webhook URLs.
+- [x] `SPEC.md` — cross-links this spec from the monetization section.
+- [ ] `.env`/`.env.gamma` (GCP) — `REVENUECAT_WEBHOOK_SECRET` + `STRIPE_PRICE_SPARK_*` (per env). **Pending — needs Stripe/RevenueCat values.**
 
 ---
 

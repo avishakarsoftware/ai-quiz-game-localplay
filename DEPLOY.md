@@ -400,6 +400,43 @@ gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --c
   'for c in games-backend games-backend-gamma; do echo "== $c =="; docker exec "$c" sh -lc '"'"'printf "JWT_SECRET=%s\n" "${JWT_SECRET:+set}"; printf "GOOGLE_CLIENT_ID=%s\n" "${GOOGLE_CLIENT_ID:+set}"; printf "APPLE_CLIENT_ID=%s\n" "${APPLE_CLIENT_ID:+set}"; printf "APPLE_CLIENT_IDS=%s\n" "${APPLE_CLIENT_IDS:+set}"'"'"'; done'
 ```
 
+### 3c. Native In-App Purchase (RevenueCat) — pending console setup
+
+Native IAP sells the unified spark ladder (50/200/500). The backend (`POST /webhook/revenuecat`) and the
+web/frontend are implemented; the native plugin install + console setup remain. Full plan: **`SPEC-IAP.md`**
+(§7 console setup, §8 env, §9 testing).
+
+Install the native client plugin (Capacitor 8 → RevenueCat v12 line, matching VibePix):
+
+```bash
+cd frontend
+npm install @revenuecat/purchases-capacitor@^12
+npx cap sync
+```
+
+Backend env (GCP `.env`/`.env.gamma`, distinct per env, never printed/committed):
+
+| Var | Notes |
+|-----|-------|
+| `REVENUECAT_WEBHOOK_SECRET` | Bearer secret for `POST /webhook/revenuecat` |
+| `STRIPE_PRICE_SPARK_50` / `_200` / `_500` | Per-tier Stripe price ids (web checkout) |
+
+Native build env (Vite, native builds only — publishable keys, safe to bake in):
+
+```
+VITE_REVENUECAT_IOS_KEY=appl_xxx
+VITE_REVENUECAT_ANDROID_KEY=goog_xxx
+```
+
+RevenueCat webhook URLs to register (Authorization: `Bearer <REVENUECAT_WEBHOOK_SECRET>`):
+- Gamma: `https://gamesapi-gamma.revelryapp.me/webhook/revenuecat`
+- Prod: `https://gamesapi.revelryapp.me/webhook/revenuecat`
+
+Console steps (full detail in `SPEC-IAP.md §7`): RevenueCat app for `me.revelryapp.quiz` (Apple In-App Purchase
+.p8 + reuse the `revenuecat-play@revelryapp.iam` service account; enable `androidpublisher.googleapis.com`),
+products `rc_spark_pack_50/200/500` → store products `me.revelryapp.quiz.sparks_50/200/500`; create the matching
+consumable IAPs in App Store Connect + Play Console; create the three Stripe Prices for the web tiers.
+
 ### 4. Install nginx routes
 
 Production should proxy to `127.0.0.1:8000`; gamma should proxy to `127.0.0.1:8004`.

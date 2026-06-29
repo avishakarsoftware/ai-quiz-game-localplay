@@ -1285,9 +1285,10 @@ Bonuses and packs:
 
 Billing:
 
-- Stripe Checkout is used for web purchases.
-- Native iOS requests are blocked from Stripe checkout and directed to in-app purchase.
-- Stripe webhook events are deduplicated in SQLite.
+- Spark packs sell on a unified three-tier ladder (50/200/500 @ $1.99/$4.99/$9.99) across web + iOS + Android. The catalog `config.SPARK_PRODUCTS` is the single source of truth for spark amounts. Full plan + status: **`SPEC-IAP.md`** (RevenueCat-based native IAP; backend + web/frontend implemented 2026-06-29; native plugin install + store/RevenueCat console setup pending).
+- Web purchases use Stripe Checkout (`/checkout/create` takes a `sku`).
+- Native iOS **and Android** requests are blocked from Stripe checkout and directed to in-app purchase; native purchases are fulfilled by `POST /webhook/revenuecat` (bearer-authed, idempotent via `webhook_events` + `credit_purchase(reference_id=iap:{store}:{txn})`).
+- Stripe and RevenueCat webhook events are deduplicated in the `webhook_events` table.
 
 Important behavior:
 
