@@ -4,6 +4,7 @@ import GameImage from '../media/GameImage';
 import { mediaUrl } from '../../utils/media';
 import { apiFetch } from '../../utils/api';
 import type { BingoDeckItem } from '../../types';
+import ScreenBackButton from './ScreenBackButton';
 
 const STARTER_ITEMS = [
     'Dance floor', 'Group photo', 'Someone laughs', 'Snack table', 'Party playlist',
@@ -127,8 +128,8 @@ export default function BingoSetupScreen({
 
     return (
         <div className="housie-setup min-h-dvh flex flex-col safe-top safe-bottom animate-in">
+            <ScreenBackButton onBack={onBack} />
             <div className="housie-setup-hero prompt-header">
-                <button type="button" onClick={onBack} className="btn btn-secondary prompt-header-back">Back</button>
                 <div className="hero-icon mb-4">▦</div>
                 <h1 className="hero-title">Set Up Bingo</h1>
                 <p>Create a custom board with words, emojis, or photos.</p>
@@ -220,7 +221,6 @@ export default function BingoSetupScreen({
             </div>
 
             <div className="housie-setup-actions">
-                <button onClick={onBack} className="btn btn-secondary" aria-label="Back">‹</button>
                 <button onClick={onCreateRoom} disabled={!canCreate} className="btn btn-primary btn-glow">Create Room</button>
             </div>
         </div>

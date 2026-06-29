@@ -207,6 +207,7 @@ export default function OrganizerPage() {
     const [partyQuestsConfig, setPartyQuestsConfig] = useState<PartyQuestSetupConfig>(defaultPartyQuestsConfig());
     const [catalog, setCatalog] = useState<CatalogGameWithRules[]>([]);
     const [activeRules, setActiveRules] = useState<GameRules | null>(null);
+    const [reviewPeekOpen, setReviewPeekOpen] = useState(false);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean; returnToHostApp?: boolean } | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
@@ -2521,10 +2522,41 @@ export default function OrganizerPage() {
                         onStartGame={startGame}
                         onToggleLock={() => wsRef.current?.send(JSON.stringify({ type: 'TOGGLE_LOCK' }))}
                         onBackToGames={leaveLobbyForGameList}
-                        onEditSetup={!hostAppMode && getLobbyEditTarget() ? editLobbySetup : undefined}
+                        onReviewContent={isQuizRuntimeGame(gameType) && quiz ? () => setReviewPeekOpen(true) : undefined}
+                        onEditSetup={!hostAppMode && getLobbyEditTarget() && !(isQuizRuntimeGame(gameType) && quiz) ? editLobbySetup : undefined}
                         editSetupLabel={getLobbyEditLabel()}
                         onShowRules={() => setActiveRules(rulesForGame(gameType, catalog))}
                     />
+                )}
+                {state === 'ROOM' && reviewPeekOpen && quiz && (
+                    <div className="review-peek-backdrop" onClick={() => setReviewPeekOpen(false)}>
+                        <div className="review-peek" onClick={(e) => e.stopPropagation()}>
+                            <div className="review-peek-header">
+                                <h2>{quiz.quiz_title || 'Questions'}</h2>
+                                <button type="button" className="btn btn-secondary" onClick={() => setReviewPeekOpen(false)}>Close</button>
+                            </div>
+                            <p className="review-peek-sub">{quiz.questions.length} question{quiz.questions.length === 1 ? '' : 's'} · read-only preview</p>
+                            <div className="review-peek-list no-scrollbar">
+                                {quiz.questions.map((q, i) => (
+                                    <div key={q.id ?? i} className="review-peek-q">
+                                        <p className="review-peek-q-text"><strong>{i + 1}.</strong> {q.text}</p>
+                                        <ul>
+                                            {q.options.map((opt, oi) => (
+                                                <li key={oi} className={oi === q.answer_index ? 'review-peek-correct' : ''}>
+                                                    {String.fromCharCode(65 + oi)}. {opt}{oi === q.answer_index ? ' ✓' : ''}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ))}
+                            </div>
+                            {!hostAppMode && getLobbyEditTarget() && (
+                                <button type="button" className="btn btn-secondary review-peek-edit" onClick={() => { setReviewPeekOpen(false); editLobbySetup(); }}>
+                                    Edit questions (restarts the room)
+                                </button>
+                            )}
+                        </div>
+                    </div>
                 )}
 
                 {state === 'MUSICAL_CHAIRS' && (

@@ -1,4 +1,5 @@
 import { type WhoAmIGameContent } from '../../types';
+import ScreenBackButton from './ScreenBackButton';
 
 interface WhoAmIReviewScreenProps {
     game: WhoAmIGameContent;
@@ -26,6 +27,7 @@ export default function WhoAmIReviewScreen({ game, onUpdateGame, onCreateRoom, o
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
+            <ScreenBackButton onBack={onBack} />
             <div className="flex-1 py-6">
                 <div className="text-center mb-6">
                     <div className="hero-icon mb-3">❓</div>
@@ -68,7 +70,6 @@ export default function WhoAmIReviewScreen({ game, onUpdateGame, onCreateRoom, o
             </div>
             <div className="mt-auto pb-4 space-y-2">
                 <button type="button" onClick={() => onCreateRoom()} disabled={!canCreate} className="btn btn-primary btn-glow w-full">Create Room</button>
-                <button type="button" onClick={onBack} className="btn btn-secondary w-full">Back</button>
             </div>
         </div>
     );

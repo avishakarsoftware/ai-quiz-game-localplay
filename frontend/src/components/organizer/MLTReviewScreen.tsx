@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { type MLTGame, type MLTStatement } from '../../types';
 import { useSwipeBack } from '../../utils/useSwipeBack';
+import ScreenBackButton from './ScreenBackButton';
 
 interface MLTReviewScreenProps {
     game: MLTGame;
@@ -64,6 +65,7 @@ export default function MLTReviewScreen({
             className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in"
             style={swipeProgress > 0 ? { transform: `translateX(${swipeProgress}px)`, opacity: 1 - swipeProgress / 400 } : undefined}
         >
+            <ScreenBackButton onBack={onBack} />
             <div className="flex-1 py-6">
                 <div className="text-center mb-6">
                     <h1 className="hero-title">{game.game_title}</h1>
@@ -165,9 +167,6 @@ export default function MLTReviewScreen({
                     className="btn btn-primary btn-glow w-full"
                 >
                     Create Room
-                </button>
-                <button onClick={onBack} className="btn btn-secondary w-full">
-                    Back
                 </button>
             </div>
         </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { type Quiz, type Question, ANSWER_STYLES } from '../../types';
 import { useSwipeBack } from '../../utils/useSwipeBack';
+import ScreenBackButton from './ScreenBackButton';
 import { mediaUrl } from '../../utils/media';
 import { hasEmoji } from '../../utils/emoji';
 import GameImage from '../media/GameImage';
@@ -122,6 +123,7 @@ export default function ReviewScreen({
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
+            <ScreenBackButton onBack={onBack} />
             {/* Swipe-back indicator */}
             {swipeProgress > 0 && (
                 <div className="swipe-back-indicator" style={{ opacity: swipeProgress, transform: `translateX(${swipeProgress * 24 - 24}px)` }}>
@@ -311,11 +313,6 @@ export default function ReviewScreen({
             )}
 
             <div className="review-footer-actions pb-4">
-                <button onClick={onBack} className="btn btn-secondary" style={{ flexShrink: 0, paddingLeft: 16, paddingRight: 16 }}>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="15 18 9 12 15 6" />
-                    </svg>
-                </button>
                 <button
                     onClick={() => setShowAnswers(!showAnswers)}
                     className={`btn btn-secondary review-answer-toggle ${showAnswers ? 'active' : ''}`}

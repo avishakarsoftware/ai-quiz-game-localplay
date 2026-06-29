@@ -19,6 +19,8 @@ interface LobbyScreenProps {
     onBackToGames?: () => void;
     onEditSetup?: () => void;
     editSetupLabel?: string;
+    onReviewContent?: () => void;
+    reviewLabel?: string;
     onShowRules?: () => void;
     hostAppMode?: boolean;
     hostAppJoinUrl?: string;
@@ -38,6 +40,8 @@ export default function LobbyScreen({
     onBackToGames,
     onEditSetup,
     editSetupLabel = 'Edit setup',
+    onReviewContent,
+    reviewLabel = 'Review questions',
     onShowRules,
     hostAppMode = false,
     hostAppJoinUrl = '',
@@ -109,6 +113,11 @@ export default function LobbyScreen({
                     <button type="button" onClick={onBackToGames} className="btn btn-secondary lobby-back-button">
                         Back to games
                     </button>
+                    {onReviewContent && (
+                        <button type="button" onClick={onReviewContent} className="btn btn-secondary lobby-back-button">
+                            {reviewLabel}
+                        </button>
+                    )}
                     {onEditSetup && (
                         <button type="button" onClick={onEditSetup} className="btn btn-secondary lobby-back-button">
                             {editSetupLabel}

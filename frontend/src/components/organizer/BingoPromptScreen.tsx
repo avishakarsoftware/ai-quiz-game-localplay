@@ -1,4 +1,5 @@
 import { Wand2 } from 'lucide-react';
+import ScreenBackButton from './ScreenBackButton';
 import SignInNudge from '../SignInNudge';
 import { useTokenBalance } from '../../hooks/useTokenBalance';
 import { randomQuizTopic, type AIProvider } from './PromptScreen';
@@ -43,9 +44,9 @@ export default function BingoPromptScreen({
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
+            <ScreenBackButton onBack={onBack} />
             <div className="flex-1 flex flex-col justify-center py-8">
                 <div className="text-center mb-8 prompt-header">
-                    <button type="button" onClick={onBack} className="btn btn-secondary prompt-header-back">Back</button>
                     <div className="hero-icon mb-4">▦</div>
                     <h1 className="hero-title">Create Bingo</h1>
                     <p className="text-[--text-tertiary] mt-2">Give a theme and get an editable Bingo deck.</p>
@@ -132,9 +133,6 @@ export default function BingoPromptScreen({
                 </button>
                 <button type="button" onClick={onCreateCustom} className="btn btn-secondary w-full">
                     Custom Deck
-                </button>
-                <button type="button" onClick={onBack} className="btn btn-secondary w-full">
-                    Back
                 </button>
             </div>
         </div>

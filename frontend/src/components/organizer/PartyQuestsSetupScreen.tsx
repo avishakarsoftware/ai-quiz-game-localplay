@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { SHOW_PROVIDER_SELECTOR } from '../../config';
 import { type AIProvider } from './PromptScreen';
+import ScreenBackButton from './ScreenBackButton';
 
 export interface PartyQuestSetupConfig {
     game_title: string;
@@ -202,8 +203,8 @@ export default function PartyQuestsSetupScreen({
 
     return (
         <div className="container-responsive safe-top safe-bottom animate-in">
+            <ScreenBackButton onBack={onBack} />
             <div className="text-center mb-7 prompt-header">
-                <button type="button" className="btn btn-secondary prompt-header-back" onClick={onBack}>Back</button>
                 <div className="hero-icon mb-4">🗺️</div>
                 <h1 className="hero-title">Party Quests</h1>
                 <p className="hero-subtitle">Choose a quest pack guests can play throughout the party.</p>

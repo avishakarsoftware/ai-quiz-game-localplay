@@ -119,9 +119,9 @@ test.describe('Lobby navigation actions', () => {
     await context.close();
   });
 
-  test('content game create flow shows Edit questions and round-trips to review', async ({ page }) => {
+  test('quiz lobby offers a read-only review peek that keeps the room, and edit-from-peek restarts it', async ({ page }) => {
     // Build a minimal custom quiz (no AI) and create a real room, so the
-    // per-session content state is set and the content-game Edit button appears.
+    // per-session quiz content is set and the lobby exposes "Review questions".
     page.on('dialog', (d) => d.accept());
     await page.goto('/');
     await page.getByRole('button', { name: /AI Quiz/ }).click();
@@ -137,11 +137,24 @@ test.describe('Lobby navigation actions', () => {
 
     await expect(page.locator('.room-code')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('button', { name: /back to games/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Edit questions' })).toBeVisible();
-    await page.screenshot({ path: 'test-results/lobby-nav-quiz.png', fullPage: true });
+    // Quiz uses the read-only peek (not a destructive top-level Edit).
+    await expect(page.getByRole('button', { name: 'Review questions' })).toBeVisible();
+    const code = await page.locator('.room-code').textContent();
 
-    // Edit questions closes the lobby and returns to review (Create Room again).
-    await page.getByRole('button', { name: 'Edit questions' }).click();
+    // Peek shows the questions read-only with the correct option marked.
+    await page.getByRole('button', { name: 'Review questions' }).click();
+    await expect(page.locator('.review-peek')).toBeVisible();
+    await expect(page.getByText('· read-only preview')).toBeVisible();
+    await expect(page.getByText(/Seattle ✓/)).toBeVisible();
+
+    // Closing returns to the SAME lobby/room (no teardown).
+    await page.getByRole('button', { name: 'Close' }).click();
+    await expect(page.locator('.review-peek')).toHaveCount(0);
+    await expect(page.locator('.room-code')).toHaveText(code || '');
+
+    // Editing from the peek intentionally restarts the room → returns to review.
+    await page.getByRole('button', { name: 'Review questions' }).click();
+    await page.getByRole('button', { name: /Edit questions \(restarts/ }).click();
     await expect(page.locator('.room-code')).toHaveCount(0, { timeout: 10_000 });
     await expect(page.getByRole('button', { name: 'Create Room' })).toBeVisible({ timeout: 10_000 });
   });

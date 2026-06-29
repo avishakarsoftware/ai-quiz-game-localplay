@@ -1,5 +1,6 @@
 import { useTokenBalance } from '../../hooks/useTokenBalance';
 import SignInNudge from '../SignInNudge';
+import ScreenBackButton from './ScreenBackButton';
 import { SHOW_PROVIDER_SELECTOR } from '../../config';
 
 export interface AIProvider {
@@ -262,18 +263,10 @@ export default function PromptScreen({
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
+            {onBack && <ScreenBackButton onBack={onBack} />}
             <div className="flex-1 flex flex-col justify-center py-8">
                 {/* Hero header */}
                 <div className="text-center mb-8 prompt-header">
-                    {onBack && (
-                        <button
-                            type="button"
-                            onClick={onBack}
-                            className="btn btn-secondary prompt-header-back"
-                        >
-                            Back
-                        </button>
-                    )}
                     <div className="hero-icon mb-4">⚡</div>
                     <h1 className="hero-title">Create Quiz</h1>
                     <p className="text-[--text-tertiary] mt-2">What should your players be quizzed on?</p>

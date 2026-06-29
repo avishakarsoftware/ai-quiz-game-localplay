@@ -1,6 +1,7 @@
 import { type CSSProperties } from 'react';
 import { type GameModeConfig } from '../../gameModes';
 import { randomQuizTopic, type AIProvider } from './PromptScreen';
+import ScreenBackButton from './ScreenBackButton';
 import { SHOW_PROVIDER_SELECTOR } from '../../config';
 
 interface QuizVariantPromptScreenProps {
@@ -56,15 +57,9 @@ export default function QuizVariantPromptScreen({
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
+            <ScreenBackButton onBack={onBack} />
             <div className="flex-1 flex flex-col justify-center py-8 quiz-variant-shell">
                 <div className="text-center mb-7 prompt-header">
-                    <button
-                        type="button"
-                        onClick={onBack}
-                        className="btn btn-secondary prompt-header-back"
-                    >
-                        Back
-                    </button>
                     <div className="hero-icon mb-4">{config.icon}</div>
                     <h1 className="hero-title">{config.promptTitle || config.title}</h1>
                     <p className="text-[--text-tertiary] mt-2">{config.promptSubtitle || config.description}</p>

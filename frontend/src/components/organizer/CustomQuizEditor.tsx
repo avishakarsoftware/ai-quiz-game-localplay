@@ -4,7 +4,8 @@ import { useSwipeBack } from '../../utils/useSwipeBack';
 import { mediaUrl } from '../../utils/media';
 import GameImage from '../media/GameImage';
 import { apiFetch } from '../../utils/api';
-import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, ImagePlus, Plus, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Copy, ImagePlus, Plus, Trash2, X } from 'lucide-react';
+import ScreenBackButton from './ScreenBackButton';
 
 type QuestionType = 'multiple_choice' | 'true_false';
 
@@ -328,6 +329,8 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
                 </div>
             )}
 
+            <ScreenBackButton onBack={onBack} />
+
             <div className="custom-quiz-hero">
                 <div className="hero-icon mb-3">✍️</div>
                 <h1 className="hero-title">Create Your Own</h1>
@@ -524,9 +527,6 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
             </div>
 
             <div className="custom-quiz-footer">
-                <button onClick={onBack} className="btn btn-secondary custom-footer-icon" aria-label="Back">
-                    <ArrowLeft size={20} aria-hidden="true" />
-                </button>
                 {onSave && (
                     <button onClick={handleSave} disabled={!canReview || saving} className="btn btn-secondary custom-footer-secondary">
                         {saving ? 'Saving' : 'Save'}

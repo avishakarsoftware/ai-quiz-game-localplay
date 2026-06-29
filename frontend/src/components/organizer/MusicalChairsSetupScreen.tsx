@@ -1,5 +1,6 @@
 import { type MusicalChairsConfig, type MusicalChairsGameplayMode, type MusicalChairsMusicMode, type MusicalChairsMusicStyle } from '../../types';
 import { defaultMusicalChairsTrackId, tracksForMusicalChairsStyle } from '../../audio/musicalChairsTracks';
+import ScreenBackButton from './ScreenBackButton';
 
 const STYLES: Array<{ id: MusicalChairsMusicStyle; label: string }> = [
     { id: 'upbeat', label: 'Upbeat' },
@@ -54,9 +55,9 @@ export default function MusicalChairsSetupScreen({
 
     return (
         <div className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in">
+            <ScreenBackButton onBack={onBack} />
             <div className="flex-1 flex flex-col justify-center py-8" style={{ maxWidth: 620, width: '100%', margin: '0 auto' }}>
                 <div className="text-center mb-7 prompt-header">
-                    <button type="button" onClick={onBack} className="btn btn-secondary prompt-header-back">Back</button>
                     <div className="hero-icon mb-4">🎵</div>
                     <h1 className="hero-title">Musical Chairs</h1>
                     <p className="text-[--text-tertiary] mt-2">Run it as a physical party game or a phone-tap race.</p>

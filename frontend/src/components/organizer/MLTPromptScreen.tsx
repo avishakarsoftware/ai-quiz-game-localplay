@@ -1,4 +1,5 @@
 import { type AIProvider } from './PromptScreen';
+import ScreenBackButton from './ScreenBackButton';
 import { useSwipeBack } from '../../utils/useSwipeBack';
 import { useTokenBalance } from '../../hooks/useTokenBalance';
 import SignInNudge from '../SignInNudge';
@@ -85,15 +86,9 @@ export default function MLTPromptScreen({
             className="min-h-dvh flex flex-col container-responsive safe-top safe-bottom animate-in"
             style={swipeProgress > 0 ? { transform: `translateX(${swipeProgress}px)`, opacity: 1 - swipeProgress / 400 } : undefined}
         >
+            <ScreenBackButton onBack={onBack} />
             <div className="flex-1 flex flex-col justify-center py-8">
                 <div className="text-center mb-8 prompt-header">
-                    <button
-                        type="button"
-                        onClick={onBack}
-                        className="btn btn-secondary prompt-header-back"
-                    >
-                        Back
-                    </button>
                     <div className="hero-icon mb-4">🎯</div>
                     <h1 className="hero-title">Most Likely To</h1>
                     <p className="text-[--text-tertiary] mt-2">Enter a theme for your statements</p>
