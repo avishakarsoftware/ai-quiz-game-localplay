@@ -708,17 +708,17 @@ Deploy steps:
 
 ## 12. File-change checklist (implementation)
 
-Backend:
-- [ ] `backend/config.py` — `SPARK_PRODUCTS`, `SPARK_PRODUCT_BY_ANY_ID`, `STRIPE_PRICE_BY_SKU`,
-      `REVENUECAT_WEBHOOK_SECRET`, `STRIPE_PRICE_SPARK_50/200/500`, startup warnings.
-- [ ] `backend/main.py` — `POST /webhook/revenuecat`; widen platform guard at `:5739` to include `android`.
-- [ ] `backend/main.py` — `/checkout/create` takes `sku`, resolves price+sparks from the catalog (§5.6);
-      `/webhook/stripe` cap updated to the max catalog amount.
-- [ ] `backend/main.py` — helper `_record_iap_entitlement(wallet_id, store, txn_id)` writing
-      `entitlements.apple_transaction_id`/`google_order_id` (reuse `create_entitlement`).
-- [ ] `backend/tests/test_iap_webhook.py` — full coverage per §5.7; extend `test_*checkout*`/Stripe webhook
-      tests for the per-sku price/amount path.
-- [ ] (no schema migration — verify gamma/prod schema already matches; it does as of 2026-06-29.)
+Backend (DONE 2026-06-29):
+- [x] `backend/config.py` — `SPARK_PRODUCTS`, `SPARK_PRODUCT_BY_ANY_ID`, `STRIPE_PRICE_BY_SKU`,
+      `REVENUECAT_WEBHOOK_SECRET`, `STRIPE_PRICE_SPARK_50/200/500`, `MAX_SPARK_PACK`, `DEFAULT_SPARK_SKU`.
+- [x] `backend/main.py` — `POST /webhook/revenuecat`; widen platform guard at `/checkout/create` to block `android` too.
+- [x] `backend/main.py` — `/checkout/create` takes `sku`, resolves price+sparks from the catalog (§5.6);
+      `/webhook/stripe` cap updated to `MAX_SPARK_PACK` (credit + refund paths).
+- [x] `backend/main.py` — helper `_record_iap_entitlement(wallet_id, store, txn_id)` (games=0/`iap_consumed`,
+      best-effort, swallows errors). Startup notices moved to `_check_payment_config()` (not secret-strength).
+- [x] `backend/tests/test_iap_webhook.py` — 22 tests: webhook auth/idempotency/refund/unknown-product/amount-from-catalog,
+      platform guard (ios+android), tiered `/checkout/create`, Stripe webhook cap. Full backend suite 937 passing.
+- [x] (no schema migration — Supabase gamma/prod schema already matches.)
 
 Frontend:
 - [ ] `frontend/package.json` — add `@revenuecat/purchases-capacitor`.

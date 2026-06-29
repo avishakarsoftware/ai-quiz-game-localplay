@@ -141,10 +141,27 @@ def _check_secret_strength():
     return warnings
 
 
+def _check_payment_config():
+    """Log operational notices about payment/IAP configuration (not secret-strength).
+
+    These are expected-to-be-empty pre-launch, so they're informational rather than security warnings."""
+    notices = []
+    if not config.REVENUECAT_WEBHOOK_SECRET:
+        notices.append("REVENUECAT_WEBHOOK_SECRET unset — native IAP fulfillment is disabled")
+    if config.STRIPE_SECRET_KEY and not (any(config.STRIPE_PRICE_BY_SKU.values()) or config.STRIPE_PRICE_ID):
+        notices.append("Stripe is enabled but no spark price is configured — web checkout will 503")
+    elif config.STRIPE_SECRET_KEY and not any(config.STRIPE_PRICE_BY_SKU.values()):
+        notices.append("No STRIPE_PRICE_SPARK_* configured — web checkout falls back to the legacy single price")
+    for n in notices:
+        logger.info("PAYMENT CONFIG: %s", n)
+    return notices
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting LocalPlay backend")
     _check_secret_strength()
+    _check_payment_config()
     db.init_db()
     await remote_config.init()
     socket_manager.start_cleanup_loop()
@@ -5714,6 +5731,7 @@ async def auth_me(req: Request):
 
 class CheckoutRequest(BaseModel):
     device_id: str
+    sku: str = config.DEFAULT_SPARK_SKU  # which spark tier; default keeps older clients working
     promo_id: str = ""
 
     @field_validator('device_id')
@@ -5723,6 +5741,13 @@ class CheckoutRequest(BaseModel):
         if not tokens._UUID_RE.match(v):
             raise ValueError('device_id must be a valid UUID')
         return v
+
+    @field_validator('sku')
+    @classmethod
+    def validate_sku(cls, v: str) -> str:
+        v = (v or "").strip()
+        # Unknown/blank sku falls back to the default tier rather than erroring an old client.
+        return v if v in config.SPARK_PRODUCTS else config.DEFAULT_SPARK_SKU
 
     @field_validator('promo_id')
     @classmethod
@@ -5735,17 +5760,23 @@ class CheckoutRequest(BaseModel):
 
 @app.post("/checkout/create")
 async def create_checkout(request: CheckoutRequest, req: Request):
-    # Enforce iOS IAP-only rule: block Stripe on native iOS
+    # Native platforms must use in-app purchase (Stripe for digital goods violates store policy).
     platform = tokens.get_platform(req)
-    if platform == "ios":
-        raise HTTPException(status_code=403, detail="Use in-app purchase on iOS")
+    if platform in ("ios", "android"):
+        raise HTTPException(status_code=403, detail="Use in-app purchase on native platforms")
 
     # Verify body device_id matches header device_id
     header_device_id = tokens.get_device_id(req)
     if header_device_id and header_device_id != request.device_id:
         raise HTTPException(status_code=400, detail="Device ID mismatch")
 
-    if not config.STRIPE_SECRET_KEY or not config.STRIPE_PRICE_ID:
+    # Resolve the price + spark amount from the catalog (single source of truth).
+    sku = request.sku  # validated to a known sku (or default) above
+    spark_amount = config.SPARK_PRODUCTS[sku]["sparks"]
+    # Prefer the per-tier price; fall back to the legacy single price during the transition.
+    price_id = config.STRIPE_PRICE_BY_SKU.get(sku) or config.STRIPE_PRICE_ID
+
+    if not config.STRIPE_SECRET_KEY or not price_id:
         raise HTTPException(status_code=503, detail="Payments not configured")
     import stripe
     stripe.api_key = config.STRIPE_SECRET_KEY
@@ -5756,22 +5787,23 @@ async def create_checkout(request: CheckoutRequest, req: Request):
         raise HTTPException(status_code=400, detail="Device ID required")
     tokens.ensure_wallet(wallet_id)
 
-    # Determine token amount (promo or standard)
+    # Promo overrides the tier amount when active (legacy behavior, applies to the default tier).
     promo_id = request.promo_id.strip()
     if promo_id and promo_id == config.PROMO_ID and config.PROMO_TOKEN_AMOUNT > 0:
         token_amount = config.PROMO_TOKEN_AMOUNT
     else:
-        token_amount = config.TOKEN_PACK_AMOUNT
+        token_amount = spark_amount
         promo_id = ""  # Clear invalid promo
 
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
-            line_items=[{"price": config.STRIPE_PRICE_ID, "quantity": 1}],
+            line_items=[{"price": price_id, "quantity": 1}],
             metadata={
                 "device_id": request.device_id,
                 "wallet_id": wallet_id,
                 "token_amount": str(token_amount),
+                "sku": sku,
                 "promo_id": promo_id,
             },
             success_url=f"{config.CHECKOUT_RETURN_URL or origins[0]}?checkout=success&session_id={{CHECKOUT_SESSION_ID}}",
@@ -5821,7 +5853,7 @@ async def stripe_webhook(req: Request):
         # Read token amount from metadata (set at checkout creation), fallback to config
         # Cap to max allowed amount to prevent metadata tampering
         import json
-        max_allowed = max(config.TOKEN_PACK_AMOUNT, config.PROMO_TOKEN_AMOUNT) if config.PROMO_TOKEN_AMOUNT > 0 else config.TOKEN_PACK_AMOUNT
+        max_allowed = max(config.MAX_SPARK_PACK, config.PROMO_TOKEN_AMOUNT)
         try:
             raw_token_amount = int(metadata.get("token_amount") or config.TOKEN_PACK_AMOUNT)
         except (ValueError, TypeError):
@@ -5857,7 +5889,7 @@ async def stripe_webhook(req: Request):
                         tokens_purchased = int(refund_metadata.get("token_amount") or config.TOKEN_PACK_AMOUNT)
                     except (ValueError, TypeError):
                         tokens_purchased = config.TOKEN_PACK_AMOUNT
-                    token_cap = max(config.TOKEN_PACK_AMOUNT, config.PROMO_TOKEN_AMOUNT) if config.PROMO_TOKEN_AMOUNT > 0 else config.TOKEN_PACK_AMOUNT
+                    token_cap = max(config.MAX_SPARK_PACK, config.PROMO_TOKEN_AMOUNT)
                     tokens_purchased = min(tokens_purchased, token_cap) if tokens_purchased > 0 else config.TOKEN_PACK_AMOUNT
 
                     # Prorate tokens for partial refunds based on cumulative refund/charge ratio
@@ -5893,6 +5925,118 @@ async def stripe_webhook(req: Request):
     if event_id:
         db.mark_webhook_event_processed(event_id)
 
+    return {"status": "ok"}
+
+
+def _record_iap_entitlement(wallet_id: str, store: str, transaction_id: str) -> None:
+    """Best-effort audit/restore marker for a native IAP. The authoritative spark credit lives in
+    token_transactions (reference_id=iap:store:txn); this row just records the store transaction id.
+    APP_STORE txns go in apple_transaction_id, PLAY_STORE in google_order_id. games=0 + a neutral
+    status keep it out of the restorable-entitlement path. Swallows all errors — credit_purchase is the
+    real idempotency gate, so a failure here must never fail the webhook after a successful grant."""
+    if not (wallet_id and transaction_id):
+        return
+    try:
+        apple_txn = transaction_id if store == "APP_STORE" else None
+        google_txn = transaction_id if store == "PLAY_STORE" else None
+        if not (apple_txn or google_txn):
+            return  # unknown store → nothing to key the audit row on
+        db.create_entitlement(
+            uuid.uuid4().hex,
+            device_id=wallet_id,
+            apple_transaction_id=apple_txn,
+            google_order_id=google_txn,
+            games=0,
+            status="iap_consumed",
+        )
+    except Exception as e:  # noqa: BLE001 — audit marker is best-effort
+        logger.warning("IAP entitlement audit record failed (store=%s): %s", store, e)
+
+
+@app.post("/webhook/revenuecat")
+async def revenuecat_webhook(req: Request):
+    """Fulfill native IAP purchases validated by RevenueCat. See SPEC-IAP §5.1.
+
+    Idempotency is double-layered: webhook_events(event_id) skips exact replays, and
+    credit_purchase(reference_id=iap:{store}:{txn}) prevents a second credit even when RevenueCat
+    sends a new event id for the same transaction."""
+    if not config.REVENUECAT_WEBHOOK_SECRET:
+        raise HTTPException(status_code=503, detail="IAP not configured")
+    auth = req.headers.get("authorization", "")
+    if auth != f"Bearer {config.REVENUECAT_WEBHOOK_SECRET}":
+        logger.warning("RevenueCat webhook auth failure from %s", _get_client_ip(req))
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        body = await req.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    event = body.get("event") if isinstance(body, dict) else None
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=400, detail="Missing event")
+
+    event_type = (event.get("type") or "").upper()
+    wallet_id = (event.get("app_user_id") or "").strip()
+    product_id = (event.get("product_id") or "").strip()
+    store = (event.get("store") or "").upper()  # "APP_STORE" | "PLAY_STORE"
+    txn_id = (event.get("transaction_id") or event.get("store_transaction_id") or "").strip()
+    event_id = (event.get("id") or (f"rc_{store}_{txn_id}" if txn_id else "")).strip()
+    if not event_id:
+        raise HTTPException(status_code=400, detail="Missing event identifier")
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="Missing app_user_id")
+
+    # Idempotency: skip already-processed events (survives restarts).
+    if db.is_webhook_event_processed(event_id):
+        logger.info("Skipping duplicate RevenueCat event: %s", event_id)
+        return {"status": "ok", "detail": "already processed"}
+
+    sku = config.SPARK_PRODUCT_BY_ANY_ID.get(product_id)
+    reference_id = f"iap:{store or 'UNKNOWN'}:{txn_id}"
+
+    if event_type in ("INITIAL_PURCHASE", "NON_RENEWING_PURCHASE"):
+        if not sku:
+            # Ack unknown products with 200 so RevenueCat stops retrying, but credit nothing.
+            logger.warning("RevenueCat unknown product: %s", product_id)
+            db.mark_webhook_event_processed(event_id)
+            return {"status": "ok", "detail": "unknown product"}
+        if not txn_id:
+            raise HTTPException(status_code=400, detail="Missing transaction_id")
+        sparks = config.SPARK_PRODUCTS[sku]["sparks"]
+
+        # Idempotent on reference_id (DB error here propagates as 500 → RevenueCat retries).
+        credited, new_balance = db.credit_purchase(
+            wallet_id, sparks, reference_id,
+            metadata=json.dumps({"source": "iap", "store": store, "product_id": product_id}),
+        )
+        logger.info("IAP credit %s sparks to wallet %s (store=%s, sku=%s, credited=%s, balance=%s)",
+                    sparks, wallet_id[:8], store, sku, credited, new_balance)
+        _record_iap_entitlement(wallet_id, store, txn_id)
+
+        if credited:
+            try:
+                db.store_pending_token(wallet_id, json.dumps(
+                    {"tokens_added": sparks, "new_balance": new_balance}))
+            except Exception as e:  # noqa: BLE001 — notification is best-effort; native polls balance
+                logger.warning("IAP pending-token notify failed: %s", e)
+
+    elif event_type in ("REFUND", "CANCELLATION"):
+        # Clawback — mirror the Stripe charge.refunded path (debit_tokens, idempotent via already-debited).
+        if sku and txn_id:
+            already = db.get_refund_debits_for_session(reference_id)
+            owed = config.SPARK_PRODUCTS[sku]["sparks"]
+            refund_tokens = max(0, owed - already)
+            if refund_tokens > 0:
+                success, _ = db.debit_tokens(wallet_id, refund_tokens, "refund", reference_id)
+                if not success:
+                    logger.warning("IAP refund debit failed: wallet=%s ref=%s amount=%d",
+                                   wallet_id[:8], reference_id, refund_tokens)
+                else:
+                    logger.info("IAP refund debited %d sparks from wallet %s (ref=%s)",
+                                refund_tokens, wallet_id[:8], reference_id)
+    # else: TEST, TRANSFER, RENEWAL, EXPIRATION, BILLING_ISSUE, etc. → ack and ignore (no subscriptions in v1)
+
+    db.mark_webhook_event_processed(event_id)
     return {"status": "ok"}
 
 
