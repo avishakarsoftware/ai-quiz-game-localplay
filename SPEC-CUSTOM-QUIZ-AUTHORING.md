@@ -107,6 +107,7 @@ Also add a library entry point:
 For host-app launches such as Revelry:
 
 - Host app opens a LocalPlay-hosted authoring route with signed party/user context, `draft_id`, and `return_url`.
+- The embedded quiz authoring surface presents AI vs custom as a **two-step choice** rather than stacking both at once: a first "Create a quiz" step offers just **AI quiz** and **Custom quiz**, and only the chosen path's detailed UI (AI topic/difficulty/count form, or the question editor) is then shown. Opening an existing saved quiz skips the chooser and goes straight to the editor. See "two-step choice" under Revelry quiz creation in `SPEC-REVELRY-INTEGRATION.md`.
 - LocalPlay handles authoring, image upload, validation, local draft recovery, and saved content.
 - LocalPlay redirects back to the host app with canonical `localplay_content_id` and safe metadata hints.
 - Host app verifies the returned content server-side before storing a prepared game setup pointer or creating a session.
