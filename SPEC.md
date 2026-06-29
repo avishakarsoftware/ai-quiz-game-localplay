@@ -749,6 +749,7 @@ Reconnection:
   - `players` in lobby and roster messages includes both connected and preserved offline seats so the host can see who joined earlier.
   - `LOBBY_RECONNECT_GRACE_SECONDS` (default **600 = 10 min**, `<= ROOM_TTL_SECONDS`) controls how long a disconnected lobby seat is preserved before it is pruned.
   - Backend start checks must prune expired offline seats, count only connected players for minimums, and never materialize offline seats into a started game.
+  - Mid-lobby age-out cleanup broadcasts a `PLAYER_LEFT` roster update with the refreshed `players` list. If multiple stale seats are pruned in one cleanup pass, the payload includes `nicknames: [...]` for all removed seats and keeps `nickname` as the last removed name for older clients.
   - **Implementation note (timing):** the grace is enforced in two places. At `START_GAME`, `prune_expired_lobby_players()` runs a grace-based pass then a `force=True` pass that drops all remaining offline seats (a started game never includes offline seats). Separately, the room cleanup loop (`_cleanup_expired_rooms`, every 60s) prunes offline lobby seats older than the grace mid-lobby and broadcasts a roster update, so an abandoned seat is actually reclaimed ~10 min after disconnect rather than lingering until the room's own `ROOM_TTL_SECONDS` (30 min) or `ORGANIZER_RECONNECT_GRACE_SECONDS` (10 min after the host leaves) sweep the whole room.
 
 ## WebSocket Protocol
@@ -1123,7 +1124,7 @@ Game select:
 - **My Quizzes** opens `QUIZ_LIBRARY`; starting a saved pack materializes it and enters normal review.
 - Home/menu navigation must reset safely from setup, loading, review, library, lobby, active gameplay, and terminal states.
 - The organizer lobby must expose an obvious **Back to games** action in addition to the hamburger menu. It uses the same shared home-navigation behavior as the menu: setup/review states reset directly, while lobby/active gameplay/result states warn that leaving the room may interrupt connected players before returning to the game list.
-- Quiz lobbies expose **Review questions** — a read-only peek that opens the questions over the lobby and returns to the SAME room without teardown (the room/socket and code are unchanged). The peek itself offers **Edit questions (restarts the room)** for actual edits.
+- Quiz lobbies expose **Review questions** — a read-only peek that opens the questions over the lobby and returns to the SAME room without teardown (the room/socket and code are unchanged). The peek itself offers **Edit questions (restarts the room)** for actual edits. This peek is transient host UI and must be closed automatically on room creation, game start, room reset, or explicit lobby close so it cannot reopen over a later room.
 - For other games with editable pre-start setup (WMLT/Drawing/Housie/Bingo/Musical Chairs/Party Quests/Who Am I/Chit Pull), the lobby exposes **Edit setup** (or **Edit prompts**, etc.). Because a lobby room already exists, the *edit* path warns the host that the lobby will close and connected players will rejoin a new room after changes are saved. The read-only review peek does not close the room.
 - Entering a new organizer state or switching game type must reset page scroll to the top so setup/review screens never open partially scrolled from the previous catalog or editor position.
 

@@ -402,6 +402,7 @@ export default function OrganizerPage() {
         try { msg = JSON.parse(event.data); } catch { return; }
         if (msg.type === 'ROOM_CREATED') {
             finishedRoomCanResetRef.current = false;
+            setReviewPeekOpen(false);
             setRoomCode(msg.room_code as string || roomCodeRef.current);
             setPlayerCount((msg.player_count as number | undefined) || 0);
             setPlayers((msg.players as PlayerInfo[] | undefined) || []);
@@ -414,6 +415,7 @@ export default function OrganizerPage() {
         }
         else if (msg.type === 'QUESTION') {
             finishedRoomCanResetRef.current = false;
+            setReviewPeekOpen(false);
             // First question means game just started (sparks were charged)
             if (!hostAppMode && msg.question_number === 1) {
                 window.dispatchEvent(new CustomEvent('refresh-sparks'));
@@ -670,6 +672,7 @@ export default function OrganizerPage() {
         }
         else if (msg.type === 'ROOM_RESET') {
             finishedRoomCanResetRef.current = false;
+            setReviewPeekOpen(false);
             if (msg.game_type) {
                 setGameType(msg.game_type as GameType);
                 persistOrganizerSession({ gameType: msg.game_type as string, contentId: '' });
@@ -1601,6 +1604,7 @@ export default function OrganizerPage() {
             wsRef.current?.readyState === WebSocket.OPEN &&
             canResetFinishedRoomWithGame(effectiveGameType, selectedContentId)
         ) {
+            setReviewPeekOpen(false);
             wsRef.current.send(JSON.stringify({
                 type: 'RESET_ROOM',
                 content_id: selectedContentId,
@@ -1616,6 +1620,7 @@ export default function OrganizerPage() {
         // First-time room creation
         try {
             finishedRoomCanResetRef.current = false;
+            setReviewPeekOpen(false);
             setPlayerCount(0);
             setPlayers([]);
             const body: Record<string, unknown> = {
@@ -2048,6 +2053,7 @@ export default function OrganizerPage() {
     const closeCurrentLobbyRoom = (nextState?: OrganizerState) => {
         flowEpochRef.current += 1;
         finishedRoomCanResetRef.current = false;
+        setReviewPeekOpen(false);
         clearOrganizerSession();
         if (reconnectTimerRef.current) {
             clearTimeout(reconnectTimerRef.current);

@@ -85,4 +85,22 @@ describe('LobbyScreen min-player gating', () => {
 
         expect(onEditSetup).toHaveBeenCalledTimes(1);
     });
+
+    it('offers an optional read-only review action before the host starts', async () => {
+        const user = userEvent.setup();
+        const onReviewContent = vi.fn();
+        render(
+            <LobbyScreen
+                {...baseProps}
+                playerCount={2}
+                minPlayers={2}
+                onBackToGames={() => {}}
+                onReviewContent={onReviewContent}
+            />,
+        );
+
+        await user.click(screen.getByRole('button', { name: /review questions/i }));
+
+        expect(onReviewContent).toHaveBeenCalledTimes(1);
+    });
 });

@@ -386,6 +386,7 @@ Lifecycle rules:
 - Live sessions expire after 2 idle hours with no activity.
 - Host/cohost can relaunch a fresh session from the same game setup when the game type supports it.
 - Party-scale lobby continuity: LocalPlay must not treat every guest WebSocket close in `lobby` as an intentional leave. For Revelry-launched games, guests often join from mobile, scan early, switch apps, or let the phone sleep while the host announces. LocalPlay should preserve lobby participants as offline/reconnecting seats for a configurable grace period, keyed by the LocalPlay runtime participant token and, when available, the host-app guest/user id. Reopening from Revelry should mint/resolve a fresh launch token but reclaim the same LocalPlay participant identity instead of producing duplicate guests, nickname conflicts, or a slow fresh-join wave.
+- When stale lobby seats age out, LocalPlay broadcasts a full refreshed roster. If a cleanup pass removes more than one offline seat, the payload includes `nicknames: [...]` for all removed seats while retaining legacy `nickname` for older consumers.
 - Host disconnect should be recoverable without making guests restart from scratch. A sleeping organizer socket may show the room as host-offline, but it should not immediately invalidate player launch routes or force a new session unless the configured host/room preservation window has elapsed or the host explicitly replaces/cancels the game.
 
 ### Launch Routes

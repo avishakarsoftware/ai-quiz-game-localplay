@@ -859,6 +859,7 @@ class SocketManager:
                         await room.broadcast({
                             "type": "PLAYER_LEFT",
                             "nickname": pruned[-1],
+                            "nicknames": pruned,
                             "player_count": room.connected_player_count(),
                             "players": room.lobby_roster(),
                         })

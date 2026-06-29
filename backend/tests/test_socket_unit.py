@@ -261,6 +261,33 @@ class TestRemoveConnectionLobby:
         assert "p2" in room.players              # within grace, preserved
         assert "p3" in room.players              # still connected, preserved
 
+    @pytest.mark.asyncio
+    async def test_cleanup_loop_broadcasts_all_pruned_lobby_players(self):
+        room = make_room()
+        room.state = "LOBBY"
+        org_ws = add_organizer(room)
+        add_player(room, "p1", "Stale One")
+        add_player(room, "p2", "Stale Two")
+        add_player(room, "p3", "Online")
+        room._remove_connection("p1")
+        room._remove_connection("p2")
+        room.players["p1"]["disconnected_at"] = time.time() - config.LOBBY_RECONNECT_GRACE_SECONDS - 1
+        room.players["p2"]["disconnected_at"] = time.time() - config.LOBBY_RECONNECT_GRACE_SECONDS - 1
+        manager = SocketManager()
+        manager.rooms[room.room_code] = room
+
+        with patch("socket_manager.asyncio.sleep", AsyncMock(side_effect=[None, asyncio.CancelledError])):
+            await manager._cleanup_expired_rooms()
+
+        update = org_ws.last("PLAYER_LEFT")
+        assert update is not None
+        assert update["nickname"] == "Stale Two"
+        assert update["nicknames"] == ["Stale One", "Stale Two"]
+        assert update["player_count"] == 1
+        assert update["players"] == [
+            {"nickname": "Online", "avatar": "", "status": "connected"},
+        ]
+
 
 class TestRemoveConnectionDuringGame:
     """Removing a player during game should preserve data for reconnection."""
