@@ -219,11 +219,6 @@ CHECKOUT_DEVICE = "11111111-2222-3333-4444-555555555555"
 @pytest.fixture
 def stripe_configured(monkeypatch):
     monkeypatch.setattr(config, "STRIPE_SECRET_KEY", "sk_test_x")
-    monkeypatch.setattr(config, "STRIPE_PRICE_BY_SKU", {
-        "spark_pack_50": "price_50",
-        "spark_pack_200": "price_200",
-        "spark_pack_500": "price_500",
-    })
     import stripe
 
     captured = {}
@@ -257,8 +252,12 @@ def test_checkout_web_allowed_and_uses_tier_price(stripe_configured):
                       json={"device_id": CHECKOUT_DEVICE, "sku": "spark_pack_200"},
                       headers={"X-Device-ID": CHECKOUT_DEVICE, "X-Platform": "web"})
     assert res.status_code == 200
-    # Chose the matching tier price and wrote sku + catalog amount into metadata.
-    assert stripe_configured["line_items"][0]["price"] == "price_200"
+    # Built the line item inline via price_data from the catalog (no pre-created Price object),
+    # and wrote sku + catalog amount into metadata.
+    price_data = stripe_configured["line_items"][0]["price_data"]
+    assert price_data["unit_amount"] == 499
+    assert price_data["currency"] == "usd"
+    assert price_data["product_data"]["name"] == "200 Sparks"
     meta = stripe_configured["metadata"]
     assert meta["sku"] == "spark_pack_200"
     assert meta["token_amount"] == "200"

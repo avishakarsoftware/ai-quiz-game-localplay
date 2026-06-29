@@ -148,10 +148,8 @@ def _check_payment_config():
     notices = []
     if not config.REVENUECAT_WEBHOOK_SECRET:
         notices.append("REVENUECAT_WEBHOOK_SECRET unset — native IAP fulfillment is disabled")
-    if config.STRIPE_SECRET_KEY and not (any(config.STRIPE_PRICE_BY_SKU.values()) or config.STRIPE_PRICE_ID):
-        notices.append("Stripe is enabled but no spark price is configured — web checkout will 503")
-    elif config.STRIPE_SECRET_KEY and not any(config.STRIPE_PRICE_BY_SKU.values()):
-        notices.append("No STRIPE_PRICE_SPARK_* configured — web checkout falls back to the legacy single price")
+    if not config.STRIPE_SECRET_KEY:
+        notices.append("STRIPE_SECRET_KEY unset — web checkout is disabled (will 503)")
     for n in notices:
         logger.info("PAYMENT CONFIG: %s", n)
     return notices
@@ -5770,16 +5768,16 @@ async def create_checkout(request: CheckoutRequest, req: Request):
     if header_device_id and header_device_id != request.device_id:
         raise HTTPException(status_code=400, detail="Device ID mismatch")
 
-    # Resolve the price + spark amount from the catalog (single source of truth).
-    sku = request.sku  # validated to a known sku (or default) above
-    spark_amount = config.SPARK_PRODUCTS[sku]["sparks"]
-    # Prefer the per-tier price; fall back to the legacy single price during the transition.
-    price_id = config.STRIPE_PRICE_BY_SKU.get(sku) or config.STRIPE_PRICE_ID
-
-    if not config.STRIPE_SECRET_KEY or not price_id:
+    if not config.STRIPE_SECRET_KEY:
         raise HTTPException(status_code=503, detail="Payments not configured")
     import stripe
     stripe.api_key = config.STRIPE_SECRET_KEY
+
+    # Resolve the price + spark amount from the catalog (single source of truth). The Stripe line item
+    # is built inline via price_data (VibePix-style) — no pre-created Stripe Price objects required.
+    sku = request.sku  # validated to a known sku (or default) above
+    pack = config.SPARK_PRODUCTS[sku]
+    spark_amount = pack["sparks"]
 
     # Resolve wallet for this user/device
     wallet_id = tokens.get_wallet_id(req)
@@ -5798,7 +5796,14 @@ async def create_checkout(request: CheckoutRequest, req: Request):
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
-            line_items=[{"price": price_id, "quantity": 1}],
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "product_data": {"name": pack["name"]},
+                    "unit_amount": pack["price_cents"],
+                },
+                "quantity": 1,
+            }],
             metadata={
                 "device_id": request.device_id,
                 "wallet_id": wallet_id,

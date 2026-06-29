@@ -140,47 +140,39 @@ This is the **single source of truth for spark amounts on every surface** (web S
 Each sku carries the spark grant plus the per-surface product handle.
 
 ```python
-# Amounts/SKUs/RC-ids deliberately mirror VibePix (server.js PRODUCTS) so the economies can merge later.
-# Keep `sparks` authoritative here; never trust client- or webhook-body-supplied amounts.
+# Amounts/SKUs/RC-ids/prices deliberately mirror VibePix (server.js PRODUCTS) so the economies can merge.
+# `sparks` and `price_cents` are authoritative; never trust client- or webhook-body-supplied amounts.
+# Web checkout builds Stripe `price_data` inline from price_cents (VibePix-style) — NO pre-created Stripe
+# Price objects and NO per-tier price env vars.
 SPARK_PRODUCTS = {
-    # sku (== VibePix sku): {sparks, rc_id, ios, android, stripe_price_env}
     "spark_pack_50": {
-        "sparks": 50,
+        "sparks": 50, "price_cents": 199, "name": "50 Sparks",
         "rc_id": "rc_spark_pack_50",
-        "ios": "me.revelryapp.quiz.sparks_50",
-        "android": "me.revelryapp.quiz.sparks_50",
-        "stripe_price_env": "STRIPE_PRICE_SPARK_50",   # $1.99
+        "ios": "me.revelryapp.quiz.sparks_50", "android": "me.revelryapp.quiz.sparks_50",
     },
     "spark_pack_200": {
-        "sparks": 200,
+        "sparks": 200, "price_cents": 499, "name": "200 Sparks",
         "rc_id": "rc_spark_pack_200",
-        "ios": "me.revelryapp.quiz.sparks_200",
-        "android": "me.revelryapp.quiz.sparks_200",
-        "stripe_price_env": "STRIPE_PRICE_SPARK_200",  # $4.99
+        "ios": "me.revelryapp.quiz.sparks_200", "android": "me.revelryapp.quiz.sparks_200",
     },
     "spark_pack_500": {
-        "sparks": 500,
+        "sparks": 500, "price_cents": 999, "name": "500 Sparks",
         "rc_id": "rc_spark_pack_500",
-        "ios": "me.revelryapp.quiz.sparks_500",
-        "android": "me.revelryapp.quiz.sparks_500",
-        "stripe_price_env": "STRIPE_PRICE_SPARK_500",  # $9.99
+        "ios": "me.revelryapp.quiz.sparks_500", "android": "me.revelryapp.quiz.sparks_500",
     },
 }
 
-# Stripe price id per sku, resolved from env at import (None if unset → that tier is web-unavailable)
-STRIPE_PRICE_BY_SKU = {sku: os.getenv(p["stripe_price_env"], "") for sku, p in SPARK_PRODUCTS.items()}
-
-# Reverse lookup: any store/rc/stripe-price id → sku (built at import time)
+# Reverse lookup: any store/rc product id → sku (built at import time)
 SPARK_PRODUCT_BY_ANY_ID = {}
 for _sku, _p in SPARK_PRODUCTS.items():
     for _key in ("rc_id", "ios", "android"):
         SPARK_PRODUCT_BY_ANY_ID[_p[_key]] = _sku
-    if STRIPE_PRICE_BY_SKU.get(_sku):
-        SPARK_PRODUCT_BY_ANY_ID[STRIPE_PRICE_BY_SKU[_sku]] = _sku
 ```
 
-(The map is named `SPARK_PRODUCTS` rather than `IAP_PRODUCTS` because it now also drives the web Stripe
-path. The webhook handlers reference `SPARK_PRODUCT_BY_ANY_ID` for product→sku resolution.)
+(The map is named `SPARK_PRODUCTS` rather than `IAP_PRODUCTS` because it also drives the web Stripe path.
+The webhook handlers reference `SPARK_PRODUCT_BY_ANY_ID` for product→sku resolution. Because Stripe uses
+inline `price_data`, the web side needs **no Stripe Product/Price objects and no price-id env** — only
+`STRIPE_SECRET_KEY` + the webhook secret.)
 
 > Note: with a multi-tier catalog the per-purchase grant is keyed off the **product id → sku → sparks**
 > lookup, not off the single `TOKEN_PACK_AMOUNT`. `MAX_TOKEN_BALANCE` (default 1000) must be ≥ the largest
@@ -385,49 +377,44 @@ remains the Stripe path.
 ```python
 REVENUECAT_WEBHOOK_SECRET = os.getenv("REVENUECAT_WEBHOOK_SECRET", "")
 # (RevenueCat client keys are NOT backend secrets — they're public SDK keys baked into the app build, §6.4)
-
-# Per-tier Stripe price ids (web). The catalog (§4.1) reads these via stripe_price_env.
-STRIPE_PRICE_SPARK_50  = os.getenv("STRIPE_PRICE_SPARK_50", "")
-STRIPE_PRICE_SPARK_200 = os.getenv("STRIPE_PRICE_SPARK_200", "")
-STRIPE_PRICE_SPARK_500 = os.getenv("STRIPE_PRICE_SPARK_500", "")
 ```
 
-`TOKEN_PACK_AMOUNT` and the single `STRIPE_PRICE_ID` are **deprecated** by this change. Keep them defined
-for one release as a fallback (if a `sku` is omitted by an old client, `/checkout/create` falls back to the
-legacy single price), then remove once clients are updated. Add a startup warning (near the Stripe one at
-`main.py:135`) if native builds are shipped but `REVENUECAT_WEBHOOK_SECRET` is unset, and if no
-`STRIPE_PRICE_SPARK_*` are configured while Stripe is otherwise enabled.
+No per-tier Stripe price env vars: prices live in `SPARK_PRODUCTS[*]["price_cents"]` and the web checkout
+builds Stripe `price_data` inline. `TOKEN_PACK_AMOUNT` and the single `STRIPE_PRICE_ID` are **deprecated**
+(no longer used for checkout; left defined for now). Startup notice (`_check_payment_config`): if
+`REVENUECAT_WEBHOOK_SECRET` is unset → native IAP disabled; if `STRIPE_SECRET_KEY` is unset → web checkout 503.
 
-### 5.6 Web Stripe checkout — move to the tiered ladder (`/checkout/create`)
+### 5.6 Web Stripe checkout — tiered ladder via inline `price_data` (`/checkout/create`)
 
-Today `/checkout/create` (`main.py:5736`) sells one pack: a single `STRIPE_PRICE_ID`, amount
-`TOKEN_PACK_AMOUNT`/`PROMO_TOKEN_AMOUNT` in metadata. Change it to take a **sku** and drive the price +
-spark amount from the catalog:
+`/checkout/create` takes a **sku** and builds the Stripe line item inline from the catalog — the
+**VibePix-style `price_data` approach** (`vibepix/server.js:2248`), so there are **no pre-created Stripe
+Price objects** to manage:
 
 ```python
 class CheckoutRequest(BaseModel):
     device_id: str
-    sku: str = "spark_pack_50"     # NEW — which tier; default keeps old clients working
+    sku: str = config.DEFAULT_SPARK_SKU   # which tier; default keeps old clients working
     promo_id: str = ""
+    # validator coerces unknown/blank sku → DEFAULT_SPARK_SKU
 
 # in create_checkout, after the platform guard + device match:
-sku = request.sku if request.sku in config.SPARK_PRODUCTS else "spark_pack_50"
-price_id = config.STRIPE_PRICE_BY_SKU.get(sku) or config.STRIPE_PRICE_ID   # fallback during transition
-spark_amount = config.SPARK_PRODUCTS[sku]["sparks"]
-if not config.STRIPE_SECRET_KEY or not price_id:
+if not config.STRIPE_SECRET_KEY:
     raise HTTPException(503, "Payments not configured")
-# ... stripe.checkout.Session.create(line_items=[{"price": price_id, "quantity": 1}], ...)
-# metadata: {"device_id", "wallet_id", "token_amount": spark_amount, "sku": sku, "promo_id"}
+pack = config.SPARK_PRODUCTS[request.sku]
+# stripe.checkout.Session.create(line_items=[{
+#     "price_data": {"currency": "usd", "product_data": {"name": pack["name"]},
+#                    "unit_amount": pack["price_cents"]},
+#     "quantity": 1}], ...)
+# metadata: {"device_id", "wallet_id", "token_amount": pack["sparks"], "sku": request.sku, "promo_id"}
 ```
 
-The **Stripe webhook** (`/webhook/stripe`, `main.py:5806`) already reads `token_amount` from session
-metadata and caps it; update the cap to `max(spark amounts in SPARK_PRODUCTS)` (500) instead of
-`max(TOKEN_PACK_AMOUNT, PROMO_TOKEN_AMOUNT)`. Refund proration already keys off the session's stored
-`token_amount`, so it carries over unchanged.
+The **Stripe webhook** (`/webhook/stripe`) reads `token_amount` from session metadata and caps it to
+`max(MAX_SPARK_PACK, PROMO_TOKEN_AMOUNT)` (500). Refund proration keys off the session's stored
+`token_amount`, unchanged.
 
-**Stripe dashboard:** create three Prices on the existing "Spark Pack" product (or three products) at
-$1.99 / $4.99 / $9.99 and put their ids in `STRIPE_PRICE_SPARK_50/200/500`. The legacy
-$0.99 price can be archived once the new tiers are live.
+**Stripe dashboard:** nothing to create for the catalog — inline `price_data` means no Product/Price
+objects. The **only** Stripe setup is one webhook endpoint (§7). (VibePix uses the same inline approach, which
+is why its spark packs never appear in the Stripe product catalog.)
 
 **Frontend web buy UI** shows the same three tiers and sends `sku` in the `/checkout/create` body
 (`OrganizerPage.tsx:2969`).
@@ -624,9 +611,10 @@ Backend (GCP, gamma + prod `.env`/`.env.gamma`) — set via the existing deploy 
 | Var | Where | Notes |
 |---|---|---|
 | `REVENUECAT_WEBHOOK_SECRET` | gamma + prod | **distinct per env**; never printed/committed |
-| `STRIPE_PRICE_SPARK_50` | gamma + prod | Stripe price id for the $1.99 / 50-spark tier (web) |
-| `STRIPE_PRICE_SPARK_200` | gamma + prod | Stripe price id for the $4.99 / 200-spark tier (web) |
-| `STRIPE_PRICE_SPARK_500` | gamma + prod | Stripe price id for the $9.99 / 500-spark tier (web) |
+| `STRIPE_SECRET_KEY` | gamma + prod | enables web checkout (test key for gamma, live for prod) |
+| `STRIPE_WEBHOOK_SECRET` | gamma + prod | from the per-env Stripe webhook endpoint |
+
+(No per-tier Stripe price env vars — prices are inline `price_data` from the catalog.)
 
 Native client build (Vite, native builds only):
 
@@ -699,9 +687,9 @@ Deploy steps:
 5. Set `REVENUECAT_WEBHOOK_SECRET` on **prod**, add the prod webhook in RevenueCat, deploy prod backend.
 6. Submit the iOS app + IAP for App Store review; promote the Android build off Draft to a testing track,
    then production.
-7. **Web Stripe tiers:** create the three Stripe Prices, set `STRIPE_PRICE_SPARK_50/200/500` on gamma+prod,
-   and (separately, per `launch_feature_gaps.md`) add live Stripe keys so web sells the same ladder. Archive
-   the legacy $0.99 price once the tiers are live.
+7. **Web Stripe:** no Stripe Products to create (inline `price_data`). Set `STRIPE_SECRET_KEY` +
+   `STRIPE_WEBHOOK_SECRET` per env (test on gamma; live on prod, per `launch_feature_gaps.md`) and register
+   one webhook endpoint per env. The legacy $0.99 single-price Product can be archived.
 8. Record the deploy in `DEPLOY.md`.
 
 ---
@@ -709,8 +697,8 @@ Deploy steps:
 ## 12. File-change checklist (implementation)
 
 Backend (DONE 2026-06-29):
-- [x] `backend/config.py` — `SPARK_PRODUCTS`, `SPARK_PRODUCT_BY_ANY_ID`, `STRIPE_PRICE_BY_SKU`,
-      `REVENUECAT_WEBHOOK_SECRET`, `STRIPE_PRICE_SPARK_50/200/500`, `MAX_SPARK_PACK`, `DEFAULT_SPARK_SKU`.
+- [x] `backend/config.py` — `SPARK_PRODUCTS` (incl. `price_cents`/`name`), `SPARK_PRODUCT_BY_ANY_ID`,
+      `REVENUECAT_WEBHOOK_SECRET`, `MAX_SPARK_PACK`, `DEFAULT_SPARK_SKU` (no per-tier Stripe price env).
 - [x] `backend/main.py` — `POST /webhook/revenuecat`; widen platform guard at `/checkout/create` to block `android` too.
 - [x] `backend/main.py` — `/checkout/create` takes `sku`, resolves price+sparks from the catalog (§5.6);
       `/webhook/stripe` cap updated to `MAX_SPARK_PACK` (credit + refund paths).
@@ -741,7 +729,7 @@ Frontend (DONE 2026-06-29, except the native plugin install):
 Docs/config:
 - [x] `DEPLOY.md` — §3c RevenueCat setup, native build env vars, plugin install, gamma+prod webhook URLs.
 - [x] `SPEC.md` — cross-links this spec from the monetization section.
-- [ ] `.env`/`.env.gamma` (GCP) — `REVENUECAT_WEBHOOK_SECRET` + `STRIPE_PRICE_SPARK_*` (per env). **Pending — needs Stripe/RevenueCat values.**
+- [ ] `.env`/`.env.gamma` (GCP) — `REVENUECAT_WEBHOOK_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (per env). **Pending — needs Stripe/RevenueCat values.**
 
 ---
 

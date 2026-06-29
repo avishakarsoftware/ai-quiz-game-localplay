@@ -419,7 +419,13 @@ Backend env (GCP `.env`/`.env.gamma`, distinct per env, never printed/committed)
 | Var | Notes |
 |-----|-------|
 | `REVENUECAT_WEBHOOK_SECRET` | Bearer secret for `POST /webhook/revenuecat` |
-| `STRIPE_PRICE_SPARK_50` / `_200` / `_500` | Per-tier Stripe price ids (web checkout) |
+| `STRIPE_SECRET_KEY` | enables web checkout (test on gamma, live on prod) |
+| `STRIPE_WEBHOOK_SECRET` | from the per-env Stripe webhook endpoint |
+
+Web Stripe uses inline `price_data` from the catalog — **no Stripe Product/Price objects or per-tier price
+env vars**. The only Stripe console step is registering one webhook endpoint per env
+(`https://gamesapi-gamma.revelryapp.me/webhook/stripe`, `https://gamesapi.revelryapp.me/webhook/stripe`,
+events `checkout.session.completed`, `charge.refunded`, `charge.dispute.created`).
 
 Native build env (Vite, native builds only — publishable keys, safe to bake in):
 
@@ -435,7 +441,7 @@ RevenueCat webhook URLs to register (Authorization: `Bearer <REVENUECAT_WEBHOOK_
 Console steps (full detail in `SPEC-IAP.md §7`): RevenueCat app for `me.revelryapp.quiz` (Apple In-App Purchase
 .p8 + reuse the `revenuecat-play@revelryapp.iam` service account; enable `androidpublisher.googleapis.com`),
 products `rc_spark_pack_50/200/500` → store products `me.revelryapp.quiz.sparks_50/200/500`; create the matching
-consumable IAPs in App Store Connect + Play Console; create the three Stripe Prices for the web tiers.
+consumable IAPs in App Store Connect + Play Console. (Web Stripe needs no products — inline `price_data`.)
 
 ### 4. Install nginx routes
 

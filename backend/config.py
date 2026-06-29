@@ -155,7 +155,7 @@ JWT_SECRET = os.getenv("JWT_SECRET", "")
 GEMINI_PREMIUM_MODEL = os.getenv("GEMINI_PREMIUM_MODEL", "gemini-2.5-flash-lite")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")  # DEPRECATED single-pack price; fallback during the tier transition
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")  # DEPRECATED single-pack price; no longer used for checkout
 CHECKOUT_RETURN_URL = os.getenv("CHECKOUT_RETURN_URL", "")  # explicit return URL for Stripe checkout
 
 # --- In-App Purchase (RevenueCat) + unified spark tier ladder (SPEC-IAP) ---
@@ -163,48 +163,43 @@ CHECKOUT_RETURN_URL = os.getenv("CHECKOUT_RETURN_URL", "")  # explicit return UR
 # live in the native build (VITE_REVENUECAT_*), not here.
 REVENUECAT_WEBHOOK_SECRET = os.getenv("REVENUECAT_WEBHOOK_SECRET", "")
 
-# Per-tier Stripe price ids (web). Empty → that tier is unavailable on web.
-STRIPE_PRICE_SPARK_50 = os.getenv("STRIPE_PRICE_SPARK_50", "")
-STRIPE_PRICE_SPARK_200 = os.getenv("STRIPE_PRICE_SPARK_200", "")
-STRIPE_PRICE_SPARK_500 = os.getenv("STRIPE_PRICE_SPARK_500", "")
-
-# Single source of truth for spark amounts on every surface (web Stripe + iOS + Android).
-# SKUs / RC ids / amounts deliberately mirror VibePix (server.js PRODUCTS) so the economies can merge later.
-# `sparks` is authoritative — never trust client- or webhook-body-supplied amounts.
+# Single source of truth for spark amounts AND prices on every surface (web Stripe + iOS + Android).
+# SKUs / RC ids / amounts / prices deliberately mirror VibePix (server.js PRODUCTS) so the economies can
+# merge later. Web checkout builds Stripe `price_data` inline from `price_cents` (VibePix-style) — no
+# pre-created Stripe Price objects, no per-tier price env vars. `sparks`/`price_cents` are authoritative;
+# never trust client- or webhook-body-supplied amounts.
 SPARK_PRODUCTS = {
     "spark_pack_50": {
         "sparks": 50,
+        "price_cents": 199,
+        "name": "50 Sparks",
         "rc_id": "rc_spark_pack_50",
         "ios": "me.revelryapp.quiz.sparks_50",
         "android": "me.revelryapp.quiz.sparks_50",
-        "stripe_price": STRIPE_PRICE_SPARK_50,
     },
     "spark_pack_200": {
         "sparks": 200,
+        "price_cents": 499,
+        "name": "200 Sparks",
         "rc_id": "rc_spark_pack_200",
         "ios": "me.revelryapp.quiz.sparks_200",
         "android": "me.revelryapp.quiz.sparks_200",
-        "stripe_price": STRIPE_PRICE_SPARK_200,
     },
     "spark_pack_500": {
         "sparks": 500,
+        "price_cents": 999,
+        "name": "500 Sparks",
         "rc_id": "rc_spark_pack_500",
         "ios": "me.revelryapp.quiz.sparks_500",
         "android": "me.revelryapp.quiz.sparks_500",
-        "stripe_price": STRIPE_PRICE_SPARK_500,
     },
 }
 
-# Stripe price id per sku (empty string when unconfigured).
-STRIPE_PRICE_BY_SKU = {sku: p["stripe_price"] for sku, p in SPARK_PRODUCTS.items()}
-
-# Reverse lookup: any store/rc/stripe-price id → sku (built at import time).
+# Reverse lookup: any store/rc product id → sku (built at import time).
 SPARK_PRODUCT_BY_ANY_ID = {}
 for _sku, _p in SPARK_PRODUCTS.items():
     for _key in ("rc_id", "ios", "android"):
         SPARK_PRODUCT_BY_ANY_ID[_p[_key]] = _sku
-    if _p.get("stripe_price"):
-        SPARK_PRODUCT_BY_ANY_ID[_p["stripe_price"]] = _sku
 
 # Largest single pack — used to cap webhook-metadata-supplied grant amounts (anti-tamper).
 MAX_SPARK_PACK = max(p["sparks"] for p in SPARK_PRODUCTS.values())
