@@ -39,6 +39,15 @@ As of the SPA rollout, the VM has both LocalPlay containers deployed:
 
 The older backup containers `revelry-platform` and `revelry-gamma` may exist on the VM. They are not managed by `scripts/deploy-gcp.sh`; the LocalPlay deploy script only stops/removes `games-backend` and `games-backend-gamma`.
 
+### Recent PROD deploy — June 28, 2026 (lobby continuity + answer reveal + lobby nav)
+
+Promoted the gamma-validated RC (runtime commit `b3b9542`; repo HEAD `f794e07` adds only test-only commits) to **prod**. No schema migration required.
+
+- **Backend + fallback SPA:** `./scripts/deploy-gcp.sh --with-frontend` → `games-backend` (Supabase prod `games_`). DB backed up to `revelry-backups/revelry_20260628_170032.db`; health passed; gamma untouched.
+- **Public frontend (IONOS `games.revelryapp.me`):** `VITE_BASE_PATH=/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_WEB_URL=https://games.revelryapp.me/ VITE_CAST_APP_ID=1BC9ACD8 npx vite build`, then additive `scp -r dist/*` + `rsync .htaccess` (no `--delete`, no asset cleanup). Live index serves bundle `index-CRH0ltSK.js` (matches local build).
+- Ships: quiz answer-reveal on all surfaces, consistent lobby Back/Edit nav + mobile overlap fix, lobby continuity (offline seat preservation / reconnect, `connected_player_count`), Party Quests AI setup, and the Revelry callback event-loop hardening.
+- **Verified after promotion:** `scripts/smoke-remote.py --base-url https://gamesapi.revelryapp.me` passed (health, providers, generation, idempotency, token no-double-charge); `PLAYWRIGHT_BASE_URL=https://games.revelryapp.me npm exec playwright test e2e/gamma-smoke.spec.ts` passed desktop+mobile. Pre-promotion gamma RC suites (smoke, lobby-nav, generic 10, preprod-live 12, broader live 4, Revelry preprod matrix 2, UX audit) all green.
+
 ### Recent gamma deploy — June 28, 2026 (Revelry callback event-loop hardening)
 
 Deployed runtime commit `1170215` to gamma with `./scripts/deploy-gcp.sh --gamma --with-frontend`. No schema migration was required. The deploy includes LocalPlay-side Revelry session/callback timing instrumentation and moves runtime WebSocket lifecycle callbacks (`game.started`, `game.completed`, cancellation/expiration) through a worker thread so synchronous HTTP retry/backoff cannot block the asyncio event loop for other rooms and players.
