@@ -11,7 +11,7 @@ export function getGammaPartyGamesUrl(): URL {
     || (process.env.REVELRY_GAMMA_PARTY_GAMES_URL_FILE
       ? readFileSync(process.env.REVELRY_GAMMA_PARTY_GAMES_URL_FILE, 'utf8').trim()
       : '');
-  test.skip(!rawUrl, 'Set REVELRY_GAMMA_PARTY_GAMES_URL to a short-lived gamma party games URL.');
+  test.skip(!rawUrl, 'No gamma party-games URL. Mint one for the seeded party with `./scripts/mint-gamma-revelry-url.sh`, then set REVELRY_GAMMA_PARTY_GAMES_URL_FILE (or REVELRY_GAMMA_PARTY_GAMES_URL). Use the seeded party so the mirror-results test resolves on Revelry.');
 
   const url = new URL(rawUrl);
   expect(url.origin).toBe(GAMMA_ORIGIN);
