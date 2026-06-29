@@ -230,7 +230,6 @@ export default function RevelryAuthoringPage() {
     ].join(':');
     const editorScope = resolved.localplay_content_id || `new:${authoringToken.slice(0, 16)}`;
     const draftScope = currentContentId || resolved.localplay_content_id || editorScope;
-    const initialQuiz = generatedQuiz || resolved.content?.quiz || null;
     const hostAppImageGenerationAllowed = Boolean(
         resolved.launch_context.host_app !== 'revelry'
         || false
@@ -241,6 +240,9 @@ export default function RevelryAuthoringPage() {
     const effectiveMode = editingExisting ? 'custom' : authoringMode;
     const containerLabel = resolved.launch_context.display?.container_label || resolved.launch_context.external_container_title || 'Revelry Games';
     const editorBack = editingExisting ? () => returnToRevelry() : () => setAuthoringMode('choose');
+    const initialQuiz = effectiveMode === 'ai'
+        ? generatedQuiz
+        : resolved.content?.quiz || null;
 
     // Step 1 — choose AI vs custom (only for brand-new content).
     if (effectiveMode === 'choose') {

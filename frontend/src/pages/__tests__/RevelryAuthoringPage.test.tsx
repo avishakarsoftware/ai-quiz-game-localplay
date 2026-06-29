@@ -2,9 +2,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { type Quiz } from '../../types';
 
 vi.mock('../../components/organizer/CustomQuizEditor', () => ({
-    default: ({ initialQuiz }: { initialQuiz: Quiz | null }) => (
+    default: ({ initialQuiz, onBack }: { initialQuiz: Quiz | null; onBack?: () => void }) => (
         <div>
             <div>Mock editor</div>
+            {onBack && <button type="button" onClick={onBack}>Mock editor back</button>}
             {initialQuiz?.questions.map((question) => (
                 <div key={question.id}>
                     <span>{question.text}</span>
@@ -138,5 +139,58 @@ describe('RevelryAuthoringPage', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Generate AI quiz' }));
 
         await waitFor(() => expect(screen.getByText('What is on the cake?')).toBeInTheDocument());
+    });
+
+    it('does not carry a generated AI quiz into the custom path after returning to the chooser', async () => {
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('/integrations/revelry/content/authoring-token/resolve')) {
+                return Response.json({
+                    launch_context: {
+                        host_app: 'revelry',
+                        external_container_type: 'party',
+                        external_container_id: 'party-1',
+                        external_container_title: 'Ava Party',
+                        display: { container_label: 'Ava Party' },
+                    },
+                    mode: 'create',
+                    localplay_content_id: null,
+                    content: null,
+                });
+            }
+            if (url.includes('/sd/status')) return Response.json({ available: false });
+            if (url.includes('/integrations/revelry/party-games/prompts/generate')) {
+                return Response.json({
+                    content_payload: {
+                        quiz: {
+                            quiz_title: 'Generated Quiz',
+                            questions: [
+                                {
+                                    id: 1,
+                                    text: 'Generated question should stay on the AI path',
+                                    options: ['A', 'B', 'C', 'D'],
+                                    answer_index: 0,
+                                    image_prompt: '',
+                                },
+                            ],
+                        },
+                    },
+                });
+            }
+            return new Response('not found', { status: 404 });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(<RevelryAuthoringPage />);
+
+        fireEvent.click(await screen.findByRole('button', { name: /AI quiz/ }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Generate AI quiz' }));
+        await screen.findByText('Generated question should stay on the AI path');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Mock editor back' }));
+        fireEvent.click(await screen.findByRole('button', { name: /Custom quiz/ }));
+
+        expect(screen.getByText('Mock editor')).toBeInTheDocument();
+        expect(screen.queryByText('Generated question should stay on the AI path')).toBeNull();
     });
 });
