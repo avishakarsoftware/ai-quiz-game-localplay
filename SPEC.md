@@ -749,6 +749,7 @@ Reconnection:
   - `players` in lobby and roster messages includes both connected and preserved offline seats so the host can see who joined earlier.
   - `LOBBY_RECONNECT_GRACE_SECONDS` controls how long a disconnected lobby seat is preserved before age-out cleanup; default target is long enough for real party pauses (90 minutes).
   - Backend start checks must prune expired offline seats, count only connected players for minimums, and never materialize offline seats into a started game.
+  - **Current implementation note (timing reality):** `prune_expired_lobby_players()` is only invoked at `START_GAME` — first a grace-based pass, then a `force=True` pass that drops *all* remaining offline seats (so a started game never includes offline seats, regardless of grace). There is no periodic/background age-out task and the reconnect/reclaim path does not check the grace, so `LOBBY_RECONNECT_GRACE_SECONDS` is largely vestigial as wired. The effective backstops that actually reclaim an abandoned lobby are the room's own `ROOM_TTL_SECONDS` (30 min inactivity, swept by `_cleanup_expired_rooms`) and `ORGANIZER_RECONNECT_GRACE_SECONDS` (10 min after the host disconnects) — both well under 90 min. To make the lobby grace meaningful (and to allow a shorter value like 10 min), add a periodic offline-seat prune; otherwise the durable client session TTL only usefully spans the room's ~30-min life.
 
 ## WebSocket Protocol
 
