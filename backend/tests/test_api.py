@@ -1,6 +1,7 @@
 """API endpoint tests using FastAPI TestClient."""
 import sys
 import os
+import re
 import time
 import pytest
 
@@ -803,6 +804,9 @@ class TestMediaUploads:
         body = res.json()
         assert body["asset"]["public_url"].startswith("https://media.revelryapp.me/apps/localplay/gamma/uploads/")
         assert body["upload"]["fields"]["token"]
+        signed_path = body["upload"]["fields"]["path"]
+        assert re.match(r"^gamma/uploads/[A-Za-z0-9_-]+/\d{4}/\d{2}/\d{2}/img_[a-f0-9]+\.webp$", signed_path)
+        assert "pic" not in signed_path
 
         finalize = client.post(
             f"/media/{body['asset']['id']}/finalize",
@@ -811,6 +815,29 @@ class TestMediaUploads:
         )
         assert finalize.status_code == 200
         assert finalize.json()["asset"]["status"] == "ready"
+
+    def test_create_media_upload_url_rejects_executable_filenames(self, monkeypatch):
+        monkeypatch.setattr(config, "MEDIA_UPLOAD_URL", "https://media.revelryapp.me/apps/localplay/upload.php")
+        monkeypatch.setattr(config, "MEDIA_PUBLIC_BASE_URL", "https://media.revelryapp.me/apps/localplay")
+        monkeypatch.setattr(config, "MEDIA_UPLOAD_SECRET", "super-secret")
+        res = client.post(
+            "/media/upload-url",
+            json={"filename": "party-photo.php.jpg", "mime_type": "image/jpeg", "bytes": 1234},
+            headers=AUTH_HEADERS,
+        )
+        assert res.status_code == 415
+        assert res.json()["detail"] == "Executable media filenames are not allowed"
+
+    def test_create_media_upload_url_rejects_svg_filenames(self, monkeypatch):
+        monkeypatch.setattr(config, "MEDIA_UPLOAD_URL", "https://media.revelryapp.me/apps/localplay/upload.php")
+        monkeypatch.setattr(config, "MEDIA_PUBLIC_BASE_URL", "https://media.revelryapp.me/apps/localplay")
+        monkeypatch.setattr(config, "MEDIA_UPLOAD_SECRET", "super-secret")
+        res = client.post(
+            "/media/upload-url",
+            json={"filename": "diagram.svg", "mime_type": "image/png", "bytes": 1234},
+            headers=AUTH_HEADERS,
+        )
+        assert res.status_code == 415
 
 
 # ---------------------------------------------------------------------------

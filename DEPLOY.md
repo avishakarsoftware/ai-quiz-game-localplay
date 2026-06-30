@@ -465,7 +465,7 @@ scheme in `Info.plist`; `cap-build.mjs` bakes the public client ids). Remaining 
 | Platform | Step |
 |---|---|
 | iOS | Xcode → App target → Signing & Capabilities → **+ Sign in with Apple** (adds the entitlement). Google iOS client + URL scheme already configured. |
-| Android | Create a **GCP OAuth client** (project `revelryapp`, type Android): package `me.revelryapp.quiz` + the **Play App Signing** SHA-1 (Play Console → Test and release → Setup → App integrity). Also add the **upload** key SHA-1 for internal-testing installs: `keytool -list -v -keystore ~/keystores/revelry-quiz-upload.keystore -alias <alias> | grep SHA`. serverClientId = the web Google client. |
+| Android | Create a **GCP OAuth client** (project `revelryapp`, type Android): package `me.revelryapp.quiz` + the **Play App Signing** SHA-1 (Play Console → Test and release → Setup → App integrity). Also add the **upload** key SHA-1 for direct/sideload installs: `keytool -list -v -keystore ~/keystores/revelry-quiz-upload.keystore -alias revelry-quiz | grep SHA`. The **Play App Signing** SHA-1 is the one Play-installed builds use — register that as the primary. serverClientId = the web Google client (already baked); creating the Android OAuth client needs no code change. |
 
 Backend already verifies Google ID tokens against the web client and Apple via JWKS (`APPLE_CLIENT_IDS`), so no backend change is needed.
 
@@ -1409,7 +1409,7 @@ curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sess
 - Revelry party hub active-session recovery: LocalPlay must reconcile persisted `games_gamma_game_sessions` rows with the current runtime room map after any gamma deploy/restart. If a session remains `lobby` / `active` / `paused` but its room no longer exists, LocalPlay marks it `expired` with `closed_reason = runtime_unavailable`, rejects new organizer/player launch tokens for it, hides it from the hub's active game card, and allows the host to start a fresh game without replacement confirmation.
 - Applied the rendered gamma Supabase schema again on 2026-05-25; `games_gamma_host_app_catalog_flags` now exists. Seeded Revelry gamma catalog policy rows for `quiz`, `wmlt`, and `drawing` with `enabled = true` and `status = gamma`. `GET /catalog?host_app=revelry` now returns those rows with `status: "gamma"` instead of relying on the non-production permissive fallback.
 - Post-deploy gamma smoke on 2026-05-25 passed for `/health`, `/providers`, `/media/status`, `/config.json`, SPA root, anonymous auth rejection, invalid sign-in rejection, iOS checkout guard, and `GET /catalog?host_app=revelry`; generation/idempotency checks were intentionally skipped.
-- On 2026-05-25, gamma media upload testing found `403 bad_signature` from the IONOS LocalPlay upload handler because `games-backend-gamma` had a `MEDIA_UPLOAD_SECRET` that did not match `~/revelryapp/media/apps/localplay/.upload_secret`. Updated `/home/revelry-games/app/.env.gamma` to match the IONOS secret, redeployed gamma with `./scripts/deploy-gcp.sh --gamma --with-frontend`, and verified a signed PNG upload returned `200`.
+- On 2026-05-25, gamma media upload testing found `403 bad_signature` from the IONOS LocalPlay upload handler because `games-backend-gamma` had a `MEDIA_UPLOAD_SECRET` that did not match the IONOS upload secret. Updated `/home/revelry-games/app/.env.gamma` to match the IONOS secret, redeployed gamma with `./scripts/deploy-gcp.sh --gamma --with-frontend`, and verified a signed PNG upload returned `200`.
 - On 2026-05-25, deployed the Revelry authoring editor remount fix to gamma so saving a new party-scoped quiz no longer clears the custom quiz editor after `currentContentId` is assigned.
 - Post-fix gamma Playwright passed on 2026-05-25: `npm run test:e2e:gamma` returned `2 passed`; `REVELRY_GAMMA_PARTY_GAMES_URL_FILE=... npm run test:e2e:gamma:revelry` returned `2 passed`, covering Drawing save/start/re-entry plus custom Quiz image upload/save/payload verification.
 - Deployed gamma-only extended party-games token TTL support on 2026-05-25 with `./scripts/deploy-gcp.sh --gamma --with-frontend`. The Revelry gamma mint script can now write a 30-day disposable-party URL to `gamma_party_games_url.txt`; production rejects custom party-games token TTLs. Verified the minted token expiry was 30 days, then reran Playwright: `REVELRY_GAMMA_PARTY_GAMES_URL_FILE=... npm run test:e2e:gamma:revelry` returned `2 passed`, and `npm run test:e2e:gamma` returned `2 passed`.
@@ -1428,7 +1428,7 @@ curl -sS -X POST "https://gamesapi-gamma.revelryapp.me/integrations/revelry/sess
 - Deployed the current LocalPlay bridge/backend-served SPA to production on 2026-06-02 with `./scripts/deploy-gcp.sh --with-frontend`, promoting the gamma-tested Revelry catalog picker, Musical Chairs quick-start bridge, hosted music loops, and recent UX/gameplay fixes.
 - Production env includes `REVELRY_INTEGRATION_SECRET`, `PUBLIC_BASE_URL=https://gamesapi.revelryapp.me`, `REVELRY_CALLBACK_URL=https://api.revelryapp.me/api/games/localplay/callback`, and `REVELRY_CALLBACK_SECRET=`. Keep `REVELRY_CALLBACK_SECRET` empty unless doing a deliberate rotation/compatibility window.
 - Production env keeps AI image generation disabled with `IMAGE_GENERATION_PROVIDER=none`.
-- Production media uploads are enabled through IONOS with `MEDIA_PUBLIC_BASE_URL=https://media.revelryapp.me/apps/localplay`, `MEDIA_UPLOAD_URL=https://media.revelryapp.me/apps/localplay/upload.php`, `MEDIA_PATH_PREFIX=prod`, and a `MEDIA_UPLOAD_SECRET` matching `~/revelryapp/media/apps/localplay/.upload_secret`.
+- Production media uploads are enabled through IONOS with `MEDIA_PUBLIC_BASE_URL=https://media.revelryapp.me/apps/localplay`, `MEDIA_UPLOAD_URL=https://media.revelryapp.me/apps/localplay/upload.php`, `MEDIA_PATH_PREFIX=prod`, and a `MEDIA_UPLOAD_SECRET` matching the string returned by `~/revelryapp/media/apps/localplay/upload-secret.php`.
 - Applied the targeted production Supabase parity migration on 2026-05-25: `games_quiz_packs`, `games_quiz_questions`, `games_media_assets`, `games_game_sessions`, and the refreshed `games_generated_content_content_type_check` allowing `quiz`, `mlt`, and `drawing`.
 - Post-migration consistency check scoped to LocalPlay tables/RPCs (`games_` vs `games_gamma_`) returned no diffs across tables, columns/defaults, constraints, indexes, RLS, policies, and RPC signatures as of 2026-05-25. The shared Supabase project also contains unrelated `pp_*` tables; those are not LocalPlay/Revelry bridge migrations and should not be modified by LocalPlay deploy work.
 - Applied the rendered production Supabase schema on 2026-06-02 to create `games_host_app_catalog_flags`, then seeded production Revelry policy rows with `status = "live"` for `quiz`, `wmlt`, `drawing`, and quick-start-only `musical_chairs`. Housie remains unpromoted in production until the production generated-content constraint is explicitly expanded to include `housie` and a prod Housie save/start smoke passes.
@@ -1537,9 +1537,9 @@ https://media.revelryapp.me/apps/localplay/
 IONOS server:
 ~/revelryapp/media/apps/localplay/
   upload.php
+  upload-secret.php
   delete.php
   .htaccess
-  .upload_secret
   prod/
     uploads/{wallet_prefix}/YYYY/MM/DD/{asset_id}.webp
     generated/{asset_id}.webp
@@ -1554,6 +1554,8 @@ Repo source:
 
 ```text
 ionos/media/upload.php
+ionos/media/upload-secret.example.php
+ionos/media/uploads.htaccess
 ionos/media/delete.php   # future
 ionos/media/.htaccess    # future
 ```
@@ -1562,21 +1564,39 @@ Deploy PHP handlers only from repo source:
 
 ```bash
 scp ionos/media/upload.php u69414981@home420463025.1and1-data.host:~/revelryapp/media/apps/localplay/upload.php
+ssh u69414981@home420463025.1and1-data.host "mkdir -p ~/revelryapp/media/apps/localplay/gamma/uploads ~/revelryapp/media/apps/localplay/prod/uploads"
+scp ionos/media/uploads.htaccess u69414981@home420463025.1and1-data.host:~/revelryapp/media/apps/localplay/gamma/uploads/.htaccess
+scp ionos/media/uploads.htaccess u69414981@home420463025.1and1-data.host:~/revelryapp/media/apps/localplay/prod/uploads/.htaccess
 ```
+
+Create `upload-secret.php` from `ionos/media/upload-secret.example.php`, replace the placeholder with
+the real `MEDIA_UPLOAD_SECRET`, and deploy that edited file. Do not deploy the example file as-is.
 
 The IONOS secret file must match backend env:
 
 ```text
-IONOS:   ~/revelryapp/media/apps/localplay/.upload_secret
+IONOS:   ~/revelryapp/media/apps/localplay/upload-secret.php
 Backend: MEDIA_UPLOAD_SECRET
 ```
+
+`upload-secret.php` should return the secret string and must not echo it. A legacy `.upload_secret`
+file is still accepted by `upload.php` only as a migration fallback, but it should not be used for
+new deploys because some shared-host docroots serve dotfiles publicly. After updating the secret,
+verify the response body is empty or denied:
+
+```bash
+curl -sS https://media.revelryapp.me/apps/localplay/upload-secret.php
+curl -sS https://media.revelryapp.me/apps/localplay/.upload_secret
+```
+
+Neither command should print `MEDIA_UPLOAD_SECRET`.
 
 Required backend env for uploads:
 
 ```env
 MEDIA_PUBLIC_BASE_URL=https://media.revelryapp.me/apps/localplay
 MEDIA_UPLOAD_URL=https://media.revelryapp.me/apps/localplay/upload.php
-MEDIA_UPLOAD_SECRET=<same value as .upload_secret>
+MEDIA_UPLOAD_SECRET=<same value returned by upload-secret.php>
 MEDIA_PATH_PREFIX=gamma   # gamma; use prod in production
 MEDIA_ALLOWED_MIME_TYPES=image/png,image/jpeg,image/webp
 MEDIA_UPLOAD_TOKEN_TTL_SECONDS=900
@@ -1598,6 +1618,8 @@ Path validation:
 - LocalPlay paths should start with `prod/` or `gamma/`.
 - Backend-generated paths must use sanitized owner/context segments.
 - Backend-generated paths should use UUID-like asset names, never user-provided filenames.
+- Backend and PHP handlers must reject executable/config/web extensions even when MIME type appears image-like, including double-extension names such as `image.php.jpg`.
+- Put `ionos/media/uploads.htaccess` under each uploaded-content directory (`gamma/uploads/` and `prod/uploads/`) to disable PHP/script execution without disabling `upload.php`.
 - Delete should be best-effort: signed `delete.php` removes the IONOS file, while backend metadata is soft-deleted.
 
 Operational notes:
@@ -1820,7 +1842,7 @@ The test verifies:
 - A small quiz can be started from the Revelry party workspace, driven through LocalPlay WebSockets to podium, and mirrored back to Revelry as a completed session.
 - Revelry's sessions and session-results endpoints return the final player score/feed-card summary, and the workspace no longer reports the completed LocalPlay room as active.
 
-If the test shows `Invalid or expired party games token`, mint a fresh gamma URL and rerun. If image upload fails with `403 bad_signature`, verify `games-backend-gamma` `MEDIA_UPLOAD_SECRET` matches `~/revelryapp/media/apps/localplay/.upload_secret` on IONOS, then redeploy gamma. If completion succeeds in LocalPlay but Revelry never shows a completed session, verify gamma has `REVELRY_CALLBACK_URL=https://api-gamma.revelryapp.me/api/games/localplay/callback` and redeploy gamma.
+If the test shows `Invalid or expired party games token`, mint a fresh gamma URL and rerun. If image upload fails with `403 bad_signature`, verify `games-backend-gamma` `MEDIA_UPLOAD_SECRET` matches the string returned by `~/revelryapp/media/apps/localplay/upload-secret.php` on IONOS, then redeploy gamma. If completion succeeds in LocalPlay but Revelry never shows a completed session, verify gamma has `REVELRY_CALLBACK_URL=https://api-gamma.revelryapp.me/api/games/localplay/callback` and redeploy gamma.
 
 If a Revelry-hosted Start or replay feels slow, check LocalPlay logs before changing the callback contract:
 

@@ -2054,9 +2054,46 @@ class MediaFinalizeRequest(BaseModel):
     alt_text: str = ""
 
 
+_DANGEROUS_MEDIA_EXTENSIONS = {
+    ".asa",
+    ".asax",
+    ".ascx",
+    ".ashx",
+    ".asp",
+    ".aspx",
+    ".bat",
+    ".cgi",
+    ".cmd",
+    ".config",
+    ".exe",
+    ".htaccess",
+    ".html",
+    ".js",
+    ".jsp",
+    ".jspx",
+    ".php",
+    ".php3",
+    ".php4",
+    ".php5",
+    ".php7",
+    ".phtml",
+    ".phar",
+    ".pl",
+    ".py",
+    ".shtml",
+    ".sh",
+    ".svg",
+}
+
+
 def _sign_media_upload(path: str, expires: int, mime_type: str, bytes_size: int) -> str:
     payload = f"{path}\n{expires}\n{mime_type}\n{bytes_size}".encode()
     return hmac.new(config.MEDIA_UPLOAD_SECRET.encode(), payload, hashlib.sha256).hexdigest()
+
+
+def _has_dangerous_media_extension(filename: str) -> bool:
+    suffixes = Path(filename or "").suffixes
+    return any(suffix.lower() in _DANGEROUS_MEDIA_EXTENSIONS for suffix in suffixes)
 
 
 def _media_owner_path_segment(wallet_id: str) -> str:
@@ -2082,6 +2119,8 @@ async def create_media_upload_url(request: MediaUploadUrlRequest, req: Request):
         raise HTTPException(status_code=401, detail="Authentication required")
     if not (config.MEDIA_UPLOAD_URL and config.MEDIA_PUBLIC_BASE_URL and config.MEDIA_UPLOAD_SECRET):
         raise HTTPException(status_code=503, detail="Media uploads are not configured")
+    if _has_dangerous_media_extension(request.filename):
+        raise HTTPException(status_code=415, detail="Executable media filenames are not allowed")
     if request.mime_type not in config.MEDIA_ALLOWED_MIME_TYPES:
         raise HTTPException(status_code=422, detail="Unsupported image type")
     if request.bytes <= 0 or request.bytes > config.MAX_IMAGE_SIZE_BYTES:

@@ -1,0 +1,32 @@
+# Deploy this file to each uploaded-content directory, for example:
+#   ~/revelryapp/media/apps/localplay/gamma/uploads/.htaccess
+#   ~/revelryapp/media/apps/localplay/prod/uploads/.htaccess
+#
+# It must not be placed beside upload.php, otherwise the upload handler itself
+# may stop executing.
+
+Options -Indexes
+
+<IfModule mod_php.c>
+  php_flag engine off
+</IfModule>
+<IfModule mod_php5.c>
+  php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+  php_flag engine off
+</IfModule>
+<IfModule mod_php8.c>
+  php_flag engine off
+</IfModule>
+
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .phar .cgi .pl .py .sh .shtml .asp .aspx .jsp .jspx
+RemoveType .php .phtml .php3 .php4 .php5 .php7 .phar .cgi .pl .py .sh .shtml .asp .aspx .jsp .jspx
+
+<FilesMatch "\.(php|phtml|php3|php4|php5|php7|phar|cgi|pl|py|sh|shtml|asp|aspx|jsp|jspx|html|js|svg|htaccess)$">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_headers.c>
+  Header set Access-Control-Allow-Origin "*"
+</IfModule>

@@ -30,24 +30,57 @@ function fail($status, $message) {
     exit;
 }
 
+function read_upload_secret() {
+    $phpSecretPath = __DIR__ . '/upload-secret.php';
+    if (is_file($phpSecretPath)) {
+        $secret = require $phpSecretPath;
+        $secret = is_string($secret) ? trim($secret) : '';
+        if ($secret !== '') {
+            return $secret;
+        }
+    }
+
+    // Legacy fallback. Prefer upload-secret.php because plain dotfiles may be
+    // served by some shared-host docroots.
+    $legacySecretPath = __DIR__ . '/.upload_secret';
+    if (is_file($legacySecretPath)) {
+        return trim(file_get_contents($legacySecretPath));
+    }
+
+    return '';
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     fail(405, 'method_not_allowed');
 }
 
-$secretPath = __DIR__ . '/.upload_secret';
-if (!is_file($secretPath)) {
+$secret = read_upload_secret();
+if ($secret === '') {
     fail(500, 'upload_secret_missing');
 }
-$secret = trim(file_get_contents($secretPath));
 
 $path = $_POST['path'] ?? '';
 $expires = intval($_POST['expires'] ?? '0');
 $mimeType = $_POST['mime_type'] ?? '';
 $bytes = intval($_POST['bytes'] ?? '0');
 $token = $_POST['token'] ?? '';
+$filename = $_FILES['file']['name'] ?? '';
+$dangerousExtensions = [
+    'asa', 'asax', 'ascx', 'ashx', 'asp', 'aspx', 'bat', 'cgi', 'cmd',
+    'config', 'exe', 'htaccess', 'html', 'js', 'jsp', 'jspx', 'php',
+    'php3', 'php4', 'php5', 'php7', 'phtml', 'phar', 'pl', 'py', 'shtml',
+    'sh', 'svg',
+];
 
 if ($path === '' || $expires <= time() || $mimeType === '' || $bytes <= 0 || $token === '') {
     fail(400, 'invalid_fields');
+}
+if ($filename !== '') {
+    foreach (explode('.', strtolower($filename)) as $extensionPart) {
+        if (in_array($extensionPart, $dangerousExtensions, true)) {
+            fail(415, 'dangerous_extension');
+        }
+    }
 }
 if (!preg_match('/^(local|gamma|prod)\/uploads\/[A-Za-z0-9_-]+\/\d{4}\/\d{2}\/\d{2}\/img_[a-f0-9]+\.(png|jpg|webp)$/', $path)) {
     fail(400, 'invalid_path');
@@ -83,7 +116,8 @@ $targetDir = dirname($target);
 if (!is_dir($targetDir) && !mkdir($targetDir, 0755, true)) {
     fail(500, 'mkdir_failed');
 }
-if (realpath($targetDir) === false || strpos(realpath($targetDir), $root) !== 0) {
+$resolvedTargetDir = realpath($targetDir);
+if ($resolvedTargetDir === false || strpos($resolvedTargetDir . DIRECTORY_SEPARATOR, $root . DIRECTORY_SEPARATOR) !== 0) {
     fail(400, 'path_escape');
 }
 if (!move_uploaded_file($_FILES['file']['tmp_name'], $target)) {

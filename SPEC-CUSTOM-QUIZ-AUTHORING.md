@@ -1075,7 +1075,7 @@ Remote smoke:
 - Phase 0 custom authoring is implemented.
 - Revelry party-scoped quiz authoring is implemented with `/integrations/revelry/content/authoring-link`, `/revelry/author`, `/integrations/revelry/content`, and authoring-token media uploads. It reuses quiz-pack storage under `revelry:party:{party_id}`.
 - Durable library UI requires deploying the rendered Supabase schema updates before enabling against Supabase environments.
-- Uploaded images require IONOS `upload.php`, `.upload_secret`, and matching backend media env vars.
+- Uploaded images require IONOS `upload.php`, `upload-secret.php`, uploaded-content `.htaccess` script-execution blocking, and matching backend media env vars. The legacy `.upload_secret` dotfile is a migration fallback only and must not be used for new deploys.
 - Stable Diffusion should remain disabled/unavailable in gamma and production unless explicitly replaced by a production-safe cloud provider. Host-uploaded images are the required prod/gamma path.
 - Suggested feature flags:
 

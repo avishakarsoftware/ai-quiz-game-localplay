@@ -248,10 +248,16 @@ The IONOS PHP handler should live in this repo before deployment, e.g. `ionos/me
 
 ```text
 ~/revelryapp/media/apps/localplay/upload.php
+~/revelryapp/media/apps/localplay/upload-secret.php
 ~/revelryapp/media/apps/localplay/delete.php
 ~/revelryapp/media/apps/localplay/.htaccess
-~/revelryapp/media/apps/localplay/.upload_secret
+~/revelryapp/media/apps/localplay/gamma/uploads/.htaccess
+~/revelryapp/media/apps/localplay/prod/uploads/.htaccess
 ```
+
+`upload-secret.php` must return the shared `MEDIA_UPLOAD_SECRET` string without echoing it. A plain
+`.upload_secret` dotfile is accepted by the current handler only as a migration fallback and must not
+be used for new deploys because shared-host docroots can expose dotfiles over HTTP.
 
 Storage access:
 
@@ -261,6 +267,8 @@ Storage access:
 - Backend should store `storage_path` and `public_url` in metadata.
 - Backend may serve `/media/{asset_id}` by redirecting to the IONOS URL, proxying it, or returning the URL in API payloads.
 - The `.htaccess` for reads should set CORS headers that let the IONOS frontend, backend-served gamma/prod, and native webviews display/fetch images.
+- Uploaded-content directories must have an `.htaccess` that disables PHP/script execution while leaving the root `upload.php` executable.
+- Backend signing and the PHP handler must explicitly reject executable/config/web extensions, including double-extension names such as `photo.php.jpg`; current backend-generated storage paths must remain UUID-like `img_*.(png|jpg|webp)` names and never reuse user filenames.
 - Delete should be best-effort through a signed IONOS delete handler plus a metadata soft-delete.
 
 ## API Surface
@@ -479,7 +487,7 @@ Configuration:
 ENABLE_IMAGE_GENERATION=true
 MEDIA_PUBLIC_BASE_URL=https://media.revelryapp.me/apps/localplay
 MEDIA_UPLOAD_URL=https://media.revelryapp.me/apps/localplay/upload.php
-MEDIA_UPLOAD_SECRET=<shared with IONOS .upload_secret>
+MEDIA_UPLOAD_SECRET=<shared with IONOS upload-secret.php>
 MEDIA_PATH_PREFIX=prod
 MEDIA_ALLOWED_MIME_TYPES=image/png,image/jpeg,image/webp
 MEDIA_UPLOAD_TOKEN_TTL_SECONDS=900
@@ -916,7 +924,9 @@ IONOS:
 - Media URLs returned to the frontend must be absolute or API-relative in a way that works from IONOS.
 - Uploaded files live under `https://media.revelryapp.me/apps/localplay/`.
 - Deploy PHP handlers from repo source to `~/revelryapp/media/apps/localplay/`.
-- `MEDIA_UPLOAD_SECRET` in backend env must match `~/revelryapp/media/apps/localplay/.upload_secret`.
+- `MEDIA_UPLOAD_SECRET` in backend env must match the string returned by `~/revelryapp/media/apps/localplay/upload-secret.php`.
+- Secret exposure checks must fetch the media host response body for `upload-secret.php` and legacy `.upload_secret`; neither response may contain the secret.
+- Deploy `ionos/media/uploads.htaccess` to `gamma/uploads/.htaccess` and `prod/uploads/.htaccess`.
 - Upload handler CORS must include `https://games.revelryapp.me`, `https://gamesapi.revelryapp.me`, `https://gamesapi-gamma.revelryapp.me`, local dev origins, and Capacitor origins as needed.
 - Read `.htaccess` should allow image fetches from web/PWA/native surfaces.
 - Prefer returning full URLs when frontend is not same-origin:
