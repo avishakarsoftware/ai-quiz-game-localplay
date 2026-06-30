@@ -1,8 +1,27 @@
 # SPEC-IAP — Native In-App Purchases (Apple StoreKit + Google Play Billing)
 
-Status: **Implementation-ready** (2026-06-29)
+Status: **Implemented — backend + frontend on master & verified on gamma; store/console setup in progress** (2026-06-29)
 Owner: Avi
-Related: `SPEC.md` (spark economy), `token_economy_migration.md`, `DEPLOY.md`, VibePix `SPEC.md`/`server.js` (reference implementation)
+Related: `SPEC.md` (spark economy), `DEPLOY.md` (§3c IAP runbook, §3d native sign-in, build contexts), `token_economy_migration.md`, VibePix `SPEC.md`/`server.js` (reference implementation)
+
+---
+
+## 0. Status (as-built, 2026-06-29)
+
+**Done & on master:**
+- **Backend** — `POST /webhook/revenuecat` (bearer auth, double idempotency via `webhook_events` + `credit_purchase(reference_id="iap:{store}:{txn}")`, refund clawback, unknown-product ack), tiered `/checkout/create` (inline Stripe `price_data` from `config.SPARK_PRODUCTS`, no Stripe Price objects), Android+iOS Stripe block. Unit tests in `backend/tests/test_iap_webhook.py`.
+- **Frontend** — `SparkPurchaseModal` (3 tiers, web Stripe / native RevenueCat), `utils/iap.ts` wrapper, `utils/sparkPacks.ts`, `platform.ts`; `@revenuecat/purchases-capacitor@^12.3.2` installed (iOS SPM + Android Gradle registered). Native build scripts `npm run cap:sync:gamma|cap:sync:prod` (bake API host + publishable RevenueCat/OAuth ids).
+- **Deployed to gamma & verified** — `/webhook/revenuecat` smoke-tested end-to-end: auth 401s, credit (+200), event-id replay dedup, same-txn dedup, unknown-product ack, refund clawback + no over-debit. `REVENUECAT_WEBHOOK_SECRET` set on gamma; gamma `ALLOWED_ORIGINS` includes `capacitor://localhost,http://localhost,https://localhost`.
+- **RevenueCat** — project `Revelry Games` (`proj0cdf24b0`); iOS + Android apps (`me.revelryapp.quiz`); webhook → gamma (bearer); products `rc_spark_pack_50/200/500` in the **current** `default` offering, **Apple** store products attached.
+- **Apple** — 3 consumables `me.revelryapp.quiz.sparks_50/200/500` created (Ready to Submit) + sandbox tester.
+- **Native sign-in** — wired (`utils/socialAuth.ts` `SocialLogin.initialize()`, iOS Google URL scheme in `Info.plist`); see §6.7. App version bumped to **3.1.0 / build 5** (both platforms).
+
+**Pending (manual — console/Xcode/device):**
+- **Android Play products** — must upload an AAB with the BILLING permission first (build → internal-testing track → "Create product" unblocks), create the 3 products, then attach the **Play** side to `rc_spark_pack_*` in RevenueCat.
+- **Native device test** — sandbox iOS (real device + sandbox account) and Android (internal-testing install + license tester); confirm the real webhook credits sparks.
+- **Native sign-in console** — "Sign in with Apple" capability in Xcode; GCP Android OAuth client (package `me.revelryapp.quiz` + Play App Signing SHA-1).
+- **Web Stripe** — set `STRIPE_SECRET_KEY` + a `/webhook/stripe` endpoint per env (test on gamma, live on prod); inline `price_data` needs no Price objects.
+- **Prod** — set `REVENUECAT_WEBHOOK_SECRET` + add the prod RevenueCat webhook, then deploy prod backend + ship the native builds.
 
 ---
 
@@ -439,14 +458,12 @@ Add `test_iap_webhook.py` mirroring the Stripe webhook tests:
 
 ### 6.1 Dependency
 
-Add `@revenuecat/purchases-capacitor` (VibePix uses `^12.3.0`; match Capacitor major — LocalPlay is on
-Capacitor `^8.x`, confirm plugin compatibility before implementation; if needed, pin the latest version that
-supports Capacitor 8 rather than blindly copying VibePix's version).
+**Installed:** `@revenuecat/purchases-capacitor@^12.3.2` (Capacitor 8 line; registered for iOS via SPM
+`Package.swift` and Android via Gradle on `cap sync` — **no CocoaPods**, this project uses SPM).
 
-LocalPlay's frontend is bundled with **Vite** (unlike VibePix, which had no bundler and needed a hand-written
-UMD wrapper at `public/libs/capacitor-purchases.js`). With Vite we can `import { Purchases } from
-'@revenuecat/purchases-capacitor'` directly — **no UMD shim needed.** (If the plugin's ESM trips up the
-build, fall back to dynamic `import()` as the codebase already does for `../utils/api`.)
+`utils/iap.ts` loads it via a **code-split dynamic import** (`await import('@revenuecat/purchases-capacitor')`)
+so it's bundled as a lazy chunk: never pulled into the web critical path (`initIAP` returns early on
+`platform==='web'`), but available to the native Capacitor bridge.
 
 ### 6.2 Initialization (native only)
 
@@ -559,8 +576,22 @@ VITE_REVENUECAT_IOS_KEY=appl_xxx
 VITE_REVENUECAT_ANDROID_KEY=goog_xxx
 ```
 
-Add to the relevant `vite build` invocations in `DEPLOY.md` (native builds only; the IONOS web build does
-not need them).
+`scripts/cap-build.mjs` bakes these (and the OAuth client ids in §6.7) into native builds; the IONOS web
+build does not need them.
+
+### 6.7 Native sign-in (rides this release)
+
+LocalPlay's sign-in is **not Firebase** (unlike revelryapp/VibePix). Web uses Google Identity Services +
+Apple JS directly; native uses `@capgo/capacitor-social-login` → ID token → backend verifies it (`auth.py`:
+Google via `verify_oauth2_token`, Apple via JWKS). The native path was added web-only and was never wired
+(no `SocialLogin.initialize()`), so native sign-in never worked. Now fixed:
+
+- `utils/socialAuth.ts` `ensureSocialLoginInitialized()` calls `SocialLogin.initialize({ google: { webClientId, iOSClientId, mode:'online' }, apple: { clientId, redirectUrl } })` on native (no-op on web); `SettingsDrawer` calls it before `login()`.
+- `webClientId` = the web Google OAuth client (so the returned ID token's audience matches what `auth.py` verifies); `iOSClientId` = the iOS Google OAuth client; Apple `clientId` = the Service ID (`me.revelryapp.quiz.web`) for the Android/web Apple flow.
+- iOS `Info.plist` carries the Google reversed-client-id **URL scheme** for the OAuth redirect.
+- `cap-build.mjs` bakes the **public** `VITE_GOOGLE_CLIENT_ID` / `VITE_GOOGLE_IOS_CLIENT_ID` / `VITE_APPLE_CLIENT_ID`.
+
+**Pending console/Xcode (see DEPLOY.md §3d):** add the **"Sign in with Apple"** capability in Xcode; create a **GCP Android OAuth client** (package `me.revelryapp.quiz` + the Play App Signing SHA-1) so native Android Google sign-in works. iOS Google client + redirect scheme are already configured.
 
 ---
 
@@ -616,12 +647,15 @@ Backend (GCP, gamma + prod `.env`/`.env.gamma`) — set via the existing deploy 
 
 (No per-tier Stripe price env vars — prices are inline `price_data` from the catalog.)
 
-Native client build (Vite, native builds only):
+Native client build (Vite, native builds only — all **public**, baked by `scripts/cap-build.mjs`):
 
 | Var | Notes |
 |---|---|
 | `VITE_REVENUECAT_IOS_KEY` | publishable `appl_…` |
 | `VITE_REVENUECAT_ANDROID_KEY` | publishable `goog_…` |
+| `VITE_GOOGLE_CLIENT_ID` | web Google OAuth client (also serverClientId for native sign-in) |
+| `VITE_GOOGLE_IOS_CLIENT_ID` | iOS Google OAuth client |
+| `VITE_APPLE_CLIENT_ID` | Apple Service ID (`me.revelryapp.quiz.web`) for the Android/web Apple flow |
 
 (No Apple `.p8` or GCP service-account JSON lives in the LocalPlay backend — RevenueCat holds those.)
 
@@ -708,9 +742,13 @@ Backend (DONE 2026-06-29):
       platform guard (ios+android), tiered `/checkout/create`, Stripe webhook cap. Full backend suite 937 passing.
 - [x] (no schema migration — Supabase gamma/prod schema already matches.)
 
-Frontend (DONE 2026-06-29, except the native plugin install):
-- [ ] `frontend/package.json` — add `@revenuecat/purchases-capacitor` (**pending — user to install before native build**;
-      `iap.ts` loads it via an indirect dynamic import so web build/tests don't require it).
+Frontend (DONE 2026-06-29):
+- [x] `frontend/package.json` — `@revenuecat/purchases-capacitor@^12.3.2` installed; `iap.ts` loads it via a
+      code-split dynamic import (lazy chunk, web never loads it at runtime).
+- [x] `frontend/scripts/cap-build.mjs` + `npm run cap:sync:gamma|cap:sync:prod` — native build with baked
+      API host + publishable RevenueCat/OAuth ids; `cap sync` registers RevenueCat (iOS SPM + Android Gradle).
+- [x] `frontend/src/utils/socialAuth.ts` + `SettingsDrawer` — `SocialLogin.initialize()` for native sign-in (§6.7);
+      iOS Google URL scheme added to `Info.plist`. App version → 3.1.0 / build 5.
 - [x] `frontend/src/utils/platform.ts` — shared `getPlatform()`/`isNativePlatform()`; `api.ts` now imports it.
       (`SettingsDrawer.tsx` keeps its local `isNativePlatform`; `analytics.ts` intentionally separate.)
 - [x] `frontend/src/utils/iap.ts` — initIAP, iapLogIn/Out, getNativePrices, buySparksNative, restoreNative;

@@ -450,6 +450,25 @@ Console steps (full detail in `SPEC-IAP.md §7`): RevenueCat app for `me.revelry
 products `rc_spark_pack_50/200/500` → store products `me.revelryapp.quiz.sparks_50/200/500`; create the matching
 consumable IAPs in App Store Connect + Play Console. (Web Stripe needs no products — inline `price_data`.)
 
+**Android product-creation gotcha:** Play won't let you create one-time products until an uploaded build
+declares the `com.android.vending.BILLING` permission (the Play Billing lib RevenueCat pulls in adds it
+automatically). So the Android order is **build a signed AAB → upload to internal testing → then create the
+3 products** (the inverse of iOS). Build: `npm run cap:sync:gamma` then `cd android && KEYSTORE_PATH=~/keystores/revelry-quiz-upload.keystore ./gradlew bundleRelease`. (versionCode must exceed the track's; currently 5.)
+
+### 3d. Native sign-in (`@capgo/capacitor-social-login`)
+
+LocalPlay does **not** use Firebase (unlike revelryapp). Web sign-in = Google Identity Services + Apple JS;
+native sign-in = `@capgo/capacitor-social-login` → ID token → backend verifies (`auth.py`). The code is wired
+(`utils/socialAuth.ts` `SocialLogin.initialize()`, called before `login()`; iOS Google reversed-client-id URL
+scheme in `Info.plist`; `cap-build.mjs` bakes the public client ids). Remaining one-time console/Xcode setup:
+
+| Platform | Step |
+|---|---|
+| iOS | Xcode → App target → Signing & Capabilities → **+ Sign in with Apple** (adds the entitlement). Google iOS client + URL scheme already configured. |
+| Android | Create a **GCP OAuth client** (project `revelryapp`, type Android): package `me.revelryapp.quiz` + the **Play App Signing** SHA-1 (Play Console → Test and release → Setup → App integrity). Also add the **upload** key SHA-1 for internal-testing installs: `keytool -list -v -keystore ~/keystores/revelry-quiz-upload.keystore -alias <alias> | grep SHA`. serverClientId = the web Google client. |
+
+Backend already verifies Google ID tokens against the web client and Apple via JWKS (`APPLE_CLIENT_IDS`), so no backend change is needed.
+
 ### 4. Install nginx routes
 
 Production should proxy to `127.0.0.1:8000`; gamma should proxy to `127.0.0.1:8004`.

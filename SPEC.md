@@ -1351,6 +1351,7 @@ Current behavior:
 - `GET /auth/me` returns the current signed-in user and token status.
 - Sign-in migrates in-memory game history entries from the device wallet id to the signed-in user id.
 - Token/wallet status is resolved through the current spark economy.
+- **Not Firebase.** Web sign-in uses Google Identity Services + Apple JS directly; **native** sign-in uses `@capgo/capacitor-social-login` (`utils/socialAuth.ts` `SocialLogin.initialize()` → `login()`), and either path sends the provider ID token to `/auth/signin`, where the backend verifies it itself (Google via `verify_oauth2_token`, Apple via JWKS). Native sign-in setup (Apple capability, Android OAuth client + SHA-1) is tracked in `DEPLOY.md §3d`.
 
 Historical context:
 
