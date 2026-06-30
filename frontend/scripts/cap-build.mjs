@@ -32,6 +32,11 @@ const cfg = ENVS[envName];
 const RC_IOS = process.env.VITE_REVENUECAT_IOS_KEY || 'appl_pGvqXcNifKTHWOsnGBXuyHfkJlm';
 const RC_ANDROID = process.env.VITE_REVENUECAT_ANDROID_KEY || 'goog_pkOCCLwUzCmywutlnyNQFovpuAF';
 
+// Public OAuth client ids for native sign-in (Google web + iOS clients, Apple Service ID). Safe to bake.
+const GOOGLE_WEB = process.env.VITE_GOOGLE_CLIENT_ID || '458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com';
+const GOOGLE_IOS = process.env.VITE_GOOGLE_IOS_CLIENT_ID || '458966837298-ncc86ha91tct2lo9ah16g8v9ibp4ckki.apps.googleusercontent.com';
+const APPLE_ID = process.env.VITE_APPLE_CLIENT_ID || 'me.revelryapp.quiz.web';
+
 const buildEnv = {
     ...process.env,
     VITE_BASE_PATH: '/',
@@ -40,6 +45,9 @@ const buildEnv = {
     VITE_CAST_APP_ID: process.env.VITE_CAST_APP_ID || '1BC9ACD8',
     VITE_REVENUECAT_IOS_KEY: RC_IOS,
     VITE_REVENUECAT_ANDROID_KEY: RC_ANDROID,
+    VITE_GOOGLE_CLIENT_ID: GOOGLE_WEB,
+    VITE_GOOGLE_IOS_CLIENT_ID: GOOGLE_IOS,
+    VITE_APPLE_CLIENT_ID: APPLE_ID,
     // Native: let Apple JS fall back to window.location.origin (DEPLOY.md note).
     VITE_APPLE_REDIRECT_URI: '',
 };

@@ -45,5 +45,15 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!-- Google Sign-In redirect (REVERSED_CLIENT_ID from the iOS OAuth client) -->
+				<string>com.googleusercontent.apps.458966837298-ncc86ha91tct2lo9ah16g8v9ibp4ckki</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

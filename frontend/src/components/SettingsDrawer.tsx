@@ -202,6 +202,9 @@ export default function SettingsDrawer() {
         try {
             // Dynamic import — only loaded on native
             const { SocialLogin } = await import('@capgo/capacitor-social-login');
+            // Configure the provider before login (required by @capgo; no-op if already initialized).
+            const { ensureSocialLoginInitialized } = await import('../utils/socialAuth');
+            await ensureSocialLoginInitialized();
             const result = await SocialLogin.login({
                 provider,
                 options: provider === 'google'
