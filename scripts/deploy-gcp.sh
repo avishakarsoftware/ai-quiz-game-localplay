@@ -201,7 +201,7 @@ bootstrap_vm_layout() {
         sudo sh -c \"grep -q '^TABLE_PREFIX=' $REMOTE_APP_DIR/.env.gamma && sed -i 's#^TABLE_PREFIX=.*#TABLE_PREFIX=games_gamma_#' $REMOTE_APP_DIR/.env.gamma || echo 'TABLE_PREFIX=games_gamma_' >> $REMOTE_APP_DIR/.env.gamma\"
         sudo sh -c \"grep -q '^SUPABASE_URL=' $REMOTE_APP_DIR/.env.gamma || echo 'SUPABASE_URL=$SUPABASE_URL_DEFAULT' >> $REMOTE_APP_DIR/.env.gamma\"
         for KV in \
-            'ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me,http://localhost:9200,http://127.0.0.1:9200' \
+            'ALLOWED_ORIGINS=https://gamesapi-gamma.revelryapp.me,http://localhost:9200,http://127.0.0.1:9200,capacitor://localhost,http://localhost,https://localhost' \
             'DB_DIR=/app/data' \
             'CHECKOUT_RETURN_URL=https://gamesapi-gamma.revelryapp.me/' \
             'TRUST_PROXY_HEADERS=true' \
