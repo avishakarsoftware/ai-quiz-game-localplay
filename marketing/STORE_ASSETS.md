@@ -69,6 +69,7 @@ represent the native apps.
 6. Variety — Who's Most Likely To and Drawing in action
 7. Get Sparks — purchase modal (also the IAP review screenshot)
 
-## Still TODO (design assets, not screenshots)
-- [ ] Google Play **feature graphic** 1024 × 500
-- [ ] App icon 512 × 512 (likely already have from existing app)
+## Design assets (not screenshots)
+- [x] Google Play **feature graphic** 1024 × 500 → `marketing/play-store/feature-graphic.png`
+      (source: `/tmp/fg/feature.html`; rendered 2x then downscaled). Apple has no feature-graphic equivalent.
+- [x] App icon 512 × 512 / 1024 → `frontend/public/icons/icon-512.png`, `icon-1024.png` (existing)
