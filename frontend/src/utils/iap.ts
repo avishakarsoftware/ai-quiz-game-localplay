@@ -48,11 +48,10 @@ function walletAppUserId(): string {
 async function loadModule(): Promise<RCPurchasesModule | null> {
     if (_module) return _module;
     try {
-        // Indirect specifier + @vite-ignore: optional native dependency that may be absent in web
-        // builds and not installed at all until the native plugin is added. Kept non-statically
-        // analyzable so tsc/Vite don't require it to resolve.
-        const spec = '@revenuecat/purchases-capacitor';
-        _module = (await import(/* @vite-ignore */ spec)) as unknown as RCPurchasesModule;
+        // Dynamic import → Vite code-splits the plugin into its own lazy chunk. It only loads when
+        // initIAP() runs on native (web returns early via isIAPConfigured), so the web bundle never
+        // pulls it in at runtime, but it IS bundled and available to the native WebView/Capacitor bridge.
+        _module = (await import('@revenuecat/purchases-capacitor')) as unknown as RCPurchasesModule;
         return _module;
     } catch {
         return null;
