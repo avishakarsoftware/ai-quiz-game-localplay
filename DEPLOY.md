@@ -585,6 +585,24 @@ The frontend manifest lives in `frontend/src/audio/musicalChairsTracks.ts`. Set 
 
 ---
 
+## Frontend build contexts (three distinct var sets — do not conflate)
+
+The frontend ships in three contexts with **slightly different `VITE_*` vars**. `API_URL = VITE_API_URL || ''`,
+so an *empty* `VITE_API_URL` means **same-origin** — uploading a same-origin bundle to IONOS would route
+`/quiz`,`/room`,`/tokens`,`/checkout` to IONOS static hosting and break the public site (this exact mistake
+bit revelryapp). Each context has a codified build script so the vars can't drift:
+
+| Context | Command | `VITE_API_URL` | base | `VITE_APPLE_REDIRECT_URI` | RevenueCat keys |
+|---|---|---|---|---|---|
+| **IONOS web** (`games.revelryapp.me`) | `npm run ionos:build` | `https://gamesapi.revelryapp.me` | `/` | `https://games.revelryapp.me` | — |
+| **Backend-served** (gamma/prod container) | `./scripts/deploy-gcp.sh [--gamma] --with-frontend` | *empty (same-origin)* | `/` | blank | — |
+| **Native gamma** | `npm run cap:sync:gamma` | `https://gamesapi-gamma.revelryapp.me` | `/` | blank | yes |
+| **Native prod** | `npm run cap:sync:prod` | `https://gamesapi.revelryapp.me` | `/` | blank | yes |
+
+`scripts/ionos-build.mjs` **hard-fails** unless the built bundle actually references `gamesapi.revelryapp.me`,
+so a same-origin bundle can't be shipped to IONOS by accident. `scripts/cap-build.mjs` bakes the publishable
+RevenueCat keys (same project for gamma+prod) into native builds.
+
 ## Frontend Deployment
 
 ### Prerequisites
@@ -595,12 +613,10 @@ The frontend manifest lives in `frontend/src/audio/musicalChairsTracks.ts`. Set 
 
 ```bash
 cd frontend
-
-# Production build with root path and backend URL
-VITE_BASE_PATH=/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_WEB_URL=https://games.revelryapp.me/ VITE_CAST_APP_ID=1BC9ACD8 npx vite build
+npm run ionos:build   # builds + verifies the bundle points at gamesapi.revelryapp.me
 ```
 
-This produces `frontend/dist/` with all static assets.
+This produces `frontend/dist/` with all static assets, verified safe to upload to IONOS.
 
 ### Step 2: Prepare the IONOS target directory
 

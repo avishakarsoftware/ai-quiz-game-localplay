@@ -10,6 +10,7 @@
     "cap:sync:gamma": "node scripts/cap-build.mjs gamma sync",
     "cap:prod": "node scripts/cap-build.mjs prod copy",
     "cap:sync:prod": "node scripts/cap-build.mjs prod sync",
+    "ionos:build": "node scripts/ionos-build.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
