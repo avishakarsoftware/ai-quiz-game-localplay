@@ -406,13 +406,20 @@ Native IAP sells the unified spark ladder (50/200/500). The backend (`POST /webh
 web/frontend are implemented; the native plugin install + console setup remain. Full plan: **`SPEC-IAP.md`**
 (§7 console setup, §8 env, §9 testing).
 
-Install the native client plugin (Capacitor 8 → RevenueCat v12 line, matching VibePix):
+The native client plugin is installed (`@revenuecat/purchases-capacitor@^12.3.2`, Capacitor 8 / SPM — no
+CocoaPods). Build + sync a native target with the codified scripts (mirrors VibePix's `cap:gamma`/`cap:prod`):
 
 ```bash
 cd frontend
-npm install @revenuecat/purchases-capacitor@^12
-npx cap sync
+npm run cap:sync:gamma   # vite build (gamma API + baked RC keys) → npx cap sync
+npx cap open ios         # Xcode → signing team → Run on a REAL device (sandbox IAP needs a device)
+# prod build: npm run cap:sync:prod
 ```
+
+`scripts/cap-build.mjs` injects per-env `VITE_API_URL`/`VITE_WEB_URL` plus the publishable
+`VITE_REVENUECAT_IOS_KEY`/`_ANDROID_KEY` (same RevenueCat project for gamma + prod). Gamma's
+`ALLOWED_ORIGINS` includes `capacitor://localhost,http://localhost,https://localhost` so the native
+WebView can call the API.
 
 Backend env (GCP `.env`/`.env.gamma`, distinct per env, never printed/committed):
 

@@ -6,6 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "cap:gamma": "node scripts/cap-build.mjs gamma copy",
+    "cap:sync:gamma": "node scripts/cap-build.mjs gamma sync",
+    "cap:prod": "node scripts/cap-build.mjs prod copy",
+    "cap:sync:prod": "node scripts/cap-build.mjs prod sync",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
