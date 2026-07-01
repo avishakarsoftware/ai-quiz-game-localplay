@@ -453,7 +453,25 @@ consumable IAPs in App Store Connect + Play Console. (Web Stripe needs no produc
 **Android product-creation gotcha:** Play won't let you create one-time products until an uploaded build
 declares the `com.android.vending.BILLING` permission (the Play Billing lib RevenueCat pulls in adds it
 automatically). So the Android order is **build a signed AAB → upload to internal testing → then create the
-3 products** (the inverse of iOS). Build: `npm run cap:sync:gamma` then `cd android && KEYSTORE_PATH=~/keystores/revelry-quiz-upload.keystore ./gradlew bundleRelease`. (versionCode must exceed the track's; currently 5.)
+3 products** (the inverse of iOS). (versionCode must exceed the track's; currently 5.)
+
+**Android signing / upload key (IMPORTANT — 2026-06-30):** the original `revelry-quiz-upload.keystore`
+password was lost and is unrecoverable. A **new upload keystore** was generated:
+`~/keystores/revelry-quiz-upload-v2.keystore` (alias `revelry-quiz`; password in
+`backupenv/quiz/local/keystore.properties`). `app/build.gradle` now defaults to it. Because the app uses
+**Play App Signing**, this only requires an **upload key reset** — it does **not** affect the app's identity
+or other apps:
+1. Play Console → this app → **Test and release → Setup → App signing** → **Request upload key reset** →
+   upload `~/keystores/revelry-quiz-upload-v2.pem`. Google processes it (hours–2 days).
+2. After Google confirms, build the signed AAB:
+   ```bash
+   cd frontend && npm run cap:sync:gamma
+   cd android
+   KEYSTORE_PASSWORD='<see backupenv/quiz/local/keystore.properties>' \
+   KEY_PASSWORD='<same>' ./gradlew bundleRelease
+   # → app/build/outputs/bundle/release/app-release.aab
+   ```
+3. Upload the AAB to **internal testing** → then "Create product" unblocks.
 
 ### 3d. Native sign-in (`@capgo/capacitor-social-login`)
 
