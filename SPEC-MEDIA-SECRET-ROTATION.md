@@ -21,6 +21,19 @@ recomputes the same HMAC and `403`s on mismatch). Existing media are plain stati
 `media.revelryapp.me/apps/localplay/…` and never touch the secret. We still verify reads before/after because
 media is user-visible.
 
+## Revelry integration impact — none to the integration itself
+
+`MEDIA_UPLOAD_SECRET` and the Revelry integration secrets (`REVELRY_INTEGRATION_SECRET` /
+`REVELRY_CALLBACK_SECRET`, config.py:220/227) are **separate secrets with no cross-use**. Rotating the media
+secret does **not** touch party-games links, launch tokens, resolve, lifecycle callbacks, or mirror-results —
+launching and playing Revelry-embedded games keeps working throughout the rotation.
+
+The **only** overlap is new media *uploads*: if a Revelry-launched game uploads media (custom-quiz images,
+drawing), it uses the same `MEDIA_UPLOAD_SECRET` path, so during the Option-A cutover blip a *new* upload from
+**any** surface — web, native, or Revelry-embedded — may briefly `403` until both containers + IONOS converge
+(retry / fresh signed URL recovers it). Existing media (including images already attached to Revelry games)
+read fine throughout. A low-traffic window makes this negligible.
+
 ## Why it must be coordinated (3 places, one value)
 
 `media.revelryapp.me/apps/localplay/` is a **single IONOS host** whose one validator
