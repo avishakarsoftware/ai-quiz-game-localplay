@@ -2,6 +2,7 @@ import uuid
 
 import config
 import db
+from game_rules import validate_catalog_rules, validate_rules
 from host_app_catalog_policy import clear_policy_cache, effective_catalog, is_game_allowed
 from main import GAME_CATALOG
 
@@ -42,6 +43,17 @@ def test_static_launchable_games_have_rules_metadata():
         if game.get("launchable") and game.get("enabled", True) and not game.get("rules", {}).get("summary")
     ]
     assert missing == []
+    validate_catalog_rules(GAME_CATALOG)
+
+
+def test_rules_validator_reports_missing_required_fields():
+    errors = validate_rules(
+        {"version": 1, "title": "", "summary": "Missing useful bits", "sections": []},
+        "broken_game",
+    )
+
+    assert "broken_game: rules.title is required" in errors
+    assert "broken_game: rules.sections must be a non-empty list" in errors
 
 
 def test_musical_chairs_is_host_app_quick_startable_in_gamma():

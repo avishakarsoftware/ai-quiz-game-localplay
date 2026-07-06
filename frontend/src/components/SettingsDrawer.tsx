@@ -274,6 +274,11 @@ export default function SettingsDrawer() {
         track('signed_out', { source: 'settings' });
     };
 
+    const showCurrentGameRules = () => {
+        setOpen(false);
+        window.dispatchEvent(new CustomEvent('show-game-rules'));
+    };
+
     return (
         <>
             {/* Spark badge — fixed top-right */}
@@ -316,6 +321,19 @@ export default function SettingsDrawer() {
                         <polyline points="9 22 9 12 15 12 15 22" />
                     </svg>
                     <span style={{ fontWeight: 600, fontSize: 14 }}>Home</span>
+                </div>
+
+                <div
+                    className="settings-drawer-row"
+                    style={{ cursor: 'pointer' }}
+                    onClick={showCurrentGameRules}
+                >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M12 16v-4" />
+                        <path d="M12 8h.01" />
+                    </svg>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>Rules</span>
                 </div>
 
                 {/* Account Section */}

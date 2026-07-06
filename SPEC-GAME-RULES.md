@@ -1,18 +1,39 @@
 # LocalPlay Game Rules Surface Spec
 
-Status: Phase 1 implemented; Phase 2/3 polish is implementation-ready
+Status: Phase 2 rules access polish implemented; deeper room-config-specific rule overrides remain planned
 Last updated: July 6, 2026
 
-## July 6, 2026 Implementation-Ready Update
+## July 6, 2026 Implementation Update
 
-Phase 1 shipped the base rules metadata and pre-start modal surfaces. The next implementation pass should make rules feel like a first-class part of choosing and joining every game, with consistent access before and during play.
+The Phase 2 access pass is implemented on the LocalPlay side:
 
-Scope for the next pass:
+- Static catalog rules are attached and validated at startup for every enabled launchable game.
+- Standalone catalog cards expose a Rules affordance that does not select the game.
+- Organizer lobbies show Rules next to pre-start controls.
+- Player lobbies show Rules while waiting.
+- The standalone hamburger menu exposes Rules during organizer, player, and spectator game sessions.
+- LocalPlay-owned Revelry hub catalog cards, active-session cards, and saved/prepared game cards expose Rules when the game type is known.
+- Active Revelry session payloads now include `game_type` and `content_id` so embedded hub surfaces can choose the correct rules copy.
+
+Remaining planned work:
+
+- Generate room-config-aware rule overrides for setup-sensitive games such as Musical Chairs, Mafia, Housie/Bingo, Party Quests, Photo Clue, Poker, and Drawing.
+- Add Playwright coverage for one in-game Rules menu path across organizer, player, and spectator.
+- Add optional rules affordances in Revelry-native cards if the host app wants to render its own UI outside LocalPlay-owned embedded surfaces.
+
+## July 6, 2026 Phase 2 Scope
+
+Phase 1 shipped the base rules metadata and pre-start modal surfaces. The Phase 2 pass made rules feel like a first-class part of choosing and joining every game, with consistent access before and during play.
+
+Scope covered by Phase 2:
 
 - Add a rules affordance to every game card/list presentation, including standalone catalog, embedded Revelry hub catalog, saved/prepared game cards where a game type is known, and active-session cards.
 - Add a persistent Help/Rules entry to the organizer/player/spectator in-game menu for complex games, not only lobby screens.
-- Add room-config-aware rule overrides for games where setup changes materially affect rules: Musical Chairs mode/music source, Mafia role mix, Bingo/Housie prize patterns, Party Quests confirmation mode, Photo Clue upload/guess timings, Poker table rules, and Drawing auto/manual round advance.
 - Add a lightweight backend schema validator for `rules` objects so future game additions cannot ship without required fields.
+
+Deferred from Phase 2:
+
+- Add room-config-aware rule overrides for games where setup changes materially affect rules: Musical Chairs mode/music source, Mafia role mix, Bingo/Housie prize patterns, Party Quests confirmation mode, Photo Clue upload/guess timings, Poker table rules, and Drawing auto/manual round advance.
 - Add Playwright coverage that opens rules from the catalog, organizer lobby, player lobby, and one in-game menu.
 
 Non-goals for this pass:
@@ -22,12 +43,11 @@ Non-goals for this pass:
 - No host-editable rules copy.
 - No Revelry repo changes; LocalPlay should expose metadata and render LocalPlay-owned embedded surfaces. Revelry-side affordances can be requested separately.
 
-Acceptance for the next pass:
+Acceptance for Phase 2:
 
 - Every launchable LocalPlay game has a valid `rules` object with objective, flow, scoring/winning, and late-join guidance where applicable.
 - Every catalog card has a tappable/clickable Rules affordance that does not accidentally select or start the game.
 - Organizer lobby and player lobby rules still work after reconnect.
-- For at least Mafia, Party Quests, Musical Chairs, and Housie, rule text reflects the selected setup where it changes play expectations.
 - The rules modal remains readable on mobile and does not block game WebSocket state updates.
 
 ## Goal

@@ -192,6 +192,17 @@ export default function PlayerPage() {
     const [selectedVote, setSelectedVote] = useState<string | null>(null);
     const [voteResult, setVoteResult] = useState<{ winner: string; winners: string[]; winner_votes: number; votes: Record<string, string[]>; unanimous: boolean; round_podium: { nickname: string; avatar: string; vote_count: number; voters: string[] }[]; show_votes: boolean } | null>(null);
     const [superlatives, setSuperlatives] = useState<{ title: string; icon: string; winner: string; avatar: string; detail: string }[]>([]);
+
+    useEffect(() => {
+        const handler = () => {
+            if (!roomCode) return;
+            const rules = rulesForGame(gameType, catalog);
+            if (rules) setActiveRules(rules);
+        };
+        window.addEventListener('show-game-rules', handler);
+        return () => window.removeEventListener('show-game-rules', handler);
+    }, [catalog, gameType, roomCode]);
+
     // DrawingGame state
     const [drawingPrompt, setDrawingPrompt] = useState('');
     const [drawingDrawer, setDrawingDrawer] = useState('');

@@ -3087,6 +3087,8 @@ def _format_session(session: dict) -> dict:
     return {
         "session_id": session["id"],
         "room_code": session["room_code"],
+        "game_type": session.get("game_type"),
+        "content_id": session.get("content_id"),
         "status": status,
         "joinable": joinable,
         "closed_reason": session.get("closed_reason"),

@@ -335,10 +335,59 @@ def rules_for_game(game_id: str) -> dict[str, Any]:
     return copy.deepcopy(GAME_RULES.get(game_id, {}))
 
 
+def validate_rules(rules: dict[str, Any], game_id: str) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(rules, dict):
+        return [f"{game_id}: rules must be an object"]
+    if rules.get("version") != 1:
+        errors.append(f"{game_id}: rules.version must be 1")
+    for field in ("title", "summary"):
+        if not isinstance(rules.get(field), str) or not rules[field].strip():
+            errors.append(f"{game_id}: rules.{field} is required")
+    sections = rules.get("sections")
+    if not isinstance(sections, list) or not sections:
+        errors.append(f"{game_id}: rules.sections must be a non-empty list")
+        return errors
+    section_ids: set[str] = set()
+    for index, section in enumerate(sections):
+        if not isinstance(section, dict):
+            errors.append(f"{game_id}: rules.sections[{index}] must be an object")
+            continue
+        section_id = section.get("id")
+        if not isinstance(section_id, str) or not section_id.strip():
+            errors.append(f"{game_id}: rules.sections[{index}].id is required")
+        elif section_id in section_ids:
+            errors.append(f"{game_id}: duplicate rules section id {section_id}")
+        else:
+            section_ids.add(section_id)
+        if not isinstance(section.get("title"), str) or not section["title"].strip():
+            errors.append(f"{game_id}: rules.sections[{index}].title is required")
+        items = section.get("items")
+        if not isinstance(items, list) or not items or not all(isinstance(item, str) and item.strip() for item in items):
+            errors.append(f"{game_id}: rules.sections[{index}].items must contain text")
+    return errors
+
+
+def validate_catalog_rules(catalog: list[dict[str, Any]]) -> None:
+    errors: list[str] = []
+    for game in catalog:
+        if not game.get("enabled", True) or not game.get("launchable"):
+            continue
+        game_id = str(game.get("id") or game.get("game_type") or "")
+        rules = game.get("rules")
+        if not rules:
+            errors.append(f"{game_id or '<unknown>'}: launchable game is missing rules")
+            continue
+        errors.extend(validate_rules(rules, game_id))
+    if errors:
+        raise ValueError("Invalid game rules metadata: " + "; ".join(errors))
+
+
 def attach_rules(catalog: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for game in catalog:
         game_id = str(game.get("id") or game.get("game_type") or "")
         rules = rules_for_game(game_id)
         if rules:
             game["rules"] = rules
+    validate_catalog_rules(catalog)
     return catalog

@@ -34,6 +34,8 @@ import SurveySaysGame from '../components/SurveySaysGame';
 import GenericPromptGame from '../components/GenericPromptGame';
 import SimpleSocialGame from '../components/SimpleSocialGame';
 import PhotoClueGame from '../components/PhotoClueGame';
+import GameRulesModal from '../components/GameRulesModal';
+import { rulesForGame, type GameRules } from '../gameRules';
 import '../cast.d.ts';
 import { CAST_NAMESPACE, CAST_RECEIVER_SDK_URL } from '../cast-constants';
 import { GENERIC_PROMPT_GAME_IDS } from '../gameModes';
@@ -87,6 +89,7 @@ export default function SpectatorPage() {
     const [connectionError, setConnectionError] = useState('');
     const [hostAppReturnUrl, setHostAppReturnUrl] = useState('');
     const [launchResolving, setLaunchResolving] = useState(() => searchParams.has('launch_token'));
+    const [activeRules, setActiveRules] = useState<GameRules | null>(null);
 
     useEffect(() => {
         const launchToken = searchParams.get('launch_token');
@@ -151,6 +154,16 @@ export default function SpectatorPage() {
     const [roomClosed, setRoomClosed] = useState(false);
     const mountedRef = useRef(true);
     const terminalConnectionErrorRef = useRef(false);
+
+    useEffect(() => {
+        const handler = () => {
+            if (!roomCode && !joined) return;
+            const rules = rulesForGame(gameType);
+            if (rules) setActiveRules(rules);
+        };
+        window.addEventListener('show-game-rules', handler);
+        return () => window.removeEventListener('show-game-rules', handler);
+    }, [gameType, joined, roomCode]);
 
     useEffect(() => {
         mountedRef.current = true;
@@ -1374,6 +1387,7 @@ export default function SpectatorPage() {
                     )}
                 </div>
             </div>
+            <GameRulesModal rules={activeRules} onClose={() => setActiveRules(null)} />
         </div>
         </div>
     );

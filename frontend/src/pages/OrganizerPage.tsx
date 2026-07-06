@@ -360,6 +360,15 @@ export default function OrganizerPage() {
     }, []);
 
     useEffect(() => {
+        const handler = () => {
+            const rules = rulesForGame(gameTypeRef.current, catalog);
+            if (rules) setActiveRules(rules);
+        };
+        window.addEventListener('show-game-rules', handler);
+        return () => window.removeEventListener('show-game-rules', handler);
+    }, [catalog]);
+
+    useEffect(() => {
         fetch(`${API_URL}/sd/status`)
             .then(res => res.ok ? res.json() : Promise.reject())
             .then(data => setSdAvailable(data?.available ?? false))

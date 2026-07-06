@@ -3,7 +3,8 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 import { API_URL } from '../config';
 import { getGameModeConfig, isMostPopularGameId, mostPopularGameRank } from '../gameModes';
 import GameRulesModal from '../components/GameRulesModal';
-import { type GameRules } from '../gameRules';
+import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
+import { type GameType } from '../types';
 import { returnToHostApp } from '../utils/hostAppReturn';
 
 type LaunchContext = {
@@ -37,6 +38,8 @@ type Workspace = {
         session_id: string;
         status: string;
         room_code: string;
+        game_type?: string;
+        content_id?: string;
         joinable: boolean;
         launch_routes?: Record<string, { path?: string; url?: string; scope?: string }>;
         feed_card?: {
@@ -373,6 +376,11 @@ export default function PartyHubPage() {
             .sort((a, b) => gameSortTitle(a).localeCompare(gameSortTitle(b))),
         [workspace],
     );
+    const showRulesForGame = useCallback((gameType: string | undefined) => {
+        if (!gameType) return;
+        const rules = rulesForGame(gameType as GameType, catalogGames as CatalogGameWithRules[]);
+        if (rules) setActiveRules(rules);
+    }, [catalogGames]);
     const filteredCatalogGames = useMemo(() => {
         const query = catalogSearch.trim().toLowerCase();
         const filtered = catalogGames.filter((game) => {
@@ -746,6 +754,11 @@ export default function PartyHubPage() {
                             <p>{activeSession.joinable ? `Room code ${activeSession.room_code}` : 'Completed or closed'}</p>
                         </div>
                         <div className="party-hub__actions">
+                            {activeSession.game_type && (
+                                <button type="button" className="party-hub__secondary" onClick={() => showRulesForGame(activeSession.game_type)}>
+                                    Rules
+                                </button>
+                            )}
                             {canStart && activeSession.joinable && (
                                 <button onClick={() => openActiveSession('organizer')} disabled={openingSessionScope === 'organizer'}>
                                     {openingSessionScope === 'organizer' ? 'Opening...' : 'Host game'}
@@ -1000,6 +1013,9 @@ export default function PartyHubPage() {
                                     <p>{savedContentSummary(content)}</p>
                                 </div>
                                 <div className="party-hub__actions">
+                                    <button type="button" className="party-hub__secondary" onClick={() => showRulesForGame(content.game_type)}>
+                                        Rules
+                                    </button>
                                     {canStart && (
                                         <button
                                             onClick={() => void startGame({

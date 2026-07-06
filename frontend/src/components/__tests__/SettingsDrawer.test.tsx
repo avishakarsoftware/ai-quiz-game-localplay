@@ -74,6 +74,19 @@ describe('SettingsDrawer', () => {
         expect(screen.getByText('Home')).toBeInTheDocument();
     });
 
+    it('dispatches a show-game-rules event from the Rules row', async () => {
+        const user = userEvent.setup();
+        const listener = vi.fn();
+        window.addEventListener('show-game-rules', listener);
+        render(<SettingsDrawer />);
+
+        await user.click(screen.getByTitle('Menu'));
+        await user.click(screen.getByText('Rules'));
+
+        expect(listener).toHaveBeenCalledTimes(1);
+        window.removeEventListener('show-game-rules', listener);
+    });
+
     it('shows Sound and Vibration labels', async () => {
         const user = userEvent.setup();
         render(<SettingsDrawer />);
