@@ -137,7 +137,14 @@ Random Chit is richer because LocalPlay now supports its host-app content schema
 
 LocalPlay accepts `chit_pull` in the party-games content save/generate/start endpoints, persists it in `generated_content`, and validates with the same sanitizer as standalone Random Chit. This introduces a LocalPlay DB migration: `generated_content.content_type` must include `chit_pull`.
 
-`find_someone` also advertises `checkin_friendly = true`, `can_start_with_first_player = true`, and `supports_late_join = true`. Revelry owns the party setting that makes it the default check-in game and the auto-start-on-first-check-in trigger. LocalPlay owns the resulting room/session runtime, late-join card assignment, and reconnect/duplicate-device handling.
+`find_someone` also advertises `checkin_friendly = true`, `can_start_with_first_player = true`, `supports_late_join = true`, `default_for_checkin_supported = true`, `auto_start_on_first_checkin_default = true`, and `checkin_join_policy = "resume_or_join"`. Revelry owns the party setting that makes it the default check-in game and the auto-start-on-first-check-in trigger. LocalPlay owns the resulting room/session runtime, late-join card assignment, and reconnect/duplicate-device handling.
+
+July 6, 2026 Find Someone check-in/open-or-create contract:
+
+- `POST /integrations/revelry/party-games/start` accepts `settings.find_someone_config` and `open_or_create`.
+- `POST /integrations/revelry/sessions` accepts the same behavior through `settings.open_or_create=true` or `settings.find_someone_config.default_for_checkin=true`.
+- If an active Find Someone session already exists for the party and the call is open-or-create/default-check-in, LocalPlay returns the existing session with `opened_existing=true`, mints a fresh launch token, and does not create a duplicate room or duplicate `session.created` callback.
+- If the latest Find Someone session has already ended, LocalPlay returns `409` with `detail.code="find_someone_session_finished"` and `detail.action_required="host_start_new_session"`; Revelry should show a host-facing action to start a new session rather than treating this as a check-in auto-start.
 
 Gamma/prod rollout still requires host-app catalog policy rows for each game and an embedded hub smoke test. In production, missing policy fails closed.
 

@@ -22,6 +22,21 @@ def test_validate_config_supports_first_guest_checkin_defaults():
     assert config["confirmation_mode"] == "tap_confirm"
     assert len(config["prompts"]) >= 24
     assert [pattern["id"] for pattern in config["claim_patterns"]] == ["first_line", "four_corners", "blackout"]
+    assert config["default_for_checkin"] is False
+    assert config["auto_start_on_first_checkin"] is True
+    assert config["checkin_join_policy"] == "resume_or_join"
+
+
+def test_validate_config_preserves_checkin_overrides():
+    config = validate_config({
+        "default_for_checkin": True,
+        "auto_start_on_first_checkin": False,
+        "checkin_join_policy": "host_started_only",
+    })
+
+    assert config["default_for_checkin"] is True
+    assert config["auto_start_on_first_checkin"] is False
+    assert config["checkin_join_policy"] == "host_started_only"
 
 
 def test_mark_cell_requires_matched_player_confirmation():

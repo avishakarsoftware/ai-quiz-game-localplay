@@ -15,7 +15,7 @@ Frontend display name: Find Someone Who
 
 ## Implementation-Ready MVP Scope
 
-Status: implemented for standalone LocalPlay MVP on June 12, 2026. On June 24, 2026, LocalPlay made it eligible for Revelry host-app quick-start/catalog exposure with `host_app_supported = true`, `supported_host_apps = ["revelry"]`, `can_quick_start = true`, `can_create_content = false`, `checkin_friendly = true`, `can_start_with_first_player = true`, and `supports_late_join = true`. Revelry still owns the event check-in default setting and first-guest trigger.
+Status: implemented for standalone LocalPlay MVP on June 12, 2026. On June 24, 2026, LocalPlay made it eligible for Revelry host-app quick-start/catalog exposure with `host_app_supported = true`, `supported_host_apps = ["revelry"]`, `can_quick_start = true`, `can_create_content = false`, `checkin_friendly = true`, `can_start_with_first_player = true`, and `supports_late_join = true`. On July 6, 2026, LocalPlay added the open-or-create check-in contract so Revelry can resume a live Find Someone session without duplicate rooms and cannot silently auto-restart a finished session. Revelry still owns the event check-in default setting and first-guest trigger.
 
 - Standalone LocalPlay first.
 - Host can quick-start a safe default prompt pack.
@@ -93,7 +93,10 @@ Generate only light, voluntary, conversation-friendly prompts. Avoid sensitive p
   "claim_patterns": ["first_line", "four_corners", "blackout"],
   "round_time_seconds": 1800,
   "allow_same_person_multiple_cells": false,
-  "allow_self_match": false
+  "allow_self_match": false,
+  "default_for_checkin": false,
+  "auto_start_on_first_checkin": true,
+  "checkin_join_policy": "resume_or_join"
 }
 ```
 
@@ -106,6 +109,9 @@ Defaults:
 - `round_time_seconds`: 900 engine default; standalone quick-start uses 1800 for party-friendly play.
 - `allow_same_person_multiple_cells`: false.
 - `allow_self_match`: false.
+- `default_for_checkin`: false unless set by a host-app check-in/default flow.
+- `auto_start_on_first_checkin`: true for check-in/default integrations.
+- `checkin_join_policy`: `resume_or_join`.
 
 Validation:
 
@@ -221,7 +227,8 @@ Find Someone Who is intended to be playable as an ambient party check-in game. L
   "supports_late_join": true,
   "config_schema": {
     "checkin_default_supported": true,
-    "auto_start_on_first_checkin_default": true
+    "auto_start_on_first_checkin_default": true,
+    "checkin_join_policy": "resume_or_join"
   }
 }
 ```
@@ -240,6 +247,13 @@ Expected check-in launch flow:
 3. Revelry shows the game QR/link in the event check-in or party hub surface.
 4. Additional guests who scan later join the active LocalPlay room and receive fresh cards.
 5. If a guest scans again on the same browser/device, normal LocalPlay nickname/session-token reconnect rules should recover the same player instead of creating a duplicate.
+
+LocalPlay check-in session contract:
+
+- `POST /integrations/revelry/party-games/start` accepts `open_or_create=true` and optional `settings.find_someone_config`.
+- `POST /integrations/revelry/sessions` accepts the same behavior through `settings.open_or_create=true` or `settings.find_someone_config.default_for_checkin=true`.
+- If an active Find Someone session already exists for the party, LocalPlay returns it with `opened_existing=true`, a fresh launch token, and no duplicate `session.created` callback.
+- If the latest Find Someone session has already ended, LocalPlay returns `409` with `detail.code="find_someone_session_finished"` and `detail.action_required="host_start_new_session"` instead of creating a surprise new check-in room.
 
 ## Claim Validation
 

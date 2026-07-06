@@ -101,6 +101,9 @@ def validate_config(raw: dict | None) -> dict:
             patterns.append(dict(known))
     if not patterns:
         patterns = [dict(DEFAULT_PATTERNS[0])]
+    checkin_join_policy = str(raw.get("checkin_join_policy") or "resume_or_join").strip().lower()
+    if checkin_join_policy not in {"resume_or_join", "host_started_only"}:
+        checkin_join_policy = "resume_or_join"
 
     return {
         "game_title": _clean_text(raw.get("game_title") or "Find Someone Who", 120) or "Find Someone Who",
@@ -112,6 +115,9 @@ def validate_config(raw: dict | None) -> dict:
         "allow_same_person_multiple_cells": bool(raw.get("allow_same_person_multiple_cells", False)),
         "allow_self_match": bool(raw.get("allow_self_match", False)),
         "free_center_label": _clean_text(raw.get("free_center_label") or "FREE", 30) or "FREE",
+        "default_for_checkin": bool(raw.get("default_for_checkin", False)),
+        "auto_start_on_first_checkin": bool(raw.get("auto_start_on_first_checkin", True)),
+        "checkin_join_policy": checkin_join_policy,
     }
 
 

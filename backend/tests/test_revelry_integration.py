@@ -186,6 +186,10 @@ def test_catalog_lists_launchable_games():
     assert chit_pull["can_edit_content"] is True
     assert chit_pull["supports_ai_generation"] is True
     assert find_someone["checkin_friendly"] is True
+    assert find_someone["can_start_with_first_player"] is True
+    assert find_someone["supports_late_join"] is True
+    assert find_someone["default_for_checkin_supported"] is True
+    assert find_someone["auto_start_on_first_checkin_default"] is True
     assert party_quests["can_quick_start"] is True
     assert party_quests["can_create_content"] is False
     assert party_quests["supports_ai_generation"] is False
@@ -1445,6 +1449,95 @@ def test_revelry_party_hub_can_quick_start_party_quests(monkeypatch):
     assert finished_reopen_res.status_code == 409
     finished_detail = finished_reopen_res.json()["detail"]
     assert finished_detail["code"] == "party_quests_session_finished"
+    assert finished_detail["session_id"] == body["session"]["session_id"]
+    assert finished_detail["action_required"] == "host_start_new_session"
+
+
+def test_revelry_party_hub_can_open_or_create_find_someone_checkin_session(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"find-someone-checkin-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Ava's Icebreaker",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["operate_game", "manage_games"],
+        },
+    }
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+    assert link_res.status_code == 200
+    party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
+
+    start_res = client.post(
+        "/integrations/revelry/party-games/start",
+        json={
+            "party_games_token": party_token,
+            "game_type": "find_someone",
+            "open_or_create": True,
+            "settings": {
+                "find_someone_config": {
+                    "round_time_seconds": 1800,
+                    "confirmation_mode": "honor",
+                    "default_for_checkin": True,
+                    "auto_start_on_first_checkin": True,
+                    "checkin_join_policy": "resume_or_join",
+                },
+            },
+        },
+    )
+    assert start_res.status_code == 200, start_res.text
+    body = start_res.json()
+    assert body["opened_existing"] is False
+    room = socket_manager.rooms[body["session"]["room_code"]]
+    assert room.game_type == "find_someone"
+    assert room.find_someone_config["round_time_seconds"] == 1800
+    assert room.find_someone_config["confirmation_mode"] == "honor"
+    assert room.find_someone_config["default_for_checkin"] is True
+    assert room.find_someone_config["auto_start_on_first_checkin"] is True
+
+    room_codes_before_reopen = set(socket_manager.rooms)
+    reopen_res = client.post(
+        "/integrations/revelry/party-games/start",
+        json={
+            "party_games_token": party_token,
+            "game_type": "find_someone",
+            "open_or_create": True,
+            "settings": {"find_someone_config": {"default_for_checkin": True}},
+        },
+    )
+    assert reopen_res.status_code == 200, reopen_res.text
+    reopened = reopen_res.json()
+    assert reopened["opened_existing"] is True
+    assert reopened["session"]["session_id"] == body["session"]["session_id"]
+    assert reopened["session"]["room_code"] == body["session"]["room_code"]
+    assert set(socket_manager.rooms) == room_codes_before_reopen
+
+    db.update_game_session(body["session"]["session_id"], {
+        "status": "complete",
+        "joinable": False,
+        "completed_at": main._now_ts(),
+    })
+    socket_manager.rooms.pop(body["session"]["room_code"], None)
+
+    finished_reopen_res = client.post(
+        "/integrations/revelry/party-games/start",
+        json={
+            "party_games_token": party_token,
+            "game_type": "find_someone",
+            "open_or_create": True,
+            "settings": {"find_someone_config": {"default_for_checkin": True}},
+        },
+    )
+    assert finished_reopen_res.status_code == 409
+    finished_detail = finished_reopen_res.json()["detail"]
+    assert finished_detail["code"] == "find_someone_session_finished"
     assert finished_detail["session_id"] == body["session"]["session_id"]
     assert finished_detail["action_required"] == "host_start_new_session"
 

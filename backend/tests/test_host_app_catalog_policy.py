@@ -111,6 +111,9 @@ def test_more_standalone_games_are_host_app_quick_startable_in_gamma():
     assert games["chit_pull"]["rules"]["sections"]
     assert games["find_someone"]["checkin_friendly"] is True
     assert games["find_someone"]["can_start_with_first_player"] is True
+    assert games["find_someone"]["supports_late_join"] is True
+    assert games["find_someone"]["default_for_checkin_supported"] is True
+    assert games["find_someone"]["auto_start_on_first_checkin_default"] is True
 
 
 def test_production_missing_policy_fails_closed():

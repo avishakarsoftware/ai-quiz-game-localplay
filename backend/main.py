@@ -916,6 +916,9 @@ GAME_CATALOG = [
         "checkin_friendly": True,
         "can_start_with_first_player": True,
         "supports_late_join": True,
+        "default_for_checkin_supported": True,
+        "auto_start_on_first_checkin_default": True,
+        "checkin_join_policy": "resume_or_join",
         "content_schema": {
             "kind": "social_bingo_setup",
             "layouts": ["bingo_5x5_free", "bingo_5x5", "bingo_4x4"],
@@ -928,6 +931,8 @@ GAME_CATALOG = [
             "round_time_seconds": {"min": 120, "max": 7200, "default": 900},
             "checkin_default_supported": True,
             "auto_start_on_first_checkin_default": True,
+            "default_for_checkin": {"default": False},
+            "checkin_join_policy": {"default": "resume_or_join", "options": ["resume_or_join", "host_started_only"]},
         },
     },
     {
@@ -3206,20 +3211,29 @@ def _create_revelry_session_from_context(
         and active.get("game_id") == requested_content_id
         and active.get("game_type") == game_type
     )
-    party_quests_settings = settings.get("party_quests_config") if isinstance(settings.get("party_quests_config"), dict) else {}
+    checkin_config_keys = {
+        "find_someone": "find_someone_config",
+        "party_quests": "party_quests_config",
+    }
+    checkin_game_config_key = checkin_config_keys.get(game_type, "")
+    checkin_game_settings = (
+        settings.get(checkin_game_config_key)
+        if checkin_game_config_key and isinstance(settings.get(checkin_game_config_key), dict)
+        else {}
+    )
     open_or_create = bool(
         settings.get("open_or_create")
         or settings.get("reuse_active_session")
         or settings.get("default_for_checkin")
-        or party_quests_settings.get("default_for_checkin")
+        or checkin_game_settings.get("default_for_checkin")
     )
-    same_party_quests_default = bool(
+    same_checkin_default = bool(
         open_or_create
-        and game_type == "party_quests"
+        and game_type in checkin_config_keys
         and active
-        and active.get("game_type") == "party_quests"
+        and active.get("game_type") == game_type
     )
-    if active and (same_content or same_party_quests_default) and open_or_create:
+    if active and (same_content or same_checkin_default) and open_or_create:
         existing = dict(active)
         existing["_existing_session"] = True
         return existing
@@ -3258,30 +3272,37 @@ def _create_revelry_session_from_context(
                     "message": "replace_session_id must match the active LocalPlay session",
                 },
             )
-    if open_or_create and game_type == "party_quests" and not active and not replacement_confirmed:
-        latest = db.get_latest_game_session(context.host_app, context.external_container_id, "party_quests")
+    if open_or_create and game_type in checkin_config_keys and not active and not replacement_confirmed:
+        latest = db.get_latest_game_session(context.host_app, context.external_container_id, game_type)
         latest = _sync_session_runtime_availability(latest) or latest
         if latest and latest.get("status") not in ("lobby", "active", "paused"):
+            title_for_message = latest.get("game_title") or next((g["title"] for g in GAME_CATALOG if g["game_type"] == game_type), "LocalPlay Game")
             raise HTTPException(
                 status_code=409,
                 detail={
-                    "code": "party_quests_session_finished",
+                    "code": f"{game_type}_session_finished",
                     "session_id": latest["id"],
                     "active_session_id": latest["id"],
-                    "game_type": latest.get("game_type") or "party_quests",
-                    "game_title": latest.get("game_title") or "Party Quests",
+                    "game_type": latest.get("game_type") or game_type,
+                    "game_title": title_for_message,
                     "active_content_id": latest.get("game_id") or "",
                     "active_status": latest.get("status"),
                     "active_joinable": bool(latest.get("joinable", False)),
                     "active_room_code": latest.get("room_code") or "",
                     "action_required": "host_start_new_session",
-                    "message": "The Party Quests session for this party has already ended. Start a new session from the Games hub.",
+                    "message": f"The {title_for_message} session for this party has already ended. Start a new session from the Games hub.",
                 },
             )
 
     title = context.external_container_title or next((g["title"] for g in GAME_CATALOG if g["game_type"] == game_type), "LocalPlay Game")
     content_started = time.perf_counter()
     content_id, game_data = _resolve_revelry_runtime_content(context, game_type, str(settings.get("content_id") or ""), title)
+    if game_type == "find_someone" and isinstance(settings.get("find_someone_config"), dict):
+        game_data = validate_find_someone_config({
+            **game_data,
+            **settings["find_someone_config"],
+            "game_title": settings["find_someone_config"].get("game_title") or game_data.get("game_title") or title,
+        })
     if game_type == "party_quests" and isinstance(settings.get("party_quests_config"), dict):
         game_data = validate_party_quests_config({
             **game_data,
