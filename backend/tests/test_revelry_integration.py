@@ -260,6 +260,63 @@ def test_revelry_session_create_launch_token_and_status(monkeypatch):
         assert ws.receive_json()["type"] == "GAME_STARTING"
 
 
+def test_revelry_sessions_open_or_create_checkin_games(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    cases = [
+        (
+            "party_quests",
+            "party_quests_config",
+            {"default_for_checkin": True, "duration_minutes": 45, "quests_per_player": 5},
+            "party_quests_session_finished",
+        ),
+        (
+            "find_someone",
+            "find_someone_config",
+            {"default_for_checkin": True, "round_time_seconds": 1800, "confirmation_mode": "honor"},
+            "find_someone_session_finished",
+        ),
+    ]
+
+    for game_type, config_key, game_config, finished_code in cases:
+        container_id = f"sessions-{game_type}-{uuid.uuid4().hex}"
+        payload = _create_payload(container_id, game_type=game_type)
+        payload["settings"] = {
+            "time_limit": 20,
+            "open_or_create": True,
+            config_key: game_config,
+        }
+
+        first_res = client.post("/integrations/revelry/sessions", headers=_headers(), json=payload)
+        assert first_res.status_code == 200, first_res.text
+        first = first_res.json()
+        assert first["opened_existing"] is False
+        assert first["room_code"] in socket_manager.rooms
+
+        room_codes_before_reopen = set(socket_manager.rooms)
+        reopen_res = client.post("/integrations/revelry/sessions", headers=_headers(), json=payload)
+        assert reopen_res.status_code == 200, reopen_res.text
+        reopened = reopen_res.json()
+        assert reopened["opened_existing"] is True
+        assert reopened["session_id"] == first["session_id"]
+        assert reopened["room_code"] == first["room_code"]
+        assert set(socket_manager.rooms) == room_codes_before_reopen
+
+        db.update_game_session(first["session_id"], {
+            "status": "complete",
+            "joinable": False,
+            "completed_at": main._now_ts(),
+        })
+        socket_manager.rooms.pop(first["room_code"], None)
+
+        finished_res = client.post("/integrations/revelry/sessions", headers=_headers(), json=payload)
+        assert finished_res.status_code == 409
+        detail = finished_res.json()["detail"]
+        assert detail["code"] == finished_code
+        assert detail["session_id"] == first["session_id"]
+        assert detail["action_required"] == "host_start_new_session"
+
+
 def test_revelry_return_url_validation_parses_origins(monkeypatch):
     monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
     db.init_db()
