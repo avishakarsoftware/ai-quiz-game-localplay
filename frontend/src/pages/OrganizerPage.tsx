@@ -368,6 +368,21 @@ export default function OrganizerPage() {
         return () => window.removeEventListener('show-game-rules', handler);
     }, [catalog]);
 
+    // Proactive "Get Sparks" entry (e.g. tapping the spark badge) — open the purchase modal directly.
+    useEffect(() => {
+        const handler = () => {
+            if (hostAppMode) return;
+            if (remoteConfig.operations.kill_payments) {
+                setErrorModal({ title: 'Payments Unavailable', message: 'Payments are temporarily disabled. Please try again later.' });
+                return;
+            }
+            track('get_sparks_clicked', { source: 'spark_badge' });
+            setShowPurchase(true);
+        };
+        window.addEventListener('open-spark-purchase', handler);
+        return () => window.removeEventListener('open-spark-purchase', handler);
+    }, [hostAppMode, remoteConfig.operations.kill_payments]);
+
     useEffect(() => {
         fetch(`${API_URL}/sd/status`)
             .then(res => res.ok ? res.json() : Promise.reject())

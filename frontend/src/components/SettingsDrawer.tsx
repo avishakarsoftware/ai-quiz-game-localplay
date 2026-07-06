@@ -281,9 +281,17 @@ export default function SettingsDrawer() {
 
     return (
         <>
-            {/* Spark badge — fixed top-right */}
+            {/* Spark badge — fixed top-right. Tap to open the Get Sparks purchase flow. */}
             <div className="settings-spark-badge">
-                <TokenBadge tokenStatus={tokenStatus} loading={tokenLoading} />
+                <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('open-spark-purchase'))}
+                    title="Get Sparks"
+                    aria-label="Get Sparks"
+                    style={{ background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer' }}
+                >
+                    <TokenBadge tokenStatus={tokenStatus} loading={tokenLoading} />
+                </button>
             </div>
 
             {/* Hamburger menu trigger — top-left */}
