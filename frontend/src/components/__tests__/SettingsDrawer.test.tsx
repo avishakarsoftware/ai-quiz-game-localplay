@@ -87,6 +87,18 @@ describe('SettingsDrawer', () => {
         window.removeEventListener('show-game-rules', listener);
     });
 
+    it('dispatches open-spark-purchase when the spark badge is clicked', async () => {
+        const user = userEvent.setup();
+        const listener = vi.fn();
+        window.addEventListener('open-spark-purchase', listener);
+        render(<SettingsDrawer />);
+
+        await user.click(screen.getByRole('button', { name: /get sparks/i }));
+
+        expect(listener).toHaveBeenCalledTimes(1);
+        window.removeEventListener('open-spark-purchase', listener);
+    });
+
     it('shows Sound and Vibration labels', async () => {
         const user = userEvent.setup();
         render(<SettingsDrawer />);
