@@ -33,6 +33,18 @@ def test_validate_config_adds_default_quests_and_clamps_settings():
     assert len(config["quests"]) >= config["quests_per_player"]
 
 
+def test_validate_config_preserves_checkin_defaults():
+    config = validate_config({
+        "default_for_checkin": True,
+        "auto_start_on_first_checkin": False,
+        "checkin_join_policy": "host_started_only",
+    })
+
+    assert config["default_for_checkin"] is True
+    assert config["auto_start_on_first_checkin"] is False
+    assert config["checkin_join_policy"] == "host_started_only"
+
+
 def test_confirmation_flow_scores_requester():
     state = create_initial_state(
         ["Avi", "Ruchi"],

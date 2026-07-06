@@ -63,6 +63,9 @@ def validate_config(raw: dict | None) -> dict:
     if reveal_mode not in {"host_paced", "auto"}:
         reveal_mode = "host_paced"
     theme = _clean_text(raw.get("theme") or "party", 60).lower() or "party"
+    checkin_join_policy = str(raw.get("checkin_join_policy") or "resume_or_join").strip().lower()
+    if checkin_join_policy not in {"resume_or_join", "host_started_only"}:
+        checkin_join_policy = "resume_or_join"
 
     quests = []
     raw_quests = raw.get("quests") or DEFAULT_QUESTS
@@ -111,7 +114,9 @@ def validate_config(raw: dict | None) -> dict:
         "reveal_mode": reveal_mode,
         "theme": theme,
         "allow_late_join": bool(raw.get("allow_late_join", True)),
+        "default_for_checkin": bool(raw.get("default_for_checkin", False)),
         "auto_start_on_first_checkin": bool(raw.get("auto_start_on_first_checkin", True)),
+        "checkin_join_policy": checkin_join_policy,
     }
 
 

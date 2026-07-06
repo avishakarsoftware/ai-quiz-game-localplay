@@ -158,6 +158,36 @@ LocalPlay now implements `party_quests` as a standalone ambient social runtime a
 - Result callbacks/results should use safe aggregate fields only. Do not mirror per-player quest boards or a per-person social graph into Revelry.
 - No Revelry code change is expected if Revelry already renders LocalPlay's catalog-driven quick-start games; rollout is controlled by LocalPlay host-app catalog policy and gamma/prod smoke tests.
 
+July 6, 2026 LocalPlay check-in/default contract:
+
+- The LocalPlay catalog now advertises Party Quests with `checkin_friendly=true`, `supports_late_join=true`, `can_start_with_first_player=true`, `default_for_checkin_supported=true`, `auto_start_on_first_checkin_default=true`, and `checkin_join_policy="resume_or_join"`.
+- `POST /integrations/revelry/party-games/start` accepts `settings.party_quests_config` and `open_or_create`.
+- `POST /integrations/revelry/sessions` accepts the same behavior through `settings.open_or_create=true` or `settings.party_quests_config.default_for_checkin=true`.
+- If an active Party Quests session already exists for the party and the call is open-or-create/default-check-in, LocalPlay returns the existing session with `opened_existing=true`, mints a fresh launch token, and does not create a duplicate room or duplicate `session.created` callback.
+- If the latest Party Quests session has already ended, LocalPlay returns `409` with `detail.code="party_quests_session_finished"` and `detail.action_required="host_start_new_session"`; Revelry should show a host-facing action to start a new session rather than treating this as a check-in auto-start.
+- If a different active game exists, normal active-session conflict/replacement behavior still applies.
+
+Example:
+
+```json
+{
+  "party_games_token": "...",
+  "game_type": "party_quests",
+  "open_or_create": true,
+  "settings": {
+    "party_quests_config": {
+      "duration_minutes": 90,
+      "quests_per_player": 8,
+      "confirmation_mode": "tap_confirm",
+      "allow_late_join": true,
+      "default_for_checkin": true,
+      "auto_start_on_first_checkin": true,
+      "checkin_join_policy": "resume_or_join"
+    }
+  }
+}
+```
+
 ## June 12, 2026 — Integration hardening (deployed to gamma)
 
 Deployed to the `games-backend-gamma` container (image `revelry-backend-gamma:latest`, `gamesapi-gamma.revelryapp.me`); prod `games-backend` not yet redeployed.

@@ -1370,18 +1370,83 @@ def test_revelry_party_hub_can_quick_start_party_quests(monkeypatch):
     catalog = {game["id"]: game for game in resolve_res.json()["workspace"]["catalog"]}
     assert catalog["party_quests"]["can_quick_start"] is True
     assert catalog["party_quests"]["content_schema"]["kind"] == "party_quests_setup_v1"
+    assert catalog["party_quests"]["checkin_friendly"] is True
+    assert catalog["party_quests"]["can_start_with_first_player"] is True
+    assert catalog["party_quests"]["supports_late_join"] is True
+    assert catalog["party_quests"]["default_for_checkin_supported"] is True
+    assert catalog["party_quests"]["auto_start_on_first_checkin_default"] is True
 
     start_res = client.post(
         "/integrations/revelry/party-games/start",
-        json={"party_games_token": party_token, "game_type": "party_quests"},
+        json={
+            "party_games_token": party_token,
+            "game_type": "party_quests",
+            "open_or_create": True,
+            "settings": {
+                "party_quests_config": {
+                    "duration_minutes": 45,
+                    "quests_per_player": 5,
+                    "confirmation_mode": "honor",
+                    "allow_late_join": True,
+                    "default_for_checkin": True,
+                    "auto_start_on_first_checkin": True,
+                    "checkin_join_policy": "resume_or_join",
+                },
+            },
+        },
     )
     assert start_res.status_code == 200, start_res.text
     body = start_res.json()
+    assert body["opened_existing"] is False
     room = socket_manager.rooms[body["session"]["room_code"]]
     assert room.game_type == "party_quests"
     assert room.quiz["game_title"] == "Ava's Mixer"
-    assert room.party_quests_config["quests_per_player"] == 8
+    assert room.party_quests_config["duration_minutes"] == 45
+    assert room.party_quests_config["quests_per_player"] == 5
+    assert room.party_quests_config["confirmation_mode"] == "honor"
     assert room.party_quests_config["allow_late_join"] is True
+    assert room.party_quests_config["default_for_checkin"] is True
+    assert room.party_quests_config["auto_start_on_first_checkin"] is True
+    assert room.party_quests_config["checkin_join_policy"] == "resume_or_join"
+
+    room_codes_before_reopen = set(socket_manager.rooms)
+    reopen_res = client.post(
+        "/integrations/revelry/party-games/start",
+        json={
+            "party_games_token": party_token,
+            "game_type": "party_quests",
+            "open_or_create": True,
+            "settings": {"party_quests_config": {"default_for_checkin": True}},
+        },
+    )
+    assert reopen_res.status_code == 200, reopen_res.text
+    reopened = reopen_res.json()
+    assert reopened["opened_existing"] is True
+    assert reopened["session"]["session_id"] == body["session"]["session_id"]
+    assert reopened["session"]["room_code"] == body["session"]["room_code"]
+    assert set(socket_manager.rooms) == room_codes_before_reopen
+
+    db.update_game_session(body["session"]["session_id"], {
+        "status": "complete",
+        "joinable": False,
+        "completed_at": main._now_ts(),
+    })
+    socket_manager.rooms.pop(body["session"]["room_code"], None)
+
+    finished_reopen_res = client.post(
+        "/integrations/revelry/party-games/start",
+        json={
+            "party_games_token": party_token,
+            "game_type": "party_quests",
+            "open_or_create": True,
+            "settings": {"party_quests_config": {"default_for_checkin": True}},
+        },
+    )
+    assert finished_reopen_res.status_code == 409
+    finished_detail = finished_reopen_res.json()["detail"]
+    assert finished_detail["code"] == "party_quests_session_finished"
+    assert finished_detail["session_id"] == body["session"]["session_id"]
+    assert finished_detail["action_required"] == "host_start_new_session"
 
 
 def test_revelry_party_hub_can_quick_start_more_standalone_games(monkeypatch):

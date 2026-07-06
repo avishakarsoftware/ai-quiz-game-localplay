@@ -25,7 +25,7 @@ Find someone who has visited a city you want to visit.
 
 ## Current Implementation Status
 
-Status: LocalPlay MVP implemented on June 18, 2026; AI quest-block authoring and reorderable quest cards added on June 28, 2026. Check-in/default-game integration is implementation-ready as of July 6, 2026.
+Status: LocalPlay MVP implemented on June 18, 2026; AI quest-block authoring and reorderable quest cards added on June 28, 2026. LocalPlay check-in/default-game contract support was implemented on July 6, 2026; Revelry still owns the party setting and first-guest trigger UI.
 
 - Standalone LocalPlay host setup is implemented.
 - Host can choose a curated pack: Mingling, Birthday, Wedding, Work-safe, or Family.
@@ -50,6 +50,26 @@ Status: LocalPlay MVP implemented on June 18, 2026; AI quest-block authoring and
 ## July 6, 2026 Implementation-Ready Check-In / Default-Game Integration
 
 Party Quests should become the first ambient game that can be attached to a Revelry party before guests arrive. The LocalPlay side must support one long-running party-scoped session that guests can join from check-in, QR, or the Revelry Games tab without creating duplicate rooms.
+
+### July 6, 2026 LocalPlay Implementation
+
+Implemented on the LocalPlay side:
+
+- Catalog metadata now advertises `checkin_friendly`, `supports_late_join`, `can_start_with_first_player`, `default_for_checkin_supported`, `auto_start_on_first_checkin_default`, and `checkin_join_policy`.
+- `party_quests_config` now preserves `default_for_checkin`, `auto_start_on_first_checkin`, and `checkin_join_policy`.
+- `POST /integrations/revelry/party-games/start` accepts:
+  - `settings.party_quests_config`
+  - `open_or_create`
+- When `open_or_create=true` for `game_type="party_quests"` and the party already has an active Party Quests session, LocalPlay returns the existing session with `opened_existing=true` and mints a fresh organizer launch token. It does not create another room, supersede the current session, or emit a duplicate `session.created` callback.
+- If the latest Party Quests session for the party has already ended, `open_or_create=true` returns a structured `409` with `code="party_quests_session_finished"` and `action_required="host_start_new_session"` instead of silently creating a fresh check-in game. A host can still intentionally start a new session from the Games hub.
+- `POST /integrations/revelry/sessions` also honors `settings.open_or_create` / `settings.party_quests_config.default_for_checkin` for service-side orchestration.
+
+Still owned by Revelry:
+
+- Host-facing party setting for "make Party Quests the default check-in game."
+- First-guest check-in trigger.
+- Choosing whether that trigger calls `/party-games/start` with `open_or_create=true` or `/sessions` with `settings.open_or_create=true`.
+- Routing guests into the player launch URL using LocalPlay's existing session launch-token flow.
 
 ### Product Behavior
 

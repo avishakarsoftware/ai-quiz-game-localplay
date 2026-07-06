@@ -861,6 +861,21 @@ def get_active_game_session(host_app: str, external_container_id: str) -> Option
     ))
 
 
+def get_latest_game_session(host_app: str, external_container_id: str, game_type: str = "") -> Optional[dict]:
+    filters = {
+        "host_app": f"eq.{host_app}",
+        "external_container_id": f"eq.{external_container_id}",
+    }
+    if game_type:
+        filters["game_type"] = f"eq.{game_type}"
+    return _first(_sb().select(
+        "game_sessions",
+        filters=filters,
+        order="created_at.desc",
+        limit=1,
+    ))
+
+
 def game_content_has_sessions(host_app: str, external_container_id: str, game_id: str) -> bool:
     return bool(_first(_sb().select(
         "game_sessions",
