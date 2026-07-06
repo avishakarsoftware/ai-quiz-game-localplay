@@ -25,7 +25,7 @@ Find someone who has visited a city you want to visit.
 
 ## Current Implementation Status
 
-Status: LocalPlay MVP implemented on June 18, 2026; AI quest-block authoring and reorderable quest cards added on June 28, 2026.
+Status: LocalPlay MVP implemented on June 18, 2026; AI quest-block authoring and reorderable quest cards added on June 28, 2026. Check-in/default-game integration is implementation-ready as of July 6, 2026.
 
 - Standalone LocalPlay host setup is implemented.
 - Host can choose a curated pack: Mingling, Birthday, Wedding, Work-safe, or Family.
@@ -46,6 +46,133 @@ Status: LocalPlay MVP implemented on June 18, 2026; AI quest-block authoring and
 - Spectator/TV can show ambient progress or stay quiet until reveal.
 - Host ends the game manually or after a timer.
 - Final reveal shows winner, runner up, top connectors, quest highlights, and aggregate stats.
+
+## July 6, 2026 Implementation-Ready Check-In / Default-Game Integration
+
+Party Quests should become the first ambient game that can be attached to a Revelry party before guests arrive. The LocalPlay side must support one long-running party-scoped session that guests can join from check-in, QR, or the Revelry Games tab without creating duplicate rooms.
+
+### Product Behavior
+
+Host setup:
+
+- Host chooses Party Quests as the party default game from Revelry or LocalPlay's Revelry hub.
+- Host chooses a curated or AI-generated quest block.
+- Host can enable:
+  - `default_for_checkin`: whether check-in surfaces should point guests to Party Quests.
+  - `auto_start_on_first_checkin`: default on for check-in mode.
+  - `allow_late_join`: default on.
+- Host can still manually start the room before any guest checks in.
+
+Guest behavior:
+
+- First guest check-in can create/start the LocalPlay Party Quests session if `auto_start_on_first_checkin=true`.
+- Later guests join the same active session and receive a quest board immediately.
+- A guest who scans/checks in again from the same browser/device token should resume the same player seat and board.
+- A guest who scans from a new device but has a stable Revelry guest id should also resume the same seat when the launch token includes that guest id.
+- A different guest trying to reuse an active nickname without a matching token/guest id should be asked to choose a different name.
+
+Host/restart behavior:
+
+- If a Party Quests session is already `QUESTS_ACTIVE`, starting another default Party Quests session for the same party should return/open the existing session unless the host explicitly chooses "Start a new session."
+- If the host ended/revealed the session, check-in joins should not silently restart it.
+- Starting a different LocalPlay game should follow the normal one-active-game replacement warning and supersede Party Quests only after confirmation.
+
+### LocalPlay API Contract
+
+Extend the host-app quick-start/settings path with optional Party Quests defaults:
+
+```json
+{
+  "game_type": "party_quests",
+  "settings": {
+    "party_quests_config": {
+      "game_title": "Party Quests",
+      "quests": [],
+      "duration_minutes": 90,
+      "quests_per_player": 8,
+      "confirmation_mode": "tap_confirm",
+      "allow_late_join": true,
+      "default_for_checkin": true,
+      "auto_start_on_first_checkin": true
+    }
+  }
+}
+```
+
+Implementation options:
+
+- For MVP, LocalPlay may keep Party Quests as quick-start/default-content and materialize the selected config directly into the session.
+- If pre-party saved quest blocks are needed, use the existing host-app content flow only after production schema supports the content type and policy sets `can_create_content=true`.
+
+Suggested new or clarified fields:
+
+```ts
+interface PartyQuestGame {
+  default_for_checkin?: boolean;
+  auto_start_on_first_checkin?: boolean;
+  checkin_join_policy?: 'resume_or_join' | 'host_started_only';
+}
+```
+
+Backend behavior:
+
+- `get_active_game_session(host_app, external_container_id)` must treat `QUESTS_ACTIVE`, `QUESTS_FINAL_CALL`, and unrevealed lobby sessions as active.
+- Default check-in launch should call the same LocalPlay session/start path used by the party hub, not create a separate room type.
+- Runtime room state should preserve disconnected/offline seats long enough for party-length reconnects.
+- Late join assignment must be idempotent by stable player identity.
+- Result summary must remain aggregate and must not expose a per-person social graph.
+
+### Identity and Duplicate Join Rules
+
+Identity precedence:
+
+1. Valid LocalPlay session/player token from the same room.
+2. Host-app `external_guest_id` from the Revelry launch token.
+3. Device id/browser storage fallback.
+4. Nickname only as a display value, not a merge key.
+
+Seat restore must preserve:
+
+- quest board
+- confirmed completions
+- pending incoming/outgoing confirmations
+- score
+- joined_at
+- last_seen_at
+
+If a player restores after the timer ends but before reveal, show final-call/reveal state rather than assigning new quests.
+
+### Required Tests
+
+Backend:
+
+- First check-in creates/starts one Party Quests session when enabled.
+- Second check-in for same party joins the existing session.
+- Same guest id/device restores existing board.
+- New guest gets a new board during `QUESTS_ACTIVE`.
+- Completed/revealed session is not auto-restarted.
+- Starting a different game requires/satisfies replacement confirmation.
+- Result summary excludes per-person match graph.
+
+WebSocket:
+
+- Active late join receives `QUESTS_SYNC` with private board.
+- Reconnect restores board and pending confirmations.
+- Duplicate nickname without matching identity is rejected.
+
+Playwright:
+
+- Simulate host setup, first guest check-in, second guest check-in, confirmation, final reveal.
+- Mobile viewport: quest board, confirmation prompt, and reconnect screen remain usable.
+- Revelry embedded hub: Party Quests default/check-in card opens the existing active session instead of creating a duplicate.
+
+Acceptance:
+
+- A party can run one Party Quests room for 30-180 minutes with late joins and reconnects.
+- Guests who join mid-party do not disrupt the active game.
+- Re-scans do not duplicate the same guest.
+- Hosts can still end/reveal and start a new session deliberately.
+- Revelry receives only safe aggregate results.
 
 ## Goals
 

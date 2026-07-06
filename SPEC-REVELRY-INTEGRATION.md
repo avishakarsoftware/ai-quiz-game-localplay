@@ -1,8 +1,106 @@
 # LocalPlay Revelry Integration Spec
 
-Status: Gamma bridge plus party-scoped quiz authoring, generic WMLT/Drawing/Housie/Random Chit setup-save-start flow, catalog-driven party hub creation, and party hub start flow implemented; production hardening remains. June 24, 2026 expanded LocalPlay host-app quick-start eligibility to Bluff, Find Someone Who, Random Chit, Mafia, Would You Rather, Never Have I Ever, Word Association, Acronym Game, Photo Clue, and Party Poker; policy enablement/embedded QA still gates actual Revelry exposure.
+Status: Gamma bridge plus party-scoped quiz authoring, generic WMLT/Drawing/Housie/Random Chit setup-save-start flow, catalog-driven party hub creation, and party hub start flow implemented; production expansion remains policy/QA gated. June 24, 2026 expanded LocalPlay host-app quick-start eligibility to Bluff, Find Someone Who, Random Chit, Mafia, Would You Rather, Never Have I Ever, Word Association, Acronym Game, Photo Clue, and Party Poker; policy enablement/embedded QA still gates actual Revelry exposure.
 
-Last updated: 2026-06-24
+Last updated: 2026-07-06
+
+## July 6, 2026 — Implementation-ready Revelry production expansion plan
+
+Production Revelry currently exposes a conservative LocalPlay set. The next LocalPlay-owned work is to make the production expansion repeatable, policy-driven, and testable before asking Revelry to surface more games.
+
+### Candidate rollout groups
+
+Roll games in small groups so production issues have an obvious rollback target.
+
+Group A: low-risk quick-start/social games
+
+- `bluff`
+- `find_someone`
+- `chit_pull` quick start only unless production content schema explicitly supports saved/AI Random Chit
+- `party_quests` quick start/default content
+
+Group B: rules-heavy or hidden-information games
+
+- `mafia`
+- `poker`
+
+Group C: media/image-heavy games
+
+- `photo_clue`
+
+Group D: lightweight prompt games
+
+- `would_you_rather`
+- `never_have_i_ever`
+- `word_association`
+- `acronym`
+
+Do not batch Group C with unrelated game groups, because media upload/finalize, privacy, and result-summary safety have different failure modes.
+
+### LocalPlay implementation tasks
+
+Before enabling a group in production policy:
+
+1. Confirm static catalog entries declare the correct ceiling capabilities:
+   - `host_app_supported=true`
+   - `supported_host_apps=["revelry"]`
+   - `can_quick_start`, `can_create_content`, `can_edit_content`, `supports_ai_generation`, `supports_images` set to the maximum safe LocalPlay support.
+2. Confirm production host-app policy rows are explicit. Production must fail closed when a row is missing.
+3. Confirm schema compatibility:
+   - No production DDL required for quick-start-only games.
+   - Saved/AI content games require `generated_content.content_type` support before `can_create_content=true` or `supports_ai_generation=true`.
+4. Confirm safe result summaries:
+   - No raw player private prompts.
+   - No hidden role assignments except public end-state labels explicitly intended for results.
+   - No raw uploaded photo URLs in Revelry callbacks/results unless the game spec marks them safe to share.
+5. Add or update harness fixture coverage before policy enablement. The pre-prod Revelry matrix must fail if a production-visible game lacks a fixture.
+6. Run gamma embedded hub QA for the group, then production smoke after policy is applied.
+
+### Required LocalPlay tests
+
+Backend/API:
+
+- `GET /catalog?host_app=revelry` returns only policy-enabled production games.
+- Each enabled game can create/start a session through the appropriate bridge path.
+- Quick-start games do not require `content_id`.
+- Saved-content games require valid party-scoped content and reject missing/wrong-party ids.
+- Launch-token minting works for organizer/player/spectator.
+- Result polling returns a safe summary.
+- Disabled policy rows reject session creation/start even when the static catalog supports the game.
+
+Playwright/live harness:
+
+- Embedded hub renders category/search UI and the candidate game cards.
+- For each candidate game: start from hub, organizer route loads, player route loads, watch route loads.
+- For at least one representative in each group, drive a minimal gameplay path to podium/result.
+- Verify no standalone economy chrome appears in Revelry-hosted views.
+- Verify browser console has no hard errors.
+
+### Production rollout procedure
+
+1. Deploy current LocalPlay to gamma.
+2. Apply gamma policy rows for the candidate group.
+3. Run:
+   - `npm run test:e2e:gamma`
+   - pre-prod Revelry matrix with a fresh gamma party-games URL
+   - focused gameplay harness for the candidate group
+4. Deploy LocalPlay to production.
+5. Apply production policy rows for exactly the tested group.
+6. Run production smoke:
+   - health/config/media/catalog
+   - production embedded hub link mint/resolve
+   - Playwright load of production embedded hub
+   - session start/launch-route check for enabled games where it is safe to create smoke sessions
+7. If failures appear, disable the production policy rows first; do not roll back code unless the issue affects standalone or already-live games.
+
+### Revelry-side prompt after LocalPlay readiness
+
+LocalPlay should hand Revelry Codex a narrow prompt only after the LocalPlay gamma group passes:
+
+```text
+LocalPlay has enabled the following Revelry host-app games on gamma: <game_ids>.
+Please update Revelry only where needed to render these catalog entries from LocalPlay, preserve category/search/rules affordances, and run the Games tab smoke for party hub open, host start, player join, watch route, and result polling. Do not hard-code game-specific LocalPlay URLs; use the catalog and LocalPlay launch/session APIs.
+```
 
 ## June 24, 2026 — More standalone games exposed as quick-start candidates
 
