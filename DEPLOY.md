@@ -455,23 +455,30 @@ declares the `com.android.vending.BILLING` permission (the Play Billing lib Reve
 automatically). So the Android order is **build a signed AAB → upload to internal testing → then create the
 3 products** (the inverse of iOS). (versionCode must exceed the track's; currently 5.)
 
-**Android signing / upload key (IMPORTANT — 2026-06-30):** the original `revelry-quiz-upload.keystore`
-password was lost and is unrecoverable. A **new upload keystore** was generated:
-`~/keystores/revelry-quiz-upload-v2.keystore` (alias `revelry-quiz`; password in
-`backupenv/quiz/local/keystore.properties`). `app/build.gradle` now defaults to it. Because the app uses
-**Play App Signing**, this only requires an **upload key reset** — it does **not** affect the app's identity
-or other apps:
-1. Play Console → this app → **Test and release → Setup → App signing** → **Request upload key reset** →
-   upload `~/keystores/revelry-quiz-upload-v2.pem`. Google processes it (hours–2 days).
-2. After Google confirms, build the signed AAB:
-   ```bash
-   cd frontend && npm run cap:sync:gamma
-   cd android
-   KEYSTORE_PASSWORD='<see backupenv/quiz/local/keystore.properties>' \
-   KEY_PASSWORD='<same>' ./gradlew bundleRelease
-   # → app/build/outputs/bundle/release/app-release.aab
-   ```
-3. Upload the AAB to **internal testing** → then "Create product" unblocks.
+**Android status (DONE 2026-07-06):** products created, published, and mapped in RevenueCat. What was done
+(kept here as the runbook for future builds / re-signing):
+
+- **Signing / upload key:** the original `revelry-quiz-upload.keystore` password was lost and is
+  unrecoverable. A **new upload keystore** was generated — `~/keystores/revelry-quiz-upload-v2.keystore`
+  (alias `revelry-quiz`; password in `backupenv/quiz/local/keystore.properties`); `app/build.gradle` defaults
+  to it. Since the app uses **Play App Signing**, this only needed an **upload-key reset** (Play Console →
+  Test and release → Setup → App signing → Request upload key reset → upload
+  `~/keystores/revelry-quiz-upload-v2.pem`) — no impact to app identity or other apps. **Approved.**
+- **Build/upload (repeat for future releases):**
+  ```bash
+  cd frontend && npm run cap:sync:gamma
+  cd android
+  KEYSTORE_PASSWORD='<see backupenv/quiz/local/keystore.properties>' \
+  KEY_PASSWORD='<same>' ./gradlew bundleRelease   # → app/build/outputs/bundle/release/app-release.aab
+  ```
+  AAB **v5 (3.1.0)** uploaded to **internal testing** (bump `versionCode` for each new upload).
+- **Play products:** 3 one-time products `me.revelryapp.quiz.sparks_50/200/500` created + **Active**
+  ($1.99/$4.99/$9.99), then imported into RevenueCat and mapped into the `default` offering (each package
+  serves both the App Store and Play products).
+- **Play credential in RevenueCat:** the `revenuecat-play@revelryapp.iam` service account needed the full
+  Play permission set to validate — see `backupenv/quiz/local/iap-setup.md` for the exact working set
+  (financial + Manage orders **and** Manage store presence + Manage policy were required for green).
+- **Remaining:** license-tester device install + a real purchase to confirm the live webhook credits sparks.
 
 ### 3d. Native sign-in (`@capgo/capacitor-social-login`)
 

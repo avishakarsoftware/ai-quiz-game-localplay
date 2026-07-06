@@ -6,19 +6,19 @@ Related: `SPEC.md` (spark economy), `DEPLOY.md` (§3c IAP runbook, §3d native s
 
 ---
 
-## 0. Status (as-built, 2026-06-29)
+## 0. Status (as-built, updated 2026-07-06)
 
 **Done & on master:**
 - **Backend** — `POST /webhook/revenuecat` (bearer auth, double idempotency via `webhook_events` + `credit_purchase(reference_id="iap:{store}:{txn}")`, refund clawback, unknown-product ack), tiered `/checkout/create` (inline Stripe `price_data` from `config.SPARK_PRODUCTS`, no Stripe Price objects), Android+iOS Stripe block. Unit tests in `backend/tests/test_iap_webhook.py`.
 - **Frontend** — `SparkPurchaseModal` (3 tiers, web Stripe / native RevenueCat), `utils/iap.ts` wrapper, `utils/sparkPacks.ts`, `platform.ts`; `@revenuecat/purchases-capacitor@^12.3.2` installed (iOS SPM + Android Gradle registered). Native build scripts `npm run cap:sync:gamma|cap:sync:prod` (bake API host + publishable RevenueCat/OAuth ids).
 - **Deployed to gamma & verified** — `/webhook/revenuecat` smoke-tested end-to-end: auth 401s, credit (+200), event-id replay dedup, same-txn dedup, unknown-product ack, refund clawback + no over-debit. `REVENUECAT_WEBHOOK_SECRET` set on gamma; gamma `ALLOWED_ORIGINS` includes `capacitor://localhost,http://localhost,https://localhost`.
-- **RevenueCat** — project `Revelry Games` (`proj0cdf24b0`); iOS + Android apps (`me.revelryapp.quiz`); webhook → gamma (bearer); products `rc_spark_pack_50/200/500` in the **current** `default` offering, **Apple** store products attached.
+- **RevenueCat** — project `Revelry Games` (`proj0cdf24b0`); iOS + Android apps (`me.revelryapp.quiz`); webhook → gamma (bearer). The **current** `default` offering has 3 packages (`rc_spark_pack_50/200/500`), each serving **both** the App Store product and the Play Store product (`me.revelryapp.quiz.sparks_*`). Play credential validated (service account granted the required Play permissions). NOTE: App Store products still show "Could not check" until the iOS IAPs are submitted/approved.
 - **Apple** — 3 consumables `me.revelryapp.quiz.sparks_50/200/500` created (Ready to Submit) + sandbox tester.
+- **Android Play (2026-07-06)** — lost original upload-key password → generated `revelry-quiz-upload-v2.keystore` (documented in `backupenv/quiz/local/`), Play **upload-key reset** approved. AAB **v5 (3.1.0)** with the BILLING permission published to **internal testing**. 3 one-time products created + **Active** ($1.99/$4.99/$9.99; purchase options `sparks-50/200/500`), imported into RevenueCat and mapped into the offering. Verified end-to-end on gamma: a synthetic `PLAY_STORE` webhook for each real store id (`me.revelryapp.quiz.sparks_50/200/500`) credits 50/200/500 and dedups on replay.
 - **Native sign-in** — wired (`utils/socialAuth.ts` `SocialLogin.initialize()`, iOS Google URL scheme in `Info.plist`); see §6.7. App version bumped to **3.1.0 / build 5** (both platforms).
 
 **Pending (manual — console/Xcode/device):**
-- **Android Play products** — must upload an AAB with the BILLING permission first (build → internal-testing track → "Create product" unblocks), create the 3 products, then attach the **Play** side to `rc_spark_pack_*` in RevenueCat.
-- **Native device test** — sandbox iOS (real device + sandbox account) and Android (internal-testing install + license tester); confirm the real webhook credits sparks.
+- **Native device test** — the only thing left to prove real purchases end-to-end. Android: install the internal-testing build on a device via the tester opt-in link with a **license tester**, buy a pack, confirm the live webhook credits sparks. iOS: real device + sandbox account (see also the Apple-approval note below).
 - **Native sign-in console** — "Sign in with Apple" capability in Xcode; GCP Android OAuth client (package `me.revelryapp.quiz` + Play App Signing SHA-1).
 - **Web Stripe** — set `STRIPE_SECRET_KEY` + a `/webhook/stripe` endpoint per env (test on gamma, live on prod); inline `price_data` needs no Price objects.
 - **Prod** — set `REVENUECAT_WEBHOOK_SECRET` + add the prod RevenueCat webhook, then deploy prod backend + ship the native builds.
