@@ -9,6 +9,8 @@ import sys
 import os
 import time
 import uuid
+import queue
+import threading
 from contextlib import contextmanager
 
 import pytest
@@ -33,6 +35,7 @@ DEVICE_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 HEADERS_A = {"X-Device-Id": DEVICE_A}
 HEADERS_B = {"X-Device-Id": DEVICE_B}
 GENEROUS_TOKENS = 500  # enough for many generates + room starts
+DEFAULT_WS_RECEIVE_TIMEOUT = 8.0
 
 
 # ---------------------------------------------------------------------------
@@ -101,16 +104,59 @@ def clear_state():
 client = TestClient(app)
 
 
-def recv_until(ws, msg_type, max_messages=50):
-    """Receive WS messages until we get the expected type."""
-    for i in range(max_messages):
+def receive_json_with_timeout(ws, *, timeout=DEFAULT_WS_RECEIVE_TIMEOUT, context="websocket"):
+    """Receive one TestClient websocket message with a real wall-clock timeout."""
+    result_queue = queue.Queue(maxsize=1)
+
+    def _receive():
         try:
-            data = ws.receive_json()
-        except Exception as e:
-            raise TimeoutError(f"Connection closed while waiting for {msg_type} (after {i} messages): {e}")
+            result_queue.put(("ok", ws.receive_json()))
+        except Exception as exc:
+            result_queue.put(("error", exc))
+
+    thread = threading.Thread(target=_receive, daemon=True)
+    thread.start()
+    try:
+        status, value = result_queue.get(timeout=timeout)
+    except queue.Empty:
+        raise TimeoutError(f"Timed out after {timeout:.1f}s waiting for {context}")
+    if status == "error":
+        raise TimeoutError(f"Connection closed while waiting for {context}: {value}")
+    return value
+
+
+def recv_until(ws, msg_type, max_messages=50, timeout=DEFAULT_WS_RECEIVE_TIMEOUT):
+    """Receive WS messages until we get the expected type, failing with context."""
+    deadline = time.monotonic() + timeout
+    seen_types = []
+    last_message = None
+    for i in range(max_messages):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        data = receive_json_with_timeout(
+            ws,
+            timeout=min(DEFAULT_WS_RECEIVE_TIMEOUT, max(0.1, remaining)),
+            context=f"{msg_type} after {seen_types or 'no messages'}",
+        )
+        last_message = data
+        seen_types.append(str(data.get("type")))
         if data.get("type") == msg_type:
             return data
-    raise TimeoutError(f"Never received {msg_type} after {max_messages} messages")
+    raise TimeoutError(
+        f"Never received {msg_type} after {len(seen_types)} messages "
+        f"within {timeout:.1f}s; seen={seen_types}; last={last_message}"
+    )
+
+
+def start_game_and_wait(org_ws, player_ws_list=(), spectator_ws_list=()):
+    """Start a game and drain the GAME_STARTING lifecycle frame before advancing."""
+    org_ws.send_json({"type": "START_GAME"})
+    recv_until(org_ws, "GAME_STARTING")
+    for ws in player_ws_list:
+        recv_until(ws, "GAME_STARTING")
+    for ws in spectator_ws_list:
+        recv_until(ws, "GAME_STARTING")
 
 
 @contextmanager
@@ -269,8 +315,7 @@ class TestEndToEnd:
         # Step 4-8: Connect organizer + players, play, podium
         print("\n--- Step 4: Connect organizer ---")
         with org_connect(room_code, org_token) as org_ws:
-            msg = org_ws.receive_json()
-            assert msg["type"] == "ROOM_CREATED"
+            recv_until(org_ws, "ROOM_CREATED")
 
             # Step 5: Connect 3 players with teams
             print("\n--- Step 5: Connect players ---")
@@ -297,7 +342,7 @@ class TestEndToEnd:
 
             # Step 6: Start game
             print("\n--- Step 6: Start game ---")
-            org_ws.send_json({"type": "START_GAME"})
+            start_game_and_wait(org_ws, player_ws_list)
             org_ws.send_json({"type": "NEXT_QUESTION"})
 
             game_start = recv_until(org_ws, "QUESTION")
@@ -407,7 +452,7 @@ class TestReconnectionE2E:
         room_code, org_token = create_room(quiz_id)
 
         with org_connect(room_code, org_token) as org_ws:
-            org_ws.receive_json()  # ROOM_CREATED
+            recv_until(org_ws, "ROOM_CREATED")
 
             with client.websocket_connect(f"/ws/{room_code}/player-1") as p_ws:
                 p_ws.send_json({"type": "JOIN", "nickname": "Alice"})
@@ -416,7 +461,7 @@ class TestReconnectionE2E:
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
-                org_ws.send_json({"type": "START_GAME"})
+                start_game_and_wait(org_ws, [p_ws])
                 org_ws.send_json({"type": "NEXT_QUESTION"})
                 recv_until(org_ws, "QUESTION")
                 recv_until(p_ws, "QUESTION")
@@ -475,7 +520,7 @@ class TestExportImportE2E:
         room_code, org_token = create_room(imported_id)
 
         with org_connect(room_code, org_token) as org_ws:
-            org_ws.receive_json()
+            recv_until(org_ws, "ROOM_CREATED")
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
                 p_ws.send_json({"type": "JOIN", "nickname": "Tester"})
@@ -483,7 +528,7 @@ class TestExportImportE2E:
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
-                org_ws.send_json({"type": "START_GAME"})
+                start_game_and_wait(org_ws, [p_ws])
 
                 for _ in range(len(original_quiz["questions"])):
                     org_ws.send_json({"type": "NEXT_QUESTION"})
@@ -529,7 +574,7 @@ class TestBonusRoundsE2E:
         room_code, org_token = create_room(quiz_id)
 
         with org_connect(room_code, org_token) as org_ws:
-            org_ws.receive_json()
+            recv_until(org_ws, "ROOM_CREATED")
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
                 p_ws.send_json({"type": "JOIN", "nickname": "BonusTester"})
@@ -537,7 +582,7 @@ class TestBonusRoundsE2E:
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
-                org_ws.send_json({"type": "START_GAME"})
+                start_game_and_wait(org_ws, [p_ws])
 
                 bonus_flags = []
                 for q_num in range(num_questions):
@@ -613,7 +658,7 @@ class TestTokenEconomyE2E:
         room_code, org_token = create_room(quiz_id)
 
         with org_connect(room_code, org_token) as org_ws:
-            org_ws.receive_json()  # ROOM_CREATED
+            recv_until(org_ws, "ROOM_CREATED")
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
                 p_ws.send_json({"type": "JOIN", "nickname": "Spender"})
@@ -621,8 +666,7 @@ class TestTokenEconomyE2E:
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
-                org_ws.send_json({"type": "START_GAME"})
-                recv_until(org_ws, "GAME_STARTING")
+                start_game_and_wait(org_ws, [p_ws])
 
         # Check balance via API after game start
         res = client.get("/tokens/balance", headers=HEADERS_A)
@@ -656,7 +700,7 @@ class TestTokenEconomyE2E:
 
         # Play a complete game
         with org_connect(room_code, org_token) as org_ws:
-            org_ws.receive_json()
+            recv_until(org_ws, "ROOM_CREATED")
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
                 p_ws.send_json({"type": "JOIN", "nickname": "Historian"})
@@ -664,7 +708,7 @@ class TestTokenEconomyE2E:
                 recv_until(org_ws, "PLAYER_JOINED")
                 recv_until(p_ws, "PLAYER_JOINED")
 
-                org_ws.send_json({"type": "START_GAME"})
+                start_game_and_wait(org_ws, [p_ws])
 
                 for _ in range(3):
                     org_ws.send_json({"type": "NEXT_QUESTION"})
@@ -789,7 +833,7 @@ class TestWMLTE2E:
         room_code, org_token = create_room(scenario_id, game_type="wmlt")
 
         with org_connect(room_code, org_token) as org_ws:
-            org_ws.receive_json()  # ROOM_CREATED
+            recv_until(org_ws, "ROOM_CREATED")
 
             # Connect 3 players (WMLT needs at least MIN_WMLT_PLAYERS)
             player_ws_list = []
@@ -806,8 +850,7 @@ class TestWMLTE2E:
                     recv_until(pw, "PLAYER_JOINED")
 
             # Start game
-            org_ws.send_json({"type": "START_GAME"})
-            recv_until(org_ws, "GAME_STARTING")
+            start_game_and_wait(org_ws, player_ws_list)
 
             # Play through 3 rounds
             for round_num in range(3):
@@ -873,7 +916,7 @@ class TestGameResetE2E:
         room_code, org_token = create_room(quiz_id_1)
 
         with org_connect(room_code, org_token) as org_ws:
-            org_ws.receive_json()
+            recv_until(org_ws, "ROOM_CREATED")
 
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
                 p_ws.send_json({"type": "JOIN", "nickname": "Resetter"})
@@ -882,7 +925,7 @@ class TestGameResetE2E:
                 recv_until(p_ws, "PLAYER_JOINED")
 
                 # Play first game
-                org_ws.send_json({"type": "START_GAME"})
+                start_game_and_wait(org_ws, [p_ws])
                 for _ in range(3):
                     org_ws.send_json({"type": "NEXT_QUESTION"})
                     recv_until(p_ws, "QUESTION")
@@ -903,7 +946,7 @@ class TestGameResetE2E:
                 recv_until(p_ws, "ROOM_RESET")
 
                 # Start second game
-                org_ws.send_json({"type": "START_GAME"})
+                start_game_and_wait(org_ws, [p_ws])
                 org_ws.send_json({"type": "NEXT_QUESTION"})
                 q = recv_until(org_ws, "QUESTION")
                 assert q["question_number"] == 1
@@ -925,7 +968,7 @@ class TestSpectatorE2E:
         room_code, org_token = create_room(quiz_id)
 
         with org_connect(room_code, org_token) as org_ws:
-            org_ws.receive_json()
+            recv_until(org_ws, "ROOM_CREATED")
 
             # Connect player first, then spectator — avoids broadcast ordering issues
             with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
@@ -935,7 +978,7 @@ class TestSpectatorE2E:
                 recv_until(p_ws, "PLAYER_JOINED")
 
                 with client.websocket_connect(f"/ws/{room_code}/spec-1?spectator=true") as spec_ws:
-                    org_ws.send_json({"type": "START_GAME"})
+                    start_game_and_wait(org_ws, [p_ws], [spec_ws])
                     org_ws.send_json({"type": "NEXT_QUESTION"})
 
                     # Consume messages in broadcast order (connections: org, player, spec)
