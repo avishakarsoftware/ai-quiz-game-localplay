@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiFetch, apiUrl, apiHeaders } from '../utils/api';
+import { apiUrl, apiHeaders } from '../utils/api';
 import { getDeviceId, setCheckoutPending, clearCheckoutPending } from '../utils/storage';
 import { getPlatform } from '../utils/platform';
 import { isIAPConfigured, getNativePrices, buySparksNative } from '../utils/iap';

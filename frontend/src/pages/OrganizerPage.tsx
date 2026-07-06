@@ -3,7 +3,7 @@ import { API_URL, WS_URL } from '../config';
 import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type GenericPromptGameType, type GenericPromptState, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type WhoAmIGameContent, type ChitPullCategory, type ChitPullGameContent, type ChitPullSafeLevel, type ChitPullState, type MafiaState, type PartyQuestsState, type SurveySaysState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
-import { getDeviceId, getCheckoutPending, clearCheckoutPending, saveOrganizerSession, getSavedOrganizerSession, clearOrganizerSession } from '../utils/storage';
+import { getCheckoutPending, clearCheckoutPending, saveOrganizerSession, getSavedOrganizerSession, clearOrganizerSession } from '../utils/storage';
 import { apiHeaders, apiUrl, generateIdempotencyKey } from '../utils/api';
 import { mediaUrl } from '../utils/media';
 import { canResetFinishedRoomWithGame } from '../utils/roomReuse';
