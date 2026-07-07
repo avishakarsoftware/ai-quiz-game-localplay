@@ -10,6 +10,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: './src/test/setup.ts',
-    exclude: ['node_modules/**', 'dist/**', 'e2e/**'],
+    // ios/android hold native build artifacts (incl. RevenueCat SPM checkouts with their own *.test.ts) — never scan them.
+    exclude: ['node_modules/**', 'dist/**', 'e2e/**', 'ios/**', 'android/**'],
   },
 })
