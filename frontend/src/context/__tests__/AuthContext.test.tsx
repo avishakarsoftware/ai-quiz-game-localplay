@@ -5,17 +5,20 @@ import { AuthProvider, useAuth } from '../AuthContext';
 const mocks = vi.hoisted(() => ({
     getUserProfile: vi.fn(),
     getSessionToken: vi.fn(),
+    getDeviceId: vi.fn(() => 'test-device-id'),
     storageSignOut: vi.fn(),
     signInWithBackend: vi.fn(),
     fetchUserProfile: vi.fn(),
     iapLogIn: vi.fn(),
     iapLogOut: vi.fn(),
     track: vi.fn(),
+    identify: vi.fn(),
 }));
 
 vi.mock('../../utils/storage', () => ({
     getUserProfile: mocks.getUserProfile,
     getSessionToken: mocks.getSessionToken,
+    getDeviceId: mocks.getDeviceId,
 }));
 
 vi.mock('../../utils/auth', () => ({
@@ -31,6 +34,7 @@ vi.mock('../../utils/iap', () => ({
 
 vi.mock('../../utils/analytics', () => ({
     track: mocks.track,
+    identify: mocks.identify,
 }));
 
 function Harness() {

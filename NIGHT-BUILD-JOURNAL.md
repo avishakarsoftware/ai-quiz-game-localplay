@@ -5,9 +5,40 @@ decisions, implementing, testing, committing to master (no branching, no deploy)
 
 ---
 
-## SUMMARY (filled in at the end)
+## SUMMARY
 
-_(pending — see per-feature sections below until this is populated)_
+All 5 growth features shipped to master (specs first, then feature-by-feature: implement → test → commit).
+Nothing deployed (per standing rule). Each feature is env-gated / no-ops safely without external credentials.
+
+| # | Feature | State | Commit |
+|---|---|---|---|
+| — | 5 specs (SPEC-ANALYTICS/STREAK-BONUS/REFERRAL/SHARE-CARD/REMOTE-CONFIG) | ✅ | `a0c806c0` |
+| 1 | Analytics — backend PostHog capture + `identify()` + build baking | ✅ | `0711d706` |
+| 2 | Login-streak daily bonus (escalating reward) | ✅ | `9e3d6074` |
+| 3 | Referral rewards (invite code + redeem, both credited) | ✅ | `d5bde7ac` |
+| 4 | Shareable result cards (OG-unfurl links) | ✅ | `1ba2db83` |
+| 5 | Remote-config backend endpoint + schema extension | ✅ | `590f0ced` |
+
+**Tests:** all new + touched tests green. Backend: analytics 5, streak 6, referral 8, share 7,
+config-public 2 (+ existing token/IAP suites) — **114 passed**; the only 3 backend failures are the
+**pre-existing** `stripe`-module-not-installed ones (env, not my code). Frontend: **282/282 across 51
+files**; `tsc` clean. (Per project memory, I did NOT run the full `pytest tests/` — it hangs; ran targeted
+files. `stripe` isn't installed in this venv.)
+
+**What needs YOU (to turn things on / go live):**
+- **PostHog:** create a project; set `POSTHOG_API_KEY` (backend `.env`) + `VITE_POSTHOG_KEY` (build env).
+  Until then analytics is fully wired but no-ops.
+- **Deploy:** none of this is live until you deploy backend + ship a frontend build (I did not deploy).
+
+**Deferred / follow-ups (logged in detail per-feature):**
+- **Supabase parity for streak + referral.** Streak degrades to a flat bonus on Supabase (deployed RPC
+  unchanged for safety); referral endpoints are **gated off** when `DB_BACKEND=supabase` (prod returns 503,
+  UI hides). Full parity = add columns + `games_grant_daily_bonus`(streak) / `games_referral_*` RPCs to
+  `sql/games-schema.sql`, route them in db.py's supabase override list, drop the referral gate.
+- **Share card:** dynamic per-result OG image (v1 uses a static branded image); in-memory snapshot store.
+- **Remote config:** no admin write endpoint (v1 file-edited); `VITE_CONFIG_URL` switch to point the
+  frontend at `/config/public` is optional/unused.
+- **Ad-sparks (SPEC-ADS):** unchanged tonight; `ads_enabled` flag ships `false`.
 
 ---
 
