@@ -60,6 +60,14 @@ Capture against **prod** (`PLAYWRIGHT_BASE_URL=https://games.revelryapp.me`) so 
 the real public domain. The Capacitor native apps render this same web bundle, so browser captures
 represent the native apps.
 
+## Captured "games in action" set (`marketing/gameplay/`, 1600×900 landscape "TV"/spectator)
+- `01-question.png` — live quiz question with A/B/C/D options
+- `02-leaderboard.png` — multiplayer standings with scores (Maya 973 / Leo 973 / Ada 0)
+- `03-answer-reveal.png` — correct answer highlighted (instant feedback)
+- Captured by driving a real quiz over WebSockets against gamma (host-agnostic — no URL shown). Podium
+  ("Final Results") not captured: the spectator has a reveal-timer/PODIUM race for the final question; grab
+  it from the organizer device view instead if needed.
+
 ## Screens to capture (the "games in action" set)
 1. Catalog — "Choose a Game" (variety)
 2. AI Quiz setup — topic / difficulty / length
