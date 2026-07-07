@@ -6255,10 +6255,9 @@ class ReferralRedeemRequest(BaseModel):
     code: str = ""
 
 
-# Referrals live only in the SQLite schema for now — the Supabase RPC set has no referral functions
-# and db.py's supabase dispatch doesn't route these, so calling them in supabase mode would hit a phantom
-# local SQLite. Gate cleanly until the Supabase parity RPCs land (see NIGHT-BUILD-JOURNAL / SPEC-REFERRAL).
-_REFERRALS_SUPPORTED = config.DB_BACKEND != "supabase"
+# Referrals run on SQLite automatically. On Supabase they need the referral RPCs (sql/games-schema.sql)
+# applied first, then REFERRALS_ENABLED=true — until then the endpoints 503 and the UI hides the section.
+_REFERRALS_SUPPORTED = config.DB_BACKEND != "supabase" or config.REFERRALS_ENABLED
 
 
 @app.get("/referral/code")

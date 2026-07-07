@@ -29,13 +29,25 @@ CREATE TABLE IF NOT EXISTS __PREFIX__wallets (
   last_daily_bonus_date TEXT NOT NULL DEFAULT '',
   ads_watched_today INTEGER NOT NULL DEFAULT 0 CHECK (ads_watched_today >= 0),
   ads_watched_date TEXT NOT NULL DEFAULT '',
+  bonus_streak INTEGER NOT NULL DEFAULT 0 CHECK (bonus_streak >= 0),
+  referral_code TEXT,
+  referred_by TEXT,
   created_at BIGINT NOT NULL,
   updated_at BIGINT
 );
 
+-- Idempotent add-column migrations for existing wallet tables (SPEC-STREAK-BONUS, SPEC-REFERRAL).
+ALTER TABLE __PREFIX__wallets ADD COLUMN IF NOT EXISTS bonus_streak INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE __PREFIX__wallets ADD COLUMN IF NOT EXISTS referral_code TEXT;
+ALTER TABLE __PREFIX__wallets ADD COLUMN IF NOT EXISTS referred_by TEXT;
+
 CREATE INDEX IF NOT EXISTS idx___PREFIX__wallets_purchased
   ON __PREFIX__wallets(lifetime_purchased)
   WHERE lifetime_purchased > 0;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx___PREFIX__wallets_referral_code
+  ON __PREFIX__wallets(referral_code)
+  WHERE referral_code IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS __PREFIX__token_transactions (
   id BIGSERIAL PRIMARY KEY,
@@ -686,10 +698,18 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
+-- Login-streak daily bonus (SPEC-STREAK-BONUS). Signature is intentionally UNCHANGED (4 args) so the
+-- backend call keeps working before/after this migration; p_amount is the streak BASE. STREAK_STEP (5)
+-- and STREAK_MAX (30) are constants here that MIRROR the backend env defaults — if you change
+-- STREAK_STEP/STREAK_MAX in config.py, update the two constants below and re-render.
 DECLARE
   v_wallet RECORD;
   v_new_balance INTEGER;
   v_actual_bonus INTEGER;
+  v_streak INTEGER;
+  v_reward INTEGER;
+  c_step CONSTANT INTEGER := 5;
+  c_max CONSTANT INTEGER := 30;
   v_now BIGINT := EXTRACT(EPOCH FROM NOW())::BIGINT;
 BEGIN
   SELECT * INTO v_wallet
@@ -698,19 +718,29 @@ BEGIN
   FOR UPDATE;
 
   IF v_wallet.id IS NULL THEN
-    RETURN jsonb_build_object('granted', false, 'balance', 0);
+    RETURN jsonb_build_object('granted', false, 'balance', 0, 'streak', 0, 'reward', 0);
   END IF;
 
   IF v_wallet.last_daily_bonus_date = p_today THEN
-    RETURN jsonb_build_object('granted', false, 'balance', v_wallet.balance);
+    RETURN jsonb_build_object('granted', false, 'balance', v_wallet.balance,
+                              'streak', COALESCE(v_wallet.bonus_streak, 0));
   END IF;
 
-  v_new_balance := GREATEST(v_wallet.balance, LEAST(v_wallet.balance + p_amount, p_max_balance));
-  v_actual_bonus := v_new_balance - v_wallet.balance;
+  -- Continue the streak if yesterday was claimed, else restart at 1.
+  IF v_wallet.last_daily_bonus_date = (p_today::date - 1)::text THEN
+    v_streak := COALESCE(v_wallet.bonus_streak, 0) + 1;
+  ELSE
+    v_streak := 1;
+  END IF;
+  v_reward := LEAST(p_amount + (v_streak - 1) * c_step, c_max);
+
+  v_new_balance := GREATEST(v_wallet.balance, LEAST(v_wallet.balance + v_reward, p_max_balance));
+  v_actual_bonus := v_new_balance - v_wallet.balance;  -- may be < reward at cap; streak still advances
 
   UPDATE __PREFIX__wallets
   SET balance = v_new_balance,
       last_daily_bonus_date = p_today,
+      bonus_streak = v_streak,
       ads_watched_today = 0,
       ads_watched_date = p_today,
       updated_at = v_now
@@ -718,12 +748,14 @@ BEGIN
 
   IF v_actual_bonus > 0 THEN
     INSERT INTO __PREFIX__token_transactions
-      (wallet_id, amount, reason, reference_id, balance_after, created_at)
+      (wallet_id, amount, reason, reference_id, balance_after, metadata, created_at)
     VALUES
-      (p_wallet_id, v_actual_bonus, 'daily_bonus', NULL, v_new_balance, v_now);
+      (p_wallet_id, v_actual_bonus, 'daily_bonus', NULL, v_new_balance,
+       jsonb_build_object('streak', v_streak)::text, v_now);
   END IF;
 
-  RETURN jsonb_build_object('granted', true, 'balance', v_new_balance, 'credited', v_actual_bonus);
+  RETURN jsonb_build_object('granted', true, 'balance', v_new_balance, 'credited', v_actual_bonus,
+                            'streak', v_streak, 'reward', v_reward);
 END;
 $$;
 
@@ -786,6 +818,116 @@ BEGIN
   END IF;
 
   RETURN jsonb_build_object('granted', true, 'balance', v_new_balance, 'ads_remaining', v_remaining);
+END;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Referral RPCs (SPEC-REFERRAL). Mirror the SQLite logic in db.py.
+-- ---------------------------------------------------------------------------
+
+-- Set the wallet's referral code if unset. Caller (backend) generates the candidate and retries on
+-- collision. Returns {code: <effective code or null>, collision: bool}.
+CREATE OR REPLACE FUNCTION __PREFIX__set_referral_code(
+  p_wallet_id TEXT,
+  p_code TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_existing TEXT;
+  v_now BIGINT := EXTRACT(EPOCH FROM NOW())::BIGINT;
+BEGIN
+  INSERT INTO __PREFIX__wallets (id, created_at) VALUES (p_wallet_id, v_now)
+  ON CONFLICT (id) DO NOTHING;
+
+  SELECT referral_code INTO v_existing FROM __PREFIX__wallets WHERE id = p_wallet_id FOR UPDATE;
+  IF v_existing IS NOT NULL THEN
+    RETURN jsonb_build_object('code', v_existing, 'collision', false);
+  END IF;
+
+  BEGIN
+    UPDATE __PREFIX__wallets SET referral_code = p_code WHERE id = p_wallet_id;
+  EXCEPTION WHEN unique_violation THEN
+    RETURN jsonb_build_object('code', NULL, 'collision', true);
+  END;
+  RETURN jsonb_build_object('code', p_code, 'collision', false);
+END;
+$$;
+
+-- Redeem a referral code, crediting both parties once. Returns {status, reward, balance, referrer_id}.
+-- status ∈ {ok, invalid_code, self_referral, already_redeemed, cap_reached}.
+CREATE OR REPLACE FUNCTION __PREFIX__redeem_referral(
+  p_referee_id TEXT,
+  p_code TEXT,
+  p_reward INTEGER,
+  p_max_balance INTEGER,
+  p_max_per_day INTEGER,
+  p_since BIGINT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_referrer_id TEXT;
+  v_referee RECORD;
+  v_reference_id TEXT;
+  v_count INTEGER;
+  v_referee_bal INTEGER;
+  v_referrer_bal INTEGER;
+  v_new INTEGER;
+  v_now BIGINT := EXTRACT(EPOCH FROM NOW())::BIGINT;
+BEGIN
+  SELECT id INTO v_referrer_id FROM __PREFIX__wallets WHERE referral_code = p_code;
+  IF v_referrer_id IS NULL THEN
+    RETURN jsonb_build_object('status', 'invalid_code');
+  END IF;
+  IF v_referrer_id = p_referee_id THEN
+    RETURN jsonb_build_object('status', 'self_referral');
+  END IF;
+
+  INSERT INTO __PREFIX__wallets (id, created_at) VALUES (p_referee_id, v_now)
+  ON CONFLICT (id) DO NOTHING;
+  SELECT * INTO v_referee FROM __PREFIX__wallets WHERE id = p_referee_id FOR UPDATE;
+  IF v_referee.referred_by IS NOT NULL THEN
+    RETURN jsonb_build_object('status', 'already_redeemed');
+  END IF;
+
+  v_reference_id := 'referral:' || v_referrer_id || ':' || p_referee_id;
+  PERFORM 1 FROM __PREFIX__token_transactions
+    WHERE reference_id = v_reference_id AND reason = 'referral_reward' LIMIT 1;
+  IF FOUND THEN
+    RETURN jsonb_build_object('status', 'already_redeemed');
+  END IF;
+
+  SELECT COUNT(*) INTO v_count FROM __PREFIX__token_transactions
+    WHERE wallet_id = v_referrer_id AND reason = 'referral_reward' AND created_at >= p_since;
+  IF v_count >= p_max_per_day THEN
+    RETURN jsonb_build_object('status', 'cap_reached');
+  END IF;
+
+  UPDATE __PREFIX__wallets SET referred_by = v_referrer_id WHERE id = p_referee_id;
+
+  -- Credit referee (capped); always write a txn row for idempotency + counts.
+  v_new := GREATEST(v_referee.balance, LEAST(v_referee.balance + p_reward, p_max_balance));
+  INSERT INTO __PREFIX__token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at)
+    VALUES (p_referee_id, v_new - v_referee.balance, 'referral_reward', v_reference_id, v_new, v_now);
+  UPDATE __PREFIX__wallets SET balance = v_new, updated_at = v_now WHERE id = p_referee_id;
+  v_referee_bal := v_new;
+
+  -- Credit referrer (capped) under a row lock.
+  SELECT balance INTO v_referrer_bal FROM __PREFIX__wallets WHERE id = v_referrer_id FOR UPDATE;
+  v_new := GREATEST(v_referrer_bal, LEAST(v_referrer_bal + p_reward, p_max_balance));
+  INSERT INTO __PREFIX__token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at)
+    VALUES (v_referrer_id, v_new - v_referrer_bal, 'referral_reward', v_reference_id, v_new, v_now);
+  UPDATE __PREFIX__wallets SET balance = v_new, updated_at = v_now WHERE id = v_referrer_id;
+
+  RETURN jsonb_build_object('status', 'ok', 'reward', p_reward,
+                            'balance', v_referee_bal, 'referrer_id', v_referrer_id);
 END;
 $$;
 
@@ -937,6 +1079,8 @@ REVOKE EXECUTE ON FUNCTION __PREFIX__credit_purchase(TEXT, INTEGER, TEXT, TEXT, 
 REVOKE EXECUTE ON FUNCTION __PREFIX__merge_wallet(TEXT, TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION __PREFIX__grant_daily_bonus(TEXT, TEXT, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION __PREFIX__grant_ad_reward(TEXT, TEXT, INTEGER, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION __PREFIX__set_referral_code(TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION __PREFIX__redeem_referral(TEXT, TEXT, INTEGER, INTEGER, INTEGER, BIGINT) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION __PREFIX__claim_device_usage(TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION __PREFIX__claim_user_usage(TEXT, TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION __PREFIX__mark_webhook_processed(TEXT) FROM PUBLIC, anon, authenticated;
@@ -949,6 +1093,8 @@ GRANT EXECUTE ON FUNCTION __PREFIX__credit_purchase(TEXT, INTEGER, TEXT, TEXT, I
 GRANT EXECUTE ON FUNCTION __PREFIX__merge_wallet(TEXT, TEXT, INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION __PREFIX__grant_daily_bonus(TEXT, TEXT, INTEGER, INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION __PREFIX__grant_ad_reward(TEXT, TEXT, INTEGER, INTEGER, INTEGER) TO service_role;
+GRANT EXECUTE ON FUNCTION __PREFIX__set_referral_code(TEXT, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION __PREFIX__redeem_referral(TEXT, TEXT, INTEGER, INTEGER, INTEGER, BIGINT) TO service_role;
 GRANT EXECUTE ON FUNCTION __PREFIX__claim_device_usage(TEXT, INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION __PREFIX__claim_user_usage(TEXT, TEXT, INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION __PREFIX__mark_webhook_processed(TEXT) TO service_role;

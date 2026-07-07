@@ -146,6 +146,9 @@ STREAK_MAX = int(os.getenv("STREAK_MAX", "30"))
 # Referral rewards (SPEC-REFERRAL): both parties get REFERRAL_REWARD on a successful redeem.
 REFERRAL_REWARD = int(os.getenv("REFERRAL_REWARD", "20"))
 MAX_REFERRALS_PER_DAY = int(os.getenv("MAX_REFERRALS_PER_DAY", "10"))
+# Referrals run on SQLite automatically. On Supabase they require the referral RPCs from
+# sql/games-schema.sql to be applied first — set REFERRALS_ENABLED=true AFTER applying them.
+REFERRALS_ENABLED = os.getenv("REFERRALS_ENABLED", "false").lower() == "true"
 # Shareable result cards (SPEC-SHARE-CARD): in-memory result snapshots for OG unfurl links.
 SHARE_TTL_SECONDS = int(os.getenv("SHARE_TTL_SECONDS", str(7 * 86400)))
 MAX_SHARE_SNAPSHOTS = int(os.getenv("MAX_SHARE_SNAPSHOTS", "500"))

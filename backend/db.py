@@ -1897,6 +1897,8 @@ if config.DB_BACKEND == "supabase":
         "credit_tokens",
         "check_and_grant_daily_bonus",
         "check_and_grant_ad_reward",
+        "get_or_create_referral_code",
+        "redeem_referral",
         "has_ever_purchased",
         "credit_purchase",
         "merge_wallet",

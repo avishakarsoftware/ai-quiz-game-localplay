@@ -30,11 +30,19 @@ files. `stripe` isn't installed in this venv.)
   Until then analytics is fully wired but no-ops.
 - **Deploy:** none of this is live until you deploy backend + ship a frontend build (I did not deploy).
 
-**Deferred / follow-ups (logged in detail per-feature):**
-- **Supabase parity for streak + referral.** Streak degrades to a flat bonus on Supabase (deployed RPC
-  unchanged for safety); referral endpoints are **gated off** when `DB_BACKEND=supabase` (prod returns 503,
-  UI hides). Full parity = add columns + `games_grant_daily_bonus`(streak) / `games_referral_*` RPCs to
-  `sql/games-schema.sql`, route them in db.py's supabase override list, drop the referral gate.
+**Supabase parity for streak + referral — NOW BUILT (ready-to-apply):** authored via the SQL template +
+generator (`scripts/render-supabase-sql.py`), so prod + gamma schema files are regenerated deterministically.
+- `sql/templates/games-schema.template.sql` → regenerated `sql/games-schema.sql` + `sql/games-gamma-schema.sql`.
+- Added `bonus_streak`/`referral_code`/`referred_by` columns (+ idempotent `ADD COLUMN IF NOT EXISTS` + unique
+  referral-code index). `grant_daily_bonus` gains streak math with its **signature unchanged** (4 args; STEP=5
+  MAX=30 hardcoded constants mirroring the backend defaults) → the Python wrapper is already forward-compatible,
+  **no broken window**. New `set_referral_code` + `redeem_referral` RPCs mirror the SQLite logic.
+- Python: `supabase_db` gains `get_or_create_referral_code`/`redeem_referral`; both added to db.py's supabase
+  override list. Referral gate is now `DB_BACKEND != supabase OR REFERRALS_ENABLED`.
+- **To activate on gamma/prod:** apply the regenerated `sql/games-*-schema.sql` (streak works immediately,
+  same RPC signature), then set `REFERRALS_ENABLED=true` for referrals. Smoke-test on gamma first. I could
+  NOT run Postgres here — SQLite tests validate the logic; the plpgsql mirrors existing RPC patterns + passed
+  structural checks (prefix substitution, balanced `$$`).
 - **Share card:** dynamic per-result OG image (v1 uses a static branded image); in-memory snapshot store.
 - **Remote config:** no admin write endpoint (v1 file-edited); `VITE_CONFIG_URL` switch to point the
   frontend at `/config/public` is optional/unused.

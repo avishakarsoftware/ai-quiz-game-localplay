@@ -505,6 +505,43 @@ def has_ever_purchased(wallet_id: str) -> bool:
     return bool(row and int(row["lifetime_purchased"]) > 0)
 
 
+# --- Referrals (SPEC-REFERRAL) — mirror db.py, backed by set_referral_code / redeem_referral RPCs. ---
+import secrets as _secrets
+
+_REFERRAL_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def _utc_midnight_epoch() -> int:
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+
+
+def get_or_create_referral_code(wallet_id: str) -> str:
+    for _ in range(12):
+        candidate = "".join(_secrets.choice(_REFERRAL_ALPHABET) for _ in range(6))
+        result = _sb().rpc("set_referral_code", {"p_wallet_id": wallet_id, "p_code": candidate})
+        code = result.get("code")
+        if code:
+            return code
+        # collision → retry with a new candidate
+    raise SupabaseDBError("could not allocate a unique referral code")
+
+
+def redeem_referral(referee_id: str, code: str) -> dict:
+    code = (code or "").strip().upper()
+    if not code:
+        return {"status": "invalid_code"}
+    result = _sb().rpc("redeem_referral", {
+        "p_referee_id": referee_id,
+        "p_code": code,
+        "p_reward": config.REFERRAL_REWARD,
+        "p_max_balance": _effective_max_balance(referee_id),
+        "p_max_per_day": config.MAX_REFERRALS_PER_DAY,
+        "p_since": _utc_midnight_epoch(),
+    })
+    return result if isinstance(result, dict) else {"status": "invalid_code"}
+
+
 def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:
     if amount <= 0:
         raise ValueError(f"credit_purchase amount must be positive, got {amount}")
