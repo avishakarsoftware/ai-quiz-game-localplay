@@ -469,14 +469,24 @@ def credit_tokens(wallet_id: str, amount: int, reason: str, reference_id: str = 
     return bool(result["success"]), int(result["balance"])
 
 
-def check_and_grant_daily_bonus(wallet_id: str) -> tuple[bool, int]:
+def check_and_grant_daily_bonus(wallet_id: str) -> tuple[bool, int, int, int]:
+    """Returns (granted, balance, streak, reward). NOTE (SPEC-STREAK-BONUS): the currently-deployed
+    `grant_daily_bonus` RPC still grants a FLAT bonus and does not track a streak; the call signature is
+    left unchanged so it never breaks against the deployed RPC. Streak/reward are best-effort — if a future
+    streak-aware RPC returns `streak`/`reward` they're used, else streak degrades to 1 on a grant. To
+    activate full streak on Supabase, update `sql/games-schema.sql` `grant_daily_bonus` (add a bonus_streak
+    column + streak math returning {granted,balance,streak,reward}) and redeploy."""
     result = _sb().rpc("grant_daily_bonus", {
         "p_wallet_id": wallet_id,
         "p_today": _utc_date_str(),
-        "p_amount": config.DAILY_BONUS_TOKENS,
+        "p_amount": config.STREAK_BASE,
         "p_max_balance": _effective_max_balance(wallet_id),
     })
-    return bool(result["granted"]), int(result["balance"])
+    granted = bool(result["granted"])
+    balance = int(result["balance"])
+    streak = int(result.get("streak", 1 if granted else 0))
+    reward = int(result.get("reward", config.STREAK_BASE))
+    return granted, balance, streak, reward
 
 
 def check_and_grant_ad_reward(wallet_id: str) -> tuple[bool, int, int]:

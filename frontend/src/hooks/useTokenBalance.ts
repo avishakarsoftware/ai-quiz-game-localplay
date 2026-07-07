@@ -7,6 +7,8 @@ export interface TokenStatus {
     daily_bonus_available: boolean;
     daily_bonus_granted?: boolean;
     bonus_amount?: number;
+    bonus_streak?: number;
+    streak_next_reward?: number;
     cost_generate: number;
     cost_room: number;
     ads_remaining_today?: number;
@@ -18,6 +20,8 @@ const DEFAULT: TokenStatus = {
     daily_bonus_available: false,
     daily_bonus_granted: false,
     bonus_amount: 0,
+    bonus_streak: 0,
+    streak_next_reward: 10,
     cost_generate: 1,
     cost_room: 10,
     ads_remaining_today: 5,

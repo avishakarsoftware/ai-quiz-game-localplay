@@ -138,6 +138,11 @@ BONUS_ROUND_FRACTION = 0.3  # ~30% of questions will be bonus rounds (2x points)
 SIGNUP_BONUS_TOKENS = int(os.getenv("SIGNUP_BONUS_TOKENS", "20"))
 DAILY_BONUS_TOKENS = int(os.getenv("DAILY_BONUS_TOKENS", "10"))
 MAX_TOKEN_BALANCE = int(os.getenv("MAX_TOKEN_BALANCE", "1000"))
+# Login-streak daily bonus (SPEC-STREAK-BONUS): reward = min(BASE + (streak-1)*STEP, MAX).
+# STREAK_BASE defaults to DAILY_BONUS_TOKENS so day-1 is unchanged; keep them equal to avoid confusion.
+STREAK_BASE = int(os.getenv("STREAK_BASE", str(DAILY_BONUS_TOKENS)))
+STREAK_STEP = int(os.getenv("STREAK_STEP", "5"))
+STREAK_MAX = int(os.getenv("STREAK_MAX", "30"))
 COST_GENERATE = int(os.getenv("COST_GENERATE", "1"))
 COST_ROOM = int(os.getenv("COST_ROOM", "10"))
 AD_REWARD_TOKENS = int(os.getenv("AD_REWARD_TOKENS", "5"))

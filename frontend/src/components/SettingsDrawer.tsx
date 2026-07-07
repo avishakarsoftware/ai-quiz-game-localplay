@@ -306,6 +306,15 @@ export default function SettingsDrawer() {
                 >
                     <TokenBadge tokenStatus={tokenStatus} loading={tokenLoading} />
                 </button>
+                {!tokenLoading && (tokenStatus.bonus_streak ?? 0) >= 2 && (
+                    <div
+                        className="settings-streak-chip"
+                        title={`Come back tomorrow for +${tokenStatus.streak_next_reward ?? ''} sparks`}
+                        style={{ fontSize: 11, fontWeight: 700, textAlign: 'right', marginTop: 2, opacity: 0.85 }}
+                    >
+                        🔥 Day {tokenStatus.bonus_streak} streak
+                    </div>
+                )}
             </div>
 
             {/* Hamburger menu trigger — top-left */}

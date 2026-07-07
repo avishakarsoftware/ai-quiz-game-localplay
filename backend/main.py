@@ -6212,10 +6212,16 @@ async def token_balance(req: Request):
         if not device_id:
             return {"balance": 0, "has_purchased": False, "daily_bonus_available": False,
                     "daily_bonus_granted": False, "bonus_amount": 0,
+                    "bonus_streak": 0, "streak_next_reward": config.STREAK_BASE,
                     "cost_generate": config.COST_GENERATE, "cost_room": config.COST_ROOM,
                     "ads_remaining_today": config.MAX_ADS_PER_DAY}
         wallet_id = device_id
-    return tokens.get_token_status(wallet_id)
+    status = tokens.get_token_status(wallet_id)
+    if status.get("daily_bonus_granted"):
+        analytics.capture_bg(wallet_id, "spark_earned",
+                             {"source": "daily_bonus", "amount": status.get("bonus_amount", 0),
+                              "streak": status.get("bonus_streak", 1)})
+    return status
 
 
 # Keep old endpoint as alias for backward compatibility during rollout

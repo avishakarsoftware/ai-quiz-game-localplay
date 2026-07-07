@@ -241,6 +241,14 @@ def init_db():
         if "duplicate column" not in str(e).lower():
             logger.error("Failed to add metadata column: %s", e)
             raise
+    # Login-streak counter on wallets (SPEC-STREAK-BONUS). Idempotent add-column migration.
+    try:
+        conn.execute("ALTER TABLE wallets ADD COLUMN bonus_streak INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+    except _sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            logger.error("Failed to add bonus_streak column: %s", e)
+            raise
     _migrate_generated_content_types()
     # Run one-time migration of old entitlements to token wallets
     migrate_entitlements_to_wallets()
@@ -837,6 +845,12 @@ def _utc_date_str() -> str:
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
 
 
+def _utc_yesterday_str() -> str:
+    """Get yesterday's UTC date as YYYY-MM-DD string (for login-streak continuity)."""
+    import datetime
+    return (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+
+
 def get_or_create_wallet(wallet_id: str, signup_bonus: bool = True) -> dict:
     """Get wallet by ID, or create one with optional signup bonus.
     Returns wallet dict with keys: id, balance, lifetime_purchased, last_daily_bonus_date,
@@ -868,7 +882,8 @@ def get_or_create_wallet(wallet_id: str, signup_bonus: bool = True) -> dict:
         if row:
             return dict(row)
     return {"id": wallet_id, "balance": bonus, "lifetime_purchased": 0,
-            "last_daily_bonus_date": "", "ads_watched_today": 0, "ads_watched_date": "", "created_at": now}
+            "last_daily_bonus_date": "", "ads_watched_today": 0, "ads_watched_date": "",
+            "bonus_streak": 0, "created_at": now}
 
 
 def get_wallet_balance(wallet_id: str) -> int:
@@ -945,39 +960,53 @@ def credit_tokens(wallet_id: str, amount: int, reason: str, reference_id: str = 
         raise
 
 
-def check_and_grant_daily_bonus(wallet_id: str) -> tuple[bool, int]:
-    """Grant daily bonus if new UTC day. Returns (granted, new_balance)."""
+def _streak_reward(streak: int) -> int:
+    """Login-streak reward for a given (1-based) streak day. See SPEC-STREAK-BONUS."""
+    return min(config.STREAK_BASE + (max(1, streak) - 1) * config.STREAK_STEP, config.STREAK_MAX)
+
+
+def check_and_grant_daily_bonus(wallet_id: str) -> tuple[bool, int, int, int]:
+    """Grant the login-streak daily bonus if it's a new UTC day.
+    Returns (granted, new_balance, streak, reward). streak/reward reflect today's grant when granted;
+    on a no-grant they reflect the wallet's current stored streak and what today *would* pay."""
     conn = _get_conn()
     today = _utc_date_str()
+    yesterday = _utc_yesterday_str()
     conn.execute("BEGIN IMMEDIATE")
     try:
         row = conn.execute("SELECT * FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
         if not row:
             conn.execute("ROLLBACK")
-            return False, 0
+            return False, 0, 0, 0
 
+        stored_streak = row["bonus_streak"] if "bonus_streak" in row.keys() else 0
         if row["last_daily_bonus_date"] == today:
             conn.execute("ROLLBACK")
-            return False, row["balance"]
+            return False, row["balance"], stored_streak, _streak_reward(stored_streak)
 
-        # New day — grant bonus and reset ad counter
-        new_balance = max(row["balance"], min(row["balance"] + config.DAILY_BONUS_TOKENS, config.MAX_TOKEN_BALANCE))
-        actual_bonus = new_balance - row["balance"]
+        # New day — continue the streak if yesterday was claimed, else restart at 1.
+        streak = stored_streak + 1 if row["last_daily_bonus_date"] == yesterday else 1
+        reward = _streak_reward(streak)
+        new_balance = max(row["balance"], min(row["balance"] + reward, config.MAX_TOKEN_BALANCE))
+        actual_bonus = new_balance - row["balance"]  # may be < reward if wallet is at cap; streak still advances
         now = int(time.time())
 
         conn.execute(
-            "UPDATE wallets SET balance = ?, last_daily_bonus_date = ?, "
+            "UPDATE wallets SET balance = ?, last_daily_bonus_date = ?, bonus_streak = ?, "
             "ads_watched_today = 0, ads_watched_date = ? WHERE id = ?",
-            (new_balance, today, today, wallet_id),
+            (new_balance, today, streak, today, wallet_id),
         )
         if actual_bonus > 0:
             conn.execute(
-                "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at) "
-                "VALUES (?, ?, 'daily_bonus', NULL, ?, ?)",
-                (wallet_id, actual_bonus, new_balance, now),
+                "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, metadata, created_at) "
+                "VALUES (?, ?, 'daily_bonus', NULL, ?, ?, ?)",
+                (wallet_id, actual_bonus, new_balance, json.dumps({"streak": streak}), now),
             )
         conn.execute("COMMIT")
-        return True, new_balance
+        if actual_bonus < reward:
+            logger.info("daily_bonus capped: wallet=%s streak=%d reward=%d actual=%d",
+                        wallet_id[:8], streak, reward, actual_bonus)
+        return True, new_balance, streak, reward
     except Exception:
         conn.execute("ROLLBACK")
         raise

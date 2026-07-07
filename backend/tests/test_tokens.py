@@ -204,14 +204,15 @@ class TestCreditPurchaseMetadata:
 class TestDailyBonus:
     def test_grants_on_new_day(self):
         db.get_or_create_wallet(TEST_DEVICE)
-        granted, new_bal = db.check_and_grant_daily_bonus(TEST_DEVICE)
+        granted, new_bal, streak, reward = db.check_and_grant_daily_bonus(TEST_DEVICE)
         assert granted is True
         assert new_bal == config.SIGNUP_BONUS_TOKENS + config.DAILY_BONUS_TOKENS
+        assert streak == 1 and reward == config.STREAK_BASE
 
     def test_no_double_grant_same_day(self):
         db.get_or_create_wallet(TEST_DEVICE)
         db.check_and_grant_daily_bonus(TEST_DEVICE)
-        granted, _ = db.check_and_grant_daily_bonus(TEST_DEVICE)
+        granted, *_ = db.check_and_grant_daily_bonus(TEST_DEVICE)
         assert granted is False
 
     def test_resets_ad_counter(self):
@@ -236,7 +237,7 @@ class TestDailyBonus:
         conn.execute("UPDATE wallets SET balance = ?, last_daily_bonus_date = '' WHERE id = ?", (over_cap, TEST_DEVICE))
         conn.commit()
 
-        granted, new_bal = db.check_and_grant_daily_bonus(TEST_DEVICE)
+        granted, new_bal, _streak, _reward = db.check_and_grant_daily_bonus(TEST_DEVICE)
 
         assert granted is True
         assert new_bal == over_cap
@@ -607,7 +608,7 @@ class TestSignupBonusZero:
     def test_daily_bonus_still_works_with_zero_signup(self, monkeypatch):
         monkeypatch.setattr(config, "SIGNUP_BONUS_TOKENS", 0)
         db.get_or_create_wallet(TEST_DEVICE)
-        granted, new_bal = db.check_and_grant_daily_bonus(TEST_DEVICE)
+        granted, new_bal, _streak, _reward = db.check_and_grant_daily_bonus(TEST_DEVICE)
         assert granted is True
         assert new_bal == config.DAILY_BONUS_TOKENS
 

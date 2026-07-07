@@ -65,7 +65,7 @@ def get_token_status(wallet_id: str) -> dict:
     today = db._utc_date_str()
 
     # Auto-grant daily bonus (always call — db function handles idempotency atomically)
-    daily_granted, new_balance = db.check_and_grant_daily_bonus(wallet_id)
+    daily_granted, new_balance, streak, _reward = db.check_and_grant_daily_bonus(wallet_id)
     bonus_amount = 0
     if daily_granted:
         bonus_amount = new_balance - wallet["balance"]
@@ -81,6 +81,8 @@ def get_token_status(wallet_id: str) -> dict:
         "daily_bonus_available": not daily_granted and wallet["last_daily_bonus_date"] != today,
         "daily_bonus_granted": daily_granted,
         "bonus_amount": bonus_amount,
+        "bonus_streak": streak,
+        "streak_next_reward": db._streak_reward(streak + 1),
         "cost_generate": config.COST_GENERATE,
         "cost_room": config.COST_ROOM,
         "ads_remaining_today": ads_remaining,

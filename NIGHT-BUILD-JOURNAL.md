@@ -58,6 +58,33 @@ set, so init legitimately runs there. Kept the load-bearing pre-init no-op asser
 
 ---
 
+## Feature 2 — Login-streak daily bonus ✅
+
+**Decisions:**
+- Reward = `min(STREAK_BASE + (streak-1)*STREAK_STEP, STREAK_MAX)` = 10/15/20/25/30… (env-tunable).
+  `STREAK_BASE` defaults to `DAILY_BONUS_TOKENS` so **day-1 is unchanged** — existing tests keep passing.
+- Added `wallets.bonus_streak` via the idempotent add-column migration. New `_utc_yesterday_str()` +
+  `_streak_reward()` helpers. `check_and_grant_daily_bonus` now returns a **4-tuple**
+  `(granted, balance, streak, reward)`; streak continues if last claim == yesterday, else resets to 1.
+- Balance-at-cap still advances the streak (login counts even when wallet is full) — logged when clipped.
+- `/tokens/balance` payload gains `bonus_streak` + `streak_next_reward`; emits `spark_earned{source:daily_bonus,streak}`.
+- Frontend: streak chip ("🔥 Day N streak") under the spark badge when streak ≥ 2.
+
+**Supabase deviation (logged):** the deployed `grant_daily_bonus` RPC still grants a FLAT bonus. I did
+**not** change its call signature (would break prod against the old RPC and can't be tested here). The
+wrapper now returns the 4-tuple with safe fallbacks (streak=1 on grant) and a comment documenting the SQL
+RPC update needed to activate full streak on Supabase. **SQLite (local/dev/tests) has full streak.**
+
+**Files:** `backend/config.py` (STREAK_*), `backend/db.py` (migration + helpers + logic),
+`backend/supabase_db.py` (4-tuple wrapper + note), `backend/tokens.py` (payload), `backend/main.py`
+(event), `backend/tests/test_streak_bonus.py` (new, 6 tests), `backend/tests/test_tokens.py` (updated 4
+unpackers), `frontend/src/hooks/useTokenBalance.ts` (+fields), `frontend/src/components/SettingsDrawer.tsx` (chip).
+
+**Tests:** streak 6/6 + tokens all pass (73 total in that batch); IAP suite unchanged (19 pass; 3
+pre-existing stripe-module failures unrelated); frontend tsc clean.
+
+---
+
 DB facts (backbone for #2/#3): `wallets` table columns = id, balance, lifetime_purchased,
 last_daily_bonus_date, ads_watched_today, ads_watched_date, created_at. Migration pattern =
 `try: ALTER TABLE ... ADD COLUMN / except duplicate-column`. `credit_purchase` shows the idempotency
