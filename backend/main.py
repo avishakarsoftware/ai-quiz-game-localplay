@@ -6101,7 +6101,7 @@ async def revenuecat_webhook(req: Request):
     if not config.REVENUECAT_WEBHOOK_SECRET:
         raise HTTPException(status_code=503, detail="IAP not configured")
     auth = req.headers.get("authorization", "")
-    if auth != f"Bearer {config.REVENUECAT_WEBHOOK_SECRET}":
+    if not hmac.compare_digest(auth, f"Bearer {config.REVENUECAT_WEBHOOK_SECRET}"):
         logger.warning("RevenueCat webhook auth failure from %s", _get_client_ip(req))
         raise HTTPException(status_code=401, detail="Unauthorized")
 

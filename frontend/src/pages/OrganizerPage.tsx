@@ -1018,7 +1018,7 @@ export default function OrganizerPage() {
             });
             if (res.status === 402) {
                 track('paywall_hit', { source: 'quiz' });
-                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: !hostAppMode });
+                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Grab a spark pack to keep playing, or come back tomorrow for your daily bonus.', upgradeAvailable: !hostAppMode });
                 setState(gameType === 'quiz' ? 'PROMPT' : 'QUIZ_VARIANT_PROMPT');
                 return;
             }
@@ -1196,7 +1196,7 @@ export default function OrganizerPage() {
             });
             if (res.status === 402) {
                 track('paywall_hit', { source: 'mlt' });
-                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: !hostAppMode });
+                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Grab a spark pack to keep playing, or come back tomorrow for your daily bonus.', upgradeAvailable: !hostAppMode });
                 setState('MLT_PROMPT');
                 return;
             }
@@ -1245,7 +1245,7 @@ export default function OrganizerPage() {
             });
             if (res.status === 402) {
                 track('paywall_hit', { source: 'drawing' });
-                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: !hostAppMode });
+                setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Grab a spark pack to keep playing, or come back tomorrow for your daily bonus.', upgradeAvailable: !hostAppMode });
                 setState('DRAWING_PROMPT');
                 return;
             }
@@ -1805,7 +1805,7 @@ export default function OrganizerPage() {
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ detail: 'Failed to generate Bingo' }));
                 if (res.status === 402) {
-                    setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Buy a spark pack or watch an ad to earn free sparks.', upgradeAvailable: !hostAppMode });
+                    setErrorModal({ title: 'Not Enough Sparks', message: 'You need more sparks! Grab a spark pack to keep playing, or come back tomorrow for your daily bonus.', upgradeAvailable: !hostAppMode });
                 } else {
                     setErrorModal({ title: 'Generation Failed', message: err.detail || 'Failed to generate Bingo. Please try a different theme.' });
                 }
