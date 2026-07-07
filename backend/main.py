@@ -57,6 +57,7 @@ from media_store import media_store
 import tokens
 import db
 import auth
+import analytics
 import remote_config
 from game_rules import attach_rules
 from host_app_catalog_policy import clear_policy_cache, effective_catalog, is_game_allowed
@@ -6006,6 +6007,8 @@ async def stripe_webhook(req: Request):
         _, new_balance = db.credit_purchase(wallet_id, token_amount, stripe_session_id, metadata=txn_metadata)
         logger.info("Credited %d tokens to wallet %s (session %s, promo=%s, balance=%d)",
                     token_amount, wallet_id[:8], stripe_session_id[:8], promo_id or "none", new_balance)
+        analytics.capture_bg(wallet_id, "web_purchase_credited",
+                             {"sparks": token_amount, "promo_id": promo_id or None})
 
         # Store pickup notification for frontend polling
         if device_id:
@@ -6149,6 +6152,9 @@ async def revenuecat_webhook(req: Request):
         )
         logger.info("IAP credit %s sparks to wallet %s (store=%s, sku=%s, credited=%s, balance=%s)",
                     sparks, wallet_id[:8], store, sku, credited, new_balance)
+        if credited:
+            analytics.capture_bg(wallet_id, "iap_purchase_credited",
+                                 {"store": store, "sku": sku, "sparks": sparks})
         _record_iap_entitlement(wallet_id, store, txn_id)
 
         if credited:
@@ -6172,6 +6178,8 @@ async def revenuecat_webhook(req: Request):
                 else:
                     logger.info("IAP refund debited %d sparks from wallet %s (ref=%s)",
                                 refund_tokens, wallet_id[:8], reference_id)
+                    analytics.capture_bg(wallet_id, "iap_refund",
+                                         {"store": store, "sku": sku, "sparks_clawed": refund_tokens})
     # else: TEST, TRANSFER, RENEWAL, EXPIRATION, BILLING_ISSUE, etc. → ack and ignore (no subscriptions in v1)
 
     db.mark_webhook_event_processed(event_id)
@@ -6230,6 +6238,8 @@ async def ad_reward(req: Request):
     granted, new_balance, ads_remaining = db.check_and_grant_ad_reward(wallet_id)
     if not granted:
         raise HTTPException(status_code=429, detail="Daily ad limit reached. Come back tomorrow!")
+    analytics.capture_bg(wallet_id, "spark_earned",
+                         {"source": "ad", "amount": config.AD_REWARD_TOKENS})
     return {"granted": True, "tokens_added": config.AD_REWARD_TOKENS,
             "new_balance": new_balance, "ads_remaining_today": ads_remaining}
 

@@ -31,6 +31,33 @@ scratch" to "extend/complete" for #1 and #5:
   frontend game-catalog gating (additive — keep the static-file flow working).
 - **#2 streak / #3 referral / #4 share card** — net-new.
 
+## Feature 1 — Analytics (PostHog) ✅
+
+**Decisions:**
+- Backend `analytics.py`: dependency-free (`httpx`), `capture()`/`capture_bg()`, **no-op unless
+  `POSTHOG_API_KEY` set**. `capture_bg` holds strong task refs to dodge the asyncio fire-and-forget GC bug.
+- `distinct_id = wallet_id` (user_id else device_id) so backend + frontend events unify on one person.
+- Server events emitted: `web_purchase_credited` (Stripe), `iap_purchase_credited` + `iap_refund`
+  (RevenueCat webhook), `spark_earned{source:ad}` (ad reward). Referral/daily-bonus events added in their
+  own features.
+- Frontend: wired `identify()` in `AuthContext` (sign-in, restored session, and **anonymous device wallet**
+  so the anon distinct_id matches the backend wallet_id). Baked `VITE_POSTHOG_KEY/HOST` into
+  `cap-build.mjs` + `ionos-build.mjs` (absent ⇒ disabled).
+- Did NOT touch `utils/platform.ts` (analytics keeps its own getPlatform, per instruction).
+
+**Files:** `backend/analytics.py` (new), `backend/config.py` (+POSTHOG_*), `backend/main.py` (import +
+4 capture sites), `backend/tests/test_analytics.py` (new, 5 tests), `frontend/src/context/AuthContext.tsx`
+(identify), `frontend/scripts/{cap-build,ionos-build}.mjs`, `frontend/src/utils/__tests__/analytics.test.ts`.
+
+**Tests:** backend 5/5 pass; frontend 2/2 pass; `tsc` clean.
+
+**Deviation:** dropped a brittle `initAnalytics` no-op assertion — the test env has a `VITE_POSTHOG_KEY`
+set, so init legitimately runs there. Kept the load-bearing pre-init no-op assertions.
+
+**Needs user:** a PostHog project + `POSTHOG_API_KEY` (backend) and `VITE_POSTHOG_KEY` (build env) to turn on.
+
+---
+
 DB facts (backbone for #2/#3): `wallets` table columns = id, balance, lifetime_purchased,
 last_daily_bonus_date, ads_watched_today, ads_watched_date, created_at. Migration pattern =
 `try: ALTER TABLE ... ADD COLUMN / except duplicate-column`. `credit_purchase` shows the idempotency

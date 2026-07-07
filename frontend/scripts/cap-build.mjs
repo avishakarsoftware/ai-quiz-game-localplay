@@ -50,6 +50,9 @@ const buildEnv = {
     VITE_APPLE_CLIENT_ID: APPLE_ID,
     // Native: let Apple JS fall back to window.location.origin (DEPLOY.md note).
     VITE_APPLE_REDIRECT_URI: '',
+    // PostHog analytics — absent key ⇒ analytics stays disabled (see SPEC-ANALYTICS).
+    VITE_POSTHOG_KEY: process.env.VITE_POSTHOG_KEY || '',
+    VITE_POSTHOG_HOST: process.env.VITE_POSTHOG_HOST || 'https://us.i.posthog.com',
 };
 
 function run(cmd, args, env) {

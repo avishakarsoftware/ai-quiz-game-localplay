@@ -206,6 +206,10 @@ MAX_SPARK_PACK = max(p["sparks"] for p in SPARK_PRODUCTS.values())
 DEFAULT_SPARK_SKU = "spark_pack_50"
 REMOTE_CONFIG_URL = os.getenv("REMOTE_CONFIG_URL", "")  # e.g. https://games.revelryapp.me/quiz/config.json
 
+# --- Product analytics (PostHog) — see SPEC-ANALYTICS. Backend no-ops unless POSTHOG_API_KEY is set. ---
+POSTHOG_API_KEY = os.getenv("POSTHOG_API_KEY", "").strip()  # project write key ("phc_…")
+POSTHOG_HOST = os.getenv("POSTHOG_HOST", "https://us.i.posthog.com").strip()
+
 # --- Auth (Phase 2) ---
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_IDS = [

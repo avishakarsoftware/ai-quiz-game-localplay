@@ -23,6 +23,9 @@ const buildEnv = {
     VITE_APPLE_REDIRECT_URI: 'https://games.revelryapp.me',
     VITE_CAST_APP_ID: process.env.VITE_CAST_APP_ID || '1BC9ACD8',
     VITE_ENABLE_BINGO: process.env.VITE_ENABLE_BINGO || 'true',
+    // PostHog analytics — absent key ⇒ analytics stays disabled (see SPEC-ANALYTICS).
+    VITE_POSTHOG_KEY: process.env.VITE_POSTHOG_KEY || '',
+    VITE_POSTHOG_HOST: process.env.VITE_POSTHOG_HOST || 'https://us.i.posthog.com',
 };
 
 console.log(`[ionos-build] building IONOS web bundle (VITE_API_URL=${PROD_API})`);
