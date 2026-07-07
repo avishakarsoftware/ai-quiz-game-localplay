@@ -118,6 +118,31 @@ returns a clean 503 and the frontend hides the section. Full Supabase parity is 
 
 ---
 
+## Feature 4 — Shareable result cards ✅
+
+**Decisions:**
+- `backend/share.py`: in-memory snapshot store (token → {game_type, winner, top_score, player_count}) with
+  TTL + max-count eviction (mirrors the quiz store). `POST /share/game` mints a token; `GET /share/game/{token}`
+  returns an OG-unfurl HTML page (dynamic title/description with winner+score). Unknown/expired token → a
+  generic branded page (still 200, so stale links look fine).
+- **v1 = dynamic OG text + static image** (`{PUBLIC_BASE_URL}/og-image.png`, which already exists in
+  `frontend/public/`). Per-result dynamic image generation is deferred (logged).
+- Input sanitized on store (tag-strip + control-char removal, length clamp) and HTML-escaped once on render.
+- **Bug I caught + fixed:** initial `render_html` double-escaped the winner (escaped the field, then escaped
+  the whole title again) → `&amp;lt;`. Now escapes once at the render boundary. Test proves tag payloads are
+  stripped and bare `<` is escaped.
+- Frontend: `PodiumScreen` gains an optional `onShareResults`; OrganizerPage passes a handler
+  (`utils/shareResult.ts`) that POSTs the summary and opens the OS share sheet (clipboard fallback). Hidden
+  in `hostAppMode`.
+
+**Files:** `backend/config.py` (SHARE_*), `backend/share.py` (new), `backend/main.py` (import + 2 routes +
+model), `backend/tests/test_share_card.py` (new, 7 tests), `frontend/src/utils/shareResult.ts` (new),
+`frontend/src/components/organizer/PodiumScreen.tsx`, `frontend/src/pages/OrganizerPage.tsx`.
+
+**Tests:** share 7/7; tsc clean. In-memory store is per-process (fine for v1 best-effort links).
+
+---
+
 DB facts (backbone for #2/#3): `wallets` table columns = id, balance, lifetime_purchased,
 last_daily_bonus_date, ads_watched_today, ads_watched_date, created_at. Migration pattern =
 `try: ALTER TABLE ... ADD COLUMN / except duplicate-column`. `credit_purchase` shows the idempotency

@@ -19,6 +19,7 @@ interface PodiumScreenProps {
     superlatives?: Superlative[];
     onPlayAgain: () => void;
     onChooseAnotherGame?: () => void;
+    onShareResults?: () => void;
     playAgainLabel?: string;
     chooseAnotherLabel?: string;
 }
@@ -29,6 +30,7 @@ export default function PodiumScreen({
     superlatives,
     onPlayAgain,
     onChooseAnotherGame,
+    onShareResults,
     playAgainLabel = 'Play Again',
     chooseAnotherLabel = 'Choose Another Game',
 }: PodiumScreenProps) {
@@ -208,6 +210,11 @@ export default function PodiumScreen({
                     {onChooseAnotherGame && (
                         <button onClick={onChooseAnotherGame} className="btn btn-secondary">
                             {chooseAnotherLabel}
+                        </button>
+                    )}
+                    {onShareResults && (
+                        <button onClick={onShareResults} className="btn btn-secondary">
+                            Share results
                         </button>
                     )}
                 </div>

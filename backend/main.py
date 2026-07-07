@@ -58,6 +58,7 @@ import tokens
 import db
 import auth
 import analytics
+import share
 import remote_config
 from game_rules import attach_rules
 from host_app_catalog_policy import clear_policy_cache, effective_catalog, is_game_allowed
@@ -6303,6 +6304,32 @@ async def referral_redeem(body: ReferralRedeemRequest, req: Request):
     }
     code_status, detail = _errmap.get(status, (400, "Could not redeem referral code."))
     raise HTTPException(status_code=code_status, detail=detail)
+
+
+class ShareGameRequest(BaseModel):
+    game_type: str = ""
+    winner: str = ""
+    top_score: int = 0
+    player_count: int = 0
+
+
+@app.post("/share/game")
+async def create_share_card(body: ShareGameRequest, req: Request):
+    """Mint a shareable result card token (SPEC-SHARE-CARD)."""
+    client_ip = _get_client_ip(req)
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait.")
+    token = share.create_snapshot(body.game_type, body.winner, body.top_score, body.player_count)
+    base = config.PUBLIC_BASE_URL or ""
+    share_url = f"{base}/share/game/{token}" if base else f"/share/game/{token}"
+    return {"token": token, "share_url": share_url}
+
+
+@app.get("/share/game/{token}")
+async def get_share_card(token: str):
+    """Render the OG-unfurl page for a result card. Unknown/expired token → generic branded page."""
+    snap = share.get_snapshot(token)
+    return Response(content=share.render_html(snap), media_type="text/html")
 
 
 @app.post("/purchases/restore")

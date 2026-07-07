@@ -146,6 +146,9 @@ STREAK_MAX = int(os.getenv("STREAK_MAX", "30"))
 # Referral rewards (SPEC-REFERRAL): both parties get REFERRAL_REWARD on a successful redeem.
 REFERRAL_REWARD = int(os.getenv("REFERRAL_REWARD", "20"))
 MAX_REFERRALS_PER_DAY = int(os.getenv("MAX_REFERRALS_PER_DAY", "10"))
+# Shareable result cards (SPEC-SHARE-CARD): in-memory result snapshots for OG unfurl links.
+SHARE_TTL_SECONDS = int(os.getenv("SHARE_TTL_SECONDS", str(7 * 86400)))
+MAX_SHARE_SNAPSHOTS = int(os.getenv("MAX_SHARE_SNAPSHOTS", "500"))
 COST_GENERATE = int(os.getenv("COST_GENERATE", "1"))
 COST_ROOM = int(os.getenv("COST_ROOM", "10"))
 AD_REWARD_TOKENS = int(os.getenv("AD_REWARD_TOKENS", "5"))

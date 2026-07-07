@@ -50,6 +50,7 @@ import GameQuestionScreen from '../components/organizer/GameQuestionScreen';
 import LeaderboardScreen from '../components/organizer/LeaderboardScreen';
 import LeaderboardBarChart from '../components/LeaderboardBarChart';
 import PodiumScreen from '../components/organizer/PodiumScreen';
+import { shareGameResult } from '../utils/shareResult';
 import BonusSplash from '../components/BonusSplash';
 import ErrorModal from '../components/ErrorModal';
 import SparkPurchaseModal from '../components/SparkPurchaseModal';
@@ -2971,6 +2972,7 @@ export default function OrganizerPage() {
                         superlatives={superlatives}
                         onPlayAgain={playAgain}
                         onChooseAnotherGame={chooseAnotherGame}
+                        onShareResults={hostAppMode ? undefined : () => shareGameResult(gameTypeRef.current, leaderboard)}
                         playAgainLabel="Play Again"
                         chooseAnotherLabel={hostAppMode ? 'Back to Revelry Games' : 'Choose Another Game'}
                     />
