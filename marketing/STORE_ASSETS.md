@@ -64,9 +64,10 @@ represent the native apps.
 - `01-question.png` — live quiz question with A/B/C/D options
 - `02-leaderboard.png` — multiplayer standings with scores (Maya 973 / Leo 973 / Ada 0)
 - `03-answer-reveal.png` — correct answer highlighted (instant feedback)
-- Captured by driving a real quiz over WebSockets against gamma (host-agnostic — no URL shown). Podium
-  ("Final Results") not captured: the spectator has a reveal-timer/PODIUM race for the final question; grab
-  it from the organizer device view instead if needed.
+- `04-podium.png` — "Final Results" / champion podium with crown + confetti
+- Captured by driving a real quiz over WebSockets against gamma (host-agnostic — no URL shown). The
+  SpectatorPage correctly waits for PODIUM on the final question (no app bug); the podium capture just
+  needed the driver's `waitFor` to consume matched messages so Q2's waits weren't matching stale Q1 events.
 
 ## Screens to capture (the "games in action" set)
 1. Catalog — "Choose a Game" (variety)
