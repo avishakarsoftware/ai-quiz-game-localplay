@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { track } from '../utils/analytics';
 import { useTokenBalance } from '../hooks/useTokenBalance';
 import TokenBadge from './TokenBadge';
+import ReferralSection from './ReferralSection';
 
 declare global {
     interface Window {
@@ -337,6 +338,9 @@ export default function SettingsDrawer() {
             <div ref={drawerRef} className={`settings-drawer ${open ? 'settings-drawer-open' : ''}`}>
                 <div className="settings-drawer-handle" />
                 <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, textAlign: 'center' }}>Menu</h2>
+
+                {/* Referral / invite rewards (SPEC-REFERRAL) */}
+                <ReferralSection />
 
                 {/* Home button */}
                 <div

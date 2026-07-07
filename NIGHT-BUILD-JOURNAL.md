@@ -85,6 +85,39 @@ pre-existing stripe-module failures unrelated); frontend tsc clean.
 
 ---
 
+## Feature 3 — Referral rewards ✅
+
+**Decisions:**
+- `wallets.referral_code` (6-char, unambiguous alphabet, **unique partial index**) + `referred_by`
+  (one-time gate), added via idempotent migrations.
+- `get_or_create_referral_code` (lazy, retry-on-collision), `count_referrals_today`, `redeem_referral`
+  (single `BEGIN IMMEDIATE` txn). Both parties credited via a new `_credit_in_txn` helper (caps at
+  MAX_TOKEN_BALANCE, always writes a txn row so idempotency + daily-cap counts hold). Idempotent on
+  `reference_id = referral:{referrer}:{referee}`.
+- Guards → status codes: `invalid_code`→404, `self_referral`→400, `already_redeemed`→409,
+  `cap_reached`→429 (cap does NOT set `referred_by`, so the referee can retry another code).
+  `REFERRAL_REWARD=20`, `MAX_REFERRALS_PER_DAY=10` (env-tunable).
+- Endpoints `GET /referral/code` + `POST /referral/redeem` (rate-limited); emit `spark_earned{referral}` +
+  `referral_redeemed` for both roles.
+- Frontend: self-contained `ReferralSection` (code + Share via navigator.share/clipboard + redeem input,
+  prefilled from a `?ref=CODE` launch link) rendered in `SettingsDrawer`.
+
+**Files:** `backend/config.py`, `backend/db.py` (migrations + 4 fns + helper), `backend/main.py`
+(2 endpoints + model), `backend/tests/test_referral.py` (new, 8 tests),
+`frontend/src/components/ReferralSection.tsx` (new), `frontend/src/components/SettingsDrawer.tsx`.
+
+**Tests:** referral 8/8; combined feature batch 19/19; tsc clean.
+
+**IMPORTANT Supabase safety (handled):** db.py dispatches listed functions to `supabase_db` in prod
+(`globals()[_name] = getattr(_supabase_db, _name)`, db.py:1932). My referral fns are NOT in that list, so in
+supabase mode `db.redeem_referral` would run SQLite logic against a **phantom local DB** (and the columns
+don't exist in Postgres). Fix: the referral **endpoints are gated to `DB_BACKEND != "supabase"`** — prod
+returns a clean 503 and the frontend hides the section. Full Supabase parity is a follow-up: add
+`bonus_streak`/`referral_code`/`referred_by` columns + `games_redeem_referral`/`games_referral_code` RPCs to
+`sql/games-schema.sql`, add the fn names to db.py's override list, and drop the endpoint gate.
+
+---
+
 DB facts (backbone for #2/#3): `wallets` table columns = id, balance, lifetime_purchased,
 last_daily_bonus_date, ads_watched_today, ads_watched_date, created_at. Migration pattern =
 `try: ALTER TABLE ... ADD COLUMN / except duplicate-column`. `credit_purchase` shows the idempotency

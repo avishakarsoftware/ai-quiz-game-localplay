@@ -6250,6 +6250,61 @@ async def ad_reward(req: Request):
             "new_balance": new_balance, "ads_remaining_today": ads_remaining}
 
 
+class ReferralRedeemRequest(BaseModel):
+    code: str = ""
+
+
+# Referrals live only in the SQLite schema for now — the Supabase RPC set has no referral functions
+# and db.py's supabase dispatch doesn't route these, so calling them in supabase mode would hit a phantom
+# local SQLite. Gate cleanly until the Supabase parity RPCs land (see NIGHT-BUILD-JOURNAL / SPEC-REFERRAL).
+_REFERRALS_SUPPORTED = config.DB_BACKEND != "supabase"
+
+
+@app.get("/referral/code")
+async def referral_code(req: Request):
+    """Return this wallet's referral code + a shareable link (SPEC-REFERRAL). Lazily generated."""
+    if not _REFERRALS_SUPPORTED:
+        raise HTTPException(status_code=503, detail="Referrals are not available yet.")
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    tokens.ensure_wallet(wallet_id)
+    code = db.get_or_create_referral_code(wallet_id)
+    share_url = f"{config.PUBLIC_BASE_URL}/?ref={code}" if config.PUBLIC_BASE_URL else f"/?ref={code}"
+    return {"code": code, "share_url": share_url, "reward": config.REFERRAL_REWARD}
+
+
+@app.post("/referral/redeem")
+async def referral_redeem(body: ReferralRedeemRequest, req: Request):
+    """Redeem a referral code — credits both parties once (SPEC-REFERRAL)."""
+    if not _REFERRALS_SUPPORTED:
+        raise HTTPException(status_code=503, detail="Referrals are not available yet.")
+    client_ip = _get_client_ip(req)
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait.")
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    result = db.redeem_referral(wallet_id, body.code)
+    status = result.get("status")
+    if status == "ok":
+        analytics.capture_bg(wallet_id, "spark_earned",
+                             {"source": "referral", "amount": result.get("reward", 0)})
+        analytics.capture_bg(wallet_id, "referral_redeemed", {"role": "referee"})
+        if result.get("referrer_id"):
+            analytics.capture_bg(result["referrer_id"], "referral_redeemed", {"role": "referrer"})
+        return {"redeemed": True, "reward": result.get("reward", 0),
+                "new_balance": result.get("new_balance", 0)}
+    _errmap = {
+        "invalid_code": (404, "That referral code isn't valid."),
+        "self_referral": (400, "You can't redeem your own referral code."),
+        "already_redeemed": (409, "You've already redeemed a referral code."),
+        "cap_reached": (429, "This code has hit its daily limit. Try again tomorrow."),
+    }
+    code_status, detail = _errmap.get(status, (400, "Could not redeem referral code."))
+    raise HTTPException(status_code=code_status, detail=detail)
+
+
 @app.post("/purchases/restore")
 async def restore_purchases(req: Request):
     """Restore IAP purchases — credits tokens if not already credited."""

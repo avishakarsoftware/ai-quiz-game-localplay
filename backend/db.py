@@ -5,6 +5,7 @@ import time
 import logging
 import threading
 import json
+import secrets
 from typing import Optional
 
 import config
@@ -249,6 +250,23 @@ def init_db():
         if "duplicate column" not in str(e).lower():
             logger.error("Failed to add bonus_streak column: %s", e)
             raise
+    # Referral columns on wallets (SPEC-REFERRAL). Idempotent add-column migrations + unique code index.
+    for _col, _ddl in (
+        ("referral_code", "ALTER TABLE wallets ADD COLUMN referral_code TEXT"),
+        ("referred_by", "ALTER TABLE wallets ADD COLUMN referred_by TEXT"),
+    ):
+        try:
+            conn.execute(_ddl)
+            conn.commit()
+        except _sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                logger.error("Failed to add %s column: %s", _col, e)
+                raise
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_referral_code "
+        "ON wallets(referral_code) WHERE referral_code IS NOT NULL"
+    )
+    conn.commit()
     _migrate_generated_content_types()
     # Run one-time migration of old entitlements to token wallets
     migrate_entitlements_to_wallets()
@@ -1057,6 +1075,134 @@ def has_ever_purchased(wallet_id: str) -> bool:
     conn = _get_conn()
     row = conn.execute("SELECT lifetime_purchased FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
     return row is not None and row["lifetime_purchased"] > 0
+
+
+# --- Referrals (SPEC-REFERRAL) ---
+_REFERRAL_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # unambiguous: no 0/O/1/I/L
+
+
+def _utc_midnight_epoch() -> int:
+    """Epoch seconds at the start of the current UTC day (for per-day referral caps)."""
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+
+
+def _generate_referral_code(length: int = 6) -> str:
+    return "".join(secrets.choice(_REFERRAL_ALPHABET) for _ in range(length))
+
+
+def get_or_create_referral_code(wallet_id: str) -> str:
+    """Return this wallet's referral code, lazily generating + persisting a unique one on first call."""
+    conn = _get_conn()
+    row = conn.execute("SELECT referral_code FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
+    if row is None:
+        get_or_create_wallet(wallet_id, signup_bonus=True)
+    elif row["referral_code"]:
+        return row["referral_code"]
+    for _ in range(12):  # retry on the (rare) unique-index collision
+        code = _generate_referral_code()
+        try:
+            conn.execute(
+                "UPDATE wallets SET referral_code = ? WHERE id = ? AND referral_code IS NULL",
+                (code, wallet_id),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            continue
+        cur = conn.execute("SELECT referral_code FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
+        if cur and cur["referral_code"]:
+            return cur["referral_code"]
+    raise RuntimeError("could not allocate a unique referral code")
+
+
+def count_referrals_today(referrer_id: str) -> int:
+    """How many referral rewards this wallet has earned as a referrer since UTC midnight."""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT COUNT(*) AS c FROM token_transactions "
+        "WHERE wallet_id = ? AND reason = 'referral_reward' AND created_at >= ?",
+        (referrer_id, _utc_midnight_epoch()),
+    ).fetchone()
+    return row["c"] if row else 0
+
+
+def _credit_in_txn(conn, wallet_id: str, amount: int, reason: str, reference_id: str, now: int) -> int:
+    """Credit tokens within an already-open transaction (no BEGIN/COMMIT). Caps at MAX_TOKEN_BALANCE.
+    Always writes a transaction row (even a 0-amount one at cap) so idempotency + counts stay correct."""
+    row = conn.execute("SELECT balance FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
+    current = row["balance"] if row else 0
+    new_balance = max(current, min(current + amount, config.MAX_TOKEN_BALANCE))
+    actual = new_balance - current
+    conn.execute("UPDATE wallets SET balance = ? WHERE id = ?", (new_balance, wallet_id))
+    conn.execute(
+        "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (wallet_id, actual, reason, reference_id, new_balance, now),
+    )
+    return new_balance
+
+
+def redeem_referral(referee_id: str, code: str) -> dict:
+    """Redeem a referral code, crediting both parties once. Returns a status dict:
+    status ∈ {ok, invalid_code, self_referral, already_redeemed, cap_reached}."""
+    code = (code or "").strip().upper()
+    if not code:
+        return {"status": "invalid_code"}
+    conn = _get_conn()
+    now = int(time.time())
+    since = _utc_midnight_epoch()
+    reward = config.REFERRAL_REWARD
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        referrer = conn.execute("SELECT id FROM wallets WHERE referral_code = ?", (code,)).fetchone()
+        if not referrer:
+            conn.execute("ROLLBACK")
+            return {"status": "invalid_code"}
+        referrer_id = referrer["id"]
+        if referrer_id == referee_id:
+            conn.execute("ROLLBACK")
+            return {"status": "self_referral"}
+
+        ref_row = conn.execute("SELECT referred_by FROM wallets WHERE id = ?", (referee_id,)).fetchone()
+        if ref_row is None:
+            conn.execute(
+                "INSERT INTO wallets (id, balance, lifetime_purchased, last_daily_bonus_date, "
+                "ads_watched_today, ads_watched_date, created_at) VALUES (?, 0, 0, '', 0, '', ?)",
+                (referee_id, now),
+            )
+        elif ref_row["referred_by"]:
+            conn.execute("ROLLBACK")
+            return {"status": "already_redeemed"}
+
+        reference_id = f"referral:{referrer_id}:{referee_id}"
+        existing = conn.execute(
+            "SELECT 1 FROM token_transactions WHERE reference_id = ? AND reason = 'referral_reward' LIMIT 1",
+            (reference_id,),
+        ).fetchone()
+        if existing:
+            conn.execute("ROLLBACK")
+            return {"status": "already_redeemed"}
+
+        cap_row = conn.execute(
+            "SELECT COUNT(*) AS c FROM token_transactions "
+            "WHERE wallet_id = ? AND reason = 'referral_reward' AND created_at >= ?",
+            (referrer_id, since),
+        ).fetchone()
+        if cap_row and cap_row["c"] >= config.MAX_REFERRALS_PER_DAY:
+            conn.execute("ROLLBACK")
+            return {"status": "cap_reached"}
+
+        conn.execute("UPDATE wallets SET referred_by = ? WHERE id = ?", (referrer_id, referee_id))
+        referee_balance = _credit_in_txn(conn, referee_id, reward, "referral_reward", reference_id, now)
+        _credit_in_txn(conn, referrer_id, reward, "referral_reward", reference_id, now)
+        conn.execute("COMMIT")
+        logger.info("Referral redeemed: referrer=%s referee=%s reward=%d", referrer_id[:8], referee_id[:8], reward)
+        return {"status": "ok", "reward": reward, "new_balance": referee_balance,
+                "referrer_id": referrer_id}
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
 
 
 def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:
