@@ -23,3 +23,32 @@
 - **Party-scale lobby continuity follow-ups.** Add explicit host cleanup/remove controls for offline seats, a Revelry-aware mobile sleep/lobby lull/reopen gamma Playwright scenario, and reconnect timing/status telemetry so long party pauses can be monitored before broad production reliance.
 - **Rules surface for every game.** Phase 1 underway in `SPEC-GAME-RULES.md`: catalog-backed rules metadata, host picker rules modal, organizer/player lobby access, embedded Party Hub rules affordance, and backend/frontend regression tests. Follow-ups: room-config-aware rule overrides and post-start help access from the menu.
 - **Deprecate SQLite runtime fallback.** Production and gamma now run on Supabase, but the codebase still keeps SQLite as the default local/dev adapter and as a documented rollback path. Plan a follow-up to narrow SQLite to explicit local tests only, remove deployed rollback assumptions after the Supabase cutover window, make deploy/runtime fail clearly if a deployed environment is accidentally configured with `DB_BACKEND=sqlite`, and move remaining SQLite-specific schema/admin behavior behind test-only fixtures or a clearly named legacy adapter.
+
+## Growth / Monetization
+
+Candidate next features, all wallet/DB-centric so they're fully unit-testable against SQLite (like the
+2026-07-07 streak + referral build) and reuse the same idempotency + Supabase-override-list + template-RPC
+patterns. Each should ship as: spec → backend + pytest → frontend + vitest → commit, plus a ready-to-apply
+Supabase RPC via `sql/templates/games-schema.template.sql` and the `REFERRALS_ENABLED`-style activation gate.
+
+- **Spark gifting.** Let a player send N sparks to another wallet: atomic debit-then-credit in one
+  transaction, idempotent on a client-supplied key, self-gift blocked, per-day/amount caps, rate-limited
+  endpoint. Nearly a clone of the referral redeem flow. Frontend: a "gift sparks" affordance (enter
+  code/id + amount) in the settings drawer. Emits `spark_sent`/`spark_received` analytics.
+- **Achievements / badges.** Award badges on milestones (first game, Nth game, big win, streak day N,
+  first purchase, first referral). New `achievements` table + award-on-event hooks (idempotent per
+  wallet+badge) + a badges list in the drawer/profile. Read-mostly; low economy risk.
+- **Game-history / stats screen.** Per-wallet "games played / won / favorite mode / current streak"
+  summary. A `game_history` write on game completion + a `/stats` read endpoint + a simple stats UI.
+  (Note: some history already exists server-side — audit `game_history`/`MAX_GAME_HISTORY` before building.)
+
+## Growth — deferred follow-ups (from the 2026-07-07 overnight build)
+
+- **Ad-supported sparks (SPEC-ADS).** Rewarded AdMob video → server-verified (SSV) spark grant. Needs an
+  AdMob account + a device; not autonomously testable. `ads_enabled` flag already ships `false`.
+- **Share card: dynamic per-result OG image.** v1 uses a static branded image; a rendered SVG→PNG per-result
+  card would unfurl richer. Also: persist share snapshots to DB (currently in-memory, per-process).
+- **Remote config: admin write endpoint.** v1 is file-edited on the server; an admin-gated `POST /config`
+  would allow live edits without SSH.
+- **Analytics: turn on.** Needs a PostHog project + `POSTHOG_API_KEY` (backend) / `VITE_POSTHOG_KEY` (build);
+  code is wired and no-ops until set.
