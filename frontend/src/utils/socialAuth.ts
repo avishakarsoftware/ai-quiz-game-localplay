@@ -18,6 +18,7 @@ export function ensureSocialLoginInitialized(): Promise<void> {
     if (_ready) return _ready;
     _ready = (async () => {
         const { SocialLogin } = await import('@capgo/capacitor-social-login');
+        const platform = getPlatform();
         const googleWebId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
         const googleIosId = import.meta.env.VITE_GOOGLE_IOS_CLIENT_ID || '';
         const appleServiceId = import.meta.env.VITE_APPLE_CLIENT_ID || '';
@@ -32,9 +33,13 @@ export function ensureSocialLoginInitialized(): Promise<void> {
                 mode: 'online',
             },
         };
-        // iOS Apple sign-in uses the native bundle id + the "Sign in with Apple" entitlement; the
-        // clientId/redirectUrl here drive the Android (web-based) Apple flow.
-        if (appleServiceId) {
+        if (platform === 'ios') {
+            // iOS Apple sign-in uses ASAuthorizationAppleIDProvider and returns the ID token directly.
+            // Passing redirectUrl makes the plugin call that URL before resolving, which prevents
+            // LocalPlay from receiving the native Apple ID token.
+            options.apple = {};
+        } else if (appleServiceId) {
+            // Android Apple sign-in is web-based and needs the Service ID + redirect URL.
             options.apple = { clientId: appleServiceId, ...(webUrl ? { redirectUrl: webUrl } : {}) };
         }
         await SocialLogin.initialize(options);

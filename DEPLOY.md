@@ -491,11 +491,11 @@ automatically). So the Android order is **build a signed AAB → upload to inter
 LocalPlay does **not** use Firebase (unlike revelryapp). Web sign-in = Google Identity Services + Apple JS;
 native sign-in = `@capgo/capacitor-social-login` → ID token → backend verifies (`auth.py`). The code is wired
 (`utils/socialAuth.ts` `SocialLogin.initialize()`, called before `login()`; iOS Google reversed-client-id URL
-scheme in `Info.plist`; `cap-build.mjs` bakes the public client ids). Remaining one-time console/Xcode setup:
+scheme in `Info.plist`; iOS Apple Sign In entitlement in `App/App.entitlements`; `cap-build.mjs` bakes the public client ids). Remaining one-time console setup:
 
 | Platform | Step |
 |---|---|
-| iOS | Xcode → App target → Signing & Capabilities → **+ Sign in with Apple** (adds the entitlement). Google iOS client + URL scheme already configured. |
+| iOS | Sign in with Apple entitlement is tracked in `frontend/ios/App/App/App.entitlements` and wired through `CODE_SIGN_ENTITLEMENTS`; Google iOS client + URL scheme already configured. |
 | Android | Create a **GCP OAuth client** (project `revelryapp`, type Android): package `me.revelryapp.quiz` + the **Play App Signing** SHA-1 (Play Console → Test and release → Setup → App integrity). Also add the **upload** key SHA-1 for direct/sideload installs: `keytool -list -v -keystore ~/keystores/revelry-quiz-upload.keystore -alias revelry-quiz | grep SHA`. The **Play App Signing** SHA-1 is the one Play-installed builds use — register that as the primary. serverClientId = the web Google client (already baked); creating the Android OAuth client needs no code change. |
 
 Backend verifies Google ID tokens against `GOOGLE_CLIENT_IDS` and Apple via JWKS (`APPLE_CLIENT_IDS`). Prod/gamma must include both Google web+iOS clients, and both Apple Service ID+native bundle id, so browser, Android, and iOS tokens are accepted.

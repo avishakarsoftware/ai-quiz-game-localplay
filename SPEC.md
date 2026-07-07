@@ -1350,9 +1350,10 @@ Current behavior:
 - Supported providers are `google` and `apple`.
 - `GET /auth/me` returns the current signed-in user and token status.
 - Frontend session revalidation treats `401/403` from `/auth/me` as an invalid session and signs out, but treats timeouts/network/server errors as transient and keeps the cached signed-in user/session. A slow mobile network must not silently clear a valid login.
+- Sign-in and sign-out dispatch `refresh-sparks` so the spark badge refetches the current wallet balance after switching between device and signed-in wallets.
 - Sign-in migrates in-memory game history entries from the device wallet id to the signed-in user id.
 - Token/wallet status is resolved through the current spark economy.
-- **Not Firebase.** Web sign-in uses Google Identity Services + Apple JS directly; **native** sign-in uses `@capgo/capacitor-social-login` (`utils/socialAuth.ts` `SocialLogin.initialize()` → `login()`), and either path sends the provider ID token to `/auth/signin`, where the backend verifies it itself (Google via `verify_oauth2_token`, Apple via JWKS). Native sign-in setup (Apple capability, Android OAuth client + SHA-1) is tracked in `DEPLOY.md §3d`.
+- **Not Firebase.** Web sign-in uses Google Identity Services + Apple JS directly; **native** sign-in uses `@capgo/capacitor-social-login` (`utils/socialAuth.ts` `SocialLogin.initialize()` → `login()`), and either path sends the provider ID token to `/auth/signin`, where the backend verifies it itself (Google via `verify_oauth2_token`, Apple via JWKS). iOS Apple Sign In capability is tracked in `frontend/ios/App/App/App.entitlements`; remaining native console setup (Android OAuth client + SHA-1) is tracked in `DEPLOY.md §3d`.
 
 Historical context:
 

@@ -79,12 +79,16 @@ export async function iapLogIn(userId: string): Promise<void> {
     try { await mod.Purchases.logIn({ appUserID: userId }); } catch { /* best-effort */ }
 }
 
-/** Revert to the device-scoped wallet on sign-out. Best-effort. */
+/** Revert to the LocalPlay device-scoped wallet on sign-out. Best-effort. */
 export async function iapLogOut(): Promise<void> {
     if (!isIAPConfigured()) return;
     const mod = await loadModule();
     if (!mod) return;
-    try { await mod.Purchases.logOut(); } catch { /* best-effort */ }
+    try {
+        // RevenueCat logOut() creates/returns an RC anonymous id. LocalPlay webhooks need app_user_id
+        // to be a LocalPlay wallet id, so explicitly switch back to this device id instead.
+        await mod.Purchases.logIn({ appUserID: getDeviceId() });
+    } catch { /* best-effort */ }
 }
 
 // RevenueCat wraps getOfferings() in an extra { offerings: ... } envelope on Capacitor — unwrap it.

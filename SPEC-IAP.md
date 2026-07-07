@@ -565,7 +565,17 @@ Concrete UI change:
 re-credited (§5.3).
 
 Implementation detail: keep the button only on native builds with a configured RevenueCat key. Web restore stays
-hidden because Stripe purchases are fulfilled by webhook and visible through the wallet balance.
+hidden because Stripe purchases are fulfilled by webhook and visible through the wallet balance. Backend
+`/purchases/restore` is best-effort legacy entitlement compatibility; Supabase/credit failures return a user-facing
+`503` instead of an opaque `500`.
+
+RevenueCat identity must always map to a LocalPlay wallet id:
+
+- On launch before sign-in, configure RevenueCat with the LocalPlay `device_id`.
+- On successful app sign-in, call `Purchases.logIn({ appUserID: user.id })`.
+- On sign-out, switch RevenueCat back to `Purchases.logIn({ appUserID: device_id })`. Do **not** leave the app in
+  bare `Purchases.logOut()` state because RevenueCat can create its own anonymous id, and LocalPlay webhooks require
+  `app_user_id` to be either a LocalPlay signed-in user id or LocalPlay device id.
 
 ### 6.6 Client env (`.env` / Vite)
 
@@ -586,14 +596,16 @@ Apple JS directly; native uses `@capgo/capacitor-social-login` → ID token → 
 Google via `verify_oauth2_token`, Apple via JWKS). The native path was added web-only and was never wired
 (no `SocialLogin.initialize()`), so native sign-in never worked. Now fixed:
 
-- `utils/socialAuth.ts` `ensureSocialLoginInitialized()` calls `SocialLogin.initialize({ google: { webClientId, iOSClientId, mode:'online' }, apple: { clientId, redirectUrl } })` on native (no-op on web); `SettingsDrawer` calls it before `login()`.
-- `webClientId` = the web Google OAuth client; `iOSClientId` = the iOS Google OAuth client. Backend Google verification must accept both through `GOOGLE_CLIENT_IDS=<web-client>,<ios-client>` because native iOS Google Sign-In can return an ID token whose `aud` is the iOS OAuth client. Apple `clientId` = the Service ID (`me.revelryapp.quiz.web`) for the Android/web Apple flow.
+- `utils/socialAuth.ts` `ensureSocialLoginInitialized()` calls `SocialLogin.initialize(...)` on native (no-op on web); `SettingsDrawer` calls it before `login()`. iOS Apple intentionally uses `apple: {}` so the plugin resolves with the local `ASAuthorizationAppleIDProvider` ID token; Android Apple uses `{ clientId, redirectUrl }` for the web-based Apple flow.
+- `webClientId` = the web Google OAuth client; `iOSClientId` = the iOS Google OAuth client. Backend Google verification must accept both through `GOOGLE_CLIENT_IDS=<web-client>,<ios-client>` because native iOS Google Sign-In can return an ID token whose `aud` is the iOS OAuth client. Apple `clientId` = the Service ID (`me.revelryapp.quiz.web`) for the Android/web Apple flow, not the native iOS flow.
 - Backend Apple verification must accept both Apple audiences: the web/Android Service ID (`me.revelryapp.quiz.web`) and the native iOS bundle id (`me.revelryapp.quiz`) through `APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz`.
 - Frontend session revalidation keeps the cached signed-in user on `/auth/me` network/timeout/server failures and only clears the session on `401/403`, so a slow mobile network does not silently sign users out.
+- Frontend auth changes dispatch `refresh-sparks` after successful sign-in and sign-out so the fixed spark badge does not keep showing the previous device/signed-in wallet balance after the wallet switches.
 - iOS `Info.plist` carries the Google reversed-client-id **URL scheme** for the OAuth redirect.
+- iOS `App/App.entitlements` carries `com.apple.developer.applesignin = Default`, wired through `CODE_SIGN_ENTITLEMENTS`, so native Apple Sign In can complete before posting the Apple ID token to `/auth/signin`.
 - `cap-build.mjs` bakes the **public** `VITE_GOOGLE_CLIENT_ID` / `VITE_GOOGLE_IOS_CLIENT_ID` / `VITE_APPLE_CLIENT_ID`.
 
-**Pending console/Xcode (see DEPLOY.md §3d):** add the **"Sign in with Apple"** capability in Xcode; create a **GCP Android OAuth client** (package `me.revelryapp.quiz` + the Play App Signing SHA-1) so native Android Google sign-in works. iOS Google client + redirect scheme are already configured.
+**Pending console (see DEPLOY.md §3d):** create a **GCP Android OAuth client** (package `me.revelryapp.quiz` + the Play App Signing SHA-1) so native Android Google sign-in works. iOS Google client, redirect scheme, and Apple entitlement are configured.
 
 ---
 
@@ -750,7 +762,8 @@ Frontend (DONE 2026-06-29):
 - [x] `frontend/scripts/cap-build.mjs` + `npm run cap:sync:gamma|cap:sync:prod` — native build with baked
       API host + publishable RevenueCat/OAuth ids; `cap sync` registers RevenueCat (iOS SPM + Android Gradle).
 - [x] `frontend/src/utils/socialAuth.ts` + `SettingsDrawer` — `SocialLogin.initialize()` for native sign-in (§6.7);
-      iOS Google URL scheme added to `Info.plist`. App version → 3.1.0 / build 5.
+      iOS Google URL scheme added to `Info.plist`, and Apple Sign In entitlement added to `App.entitlements`.
+      App version → 3.1.0 / build 5.
 - [x] `frontend/src/utils/platform.ts` — shared `getPlatform()`/`isNativePlatform()`; `api.ts` now imports it.
       (`SettingsDrawer.tsx` keeps its local `isNativePlatform`; `analytics.ts` intentionally separate.)
 - [x] `frontend/src/utils/iap.ts` — initIAP, iapLogIn/Out, getNativePrices, buySparksNative, restoreNative;

@@ -49,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(result.user);
             // Tie RevenueCat purchases to the user wallet (best-effort, native only).
             if (result.user?.id) void iapLogIn(result.user.id);
+            window.dispatchEvent(new CustomEvent('refresh-sparks'));
             track('signed_in', { provider });
         } catch (err) {
             // Clean up any partial state from failed sign-in
@@ -62,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         storageSignOut();
         setUser(null);
         void iapLogOut();  // revert RevenueCat to the device-scoped wallet (best-effort, native only)
+        window.dispatchEvent(new CustomEvent('refresh-sparks'));
         track('signed_out');
     }, []);
 

@@ -6244,7 +6244,11 @@ async def restore_purchases(req: Request):
     session = auth.get_session_from_request(req)
     user_id = session["user_id"] if session else None
 
-    ent = db.find_restorable_entitlement(device_id, user_id=user_id)
+    try:
+        ent = db.find_restorable_entitlement(device_id, user_id=user_id)
+    except Exception as e:  # noqa: BLE001 — restore is a user-facing best-effort check
+        logger.warning("Purchase restore lookup failed: %s", e)
+        raise HTTPException(status_code=503, detail="Could not check purchases right now. Please try again.")
     if not ent:
         return {"restored": False}
 
@@ -6255,7 +6259,11 @@ async def restore_purchases(req: Request):
     wallet_id = user_id or device_id
     tokens_to_credit = ent["games_remaining"] * config.COST_ROOM
     if tokens_to_credit > 0:
-        db.credit_tokens(wallet_id, tokens_to_credit, "restore", reference_id=ent["id"])
+        try:
+            db.credit_tokens(wallet_id, tokens_to_credit, "restore", reference_id=ent["id"])
+        except Exception as e:  # noqa: BLE001 — avoid an opaque 500 in the settings drawer
+            logger.warning("Purchase restore credit failed: %s", e)
+            raise HTTPException(status_code=503, detail="Could not restore purchases right now. Please try again.")
     new_balance = db.get_wallet_balance(wallet_id)
     return {"restored": True, "tokens_added": tokens_to_credit, "new_balance": new_balance}
 

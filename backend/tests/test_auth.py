@@ -436,6 +436,34 @@ class TestRestorePurchases:
         data = res.json()
         assert data["restored"] is False
 
+    def test_restore_lookup_failure_returns_503(self, test_app, monkeypatch):
+        def boom(*_args, **_kwargs):
+            raise TimeoutError("db timeout")
+
+        monkeypatch.setattr(db, "find_restorable_entitlement", boom)
+
+        res = test_app.post("/purchases/restore", headers=_DEVICE_HEADERS)
+
+        assert res.status_code == 503
+        assert "Could not check purchases" in res.json()["detail"]
+
+    def test_restore_credit_failure_returns_503(self, test_app, monkeypatch):
+        monkeypatch.setattr(db, "find_restorable_entitlement", lambda *_args, **_kwargs: {
+            "id": "ent-restore-1",
+            "status": "active",
+            "games_remaining": 1,
+        })
+
+        def boom(*_args, **_kwargs):
+            raise TimeoutError("db timeout")
+
+        monkeypatch.setattr(db, "credit_tokens", boom)
+
+        res = test_app.post("/purchases/restore", headers=_DEVICE_HEADERS)
+
+        assert res.status_code == 503
+        assert "Could not restore purchases" in res.json()["detail"]
+
 
 class TestPromoCheckout:
     """Test promo_id validation in the checkout endpoint."""
