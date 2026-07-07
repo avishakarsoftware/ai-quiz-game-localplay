@@ -62,8 +62,8 @@ represent the native apps.
 
 ## Captured "games in action" set (`marketing/gameplay/`, 1600×900 landscape "TV"/spectator)
 - `01-question.png` — live quiz question with A/B/C/D options
-- `02-leaderboard.png` — multiplayer standings with scores (Maya 973 / Leo 973 / Ada 0)
-- `03-answer-reveal.png` — correct answer highlighted (instant feedback)
+- `02-answer-reveal.png` — correct answer highlighted (instant feedback)
+- `03-leaderboard.png` — multiplayer standings with scores (Maya 973 / Leo 973 / Ada 0)
 - `04-podium.png` — "Final Results" / champion podium with crown + confetti
 - Captured by driving a real quiz over WebSockets against gamma (host-agnostic — no URL shown). The
   SpectatorPage correctly waits for PODIUM on the final question (no app bug); the podium capture just
