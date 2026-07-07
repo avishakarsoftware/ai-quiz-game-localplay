@@ -2,7 +2,7 @@
 
 Status: **Implemented — backend + frontend on master & verified on gamma; store/console setup in progress** (2026-06-29)
 Owner: Avi
-Related: `SPEC.md` (spark economy), `DEPLOY.md` (§3c IAP runbook, §3d native sign-in, build contexts), `token_economy_migration.md`, VibePix `SPEC.md`/`server.js` (reference implementation)
+Related: `SPEC.md` (spark economy), `SPEC-ADS.md` (free Sparks via rewarded ads — the non-paid sibling to this spec), `DEPLOY.md` (§3c IAP runbook, §3d native sign-in, build contexts), `token_economy_migration.md`, VibePix `SPEC.md`/`server.js` (reference implementation)
 
 ---
 
