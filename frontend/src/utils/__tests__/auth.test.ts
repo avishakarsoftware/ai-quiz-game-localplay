@@ -94,29 +94,42 @@ describe('fetchUserProfile', () => {
         });
 
         const result = await fetchUserProfile();
+        expect('user' in result).toBe(true);
+        if (!('user' in result)) throw new Error('expected user profile');
         expect(result?.user.email).toBe('test@test.com');
     });
 
-    it('returns null on non-ok response', async () => {
+    it('returns unauthorized on auth rejection', async () => {
         globalThis.fetch = vi.fn().mockResolvedValue({
             ok: false,
+            status: 401,
         });
 
         const result = await fetchUserProfile();
-        expect(result).toBeNull();
+        expect(result).toEqual({ unauthorized: true });
     });
 
-    it('returns null on network error', async () => {
+    it('returns unavailable on non-auth server failure', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue({
+            ok: false,
+            status: 500,
+        });
+
+        const result = await fetchUserProfile();
+        expect(result).toEqual({ unavailable: true });
+    });
+
+    it('returns unavailable on network error', async () => {
         globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network error'));
 
         const result = await fetchUserProfile();
-        expect(result).toBeNull();
+        expect(result).toEqual({ unavailable: true });
     });
 
-    it('returns null on abort (timeout)', async () => {
+    it('returns unavailable on abort (timeout)', async () => {
         globalThis.fetch = vi.fn().mockRejectedValue(new DOMException('Aborted', 'AbortError'));
 
         const result = await fetchUserProfile();
-        expect(result).toBeNull();
+        expect(result).toEqual({ unavailable: true });
     });
 });

@@ -31,8 +31,9 @@ def _get_apple_jwks_client() -> PyJWKClient:
 
 def verify_google_token(id_token: str) -> Optional[dict]:
     """Verify a Google ID token. Returns {"sub", "email"} or None."""
-    if not config.GOOGLE_CLIENT_ID:
-        logger.error("GOOGLE_CLIENT_ID not configured")
+    google_client_ids = getattr(config, "GOOGLE_CLIENT_IDS", None) or ([config.GOOGLE_CLIENT_ID] if config.GOOGLE_CLIENT_ID else [])
+    if not google_client_ids:
+        logger.error("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_IDS not configured")
         return None
     try:
         from google.oauth2 import id_token as google_id_token
@@ -41,7 +42,7 @@ def verify_google_token(id_token: str) -> Optional[dict]:
         claims = google_id_token.verify_oauth2_token(
             id_token,
             google_requests.Request(),
-            audience=config.GOOGLE_CLIENT_ID,
+            audience=google_client_ids,
         )
         # verify_oauth2_token checks sig, exp, iss, aud
         iss = claims.get("iss", "")

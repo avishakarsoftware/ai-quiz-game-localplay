@@ -361,6 +361,7 @@ export default function OrganizerPage() {
 
     useEffect(() => {
         const handler = () => {
+            if (stateRef.current === 'SELECT_GAME') return;
             const rules = rulesForGame(gameTypeRef.current, catalog);
             if (rules) setActiveRules(rules);
         };

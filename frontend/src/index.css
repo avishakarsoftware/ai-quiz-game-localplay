@@ -964,6 +964,12 @@ body {
     color: var(--accent-primary);
 }
 
+.quota-badge-loading {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 46, 122, 0.14));
+    border-color: rgba(255, 255, 255, 0.16);
+    color: var(--text-tertiary);
+}
+
 .quota-badge-warning {
     background: rgba(255, 170, 50, 0.12);
     border-color: rgba(255, 170, 50, 0.25);

@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+ios/build-device
 playwright-report
 test-results
 *.local

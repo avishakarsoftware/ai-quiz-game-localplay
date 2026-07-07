@@ -587,7 +587,9 @@ Google via `verify_oauth2_token`, Apple via JWKS). The native path was added web
 (no `SocialLogin.initialize()`), so native sign-in never worked. Now fixed:
 
 - `utils/socialAuth.ts` `ensureSocialLoginInitialized()` calls `SocialLogin.initialize({ google: { webClientId, iOSClientId, mode:'online' }, apple: { clientId, redirectUrl } })` on native (no-op on web); `SettingsDrawer` calls it before `login()`.
-- `webClientId` = the web Google OAuth client (so the returned ID token's audience matches what `auth.py` verifies); `iOSClientId` = the iOS Google OAuth client; Apple `clientId` = the Service ID (`me.revelryapp.quiz.web`) for the Android/web Apple flow.
+- `webClientId` = the web Google OAuth client; `iOSClientId` = the iOS Google OAuth client. Backend Google verification must accept both through `GOOGLE_CLIENT_IDS=<web-client>,<ios-client>` because native iOS Google Sign-In can return an ID token whose `aud` is the iOS OAuth client. Apple `clientId` = the Service ID (`me.revelryapp.quiz.web`) for the Android/web Apple flow.
+- Backend Apple verification must accept both Apple audiences: the web/Android Service ID (`me.revelryapp.quiz.web`) and the native iOS bundle id (`me.revelryapp.quiz`) through `APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz`.
+- Frontend session revalidation keeps the cached signed-in user on `/auth/me` network/timeout/server failures and only clears the session on `401/403`, so a slow mobile network does not silently sign users out.
 - iOS `Info.plist` carries the Google reversed-client-id **URL scheme** for the OAuth redirect.
 - `cap-build.mjs` bakes the **public** `VITE_GOOGLE_CLIENT_ID` / `VITE_GOOGLE_IOS_CLIENT_ID` / `VITE_APPLE_CLIENT_ID`.
 
@@ -598,11 +600,11 @@ Google via `verify_oauth2_token`, Apple via JWKS). The native path was added web
 ## 7. Store & RevenueCat console setup (one-time)
 
 ### 7.1 RevenueCat dashboard
-1. Create a **new RevenueCat project** "LocalPlay/Revelry Quiz" (or a new app within the existing org).
+1. Create a **new RevenueCat project** "LocalPlay/Revelry Games" (or a new app within the existing org).
 2. Add an **App Store app** (bundle `me.revelryapp.quiz`) and a **Play Store app** (package `me.revelryapp.quiz`).
 3. **Apple credential:** upload the **In-App Purchase key** (.p8). The existing VibePix key
    `SubscriptionKey_655WPHCMD7.p8` is app-specific to VibePix — generate a **new In-App Purchase key** for
-   the Revelry Quiz app in App Store Connect → Users and Access → Integrations → In-App Purchase.
+   the Revelry Games app in App Store Connect → Users and Access → Integrations → In-App Purchase.
 4. **Google credential:** reuse the GCP service account `revenuecat-play@revelryapp.iam.gserviceaccount.com`
    (project `revelryapp`) — grant it access to the Play Console app. Ensure APIs are enabled:
    ```bash
@@ -776,9 +778,9 @@ Docs/config:
 1. **Catalog:** **RESOLVED** — all three surfaces (web Stripe + iOS + Android) use VibePix's tiers
    (50 / 200 / 500 @ $1.99 / $4.99 / $9.99) with identical SKUs/RC-ids to enable a future economy merge
    (§4.3). The legacy web pack (110 @ $0.99) is retired; web moves to the ladder via §5.6.
-2. **RevenueCat project:** use the existing RevenueCat org, create a new LocalPlay/Revelry Quiz app/project unless
+2. **RevenueCat project:** use the existing RevenueCat org, create a new LocalPlay/Revelry Games app/project unless
    RevenueCat support recommends a different structure.
-3. **Apple IAP key:** generate a fresh In-App Purchase .p8 for Revelry Quiz; do not reuse the VibePix app-scoped key.
+3. **Apple IAP key:** generate a fresh In-App Purchase .p8 for Revelry Games; do not reuse the VibePix app-scoped key.
 4. **Android off-Draft:** the Play app must reach at least internal testing before IAP can be tested.
 5. **Ad reward on native:** out of scope; it must not block IAP implementation.
 

@@ -34,6 +34,21 @@ function isNativePlatform(): boolean {
     return typeof cap?.isNativePlatform === 'function' && (cap.isNativePlatform as () => boolean)();
 }
 
+export function getNativeIdToken(loginResult: unknown): string {
+    const root = loginResult as Record<string, unknown> | null;
+    const payload = (root?.result as Record<string, unknown> | undefined) || root;
+    const authentication = payload?.authentication as Record<string, unknown> | undefined;
+    const candidates = [
+        payload?.idToken,
+        payload?.id_token,
+        payload?.identityToken,
+        authentication?.idToken,
+        authentication?.id_token,
+        authentication?.identityToken,
+    ];
+    return candidates.find((value): value is string => typeof value === 'string' && value.length > 0) || '';
+}
+
 export default function SettingsDrawer() {
     const [open, setOpen] = useState(false);
     const [muted, setMuted] = useState(soundManager.muted);
@@ -211,8 +226,7 @@ export default function SettingsDrawer() {
                     ? { scopes: ['email'] }
                     : { scopes: ['email'] },
             });
-            const nativeResult = result.result as { idToken?: string } | undefined;
-            const idToken = nativeResult?.idToken;
+            const idToken = getNativeIdToken(result);
             if (!idToken) throw new Error('No ID token received');
             await signIn(provider, idToken);
         } catch (err: unknown) {

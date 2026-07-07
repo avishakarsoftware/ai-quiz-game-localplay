@@ -11,9 +11,11 @@ const BASE: TokenStatus = {
 };
 
 describe('TokenBadge', () => {
-    it('renders nothing when loading', () => {
+    it('shows a stable loading badge while fetching sparks', () => {
         const { container } = render(<TokenBadge tokenStatus={BASE} loading={true} />);
-        expect(container.innerHTML).toBe('');
+        expect(screen.getByLabelText(/loading sparks/i)).toBeInTheDocument();
+        expect(screen.getByText('sparks')).toBeInTheDocument();
+        expect(container.querySelector('.quota-badge-loading')).not.toBeNull();
     });
 
     it('shows spark count', () => {

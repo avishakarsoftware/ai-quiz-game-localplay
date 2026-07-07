@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'me.revelryapp.quiz',
-  appName: 'Revelry Quiz',
+  appName: 'Revelry Games',
   webDir: 'dist',
   server: {
     // Load the bundled web app from local files (default behavior)

@@ -43,8 +43,11 @@ SKIP_BUILD=false
 ENVIRONMENT="prod"
 BOOTSTRAP_VM=false
 GOOGLE_WEB_CLIENT_ID="${GOOGLE_WEB_CLIENT_ID:-458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com}"
+GOOGLE_IOS_CLIENT_ID="${GOOGLE_IOS_CLIENT_ID:-458966837298-ncc86ha91tct2lo9ah16g8v9ibp4ckki.apps.googleusercontent.com}"
+GOOGLE_ALLOWED_CLIENT_IDS="${GOOGLE_ALLOWED_CLIENT_IDS:-$GOOGLE_WEB_CLIENT_ID,$GOOGLE_IOS_CLIENT_ID}"
 APPLE_WEB_CLIENT_ID="${APPLE_WEB_CLIENT_ID:-me.revelryapp.quiz.web}"
 APPLE_NATIVE_CLIENT_ID="${APPLE_NATIVE_CLIENT_ID:-me.revelryapp.quiz}"
+APPLE_ALLOWED_CLIENT_IDS="${APPLE_ALLOWED_CLIENT_IDS:-$APPLE_WEB_CLIENT_ID,$APPLE_NATIVE_CLIENT_ID}"
 SUPABASE_URL_DEFAULT="${SUPABASE_URL_DEFAULT:-https://hosbtyylacluziugwjfd.supabase.co}"
 
 RED='\033[0;31m'
@@ -189,8 +192,9 @@ bootstrap_vm_layout() {
             'REMOTE_CONFIG_URL=https://games.revelryapp.me/quiz/config.json' \
             'REVELRY_CALLBACK_URL=https://api.revelryapp.me/api/games/localplay/callback' \
             'GOOGLE_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID' \
+            'GOOGLE_CLIENT_IDS=$GOOGLE_ALLOWED_CLIENT_IDS' \
             'APPLE_CLIENT_ID=$APPLE_WEB_CLIENT_ID' \
-            'APPLE_CLIENT_IDS=$APPLE_WEB_CLIENT_ID,$APPLE_NATIVE_CLIENT_ID' \
+            'APPLE_CLIENT_IDS=$APPLE_ALLOWED_CLIENT_IDS' \
         ; do
             KEY=\${KV%%=*}
             sudo sh -c \"grep -q '^'\$KEY'=' $REMOTE_APP_DIR/.env && sed -i 's#^'\$KEY'=.*#\$KV#' $REMOTE_APP_DIR/.env || echo '\$KV' >> $REMOTE_APP_DIR/.env\"
@@ -213,8 +217,9 @@ bootstrap_vm_layout() {
             'REVELRY_CALLBACK_URL=https://api-gamma.revelryapp.me/api/games/localplay/callback' \
             'ENABLE_BINGO=true' \
             'GOOGLE_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID' \
+            'GOOGLE_CLIENT_IDS=$GOOGLE_ALLOWED_CLIENT_IDS' \
             'APPLE_CLIENT_ID=$APPLE_WEB_CLIENT_ID' \
-            'APPLE_CLIENT_IDS=$APPLE_WEB_CLIENT_ID,$APPLE_NATIVE_CLIENT_ID' \
+            'APPLE_CLIENT_IDS=$APPLE_ALLOWED_CLIENT_IDS' \
         ; do
             KEY=\${KV%%=*}
             sudo sh -c \"grep -q '^'\$KEY'=' $REMOTE_APP_DIR/.env.gamma && sed -i 's#^'\$KEY'=.*#\$KV#' $REMOTE_APP_DIR/.env.gamma || echo '\$KV' >> $REMOTE_APP_DIR/.env.gamma\"
@@ -254,6 +259,24 @@ if ! ssh_cmd "test -f $REMOTE_ENV_FILE" &>/dev/null; then
     exit 1
 fi
 validate_remote_db_config
+
+info "Ensuring auth provider audience env is current..."
+ssh_cmd "
+    set -e
+    for KV in \
+        'GOOGLE_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID' \
+        'GOOGLE_CLIENT_IDS=$GOOGLE_ALLOWED_CLIENT_IDS' \
+        'APPLE_CLIENT_ID=$APPLE_WEB_CLIENT_ID' \
+        'APPLE_CLIENT_IDS=$APPLE_ALLOWED_CLIENT_IDS' \
+    ; do
+        KEY=\${KV%%=*}
+        if grep -q '^'\$KEY'=' '$REMOTE_ENV_FILE'; then
+            sed -i 's#^'\$KEY'=.*#'\$KV'#' '$REMOTE_ENV_FILE'
+        else
+            echo \"\$KV\" >> '$REMOTE_ENV_FILE'
+        fi
+    done
+"
 
 if [[ "$BOOTSTRAP_VM" == "true" && "$SKIP_BUILD" == "true" && "$INCLUDE_FRONTEND" != "true" ]]; then
     info "Bootstrap complete; skipping deploy because --skip-build was provided without --with-frontend."

@@ -7,18 +7,16 @@ interface TokenBadgeProps {
 }
 
 export default function TokenBadge({ tokenStatus, loading }: TokenBadgeProps) {
-    if (loading) return null;
-
     const { balance } = tokenStatus;
     const isLow = balance > 0 && balance < 10;
     const isEmpty = balance === 0;
 
-    const className = `quota-badge ${isEmpty ? 'quota-badge-exhausted' : isLow ? 'quota-badge-warning' : 'quota-badge-premium'}`;
+    const className = `quota-badge ${loading ? 'quota-badge-loading' : isEmpty ? 'quota-badge-exhausted' : isLow ? 'quota-badge-warning' : 'quota-badge-premium'}`;
 
     return (
-        <div className={className}>
+        <div className={className} aria-label={loading ? 'Loading sparks' : undefined}>
             <span className="spark-coin-icon"><SparkCoin size={18} /></span>
-            <span>{balance} spark{balance !== 1 ? 's' : ''}</span>
+            <span>{loading ? 'sparks' : `${balance} spark${balance !== 1 ? 's' : ''}`}</span>
         </div>
     );
 }

@@ -267,6 +267,7 @@ GEMINI_MODEL=gemini-2.5-flash-lite
 GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite
 REMOTE_CONFIG_URL=https://gamesapi-gamma.revelryapp.me/config.json
 GOOGLE_CLIENT_ID=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com
+GOOGLE_CLIENT_IDS=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com,458966837298-ncc86ha91tct2lo9ah16g8v9ibp4ckki.apps.googleusercontent.com
 APPLE_CLIENT_ID=me.revelryapp.quiz.web
 APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz
 PUBLIC_BASE_URL=https://gamesapi-gamma.revelryapp.me
@@ -294,6 +295,7 @@ TABLE_PREFIX=games_
 SUPABASE_URL=https://hosbtyylacluziugwjfd.supabase.co
 SUPABASE_SERVICE_KEY=<service-role-key>
 GOOGLE_CLIENT_ID=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com
+GOOGLE_CLIENT_IDS=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com,458966837298-ncc86ha91tct2lo9ah16g8v9ibp4ckki.apps.googleusercontent.com
 APPLE_CLIENT_ID=me.revelryapp.quiz.web
 APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz
 PUBLIC_BASE_URL=https://gamesapi.revelryapp.me
@@ -374,6 +376,9 @@ Expected successful login state:
 - The **Sign Out** button is visible.
 - The browser has a LocalPlay session token for the current origin.
 
+Startup session revalidation uses `/auth/me`. `401/403` clears the LocalPlay session, but network timeouts and
+temporary server failures are treated as transient so a slow phone network does not silently sign users out.
+
 Verified browser sign-in coverage:
 
 | Origin | Google | Apple |
@@ -388,16 +393,17 @@ Common sign-in failures:
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
 | Google `origin_mismatch` before the app receives a token | Missing OAuth JavaScript origin | Add the exact SPA origin in Google Cloud Console |
-| Account chooser appears, then app says invalid/expired token | Backend cannot complete LocalPlay session creation | Verify `JWT_SECRET`, `GOOGLE_CLIENT_ID`, and container runtime env |
+| Account chooser appears, then app says invalid/expired token | Backend cannot complete LocalPlay session creation or token `aud` is not allowed | Verify `JWT_SECRET`, `GOOGLE_CLIENT_IDS`, `APPLE_CLIENT_IDS`, and container runtime env |
 | Apple popup fails or returns invalid token | Apple Service ID domains/return URLs or audience mismatch | Verify Apple Developer Service ID and `APPLE_CLIENT_IDS` |
 | Login works on `games.revelryapp.me` but not `gamesapi-gamma.revelryapp.me` | Provider console only trusts the IONOS origin | Add backend-served prod/gamma origins |
+| User appears signed out after app launch on a weak network | `/auth/me` revalidation was slow or unavailable | Keep the cached session; retry on better network and inspect `/auth/me` logs before clearing local storage |
 | Signed-in user has 0 sparks | New user wallet or wallet merge did not transfer guest balance | Check wallet merge logs and `/tokens/balance` under the signed-in session |
 
 Runtime checks:
 
 ```bash
 gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --command \
-  'for c in games-backend games-backend-gamma; do echo "== $c =="; docker exec "$c" sh -lc '"'"'printf "JWT_SECRET=%s\n" "${JWT_SECRET:+set}"; printf "GOOGLE_CLIENT_ID=%s\n" "${GOOGLE_CLIENT_ID:+set}"; printf "APPLE_CLIENT_ID=%s\n" "${APPLE_CLIENT_ID:+set}"; printf "APPLE_CLIENT_IDS=%s\n" "${APPLE_CLIENT_IDS:+set}"'"'"'; done'
+  'for c in games-backend games-backend-gamma; do echo "== $c =="; docker exec "$c" sh -lc '"'"'printf "JWT_SECRET=%s\n" "${JWT_SECRET:+set}"; printf "GOOGLE_CLIENT_ID=%s\n" "${GOOGLE_CLIENT_ID:+set}"; printf "GOOGLE_CLIENT_IDS=%s\n" "${GOOGLE_CLIENT_IDS:+set}"; printf "APPLE_CLIENT_ID=%s\n" "${APPLE_CLIENT_ID:+set}"; printf "APPLE_CLIENT_IDS=%s\n" "${APPLE_CLIENT_IDS:+set}"'"'"'; done'
 ```
 
 ### 3c. Native In-App Purchase (RevenueCat) — pending console setup
@@ -492,7 +498,7 @@ scheme in `Info.plist`; `cap-build.mjs` bakes the public client ids). Remaining 
 | iOS | Xcode → App target → Signing & Capabilities → **+ Sign in with Apple** (adds the entitlement). Google iOS client + URL scheme already configured. |
 | Android | Create a **GCP OAuth client** (project `revelryapp`, type Android): package `me.revelryapp.quiz` + the **Play App Signing** SHA-1 (Play Console → Test and release → Setup → App integrity). Also add the **upload** key SHA-1 for direct/sideload installs: `keytool -list -v -keystore ~/keystores/revelry-quiz-upload.keystore -alias revelry-quiz | grep SHA`. The **Play App Signing** SHA-1 is the one Play-installed builds use — register that as the primary. serverClientId = the web Google client (already baked); creating the Android OAuth client needs no code change. |
 
-Backend already verifies Google ID tokens against the web client and Apple via JWKS (`APPLE_CLIENT_IDS`), so no backend change is needed.
+Backend verifies Google ID tokens against `GOOGLE_CLIENT_IDS` and Apple via JWKS (`APPLE_CLIENT_IDS`). Prod/gamma must include both Google web+iOS clients, and both Apple Service ID+native bundle id, so browser, Android, and iOS tokens are accepted.
 
 ### 4. Install nginx routes
 

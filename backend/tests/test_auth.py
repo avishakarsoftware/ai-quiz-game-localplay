@@ -105,13 +105,35 @@ class TestGoogleTokenVerification:
 
     def test_missing_client_id_returns_none(self, monkeypatch):
         monkeypatch.setattr(config, "GOOGLE_CLIENT_ID", "")
+        monkeypatch.setattr(config, "GOOGLE_CLIENT_IDS", [])
         assert auth.verify_google_token("fake_token") is None
 
     def test_invalid_token_returns_none(self, monkeypatch):
         monkeypatch.setattr(config, "GOOGLE_CLIENT_ID", "test-client-id")
+        monkeypatch.setattr(config, "GOOGLE_CLIENT_IDS", ["test-client-id"])
         # verify_google_token catches all exceptions internally and returns None
         result = auth.verify_google_token("invalid_garbage_token")
         assert result is None
+
+    def test_accepts_configured_web_and_ios_audiences(self, monkeypatch):
+        audiences = [
+            "458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com",
+            "458966837298-ncc86ha91tct2lo9ah16g8v9ibp4ckki.apps.googleusercontent.com",
+        ]
+        monkeypatch.setattr(config, "GOOGLE_CLIENT_IDS", audiences)
+
+        with patch(
+            "google.oauth2.id_token.verify_oauth2_token",
+            return_value={
+                "iss": "https://accounts.google.com",
+                "sub": "google_sub",
+                "email": "g@example.com",
+            },
+        ) as verify:
+            result = auth.verify_google_token("fake_token")
+
+        assert result == {"sub": "google_sub", "email": "g@example.com"}
+        assert verify.call_args.kwargs["audience"] == audiences
 
 
 class TestAppleTokenVerification:
@@ -119,7 +141,24 @@ class TestAppleTokenVerification:
 
     def test_missing_client_id_returns_none(self, monkeypatch):
         monkeypatch.setattr(config, "APPLE_CLIENT_ID", "")
+        monkeypatch.setattr(config, "APPLE_CLIENT_IDS", [])
         assert auth.verify_apple_token("fake_token") is None
+
+    def test_accepts_configured_web_and_native_audiences(self, monkeypatch):
+        class FakeJwksClient:
+            def get_signing_key_from_jwt(self, token):
+                assert token == "fake_token"
+                return type("Key", (), {"key": "public-key"})()
+
+        audiences = ["me.revelryapp.quiz.web", "me.revelryapp.quiz"]
+        monkeypatch.setattr(config, "APPLE_CLIENT_IDS", audiences)
+        monkeypatch.setattr(auth, "_get_apple_jwks_client", lambda: FakeJwksClient())
+
+        with patch("auth.jwt.decode", return_value={"sub": "apple_sub", "email": "a@example.com"}) as decode:
+            result = auth.verify_apple_token("fake_token")
+
+        assert result == {"sub": "apple_sub", "email": "a@example.com"}
+        assert decode.call_args.kwargs["audience"] == audiences
 
 
 # ============================================================================

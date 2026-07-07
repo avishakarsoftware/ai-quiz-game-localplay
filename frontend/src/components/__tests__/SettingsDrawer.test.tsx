@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import SettingsDrawer from '../SettingsDrawer';
+import SettingsDrawer, { getNativeIdToken } from '../SettingsDrawer';
 
 vi.mock('../../utils/sound', () => ({
     soundManager: {
@@ -36,9 +36,21 @@ vi.mock('../../hooks/useTokenBalance', () => ({
 
 vi.mock('@capgo/capacitor-social-login', () => ({
     SocialLogin: {
+        initialize: vi.fn(),
         login: vi.fn(),
     },
 }));
+
+describe('getNativeIdToken', () => {
+    it('extracts the typed plugin result token', () => {
+        expect(getNativeIdToken({ provider: 'google', result: { idToken: 'jwt-1' } })).toBe('jwt-1');
+    });
+
+    it('extracts alternate native token shapes', () => {
+        expect(getNativeIdToken({ result: { authentication: { idToken: 'jwt-2' } } })).toBe('jwt-2');
+        expect(getNativeIdToken({ result: { identityToken: 'jwt-3' } })).toBe('jwt-3');
+    });
+});
 
 describe('SettingsDrawer', () => {
     it('renders the menu trigger button', () => {

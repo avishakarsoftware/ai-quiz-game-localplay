@@ -30,12 +30,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         fetchUserProfile()
             .then(data => {
                 if (cancelled) return;
-                if (data?.user) {
+                if ('user' in data && data.user) {
                     setUser(data.user);
-                } else {
+                } else if ('unauthorized' in data) {
                     storageSignOut();
                     setUser(null);
                 }
+                // Network/timeout failures keep the cached session. A slow phone network
+                // should not silently sign out an otherwise valid user.
             })
             .finally(() => { if (!cancelled) setLoading(false); });
         return () => { cancelled = true; };

@@ -9,6 +9,12 @@ export interface SignInResult {
     session_token: string;
 }
 
+export type UserProfileResult = { user: UserProfile; tokens: Record<string, unknown> };
+export type FetchUserProfileResult =
+    | UserProfileResult
+    | { unauthorized: true }
+    | { unavailable: true };
+
 export async function signInWithBackend(provider: 'google' | 'apple', idToken: string): Promise<SignInResult> {
     const res = await fetch(apiUrl('/auth/signin'), {
         method: 'POST',
@@ -37,19 +43,22 @@ export async function signInWithBackend(provider: 'google' | 'apple', idToken: s
     return data;
 }
 
-export async function fetchUserProfile(): Promise<{ user: UserProfile; tokens: Record<string, unknown> } | null> {
+export async function fetchUserProfile(): Promise<FetchUserProfileResult> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        timeoutId = setTimeout(() => controller.abort(), 15000);
         const res = await fetch(apiUrl('/auth/me'), {
             headers: apiHeaders(),
             signal: controller.signal,
         });
-        clearTimeout(timeoutId);
-        if (!res.ok) return null;
+        if (res.status === 401 || res.status === 403) return { unauthorized: true };
+        if (!res.ok) return { unavailable: true };
         return await res.json();
     } catch {
-        return null;
+        return { unavailable: true };
+    } finally {
+        if (timeoutId) clearTimeout(timeoutId);
     }
 }
 
