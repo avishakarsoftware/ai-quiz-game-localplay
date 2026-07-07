@@ -6,7 +6,9 @@ Related: `SPEC.md` (spark economy), `DEPLOY.md` (§3c IAP runbook, §3d native s
 
 ---
 
-## 0. Status (as-built, updated 2026-07-06)
+## 0. Status (as-built, updated 2026-07-07)
+
+**✅ Verified on a real iOS device (2026-07-07):** native **Google sign-in** (`/auth/signin` → 200, user created/looked up in `games_gamma_users`) and a **real App Store sandbox purchase** end-to-end — StoreKit → RevenueCat → `POST /webhook/revenuecat` (200) → `credit_purchase` credited **50 sparks** (`store=APP_STORE`, `sku=spark_pack_50`, `credited=True`), tied to the signed-in user wallet. Confirms the RevenueCat "Could not check" dashboard warning is cosmetic — real purchases fulfill. Native Apple sign-in launched correctly (capability wired) but the test device's **child/Family-Sharing Apple ID** blocks it; retest on an adult Apple ID.
 
 **Done & on master:**
 - **Backend** — `POST /webhook/revenuecat` (bearer auth, double idempotency via `webhook_events` + `credit_purchase(reference_id="iap:{store}:{txn}")`, refund clawback, unknown-product ack), tiered `/checkout/create` (inline Stripe `price_data` from `config.SPARK_PRODUCTS`, no Stripe Price objects), Android+iOS Stripe block. Unit tests in `backend/tests/test_iap_webhook.py`.
