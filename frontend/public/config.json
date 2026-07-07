@@ -27,7 +27,13 @@
   },
   "feature_flags": {
     "show_upgrade_button": true,
-    "enable_image_generation": true
+    "enable_image_generation": true,
+    "ads_enabled": false,
+    "referral_enabled": true
+  },
+  "economy": {
+    "cost_room": 10,
+    "cost_generate": 1
   },
   "ai_models": {
     "free_model": "gemini-2.5-flash-lite",

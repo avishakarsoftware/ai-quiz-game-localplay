@@ -63,3 +63,25 @@ describe('mergeWithDefaults', () => {
     expect(result.feature_flags).toEqual(DEFAULT_CONFIG.feature_flags);
   });
 });
+
+// SPEC-REMOTE-CONFIG schema extension: game toggles + economy + new feature flags.
+describe('remote config schema extension', () => {
+  it('defaults expose economy costs and ads/referral flags, with all games enabled', () => {
+    expect(DEFAULT_CONFIG.economy).toEqual({ cost_room: 10, cost_generate: 1 });
+    expect(DEFAULT_CONFIG.feature_flags.ads_enabled).toBe(false);
+    expect(DEFAULT_CONFIG.feature_flags.referral_enabled).toBe(true);
+    expect(DEFAULT_CONFIG.enabled_game_types).toBeUndefined(); // absent ⇒ all games
+  });
+
+  it('catalog gating: enabled_game_types filters the offered ids (absent ⇒ all)', () => {
+    // Mirrors the GameSelectScreen filter: keep all when absent/empty, else only the listed ids.
+    const gate = (ids: string[] | undefined, all: string[]) => {
+      const set = Array.isArray(ids) && ids.length ? new Set(ids) : null;
+      return all.filter((id) => !set || set.has(id));
+    };
+    const all = ['quiz', 'wmlt', 'drawing', 'poker'];
+    expect(gate(undefined, all)).toEqual(all);
+    expect(gate([], all)).toEqual(all);
+    expect(gate(['quiz', 'drawing'], all)).toEqual(['quiz', 'drawing']);
+  });
+});

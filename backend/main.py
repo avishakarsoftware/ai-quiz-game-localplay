@@ -6332,6 +6332,27 @@ async def get_share_card(token: str):
     return Response(content=share.render_html(snap), media_type="text/html")
 
 
+@app.get("/config/public")
+async def public_config():
+    """Server-effective remote config (SPEC-REMOTE-CONFIG): the fetched config.json augmented with
+    backend-authoritative economy + feature flags. Safe defaults; never 500. Read-only, unauthenticated."""
+    try:
+        base = await remote_config.get_config()
+    except Exception:  # noqa: BLE001 — config read must never 500
+        base = {}
+    cfg = dict(base) if isinstance(base, dict) else {}
+    # Backend is authoritative for spend costs (config.json can't override real spending).
+    cfg["economy"] = {"cost_room": config.COST_ROOM, "cost_generate": config.COST_GENERATE}
+    ff = dict(cfg.get("feature_flags") or {})
+    ff.setdefault("show_upgrade_button", True)
+    ff.setdefault("enable_image_generation", True)
+    ff["ads_enabled"] = False  # no ad SDK yet (SPEC-ADS)
+    ff["referral_enabled"] = _REFERRALS_SUPPORTED
+    cfg["feature_flags"] = ff
+    cfg.setdefault("enabled_game_types", None)
+    return cfg
+
+
 @app.post("/purchases/restore")
 async def restore_purchases(req: Request):
     """Restore IAP purchases — credits tokens if not already credited."""

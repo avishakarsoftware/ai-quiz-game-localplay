@@ -37,6 +37,15 @@ export interface RemoteConfig {
   feature_flags: {
     show_upgrade_button: boolean;
     enable_image_generation: boolean;
+    ads_enabled?: boolean;
+    referral_enabled?: boolean;
+  };
+  // Catalog gating: when present + non-empty, only these game ids are offered (absent ⇒ all enabled).
+  enabled_game_types?: string[];
+  // Tunable spark costs (informational mirror of the backend; balance endpoint remains authoritative).
+  economy?: {
+    cost_room?: number;
+    cost_generate?: number;
   };
   announcements: Announcement[];
 }
@@ -64,6 +73,10 @@ export const DEFAULT_CONFIG: RemoteConfig = {
   feature_flags: {
     show_upgrade_button: true,
     enable_image_generation: true,
+    ads_enabled: false,
+    referral_enabled: true,
   },
+  enabled_game_types: undefined,   // absent ⇒ all games enabled
+  economy: { cost_room: 10, cost_generate: 1 },
   announcements: [],
 };

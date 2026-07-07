@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { type GameType } from '../../types';
 import { filterGameModesForCatalog, GAME_MODE_CONFIGS, isMostPopularGameId, mostPopularGameRank, type GameModeConfig } from '../../gameModes';
 import { ENABLE_BINGO } from '../../config';
+import { useRemoteConfigContext } from '../../context/RemoteConfigContext';
 import GameRulesModal from '../GameRulesModal';
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../../gameRules';
 
@@ -75,12 +76,18 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
     const [activeCategory, setActiveCategory] = useState<GameCategory>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [activeRules, setActiveRules] = useState<GameRules | null>(null);
+    const { config: remoteConfig } = useRemoteConfigContext();
     const hasCatalog = Boolean(catalog?.length);
     const gameModes = useMemo(() => {
+        // Remote-config catalog gating: when enabled_game_types is present + non-empty, only those ids show.
+        const enabledIds = Array.isArray(remoteConfig.enabled_game_types) && remoteConfig.enabled_game_types.length
+            ? new Set(remoteConfig.enabled_game_types)
+            : null;
         const availableGames = (hasCatalog ? filterGameModesForCatalog(catalog) : GAME_MODE_CONFIGS)
-            .filter((game) => ENABLE_BINGO || !['bingo', 'baby_bingo'].includes(game.id));
+            .filter((game) => ENABLE_BINGO || !['bingo', 'baby_bingo'].includes(game.id))
+            .filter((game) => !enabledIds || enabledIds.has(game.id));
         return [...availableGames].sort((a, b) => a.title.localeCompare(b.title));
-    }, [catalog, hasCatalog]);
+    }, [catalog, hasCatalog, remoteConfig.enabled_game_types]);
     const aiCapable = useMemo(() => new Set((catalog || []).filter((item) => item.supports_ai_generation).map((item) => item.id)), [catalog]);
     const query = searchQuery.trim().toLowerCase();
     const filteredGameModes = useMemo(() => {

@@ -19,6 +19,8 @@ function mergeWithDefaults(data: Partial<RemoteConfig>): RemoteConfig {
     operations: { ...DEFAULT_CONFIG.operations, ...data.operations },
     pricing: { ...DEFAULT_CONFIG.pricing, ...data.pricing },
     feature_flags: { ...DEFAULT_CONFIG.feature_flags, ...data.feature_flags },
+    economy: { ...DEFAULT_CONFIG.economy, ...data.economy },
+    enabled_game_types: Array.isArray(data.enabled_game_types) ? data.enabled_game_types : undefined,
     announcements: Array.isArray(data.announcements)
       ? data.announcements
           .map((item) => item as unknown as Record<string, unknown>)

@@ -143,6 +143,38 @@ model), `backend/tests/test_share_card.py` (new, 7 tests), `frontend/src/utils/s
 
 ---
 
+## Feature 5 — Remote config: backend endpoint + schema extension ✅
+
+**Decision — avoid a second source of truth:** the frontend already fetches static `public/config.json`,
+and `backend/remote_config.py` already *consumes* it (for AI model selection). So rather than invent a new
+backend-owned config file (two sources of truth), I: (a) extended the existing config schema, (b) added a
+backend `GET /config/public` that returns the backend's **effective** view (the fetched config.json +
+backend-authoritative economy/flags), and (c) gated the game catalog in the frontend.
+
+**What was added:**
+- Schema (`types/remoteConfig.ts` + DEFAULT_CONFIG + `useRemoteConfig` merge + `public/config.json`):
+  `enabled_game_types?` (absent/empty ⇒ all games), `economy{cost_room,cost_generate}`, and
+  `feature_flags.ads_enabled/referral_enabled`.
+- **Catalog gating:** `GameSelectScreen` filters `GAME_MODE_CONFIGS` by `enabled_game_types` (via
+  `useRemoteConfigContext`) — disable any game via config, no redeploy. Composes with the existing
+  `ENABLE_BINGO`.
+- **Backend `GET /config/public`:** returns `remote_config.get_config()` augmented with backend-authoritative
+  `economy` (real COST_ROOM/COST_GENERATE — config.json can't override spend), `feature_flags`
+  (ads_enabled=false per SPEC-ADS, referral_enabled=`_REFERRALS_SUPPORTED`), and `enabled_game_types`.
+  Read-only, unauthenticated, **never 500** (swallows fetch errors → defaults).
+
+**Files:** `backend/main.py` (endpoint), `backend/tests/test_config_public.py` (new, 2 tests),
+`frontend/src/types/remoteConfig.ts`, `frontend/src/hooks/useRemoteConfig.ts`,
+`frontend/src/components/organizer/GameSelectScreen.tsx`, `frontend/public/config.json`,
+`frontend/src/hooks/__tests__/useRemoteConfig.test.ts` (+2 tests).
+
+**Tests:** backend 2/2; frontend remote-config 10/10 (+existing 22 pass); tsc clean.
+
+**Note:** did NOT build an admin write endpoint (v1 = file-edited, per spec). `/config/public` currently
+mirrors the IONOS config.json; pointing the frontend at it (`VITE_CONFIG_URL`) is left as an optional switch.
+
+---
+
 DB facts (backbone for #2/#3): `wallets` table columns = id, balance, lifetime_purchased,
 last_daily_bonus_date, ads_watched_today, ads_watched_date, created_at. Migration pattern =
 `try: ALTER TABLE ... ADD COLUMN / except duplicate-column`. `credit_purchase` shows the idempotency
