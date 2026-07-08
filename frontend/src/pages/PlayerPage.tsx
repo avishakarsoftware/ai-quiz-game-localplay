@@ -139,6 +139,7 @@ export default function PlayerPage() {
     const [lobbyPlayers, setLobbyPlayers] = useState<PlayerInfo[]>([]);
     const [catalog, setCatalog] = useState<CatalogGameWithRules[]>([]);
     const [activeRules, setActiveRules] = useState<GameRules | null>(null);
+    const [gameTypeKnown, setGameTypeKnown] = useState(false);
     const [powerUps, setPowerUps] = useState<PowerUps>({ double_points: true, fifty_fifty: true });
 
     useEffect(() => {
@@ -195,13 +196,29 @@ export default function PlayerPage() {
 
     useEffect(() => {
         const handler = () => {
-            if (!roomCode) return;
+            if (!gameTypeKnown) return;
             const rules = rulesForGame(gameType, catalog);
             if (rules) setActiveRules(rules);
         };
         window.addEventListener('show-game-rules', handler);
         return () => window.removeEventListener('show-game-rules', handler);
-    }, [catalog, gameType, roomCode]);
+    }, [catalog, gameType, gameTypeKnown]);
+
+    useEffect(() => {
+        const publishRulesContext = () => {
+            const available = gameTypeKnown && !['JOIN', 'RECONNECTING'].includes(state);
+            const rules = available ? rulesForGame(gameType, catalog) : null;
+            window.dispatchEvent(new CustomEvent('game-rules-context', {
+                detail: { available: Boolean(rules), title: rules?.title },
+            }));
+        };
+        publishRulesContext();
+        window.addEventListener('request-game-rules-context', publishRulesContext);
+        return () => {
+            window.removeEventListener('request-game-rules-context', publishRulesContext);
+            window.dispatchEvent(new CustomEvent('game-rules-context', { detail: { available: false } }));
+        };
+    }, [catalog, gameType, gameTypeKnown, state]);
 
     // DrawingGame state
     const [drawingPrompt, setDrawingPrompt] = useState('');
@@ -313,6 +330,10 @@ export default function PlayerPage() {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let msg: any;
             try { msg = JSON.parse(event.data); } catch { return; }
+            if (msg.game_type) {
+                setGameType(msg.game_type as GameType);
+                setGameTypeKnown(true);
+            }
             if (msg.type === 'ERROR') {
                 const errMsg = msg.message as string;
                 // "Nickname is taken" during our OWN reconnect is usually a race:
@@ -346,6 +367,10 @@ export default function PlayerPage() {
                 return;
             }
             if (msg.type === 'GAME_IN_PROGRESS') {
+                if (msg.game_type) {
+                    setGameType(msg.game_type as GameType);
+                    setGameTypeKnown(true);
+                }
                 setQuestionNumber(msg.question_number as number);
                 setTotalQuestions(msg.total_questions as number);
                 setState('GAME_IN_PROGRESS');
@@ -362,6 +387,10 @@ export default function PlayerPage() {
             if (msg.type === 'JOINED_ROOM') {
                 nicknameReconnectRetriesRef.current = 0;
                 savePlayerSession({ roomCode, nickname, team, avatar, sessionToken: msg.session_token || '' });
+                if (msg.game_type) {
+                    setGameType(msg.game_type as GameType);
+                    setGameTypeKnown(true);
+                }
                 if (msg.game_type === 'common_ground' && msg.common_ground) {
                     setGameType('common_ground');
                     setCommonGroundState(msg.common_ground as CommonGroundState);
@@ -417,7 +446,10 @@ export default function PlayerPage() {
                 savePlayerSession({ roomCode, nickname, team, avatar, sessionToken: token });
                 setQuestionNumber(msg.question_number as number);
                 setTotalQuestions(msg.total_questions as number);
-                if (msg.game_type) setGameType(msg.game_type as GameType);
+                if (msg.game_type) {
+                    setGameType(msg.game_type as GameType);
+                    setGameTypeKnown(true);
+                }
                 if (msg.power_ups) setPowerUps(msg.power_ups as PowerUps);
                 if (msg.state === 'LOBBY') {
                     setState('LOBBY');

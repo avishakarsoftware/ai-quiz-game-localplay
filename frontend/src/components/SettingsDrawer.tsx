@@ -54,6 +54,8 @@ export default function SettingsDrawer() {
     const [open, setOpen] = useState(false);
     const [muted, setMuted] = useState(soundManager.muted);
     const [vibration, setVibration] = useState(soundManager.vibrationEnabled);
+    const [rulesAvailable, setRulesAvailable] = useState(false);
+    const [rulesLabel, setRulesLabel] = useState('Rules');
     const [signInLoading, setSignInLoading] = useState(false);
     const [signInError, setSignInError] = useState('');
     const drawerRef = useRef<HTMLDivElement>(null);
@@ -74,9 +76,22 @@ export default function SettingsDrawer() {
         return () => window.removeEventListener('close-settings', handler);
     }, []);
 
+    useEffect(() => {
+        const handler = (event: Event) => {
+            const detail = (event as CustomEvent<{ available?: boolean; title?: string }>).detail || {};
+            setRulesAvailable(Boolean(detail.available));
+            setRulesLabel(detail.title ? detail.title.replace(/\s+Rules$/i, ' Rules') : 'Rules');
+        };
+        window.addEventListener('game-rules-context', handler);
+        return () => window.removeEventListener('game-rules-context', handler);
+    }, []);
+
     // Clear errors when drawer reopens
     useEffect(() => {
-        if (open) setSignInError('');
+        if (open) {
+            setSignInError('');
+            window.dispatchEvent(new CustomEvent('request-game-rules-context'));
+        }
     }, [open]);
 
     // Close on outside click
@@ -290,6 +305,7 @@ export default function SettingsDrawer() {
     };
 
     const showCurrentGameRules = () => {
+        if (!rulesAvailable) return;
         setOpen(false);
         window.dispatchEvent(new CustomEvent('show-game-rules'));
     };
@@ -358,18 +374,20 @@ export default function SettingsDrawer() {
                     <span style={{ fontWeight: 600, fontSize: 14 }}>Home</span>
                 </div>
 
-                <div
-                    className="settings-drawer-row"
-                    style={{ cursor: 'pointer' }}
-                    onClick={showCurrentGameRules}
-                >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="M12 16v-4" />
-                        <path d="M12 8h.01" />
-                    </svg>
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>Rules</span>
-                </div>
+                {rulesAvailable && (
+                    <div
+                        className="settings-drawer-row"
+                        style={{ cursor: 'pointer' }}
+                        onClick={showCurrentGameRules}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M12 16v-4" />
+                            <path d="M12 8h.01" />
+                        </svg>
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>{rulesLabel}</span>
+                    </div>
+                )}
 
                 {/* Account Section */}
                 {user ? (

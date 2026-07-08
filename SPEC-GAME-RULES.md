@@ -1,7 +1,20 @@
 # LocalPlay Game Rules Surface Spec
 
 Status: Phase 2 rules access polish implemented; deeper room-config-specific rule overrides remain planned
-Last updated: July 6, 2026
+Last updated: July 7, 2026
+
+## July 7, 2026 Contextual Menu Rules Fix
+
+The standalone hamburger menu must not invent a default game. The drawer now shows a current-game Rules row only when
+the mounted organizer/player/spectator page publishes a valid game-rules context:
+
+- Organizer publishes rules for setup, review, lobby, active, and result states, but not the root game picker.
+- Player publishes rules only after the room has reported a real `game_type`; an unjoined `/join/:code` URL must not
+  fall back to AI Quiz rules.
+- Spectator publishes rules only after a room/game sync provides a real `game_type`.
+- Opening the drawer requests the latest rules context from the page underneath it, then labels the row with the current
+  game rules title, such as `Housie Rules`.
+- If no current game context is available, the drawer omits the Rules row instead of showing stale or AI Quiz rules.
 
 ## July 6, 2026 Implementation Update
 
@@ -11,7 +24,8 @@ The Phase 2 access pass is implemented on the LocalPlay side:
 - Standalone catalog cards expose a Rules affordance that does not select the game.
 - Organizer lobbies show Rules next to pre-start controls.
 - Player lobbies show Rules while waiting.
-- The standalone hamburger menu exposes Rules during organizer, player, and spectator game sessions.
+- The standalone hamburger menu exposes contextual Rules during organizer, player, and spectator game sessions when the
+  current game type is known.
 - LocalPlay-owned Revelry hub catalog cards, active-session cards, and saved/prepared game cards expose Rules when the game type is known.
 - Active Revelry session payloads now include `game_type` and `content_id` so embedded hub surfaces can choose the correct rules copy.
 

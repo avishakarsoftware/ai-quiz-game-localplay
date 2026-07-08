@@ -370,6 +370,21 @@ export default function OrganizerPage() {
         return () => window.removeEventListener('show-game-rules', handler);
     }, [catalog]);
 
+    useEffect(() => {
+        const publishRulesContext = () => {
+            const rules = state === 'SELECT_GAME' ? null : rulesForGame(gameType, catalog);
+            window.dispatchEvent(new CustomEvent('game-rules-context', {
+                detail: { available: Boolean(rules), title: rules?.title },
+            }));
+        };
+        publishRulesContext();
+        window.addEventListener('request-game-rules-context', publishRulesContext);
+        return () => {
+            window.removeEventListener('request-game-rules-context', publishRulesContext);
+            window.dispatchEvent(new CustomEvent('game-rules-context', { detail: { available: false } }));
+        };
+    }, [catalog, gameType, state]);
+
     // Proactive "Get Sparks" entry (e.g. tapping the spark badge) — open the purchase modal directly.
     useEffect(() => {
         const handler = () => {

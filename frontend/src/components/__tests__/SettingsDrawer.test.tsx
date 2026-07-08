@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SettingsDrawer, { getNativeIdToken } from '../SettingsDrawer';
 
@@ -86,14 +86,29 @@ describe('SettingsDrawer', () => {
         expect(screen.getByText('Home')).toBeInTheDocument();
     });
 
-    it('dispatches a show-game-rules event from the Rules row', async () => {
+    it('hides the Rules row until the current page advertises game rules', async () => {
+        const user = userEvent.setup();
+        render(<SettingsDrawer />);
+
+        await user.click(screen.getByTitle('Menu'));
+
+        expect(screen.queryByText('Rules')).not.toBeInTheDocument();
+    });
+
+    it('dispatches a show-game-rules event from the contextual Rules row', async () => {
         const user = userEvent.setup();
         const listener = vi.fn();
         window.addEventListener('show-game-rules', listener);
         render(<SettingsDrawer />);
 
+        act(() => {
+            window.dispatchEvent(new CustomEvent('game-rules-context', {
+                detail: { available: true, title: 'Housie Rules' },
+            }));
+        });
+
         await user.click(screen.getByTitle('Menu'));
-        await user.click(screen.getByText('Rules'));
+        await user.click(screen.getByText('Housie Rules'));
 
         expect(listener).toHaveBeenCalledTimes(1);
         window.removeEventListener('show-game-rules', listener);

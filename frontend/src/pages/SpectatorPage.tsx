@@ -90,6 +90,7 @@ export default function SpectatorPage() {
     const [hostAppReturnUrl, setHostAppReturnUrl] = useState('');
     const [launchResolving, setLaunchResolving] = useState(() => searchParams.has('launch_token'));
     const [activeRules, setActiveRules] = useState<GameRules | null>(null);
+    const [gameTypeKnown, setGameTypeKnown] = useState(false);
 
     useEffect(() => {
         const launchToken = searchParams.get('launch_token');
@@ -157,13 +158,29 @@ export default function SpectatorPage() {
 
     useEffect(() => {
         const handler = () => {
-            if (!roomCode && !joined) return;
+            if (!gameTypeKnown) return;
             const rules = rulesForGame(gameType);
             if (rules) setActiveRules(rules);
         };
         window.addEventListener('show-game-rules', handler);
         return () => window.removeEventListener('show-game-rules', handler);
-    }, [gameType, joined, roomCode]);
+    }, [gameType, gameTypeKnown]);
+
+    useEffect(() => {
+        const publishRulesContext = () => {
+            const available = gameTypeKnown && joined && gameState !== 'CONNECTING' && gameState !== 'ERROR';
+            const rules = available ? rulesForGame(gameType) : null;
+            window.dispatchEvent(new CustomEvent('game-rules-context', {
+                detail: { available: Boolean(rules), title: rules?.title },
+            }));
+        };
+        publishRulesContext();
+        window.addEventListener('request-game-rules-context', publishRulesContext);
+        return () => {
+            window.removeEventListener('request-game-rules-context', publishRulesContext);
+            window.dispatchEvent(new CustomEvent('game-rules-context', { detail: { available: false } }));
+        };
+    }, [gameState, gameType, gameTypeKnown, joined]);
 
     useEffect(() => {
         mountedRef.current = true;
@@ -258,6 +275,10 @@ export default function SpectatorPage() {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let msg: any;
             try { msg = JSON.parse(event.data); } catch { return; }
+            if (msg.game_type) {
+                setGameType(msg.game_type);
+                setGameTypeKnown(true);
+            }
             if (msg.type === 'PING') return; // heartbeat — no action needed
             if (msg.type === 'ERROR') {
                 terminalConnectionErrorRef.current = true;
@@ -271,7 +292,10 @@ export default function SpectatorPage() {
                 setQuestionNumber(msg.question_number);
                 setTotalQuestions(msg.total_questions);
                 setLeaderboard(msg.leaderboard || []);
-                if (msg.game_type) setGameType(msg.game_type);
+                if (msg.game_type) {
+                    setGameType(msg.game_type);
+                    setGameTypeKnown(true);
+                }
                 if ((msg.game_type === 'housie' || msg.game_type === 'bingo') && msg.bingo) {
                     setHousieCalled(msg.bingo.called_items || []);
                     setHousieLatest(msg.bingo.latest_item || null);
