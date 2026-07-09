@@ -85,7 +85,7 @@ export function useRemoteConfig() {
     }
 
     const controller = new AbortController();
-    const configUrl = `${import.meta.env.BASE_URL}config.json`;
+    const configUrl = (import.meta.env.VITE_CONFIG_URL as string | undefined) || `${import.meta.env.BASE_URL}config.json`;
 
     fetch(configUrl, { signal: controller.signal, cache: forceFresh ? 'no-cache' : 'default' })
       .then(res => {

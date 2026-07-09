@@ -66,10 +66,10 @@ describe('mergeWithDefaults', () => {
 
 // SPEC-REMOTE-CONFIG schema extension: game toggles + economy + new feature flags.
 describe('remote config schema extension', () => {
-  it('defaults expose economy costs and ads/referral flags, with all games enabled', () => {
+  it('defaults expose economy costs and conservative feature flags, with all games enabled', () => {
     expect(DEFAULT_CONFIG.economy).toEqual({ cost_room: 10, cost_generate: 1 });
     expect(DEFAULT_CONFIG.feature_flags.ads_enabled).toBe(false);
-    expect(DEFAULT_CONFIG.feature_flags.referral_enabled).toBe(true);
+    expect(DEFAULT_CONFIG.feature_flags.referral_enabled).toBe(false);
     expect(DEFAULT_CONFIG.enabled_game_types).toBeUndefined(); // absent ⇒ all games
   });
 

@@ -29,7 +29,7 @@
     "show_upgrade_button": true,
     "enable_image_generation": true,
     "ads_enabled": false,
-    "referral_enabled": true
+    "referral_enabled": false
   },
   "economy": {
     "cost_room": 10,

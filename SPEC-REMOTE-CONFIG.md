@@ -64,7 +64,7 @@ endpoint** and **no game-catalog / spark-cost control** in the schema.
 |---|---|---|
 | `REMOTE_CONFIG_FILE` | `${data}/remote_config.json` | server-side config file |
 | `REMOTE_CONFIG_CACHE_SECONDS` | 30 | in-memory cache TTL |
-| `VITE_CONFIG_URL` (frontend) | `${BASE_URL}config.json` | point at backend `/config/public` to go live-driven |
+| `VITE_CONFIG_URL` (frontend) | `${BASE_URL}config.json` | deployed backend/IONOS/native builds point at backend `/config/public` so backend-authoritative flags such as `referral_enabled` are respected |
 
 ## 5. Testing
 - `backend/tests/test_remote_config.py`: missing file ⇒ defaults (200, no throw); valid file ⇒ merged over

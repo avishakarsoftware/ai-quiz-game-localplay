@@ -1,6 +1,6 @@
 # SPEC-REFERRAL — Invite / referral rewards
 
-Status: **Proposed — not started** (2026-07-07)
+Status: **Implemented, feature-gated for Supabase rollout** (2026-07-08)
 Owner: Avi
 Related: `SPEC.md` (spark economy), `backend/db.py` (idempotency pattern), `SPEC-ANALYTICS.md`
 
@@ -57,6 +57,9 @@ Resolve wallet (`tokens.get_wallet_id`; require device id / session). Lazily cre
 - `SettingsDrawer`: "Invite friends — you both get N sparks" → shows the code + a **Share** button
   (reuse the `@capacitor/share` / `navigator.share` pattern already in `LobbyScreen`) and a **Redeem a code**
   input.
+- The referral UI is hidden unless remote config says `feature_flags.referral_enabled === true`. Static/default
+  config stays `false`; Supabase deployments should expose it only after the referral SQL/RPCs are applied and
+  `REFERRALS_ENABLED=true` is set on the backend.
 - On app open, if URL has `?ref=CODE` and this wallet hasn't redeemed, prompt/auto-fill the redeem field
   (don't auto-submit — show the user what they're claiming).
 - On redeem success, toast "+N sparks", refresh balance, fire `referral_redeemed`.

@@ -3,6 +3,7 @@ import { soundManager } from '../utils/sound';
 import { useAuth } from '../context/AuthContext';
 import { track } from '../utils/analytics';
 import { useTokenBalance } from '../hooks/useTokenBalance';
+import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import TokenBadge from './TokenBadge';
 import ReferralSection from './ReferralSection';
 
@@ -62,6 +63,7 @@ export default function SettingsDrawer() {
     const googleBtnRef = useRef<HTMLDivElement>(null);
     const { user, signIn, signOut } = useAuth();
     const { tokenStatus, loading: tokenLoading } = useTokenBalance();
+    const { config: remoteConfig } = useRemoteConfigContext();
 
     // Listen for external open requests (e.g. from SignInNudge)
     useEffect(() => {
@@ -356,7 +358,7 @@ export default function SettingsDrawer() {
                 <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, textAlign: 'center' }}>Menu</h2>
 
                 {/* Referral / invite rewards (SPEC-REFERRAL) */}
-                <ReferralSection />
+                {remoteConfig.feature_flags.referral_enabled === true && <ReferralSection />}
 
                 {/* Home button */}
                 <div

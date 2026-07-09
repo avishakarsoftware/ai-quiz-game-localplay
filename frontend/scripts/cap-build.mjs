@@ -41,6 +41,7 @@ const buildEnv = {
     ...process.env,
     VITE_BASE_PATH: '/',
     VITE_API_URL: cfg.api,
+    VITE_CONFIG_URL: `${cfg.api}/config/public`,
     VITE_WEB_URL: cfg.web,
     VITE_CAST_APP_ID: process.env.VITE_CAST_APP_ID || '1BC9ACD8',
     VITE_REVENUECAT_IOS_KEY: RC_IOS,

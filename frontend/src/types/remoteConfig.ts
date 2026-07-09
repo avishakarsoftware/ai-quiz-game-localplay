@@ -74,7 +74,7 @@ export const DEFAULT_CONFIG: RemoteConfig = {
     show_upgrade_button: true,
     enable_image_generation: true,
     ads_enabled: false,
-    referral_enabled: true,
+    referral_enabled: false,
   },
   enabled_game_types: undefined,   // absent ⇒ all games enabled
   economy: { cost_room: 10, cost_generate: 1 },

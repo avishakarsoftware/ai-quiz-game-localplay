@@ -19,6 +19,7 @@ const buildEnv = {
     ...process.env,
     VITE_BASE_PATH: '/',
     VITE_API_URL: PROD_API,
+    VITE_CONFIG_URL: `${PROD_API}/config/public`,
     VITE_WEB_URL: 'https://games.revelryapp.me/',
     VITE_APPLE_REDIRECT_URI: 'https://games.revelryapp.me',
     VITE_CAST_APP_ID: process.env.VITE_CAST_APP_ID || '1BC9ACD8',
