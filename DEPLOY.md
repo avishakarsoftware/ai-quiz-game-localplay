@@ -79,6 +79,10 @@ Promoted the gamma-validated RC (runtime commit `b3b9542`; repo HEAD `f794e07` a
 - Ships: quiz answer-reveal on all surfaces, consistent lobby Back/Edit nav + mobile overlap fix, lobby continuity (offline seat preservation / reconnect, `connected_player_count`), Party Quests AI setup, and the Revelry callback event-loop hardening.
 - **Verified after promotion:** `scripts/smoke-remote.py --base-url https://gamesapi.revelryapp.me` passed (health, providers, generation, idempotency, token no-double-charge); `PLAYWRIGHT_BASE_URL=https://games.revelryapp.me npm exec playwright test e2e/gamma-smoke.spec.ts` passed desktop+mobile. Pre-promotion gamma RC suites (smoke, lobby-nav, generic 10, preprod-live 12, broader live 4, Revelry preprod matrix 2, UX audit) all green.
 
+### Recent gamma deploy — July 9, 2026 (cross-app Playwright data-testids)
+
+Deployed commit `76f5a0b5` to gamma with `./scripts/deploy-gcp.sh --gamma --with-frontend` (prod `games-backend` untouched). Frontend-only change: stable `data-testid`s on the embedded organizer/player/spectator surfaces for Revelry's cross-app Playwright (`organizer-room-code`, `organizer-player-count`, `organizer-start-game`, `organizer-end-game`, `player-nickname-input`, `player-join-button`, `player-in-game`, `spectator-root` — see `SPEC-REVELRY-INTEGRATION.md` testid contract). No backend code or schema change since the prior gamma deploy. Verified live: health passed; all 8 testids present in the shipped `dist`, and the live gamma entry bundle hash (`index-BGnl2Ki9.js`) matches the locally-built dist (gamma serves this build). Not deployed to prod.
+
 ### Recent gamma deploy — June 28, 2026 (Revelry callback event-loop hardening)
 
 Deployed runtime commit `1170215` to gamma with `./scripts/deploy-gcp.sh --gamma --with-frontend`. No schema migration was required. The deploy includes LocalPlay-side Revelry session/callback timing instrumentation and moves runtime WebSocket lifecycle callbacks (`game.started`, `game.completed`, cancellation/expiration) through a worker thread so synchronous HTTP retry/backoff cannot block the asyncio event loop for other rooms and players.
