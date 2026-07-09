@@ -230,7 +230,7 @@ export default function GenericPromptGame({
                     {state.phase === 'GENERIC_REVEAL' && (
                         <button type="button" className="btn btn-primary btn-glow" onClick={onNextRound}>Next Round</button>
                     )}
-                    <button type="button" className="btn btn-secondary" onClick={onEndGame}>End Game</button>
+                    <button type="button" className="btn btn-secondary" onClick={onEndGame} data-testid="organizer-end-game">End Game</button>
                 </div>
             )}
 

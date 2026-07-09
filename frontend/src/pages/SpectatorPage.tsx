@@ -782,7 +782,7 @@ export default function SpectatorPage() {
 
     if (hostAppMode && launchResolving) {
         return (
-            <div className="spectator-root">
+            <div className="spectator-root" data-testid="spectator-root">
                 <div className="app-container">
                     <div className="content-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 60px' }}>
                         <div className="animate-in text-center" style={{ maxWidth: 500, width: '100%' }}>
@@ -802,7 +802,7 @@ export default function SpectatorPage() {
 
     if (!joined) {
         return (
-            <div className="spectator-root">
+            <div className="spectator-root" data-testid="spectator-root">
             <div className="app-container">
                 <div className="content-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 60px' }}>
                     <div className="animate-in text-center" style={{ maxWidth: 500, width: '100%' }}>
@@ -846,7 +846,7 @@ export default function SpectatorPage() {
     }
 
     return (
-        <div className="spectator-root">
+        <div className="spectator-root" data-testid="spectator-root">
         <div className="app-container">
             <div className="content-wrapper">
                 <div className="spectator-layout" style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 60px 16px' }}>

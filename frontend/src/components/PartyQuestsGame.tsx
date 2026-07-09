@@ -134,7 +134,7 @@ export default function PartyQuestsGame({
                         <button type="button" className="btn btn-secondary" onClick={onReveal} disabled={state.phase === 'PODIUM'}>
                             Reveal Scores
                         </button>
-                        <button type="button" className="btn btn-primary" onClick={onEndGame}>
+                        <button type="button" className="btn btn-primary" onClick={onEndGame} data-testid="organizer-end-game">
                             End Game
                         </button>
                     </div>

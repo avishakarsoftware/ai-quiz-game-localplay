@@ -286,7 +286,7 @@ export default function MafiaGame({
                 <div className="common-ground-actions">
                     <button type="button" className="btn btn-primary btn-glow" onClick={onSkipTimer}>Skip Timer</button>
                     <button type="button" className="btn btn-secondary" onClick={onExtendTimer} disabled={state.phase !== 'MAFIA_DAY_DISCUSSION'}>Extend Discussion</button>
-                    <button type="button" className="btn btn-secondary" onClick={onEndGame}>End Game</button>
+                    <button type="button" className="btn btn-secondary" onClick={onEndGame} data-testid="organizer-end-game">End Game</button>
                 </div>
             )}
         </div>

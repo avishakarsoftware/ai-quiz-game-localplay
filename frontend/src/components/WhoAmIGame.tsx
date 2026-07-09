@@ -149,7 +149,7 @@ export default function WhoAmIGame({
                     {state.phase === 'WHOAMI_ROUND' && <button type="button" className="btn btn-secondary" onClick={onNextClue}>Next Clue</button>}
                     {state.phase === 'WHOAMI_ROUND' && <button type="button" className="btn btn-primary btn-glow" onClick={onRevealAnswer}>Reveal Answer</button>}
                     {state.phase === 'WHOAMI_REVEAL' && <button type="button" className="btn btn-primary btn-glow" onClick={onNextRound}>{state.round_number >= state.total_rounds ? 'Show Podium' : 'Next Round'}</button>}
-                    <button type="button" className="btn btn-secondary" onClick={onEndGame}>End Game</button>
+                    <button type="button" className="btn btn-secondary" onClick={onEndGame} data-testid="organizer-end-game">End Game</button>
                 </div>
             )}
         </div>

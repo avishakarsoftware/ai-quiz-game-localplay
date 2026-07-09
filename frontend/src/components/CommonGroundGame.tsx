@@ -189,7 +189,7 @@ export default function CommonGroundGame({
                     )}
                     {state.phase === 'COMMON_VOTING' && <button className="btn btn-primary btn-glow" onClick={onScoreRound}>Score Round</button>}
                     {state.phase === 'COMMON_ROUND_RESULT' && <button className="btn btn-primary btn-glow" onClick={onNextRound}>{state.round_number >= state.total_rounds ? 'Show Podium' : 'Next Round'}</button>}
-                    <button className="btn btn-secondary" onClick={onEndGame}>End Game</button>
+                    <button className="btn btn-secondary" onClick={onEndGame} data-testid="organizer-end-game">End Game</button>
                 </div>
             )}
         </div>

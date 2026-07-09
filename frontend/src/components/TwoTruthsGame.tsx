@@ -216,7 +216,7 @@ export default function TwoTruthsGame({
                             {nextLabel}
                         </button>
                     )}
-                    <button className="btn btn-secondary" onClick={onEndGame}>End Game</button>
+                    <button className="btn btn-secondary" onClick={onEndGame} data-testid="organizer-end-game">End Game</button>
                 </div>
             )}
         </div>

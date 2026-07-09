@@ -1239,6 +1239,12 @@ export default function PlayerPage() {
         <div className="app-container">
             <div className="content-wrapper">
 
+                {/* Stable in-game sentinel for cross-app (Revelry) Playwright: present once the player is
+                    past the join/lobby stage and actively in a game, through to the podium. */}
+                {!['JOIN', 'LOBBY', 'RECONNECTING', 'GAME_IN_PROGRESS'].includes(state) && (
+                    <div data-testid="player-in-game" hidden />
+                )}
+
                 {/* JOIN */}
                 {state === 'JOIN' && (
                     <div className="container-responsive safe-bottom animate-in" style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -1291,6 +1297,7 @@ export default function PlayerPage() {
                                     placeholder="Your nickname"
                                     className="input-field text-center"
                                     maxLength={20}
+                                    data-testid="player-nickname-input"
                                 />
                             </div>
 
@@ -1359,6 +1366,7 @@ export default function PlayerPage() {
                                     onClick={joinRoom}
                                     disabled={!roomCode.trim() || !nickname.trim()}
                                     className="btn btn-primary btn-glow w-full"
+                                    data-testid="player-join-button"
                                 >
                                     Join
                                 </button>

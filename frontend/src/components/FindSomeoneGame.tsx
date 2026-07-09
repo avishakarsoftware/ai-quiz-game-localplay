@@ -199,7 +199,7 @@ export default function FindSomeoneGame({
 
             {isHost && (
                 <div className="common-ground-actions">
-                    <button className="btn btn-primary btn-glow" type="button" onClick={onEndGame}>
+                    <button className="btn btn-primary btn-glow" type="button" onClick={onEndGame} data-testid="organizer-end-game">
                         End Game
                     </button>
                 </div>

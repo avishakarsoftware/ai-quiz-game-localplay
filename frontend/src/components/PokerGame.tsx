@@ -141,7 +141,7 @@ export default function PokerGame({ state, role, viewerName = '', leaderboard = 
                     <>
                         <button type="button" className="btn btn-secondary" onClick={onReveal} disabled={state.phase !== 'POKER_DECISION'}>Reveal</button>
                         <button type="button" className="btn btn-primary btn-glow" onClick={onNextHand} disabled={state.phase !== 'POKER_SHOWDOWN'}>Next Hand</button>
-                        <button type="button" className="btn btn-secondary" onClick={onEndGame}>End Game</button>
+                        <button type="button" className="btn btn-secondary" onClick={onEndGame} data-testid="organizer-end-game">End Game</button>
                     </>
                 )}
             </div>

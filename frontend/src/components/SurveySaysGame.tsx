@@ -174,7 +174,7 @@ export default function SurveySaysGame({
                             {state.round_number >= state.total_rounds ? 'Show Podium' : 'Next Round'}
                         </button>
                     )}
-                    <button className="btn btn-secondary" type="button" onClick={onEndGame}>End Game</button>
+                    <button className="btn btn-secondary" type="button" onClick={onEndGame} data-testid="organizer-end-game">End Game</button>
                 </div>
             )}
         </div>

@@ -241,7 +241,7 @@ export default function SimpleSocialGame({
                     {gameType === 'acronym' && acro.phase === 'ACRONYM_SUBMITTING' && <button type="button" className="btn btn-secondary" disabled={submittedCount === 0} onClick={onStartVoting}>Start Voting</button>}
                     {((gameType !== 'acronym' && !isReveal) || acro.phase === 'ACRONYM_VOTING') && <button type="button" className="btn btn-secondary" disabled={gameType !== 'acronym' && submittedCount === 0} onClick={onReveal}>Reveal</button>}
                     {isReveal && <button type="button" className="btn btn-primary btn-glow" onClick={onNextRound}>Next Round</button>}
-                    <button type="button" className="btn btn-secondary" onClick={onEndGame}>End Game</button>
+                    <button type="button" className="btn btn-secondary" onClick={onEndGame} data-testid="organizer-end-game">End Game</button>
                 </div>
             )}
 

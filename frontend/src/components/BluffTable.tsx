@@ -211,7 +211,7 @@ export default function BluffTable({
                         {(state.phase === 'BLUFF_CHALLENGE' || state.phase === 'BLUFF_REVEAL') && (
                             <button className="btn btn-primary btn-glow" onClick={onContinue}>Continue</button>
                         )}
-                        <button className="btn btn-secondary" onClick={onEndGame}>End Game</button>
+                        <button className="btn btn-secondary" onClick={onEndGame} data-testid="organizer-end-game">End Game</button>
                     </>
                 )}
             </div>

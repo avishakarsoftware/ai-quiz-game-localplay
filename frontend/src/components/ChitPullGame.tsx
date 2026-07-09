@@ -116,7 +116,7 @@ export default function ChitPullGame({
                     {active && <button type="button" className="btn btn-secondary" onClick={onSkip}>Skip</button>}
                     {active && <button type="button" className="btn btn-secondary" onClick={onRedrawPlayer}>New Player</button>}
                     {active && <button type="button" className="btn btn-secondary" onClick={onRedrawChit}>New Chit</button>}
-                    <button type="button" className="btn btn-secondary" onClick={onEndGame}>End Game</button>
+                    <button type="button" className="btn btn-secondary" onClick={onEndGame} data-testid="organizer-end-game">End Game</button>
                 </div>
             )}
         </div>

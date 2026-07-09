@@ -190,7 +190,7 @@ export default function StoryChainGame({
                 <div className="story-chain-actions">
                     {state.phase === 'STORY_TURN' && <button className="btn btn-secondary" onClick={onSkipTurn}>Skip Turn</button>}
                     {state.phase === 'STORY_REVEAL' && <button className="btn btn-primary btn-glow" onClick={onNextReveal}>Reveal Next</button>}
-                    <button className="btn btn-secondary" onClick={onEndGame}>End Game</button>
+                    <button className="btn btn-secondary" onClick={onEndGame} data-testid="organizer-end-game">End Game</button>
                 </div>
             )}
         </div>

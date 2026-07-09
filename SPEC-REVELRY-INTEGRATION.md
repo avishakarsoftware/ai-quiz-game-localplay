@@ -2068,6 +2068,54 @@ Playwright smoke:
 
 Run focused automated tests before merge/deploy. Live gamma/prod browser smokes are opt-in and must be explicitly requested because they touch deployed environments and real integration data.
 
+### Cross-app Playwright reference (Revelry-driven UI test against LocalPlay gamma)
+
+Reference for a Revelry-owned Playwright spec that drives the **real LocalPlay UIs** (organizer / `/join` /
+`/spectate`) end to end — no WebSocket assertions. Verified against gamma 2026-07-08. First proven by
+Revelry's `gamma-checkin-game-playthrough.spec.ts` (`party_quests` + `find_someone`, 2/2 green).
+
+**Base:** gamma LocalPlay `https://gamesapi-gamma.revelryapp.me` (same-origin backend-served SPA). Prod:
+`https://gamesapi.revelryapp.me`. All `/integrations/revelry/*` calls need the shared
+`REVELRY_INTEGRATION_SECRET` (Revelry mints server-side).
+
+**Launch handshake — two paths:**
+- **Content-backed** (quiz/wmlt/drawing with a saved deck): `POST /integrations/revelry/party-games-link`
+  with `intent=start` **requires `content_id`** (else 422 "content_id is required for start intent").
+- **Quick-start incl. the check-in games** (`party_quests`, `find_someone`, `musical_chairs` — no saved
+  content): `POST .../party-games-link` `intent=hub` → returns `party_games_url` + `party_games_token`;
+  then `POST .../party-games/start` `{party_games_token, game_type, settings:{}}` with **no `content_id`**.
+  The launch-context actor must carry capability `operate_game` or `manage_games` (else 403). Embedded
+  surface opens at `GET /integrations/revelry/games?party_games_token=…` → 302 → SPA `/revelry/games?…`.
+
+**Two independent gates a game must pass (both open for the check-in games as of 2026-07-08):**
+1. `game_type` validator (`REVELRY_PARTY_GAME_START_TYPES`) — includes `party_quests`, `find_someone`.
+2. Policy gate (`is_game_allowed`) — needs an enabled `host_app_catalog_flags` row; a missing/disabled game
+   → 422 "Game is not enabled for this Revelry party". Policy cache TTL is 60s.
+
+**Preflight (no auth):** `GET /catalog?host_app=revelry&external_container_id=<party>` → assert the target
+game present with `launchable:true`.
+
+**State/results polling:** `GET .../party-games/resolve?party_games_token=…` → `{launch_context, workspace}`;
+`GET .../party-workspace?external_container_id=…` (auth) → assert active-session cleanup after completion.
+
+**Failure codes:** 422 = game not enabled / bad game_type / missing content_id · 401 = missing/expired
+token · 403 = actor lacks operate capability · 503 = bridge secret unset.
+
+#### Stable `data-testid` contract (LocalPlay embedded surfaces)
+
+Landed 2026-07-08 so cross-app specs can select by testid (with text/role fallback). Exact names:
+
+| testid | surface | element |
+|---|---|---|
+| `organizer-room-code` | Organizer lobby (`LobbyScreen`) | room-code display |
+| `organizer-player-count` | Organizer lobby | connected-player count number |
+| `organizer-start-game` | Organizer lobby | "Start Game" button |
+| `organizer-end-game` | Organizer in-game | "End Game" button — on all single-button party/social game components (incl. `party_quests`, `find_someone`); NOT the dual-button quiz `GameQuestionScreen` |
+| `player-nickname-input` | `/join` (`PlayerPage`) | nickname text input |
+| `player-join-button` | `/join` | "Join" button |
+| `player-in-game` | `/join` | hidden sentinel present once the player is past join/lobby and in active play through podium |
+| `spectator-root` | `/spectate` (`SpectatorPage`) | root container (all render paths) |
+
 ## Rollout Status
 
 Roll out integration changes on gamma first, then promote to production after the changed path is playable end to end.

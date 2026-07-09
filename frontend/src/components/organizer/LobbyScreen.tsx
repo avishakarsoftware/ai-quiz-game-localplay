@@ -139,7 +139,7 @@ export default function LobbyScreen({
                 </div>
             )}
 
-            <div className="room-code mb-2 text-center">{roomCode}</div>
+            <div className="room-code mb-2 text-center" data-testid="organizer-room-code">{roomCode}</div>
             {!hostAppMode && <p className="text-[--text-tertiary] text-sm mb-2 text-center">{new URL(joinUrl).host}{new URL(joinUrl).pathname}</p>}
 
             {/* Share & Lock row */}
@@ -177,7 +177,7 @@ export default function LobbyScreen({
                 ) : (
                     <>
                         <p className={`text-center mb-2 ${justJoined ? 'lobby-count-bump' : ''}`} key={playerCount}>
-                            <span className="text-2xl font-bold">{playerCount}</span>{' '}
+                            <span className="text-2xl font-bold" data-testid="organizer-player-count">{playerCount}</span>{' '}
                             <span className="text-[--text-secondary] font-medium">connected player{playerCount !== 1 ? 's' : ''}</span>
                         </p>
                         {offlineCount > 0 && (
@@ -215,7 +215,7 @@ export default function LobbyScreen({
                 </button>
             )}
 
-            <button onClick={onStartGame} disabled={playerCount < minPlayers} className="btn btn-primary btn-glow w-full">
+            <button onClick={onStartGame} disabled={playerCount < minPlayers} className="btn btn-primary btn-glow w-full" data-testid="organizer-start-game">
                 Start Game
             </button>
             {playerCount < minPlayers && (
