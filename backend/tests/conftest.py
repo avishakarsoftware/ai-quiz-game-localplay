@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import pytest
 import db
+import main
 import tokens as tokens_mod
 
 # Standard test device ID used across test helpers
@@ -17,6 +18,8 @@ def fund_test_wallet(monkeypatch):
     """Bypass token spending in tests so /room/create and /generate don't fail with 402.
     Tests that specifically test the token system should use their own fixtures."""
     db.init_db()
+    main._rate_limit_store.clear()
+    main._llm_call_timestamps.clear()
 
     # Make spend_generate and spend_room always succeed (return True, 999)
     monkeypatch.setattr(tokens_mod, "spend_generate", lambda wallet_id: (True, 999))
@@ -32,3 +35,5 @@ def fund_test_wallet(monkeypatch):
     monkeypatch.setattr(tokens_mod, "get_wallet_id", lambda req: TEST_DEVICE_ID)
 
     yield
+    main._rate_limit_store.clear()
+    main._llm_call_timestamps.clear()
