@@ -1,17 +1,18 @@
 # SPEC-STREAK-BONUS — Daily login-streak bonus
 
-Status: **Implemented (SQLite live); Supabase RPC rendered, apply pending** (updated 2026-07-08)
+Status: **LIVE everywhere** — SQLite (local) + Supabase gamma + prod (activated 2026-07-08)
 Owner: Avi
 Related: `SPEC.md` (spark economy), `backend/db.py` (`check_and_grant_daily_bonus`), `backend/tokens.py`
 
-> **Activation state (2026-07-08).** SQLite (local/dev) grants the full escalating streak. On Supabase
-> (gamma + prod) the streak-aware `grant_daily_bonus` RPC + `bonus_streak` column are **rendered in
-> `sql/games-schema.sql` / `sql/games-gamma-schema.sql` but NOT yet applied** — deployed Supabase still
-> grants the flat day-1 bonus and `check_and_grant_daily_bonus` reports `streak=1` on each grant. The RPC
-> keeps its original 4-arg signature `(TEXT, TEXT, INTEGER, INTEGER)`, so applying the SQL is
-> **forward-compatible / non-breaking** (no code redeploy required; the Python wrapper already reads the
-> `streak`/`reward` fields when present). To activate escalating streak in prod: apply the rendered SQL to
-> gamma → verify → prod. No `REFERRALS_ENABLED`-style flag needed.
+> **Activation state (2026-07-08).** Escalating streak is now live in all environments. The Supabase
+> `bonus_streak` column + streak-aware `grant_daily_bonus` RPC were applied to **gamma then prod** (same
+> project `hosbtyylacluziugwjfd`, prefixes `games_gamma_` / `games_`) via a **targeted migration** —
+> only the `bonus_streak` column + `grant_daily_bonus` function, deliberately NOT the full rendered
+> schema (which would also touch the `content_type` CHECK and referral RPCs — gates #2–#4, still held).
+> The RPC keeps its original 4-arg signature `(TEXT, TEXT, INTEGER, INTEGER)` so no code redeploy was
+> needed — the deployed `supabase_db` wrapper already reads the `streak`/`reward` fields. Verified with a
+> throwaway wallet on both prefixes: day-1 → `streak=1, reward=10`; same-day repeat → `granted=false`;
+> consecutive day → `streak=2, reward=15` (temp wallets deleted). No `REFERRALS_ENABLED`-style flag needed.
 
 ---
 
