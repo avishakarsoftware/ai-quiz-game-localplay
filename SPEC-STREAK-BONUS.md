@@ -1,8 +1,17 @@
 # SPEC-STREAK-BONUS — Daily login-streak bonus
 
-Status: **Proposed — not started** (2026-07-07)
+Status: **Implemented (SQLite live); Supabase RPC rendered, apply pending** (updated 2026-07-08)
 Owner: Avi
 Related: `SPEC.md` (spark economy), `backend/db.py` (`check_and_grant_daily_bonus`), `backend/tokens.py`
+
+> **Activation state (2026-07-08).** SQLite (local/dev) grants the full escalating streak. On Supabase
+> (gamma + prod) the streak-aware `grant_daily_bonus` RPC + `bonus_streak` column are **rendered in
+> `sql/games-schema.sql` / `sql/games-gamma-schema.sql` but NOT yet applied** — deployed Supabase still
+> grants the flat day-1 bonus and `check_and_grant_daily_bonus` reports `streak=1` on each grant. The RPC
+> keeps its original 4-arg signature `(TEXT, TEXT, INTEGER, INTEGER)`, so applying the SQL is
+> **forward-compatible / non-breaking** (no code redeploy required; the Python wrapper already reads the
+> `streak`/`reward` fields when present). To activate escalating streak in prod: apply the rendered SQL to
+> gamma → verify → prod. No `REFERRALS_ENABLED`-style flag needed.
 
 ---
 
