@@ -169,18 +169,28 @@ Random Chit host-app authoring adds `chit_pull` as a saved `generated_content.co
 
 Would You Rather, Never Have I Ever, Word Association, Acronym Game, Photo Clue, and Party Poker are Revelry quick-start/settings candidates only. They do not save `generated_content` rows through the host-app bridge and do not require a schema migration before host-app catalog policy enablement. Keep them policy-gated until embedded gamma QA covers start, join, spectator, reconnect, completion, and result polling. Photo Clue should not mirror raw uploaded photos into Revelry unless LocalPlay returns an explicit safe share payload. Party Poker must remain no-money/no-rewards.
 
-### Pending Party Quests staged-authoring rollout — July 9, 2026
+### Party Quests staged-authoring gamma rollout — July 9, 2026
 
-The LocalPlay implementation now supports party-scoped saved/AI Party Quests, deterministic Host/Player/TV preview, exact saved-content materialization, first-player check-in auto-start, and idempotent host cancellation. This work is committed/tested locally but is **not a declaration that either live database has the new content type**.
+The LocalPlay implementation supports party-scoped saved/AI Party Quests, deterministic Host/Player/TV preview, exact saved-content materialization, first-player check-in auto-start, and idempotent host cancellation.
 
-Before deploying/enabling the staged flow in an environment:
+Gamma rollout status:
 
-1. Apply the updated `generated_content.content_type` CHECK for that prefix so it includes `party_quests` (`games_gamma_generated_content` first; `games_generated_content` only after gamma passes).
-2. Verify a throwaway `party_quests` content row can be inserted/read/deleted through the LocalPlay API.
-3. Update the environment's `party_quests` host-app catalog row with explicit `true` overrides for `can_create_content`, `can_edit_content`, `supports_ai_generation`, and `embedded_authoring_supported`.
-4. Keep `requires_prepared_content_for_checkin=false` until Revelry stores and sends the ready party-scoped `localplay_content_id`.
-5. After the cross-app setup/return/open-or-create test passes, set `requires_prepared_content_for_checkin=true` and verify the structured `party_quests_setup_required` response for missing ids.
-6. Test saved setup, AI draft, preview, start-now, first-player auto-start, late join, lobby/live cancel, callback reconciliation, and legacy active-session reopen before promoting the same sequence to production.
+- Applied the targeted `games_gamma_generated_content_content_type_check` migration so `party_quests` is accepted. A uniquely identified row was inserted, read, and deleted successfully; no smoke content remains.
+- Deployed backend and backend-served frontend commits `33c4ea48` and `a9d2e5fb` to `games-backend-gamma`; the standard container health check passed.
+- Enabled explicit gamma policy overrides for `can_create_content`, `can_edit_content`, `supports_ai_generation`, and `embedded_authoring_supported` while retaining `can_quick_start=true`.
+- Intentionally left `requires_prepared_content_for_checkin=false` until the matching Revelry gamma implementation is deployed. Existing check-in quick-start remains backward compatible during this interval.
+- Verified the live catalog, desktop setup/edit/save flow, Host/Player/TV sample preview, and a 390x844 mobile preview with no horizontal overflow. The temporary saved setup was deleted after the test.
+- `npm run test:e2e:gamma` passed on desktop and mobile (`2 passed`). The full pre-deploy suites were `1003` backend tests and `285` frontend tests, with the final focused additions also passing.
+- Docker Desktop's registry bridge stalled while resolving `python:3.12-slim`; the same official image was pulled and the exact prepared context was built on the deployment VM, after which the normal `--skip-build` backup/restart/health path completed. This was a local build-path issue, not a gamma service failure.
+
+Production remains unchanged: the production generated-content constraint and production Party Quests capability row have not been promoted.
+
+Remaining cross-app rollout sequence:
+
+1. Deploy Revelry's matching gamma implementation so it can persist the ready party-scoped `localplay_content_id`, arm the game, and send that id on first check-in.
+2. Run the cross-app configure, save-pointer, return, arm, first-check-in auto-start, late-join, cancel, and callback-reconciliation tests while strict enforcement remains off.
+3. Set gamma `requires_prepared_content_for_checkin=true` only after step 2 passes, then verify the structured `party_quests_setup_required` response for missing ids and legacy active-session reopen behavior.
+4. Repeat the database migration, policy rollout, tests, and strict-enforcement gate explicitly for production; do not infer production readiness from the gamma migration.
 
 The capability evaluator treats those five new Party Quests capabilities as explicit policy opt-ins. Existing July 8 quick-start rows with empty/older overrides therefore stay quick-start-only after the code deploy; deploying code alone does not enable saved authoring or strict check-in.
 
