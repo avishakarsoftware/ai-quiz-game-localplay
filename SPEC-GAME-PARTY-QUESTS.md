@@ -1,5 +1,7 @@
 # LocalPlay Party Quests Game Spec
 
+Status: **Implemented + live on gamma** (updated 2026-07-09). Base ambient game, curated/AI quest decks, per-player boards, tap-confirm/honor completions, late join, reveal/podium, and result summaries are shipped. The staged Revelry check-in contract (embedded setup/save/edit authoring, Host/Player/TV preview, strict `requires_prepared_content_for_checkin`, first-real-guest auto-start, host lobby/live cancellation via `POST /integrations/revelry/party-games/cancel`) is deployed to gamma with the strict flag flipped on 2026-07-09. **Production remains quick-start-only** pending the prod rollout (DDL → deploy → authoring caps → strict flip). Cross-app strict acceptance (Revelry) is the remaining gamma gate. Full integration contract + rollout sequence: `SPEC-REVELRY-INTEGRATION.md`; deploy/migration log: `DEPLOY.md`. Follow-up: pair-code confirmation.
+
 ## Overview
 
 Add **Party Quests** as an ambient, long-running social game that runs in the background during a party. Players receive lightweight social tasks, complete them while mingling, collect confirmation from other players, and later gather for a reveal of winners, funniest completions, and party stats.
