@@ -102,12 +102,20 @@ export default function RevelryAuthoringPage() {
         const returnUrl = resolved?.launch_context.return_url;
         if (!returnUrl) return;
         const url = new URL(returnUrl, window.location.origin);
+        const gameType = resolved?.game_type || 'quiz';
         if (localplayContentId) {
             url.searchParams.set('localplay_content_id', localplayContentId);
-            url.searchParams.set('game_type', resolved?.game_type || 'quiz');
+            url.searchParams.set('game_type', gameType);
             url.searchParams.set('status', 'ready');
         }
-        returnToHostApp(url.toString(), { parentOrigin: resolved?.launch_context.parent_origin });
+        returnToHostApp(url.toString(), {
+            parentOrigin: resolved?.launch_context.parent_origin,
+            // Mirror the saved pointer in the postMessage payload so the host app can reconcile in place
+            // without re-navigating (which was dropping the Revelry session and signing the host out).
+            content: localplayContentId
+                ? { localplay_content_id: localplayContentId, game_type: gameType, status: 'ready' }
+                : undefined,
+        });
     }
 
     async function saveQuiz(quiz: Quiz, packId?: string) {

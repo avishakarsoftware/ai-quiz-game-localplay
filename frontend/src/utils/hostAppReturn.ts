@@ -1,7 +1,17 @@
 export const REVELRY_RETURN_MESSAGE = 'revelry.localplay.return_to_parent';
 
+// Structured pointer to what LocalPlay just saved, mirrored into the return message so the host app can
+// reconcile its state in place (no URL parsing, no navigation). Same values are also on return_url's query
+// string for backward compatibility.
+export type HostAppReturnContent = {
+    localplay_content_id?: string;
+    game_type?: string;
+    status?: string;
+};
+
 type ReturnOptions = {
     parentOrigin?: string;
+    content?: HostAppReturnContent;
 };
 
 export function isEmbeddedFrame(): boolean {
@@ -31,10 +41,12 @@ export function postReturnToHostApp(returnUrl: string, options: ReturnOptions = 
     if (!isEmbeddedFrame() || !returnUrl) return false;
     const url = new URL(returnUrl, window.location.origin);
     const targetOrigin = getHostAppReturnTargetOrigin(url.toString(), options.parentOrigin);
-    window.parent.postMessage({
+    const message: { type: string; return_url: string; content?: HostAppReturnContent } = {
         type: REVELRY_RETURN_MESSAGE,
         return_url: url.toString(),
-    }, targetOrigin);
+    };
+    if (options.content) message.content = options.content;
+    window.parent.postMessage(message, targetOrigin);
     return true;
 }
 

@@ -2444,7 +2444,8 @@ Rules:
 - Revelry must validate `event.origin`
 - messages are UI hints only
 - backend result APIs remain the source of truth
-- In embedded Revelry mode, LocalPlay **Back to Revelry** / authoring return sends `window.parent.postMessage({ type: "revelry.localplay.return_to_parent", return_url }, targetOrigin)`.
+- In embedded Revelry mode, LocalPlay **Back to Revelry** / authoring return sends `window.parent.postMessage({ type: "revelry.localplay.return_to_parent", return_url }, targetOrigin)`. LocalPlay does **not** navigate its own frame in this mode — it only posts the message.
+- **Authoring save-return also mirrors the saved pointer in the payload** (added 2026-07-09): `{ type: "revelry.localplay.return_to_parent", return_url, content: { localplay_content_id, game_type, status } }`. The same three values are also on `return_url`'s query string. Revelry should reconcile its mirrored setup state **in place** from `content` (or the `return_url` params) and **router-navigate inside its SPA** — it must NOT do a full `window.location` reload on this message. A full reload drops the Revelry session and signs the host out; that regression is why the structured `content` field was added so no navigation is required to pick up the pointer.
 - `targetOrigin` must be derived from `parent_origin` when present, otherwise from `new URL(return_url).origin`. It must never use `window.location.origin`, because LocalPlay's iframe origin is `gamesapi-*` while the parent Revelry surface may be `api-gamma.revelryapp.me`, `app.revelryapp.me`, or an app/universal-link origin.
 - External/mobile/fullscreen fallback may navigate to the same validated `return_url`.
 - Host-app/iframe surfaces skip service-worker registration. Standalone/backend-served surfaces register `sw.js` from the app root (derived from the manifest path) so nested routes such as `/revelry/games` do not request `/revelry/sw.js` and receive SPA HTML with the wrong MIME type.
