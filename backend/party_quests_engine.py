@@ -68,6 +68,7 @@ def validate_config(raw: dict | None) -> dict:
         checkin_join_policy = "resume_or_join"
 
     quests = []
+    seen_displays: set[str] = set()
     raw_quests = raw.get("quests") or DEFAULT_QUESTS
     for index, quest in enumerate(raw_quests, start=1):
         if isinstance(quest, str):
@@ -83,7 +84,9 @@ def validate_config(raw: dict | None) -> dict:
             except (TypeError, ValueError):
                 points = POINTS_STANDARD
         points = POINTS_HARD if points > POINTS_STANDARD else POINTS_STANDARD
-        if display:
+        display_key = display.casefold()
+        if display and display_key not in seen_displays:
+            seen_displays.add(display_key)
             quests.append({
                 "id": f"quest_{index}",
                 "display": display,
@@ -94,12 +97,13 @@ def validate_config(raw: dict | None) -> dict:
 
     min_quests = _clamp_int(raw, "quests_per_player", 8, 3, 25)
     if len(quests) < min_quests:
-        existing = {item["display"].lower() for item in quests}
+        existing = {item["display"].casefold() for item in quests}
         for quest in DEFAULT_QUESTS:
             if len(quests) >= min_quests:
                 break
-            if quest["display"].lower() not in existing:
+            if quest["display"].casefold() not in existing:
                 quests.append({**quest, "id": f"quest_{len(quests) + 1}", "requires_partner": True})
+                existing.add(quest["display"].casefold())
     quests = quests[:120]
 
     return {

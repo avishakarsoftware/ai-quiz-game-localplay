@@ -3,6 +3,11 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 import { API_URL } from '../config';
 import { getGameModeConfig, isMostPopularGameId, mostPopularGameRank } from '../gameModes';
 import GameRulesModal from '../components/GameRulesModal';
+import PartyQuestsPreview from '../components/PartyQuestsPreview';
+import PartyQuestsSetupScreen, {
+    defaultPartyQuestsConfig,
+    type PartyQuestSetupConfig,
+} from '../components/organizer/PartyQuestsSetupScreen';
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
 import { type GameType } from '../types';
 import { returnToHostApp } from '../utils/hostAppReturn';
@@ -94,6 +99,18 @@ type SetupDraft = {
     title: string;
     promptsText: string;
     timeLimit?: number;
+};
+
+type PartyQuestsEditor = {
+    game: CatalogGame;
+    contentId?: string;
+    config: PartyQuestSetupConfig;
+};
+
+type PartyQuestsPreviewState = {
+    content: PreparedContent;
+    game: CatalogGame;
+    config: PartyQuestSetupConfig;
 };
 
 const PROMPT_COUNT_OPTIONS = [5, 8, 10, 15, 20];
@@ -198,6 +215,8 @@ function savedContentSummary(content: PreparedContent): string {
         ? `${count || 'Saved'} prize${count === 1 ? '' : 's'}`
         : content.game_type === 'quiz'
         ? `${count} question${count === 1 ? '' : 's'}`
+        : content.game_type === 'party_quests'
+        ? `${count || 'Saved'} quest${count === 1 ? '' : 's'}`
         : `${count || 'Saved'} prompt${count === 1 ? '' : 's'}`;
     return `${unit} · ${content.status}`;
 }
@@ -304,6 +323,33 @@ function contentPayloadFromDraft(draft: SetupDraft) {
     return { game: { game_title: draft.title, prompts } };
 }
 
+function partyQuestsConfigFromPayload(payload: Record<string, unknown>, fallbackTitle = 'Party Quests'): PartyQuestSetupConfig {
+    const raw = payload?.game && typeof payload.game === 'object'
+        ? payload.game as Record<string, unknown>
+        : payload;
+    const theme = typeof raw.theme === 'string' ? raw.theme : 'mingling';
+    const fallback = defaultPartyQuestsConfig(theme);
+    const quests = Array.isArray(raw.quests)
+        ? raw.quests.map((item) => {
+            const quest = typeof item === 'object' && item ? item as Record<string, unknown> : {};
+            return {
+                display: String(quest.display || quest.text || '').trim(),
+                category: typeof quest.category === 'string' ? quest.category : theme,
+                points: Number(quest.points) > 100 ? 150 : 100,
+            };
+        }).filter((item) => item.display)
+        : fallback.quests;
+    return {
+        game_title: String(raw.game_title || fallbackTitle || 'Party Quests').slice(0, 120),
+        theme,
+        duration_minutes: Number(raw.duration_minutes) || fallback.duration_minutes,
+        quests_per_player: Math.min(Number(raw.quests_per_player) || fallback.quests_per_player, Math.max(3, quests.length)),
+        confirmation_mode: raw.confirmation_mode === 'honor' ? 'honor' : 'tap_confirm',
+        allow_late_join: raw.allow_late_join !== false,
+        quests,
+    };
+}
+
 export default function PartyHubPage() {
     const params = new URLSearchParams(window.location.search);
     const partyGamesToken = params.get('party_games_token') || '';
@@ -315,6 +361,8 @@ export default function PartyHubPage() {
     const [loading, setLoading] = useState(true);
     const [startingId, setStartingId] = useState('');
     const [setupDraft, setSetupDraft] = useState<SetupDraft | null>(null);
+    const [partyQuestsEditor, setPartyQuestsEditor] = useState<PartyQuestsEditor | null>(null);
+    const [partyQuestsPreview, setPartyQuestsPreview] = useState<PartyQuestsPreviewState | null>(null);
     const [savingSetup, setSavingSetup] = useState(false);
     const [generatingPrompts, setGeneratingPrompts] = useState(false);
     const [aiPrompt, setAiPrompt] = useState('');
@@ -537,6 +585,120 @@ export default function PartyHubPage() {
         }
     }
 
+    async function loadPartyQuestsConfig(content: PreparedContent): Promise<PartyQuestSetupConfig> {
+        const res = await fetch(`${API_URL}/integrations/revelry/party-games/content/${encodeURIComponent(content.localplay_content_id)}?party_games_token=${encodeURIComponent(partyGamesToken)}&include_payload=true`);
+        if (!res.ok) throw new Error('load_failed');
+        const data = await res.json();
+        return partyQuestsConfigFromPayload(data.content_payload || {}, content.title);
+    }
+
+    function openNewPartyQuestsSetup(game: CatalogGame) {
+        const config = defaultPartyQuestsConfig('mingling');
+        setPartyQuestsEditor({
+            game,
+            config: {
+                ...config,
+                game_title: launchContext?.external_container_title
+                    ? `${launchContext.external_container_title} Quests`
+                    : 'Party Quests',
+            },
+        });
+    }
+
+    async function openSavedPartyQuestsSetup(content: PreparedContent, preview = false) {
+        const game = catalogGames.find((item) => (item.game_type || item.id) === 'party_quests');
+        if (!game) {
+            setError('Party Quests is not available for this party.');
+            return;
+        }
+        setStartingId(content.localplay_content_id);
+        setError('');
+        try {
+            const config = await loadPartyQuestsConfig(content);
+            if (preview) setPartyQuestsPreview({ content, game, config });
+            else setPartyQuestsEditor({ game, contentId: content.localplay_content_id, config });
+        } catch {
+            setError('Could not open that Party Quests setup. Please try again.');
+        } finally {
+            setStartingId('');
+        }
+    }
+
+    async function generatePartyQuestsForHub(request: {
+        prompt: string;
+        theme: string;
+        numQuests: number;
+        questsPerPlayer: number;
+        durationMinutes: number;
+        confirmationMode: PartyQuestSetupConfig['confirmation_mode'];
+        provider: string;
+    }): Promise<PartyQuestSetupConfig | null> {
+        setGeneratingPrompts(true);
+        setError('');
+        try {
+            const difficulty = request.theme === 'work_safe'
+                ? 'work'
+                : request.theme === 'family'
+                    ? 'wholesome'
+                    : 'party';
+            const res = await fetch(`${API_URL}/integrations/revelry/party-games/prompts/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    party_games_token: partyGamesToken,
+                    game_type: 'party_quests',
+                    prompt: request.prompt,
+                    difficulty,
+                    num_prompts: request.numQuests,
+                    provider: request.provider,
+                }),
+            });
+            if (!res.ok) throw new Error('generate_failed');
+            const data = await res.json();
+            const generated = partyQuestsConfigFromPayload(data.content_payload || {}, partyQuestsEditor?.config.game_title || 'Party Quests');
+            return {
+                ...generated,
+                duration_minutes: request.durationMinutes,
+                quests_per_player: Math.min(request.questsPerPlayer, generated.quests.length),
+                confirmation_mode: request.confirmationMode,
+            };
+        } catch {
+            setError('Could not generate quests. Try a different party description or edit the starter pack.');
+            return null;
+        } finally {
+            setGeneratingPrompts(false);
+        }
+    }
+
+    async function savePartyQuestsSetup(config: PartyQuestSetupConfig) {
+        if (!partyQuestsEditor) return;
+        setSavingSetup(true);
+        setError('');
+        try {
+            const res = await fetch(`${API_URL}/integrations/revelry/party-games/content`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    party_games_token: partyGamesToken,
+                    game_type: 'party_quests',
+                    title: config.game_title,
+                    content_id: partyQuestsEditor.contentId,
+                    content_payload: { game: config },
+                    status: 'ready',
+                }),
+            });
+            if (!res.ok) throw new Error('save_failed');
+            const data = await res.json();
+            setWorkspace(data.workspace);
+            setPartyQuestsEditor(null);
+            setSavedGamesScrollNonce((value) => value + 1);
+        } catch {
+            setError('Could not save Party Quests. Please try again.');
+        } finally {
+            setSavingSetup(false);
+        }
+    }
+
     function openSetup(game: CatalogGame, content?: PreparedContent, payload?: Record<string, unknown>) {
         const gameType = game.game_type || game.id;
         const prompts = promptLinesFromPayload(gameType, payload || {});
@@ -558,6 +720,10 @@ export default function PartyHubPage() {
     }
 
     function createFromCatalog(game: CatalogGame) {
+        if ((game.game_type || game.id) === 'party_quests' && (game.can_create_content || game.embedded_authoring_supported)) {
+            openNewPartyQuestsSetup(game);
+            return;
+        }
         if (game.can_create_content || game.embedded_authoring_supported) {
             if ((game.game_type || game.id) !== 'quiz') {
                 openSetup(game);
@@ -576,6 +742,10 @@ export default function PartyHubPage() {
     }
 
     async function editSavedContent(content: PreparedContent) {
+        if (content.game_type === 'party_quests') {
+            await openSavedPartyQuestsSetup(content);
+            return;
+        }
         if (content.game_type === 'quiz') {
             void openAuthoring('edit', content.game_type, content);
             return;
@@ -703,6 +873,30 @@ export default function PartyHubPage() {
         }
     }
 
+    async function cancelActiveSession() {
+        if (!activeSession || !window.confirm('Cancel this game? Connected guests will be returned to Revelry and no results will be recorded.')) return;
+        setStartingId(activeSession.session_id);
+        setError('');
+        try {
+            const res = await fetch(`${API_URL}/integrations/revelry/party-games/cancel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    party_games_token: partyGamesToken,
+                    session_id: activeSession.session_id,
+                    reason: 'host_cancelled',
+                }),
+            });
+            if (!res.ok) throw new Error('cancel_failed');
+            const data = await res.json();
+            setWorkspace(data.workspace);
+        } catch {
+            setError('Could not cancel that game. Refresh the party hub and try again.');
+        } finally {
+            setStartingId('');
+        }
+    }
+
     function returnToRevelry() {
         if (launchContext?.return_url) {
             returnToHostApp(launchContext.return_url, { parentOrigin: launchContext.parent_origin });
@@ -715,6 +909,53 @@ export default function PartyHubPage() {
 
     if (error && !workspace) {
         return <main className="party-hub party-hub--center">{error}</main>;
+    }
+
+    if (partyQuestsEditor) {
+        return (
+            <main className="party-hub" style={{ '--party-accent': display.accent_color || '#ff4f9a' } as CSSProperties}>
+                {error && <div className="party-hub__error">{error}</div>}
+                <PartyQuestsSetupScreen
+                    initialConfig={partyQuestsEditor.config}
+                    provider=""
+                    setProvider={() => undefined}
+                    providers={[]}
+                    onGenerateQuests={generatePartyQuestsForHub}
+                    onCreate={(config) => void savePartyQuestsSetup(config)}
+                    onBack={() => setPartyQuestsEditor(null)}
+                    submitLabel={savingSetup ? 'Saving...' : 'Save Party Quests'}
+                    submitting={savingSetup}
+                />
+            </main>
+        );
+    }
+
+    if (partyQuestsPreview) {
+        return (
+            <main className="party-hub" style={{ '--party-accent': display.accent_color || '#ff4f9a' } as CSSProperties}>
+                <PartyQuestsPreview
+                    config={partyQuestsPreview.config}
+                    onBack={() => setPartyQuestsPreview(null)}
+                    onEdit={() => {
+                        setPartyQuestsEditor({
+                            game: partyQuestsPreview.game,
+                            contentId: partyQuestsPreview.content.localplay_content_id,
+                            config: partyQuestsPreview.config,
+                        });
+                        setPartyQuestsPreview(null);
+                    }}
+                    onStart={canStart ? () => {
+                        const content = partyQuestsPreview.content;
+                        setPartyQuestsPreview(null);
+                        void startGame({
+                            localplay_content_id: content.localplay_content_id,
+                            game_type: content.game_type,
+                            title: content.title,
+                        });
+                    } : undefined}
+                />
+            </main>
+        );
     }
 
     return (
@@ -772,6 +1013,16 @@ export default function PartyHubPage() {
                             <button className="party-hub__secondary" onClick={() => openActiveSession('spectator')} disabled={openingSessionScope === 'spectator'}>
                                 {openingSessionScope === 'spectator' ? 'Opening...' : 'Join to watch'}
                             </button>
+                            {canDelete && (
+                                <button
+                                    type="button"
+                                    className="party-hub__danger"
+                                    onClick={() => void cancelActiveSession()}
+                                    disabled={startingId === activeSession.session_id}
+                                >
+                                    {startingId === activeSession.session_id ? 'Cancelling...' : 'Cancel game'}
+                                </button>
+                            )}
                         </div>
                     </article>
                 </section>
@@ -1026,6 +1277,16 @@ export default function PartyHubPage() {
                                             disabled={startingId === content.localplay_content_id}
                                         >
                                             {startingId === content.localplay_content_id ? 'Starting...' : 'Start'}
+                                        </button>
+                                    )}
+                                    {content.game_type === 'party_quests' && (
+                                        <button
+                                            type="button"
+                                            className="party-hub__secondary"
+                                            onClick={() => void openSavedPartyQuestsSetup(content, true)}
+                                            disabled={startingId === content.localplay_content_id}
+                                        >
+                                            Preview
                                         </button>
                                     )}
                                     {canEdit && (

@@ -1256,6 +1256,19 @@ class SocketManager:
             return
 
         if is_organizer:
+            if msg_type == "CANCEL_GAME":
+                async with room.lock:
+                    await self._mark_game_session_closed(
+                        room,
+                        "host_cancelled",
+                        "The host ended this Party Quests session." if room.game_type == "party_quests" else "The host ended this game session.",
+                    )
+                    await self.close_room(
+                        room.room_code,
+                        reason="host_cancelled",
+                        message="The host ended this Party Quests session." if room.game_type == "party_quests" else "The host ended this game session.",
+                    )
+                return
             if msg_type == "START_GAME":
                 async with room.lock:
                     if room.state != "LOBBY":
@@ -2416,6 +2429,20 @@ class SocketManager:
                     "player_count": room.connected_player_count(),
                     "players": room.lobby_roster()
                 })
+                should_auto_start_party_quests = (
+                    room.game_type == "party_quests"
+                    and room.billing_mode == "host_app_managed"
+                    and bool(room.party_quests_config.get("default_for_checkin"))
+                    and bool(room.party_quests_config.get("auto_start_on_first_checkin"))
+                    and room.connected_player_count() >= config.MIN_PARTY_QUESTS_PLAYERS
+                )
+                if should_auto_start_party_quests:
+                    await self.handle_message(
+                        room,
+                        "auto-checkin",
+                        {"type": "START_GAME"},
+                        is_organizer=True,
+                    )
 
             elif msg_type == "VOTE" and room.game_type == "wmlt":
                 if client_id not in room.players:
@@ -5738,6 +5765,18 @@ class SocketManager:
         session_id = session.get("id")
         result_summary = self._safe_result_summary(result_summary) if result_summary else None
         actor_payload = self._safe_actor_payload(session)
+        session_payload = {
+            "session_id": session_id,
+            "room_code": session.get("room_code"),
+            "game_type": session.get("game_type"),
+            "content_id": session.get("game_id") or session.get("content_id"),
+            "status": session.get("status"),
+            "joinable": bool(session.get("joinable", False)),
+            "closed_reason": session.get("closed_reason"),
+            "closed_message": session.get("closed_message"),
+            "superseded_by_session_id": session.get("superseded_by_session_id"),
+        }
+        session_payload = {key: value for key, value in session_payload.items() if value is not None}
         body = {
             "event_id": f"lp_evt_{uuid.uuid4().hex}",
             "event_type": event_type,
@@ -5748,6 +5787,7 @@ class SocketManager:
             "session_id": session_id,
             "idempotency_key": f"{event_type}:{session_id or uuid.uuid4().hex}:v1",
             "payload": {
+                "session": session_payload,
                 "room_code": session.get("room_code"),
                 "status": session.get("status"),
                 "actor": actor_payload,
@@ -5848,14 +5888,15 @@ class SocketManager:
             if not session or session.get("status") in ("complete", "superseded", "cancelled", "expired"):
                 return
             now = int(time.time())
+            status = "cancelled" if reason == "host_cancelled" else reason
             updated = db.update_game_session(session["id"], {
-                "status": reason,
+                "status": status,
                 "joinable": False,
                 "closed_reason": reason,
                 "closed_message": message,
                 "last_activity_at": now,
             })
-            self._send_integration_callback(f"session.{reason}", updated or session)
+            self._send_integration_callback(f"session.{status}", updated or session)
         except Exception:
             logger.warning("Could not mark game session closed for room %s", room.room_code)
 

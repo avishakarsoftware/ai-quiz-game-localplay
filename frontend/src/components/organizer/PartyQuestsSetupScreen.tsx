@@ -29,6 +29,9 @@ interface PartyQuestsSetupScreenProps {
     }) => Promise<PartyQuestSetupConfig | null>;
     onCreate: (config: PartyQuestSetupConfig) => void;
     onBack: () => void;
+    submitLabel?: string;
+    showBackButton?: boolean;
+    submitting?: boolean;
 }
 
 const PACKS: Record<string, string[]> = {
@@ -129,6 +132,9 @@ export default function PartyQuestsSetupScreen({
     onGenerateQuests,
     onCreate,
     onBack,
+    submitLabel = 'Create Room',
+    showBackButton = true,
+    submitting = false,
 }: PartyQuestsSetupScreenProps) {
     const [config, setConfig] = useState<PartyQuestSetupConfig>(initialConfig || buildConfig());
     const [questDrafts, setQuestDrafts] = useState(() => config.quests.map((item) => item.display));
@@ -136,6 +142,10 @@ export default function PartyQuestsSetupScreen({
     const [generating, setGenerating] = useState(false);
 
     const parsedQuests = useMemo(() => questDrafts.map((line) => line.trim()).filter(Boolean), [questDrafts]);
+    const questCountOptions = useMemo(() => {
+        const maximum = Math.max(3, parsedQuests.length);
+        return [...new Set([3, 5, 8, 10, 12, 15, 20, 25, maximum].filter((value) => value <= maximum))].sort((a, b) => a - b);
+    }, [parsedQuests.length]);
     const canCreate = parsedQuests.length >= 3;
 
     const applyTheme = (theme: string) => {
@@ -193,6 +203,7 @@ export default function PartyQuestsSetupScreen({
         if (!canCreate) return;
         onCreate({
             ...config,
+            quests_per_player: Math.min(config.quests_per_player, parsedQuests.length),
             quests: parsedQuests.map((display, index) => ({
                 display,
                 category: config.theme,
@@ -203,7 +214,7 @@ export default function PartyQuestsSetupScreen({
 
     return (
         <div className="container-responsive safe-top safe-bottom animate-in">
-            <ScreenBackButton onBack={onBack} />
+            {showBackButton && <ScreenBackButton onBack={onBack} />}
             <div className="text-center mb-7 prompt-header">
                 <div className="hero-icon mb-4">🗺️</div>
                 <h1 className="hero-title">Party Quests</h1>
@@ -268,10 +279,10 @@ export default function PartyQuestsSetupScreen({
                         <span className="text-[--text-secondary] font-bold">Quests per player</span>
                         <select
                             className="input-field"
-                            value={config.quests_per_player}
+                            value={Math.min(config.quests_per_player, Math.max(3, parsedQuests.length))}
                             onChange={(event) => setConfig((current) => ({ ...current, quests_per_player: Number(event.target.value) }))}
                         >
-                            {[5, 8, 10, 12, 15].map((value) => <option key={value} value={value}>{value}</option>)}
+                            {questCountOptions.map((value) => <option key={value} value={value}>{value}</option>)}
                         </select>
                     </label>
                     <label className="space-y-2">
@@ -324,8 +335,8 @@ export default function PartyQuestsSetupScreen({
                 </div>
             </section>
 
-            <button type="button" className="btn btn-primary w-full" disabled={!canCreate} onClick={submit}>
-                Create Room
+            <button type="button" className="btn btn-primary w-full" disabled={!canCreate || submitting} onClick={submit}>
+                {submitLabel}
             </button>
         </div>
     );

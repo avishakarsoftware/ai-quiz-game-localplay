@@ -745,6 +745,26 @@ export default function OrganizerPage() {
             setCurrentStatement('');
             setState('ROOM');
         }
+        else if (msg.type === 'ROOM_CLOSED') {
+            if (reconnectTimerRef.current) {
+                clearTimeout(reconnectTimerRef.current);
+                reconnectTimerRef.current = null;
+            }
+            clearOrganizerSession();
+            roomCodeRef.current = '';
+            stateRef.current = 'SELECT_GAME';
+            setRoomCode('');
+            setPlayerCount(0);
+            setPlayers([]);
+            setState('SELECT_GAME');
+            if (hostAppMode) {
+                setErrorModal({
+                    title: 'Game cancelled',
+                    message: msg.message as string || 'This game session was cancelled.',
+                    returnToHostApp: true,
+                });
+            }
+        }
         else if (msg.type === 'INSUFFICIENT_SPARKS') {
             setErrorModal({
                 title: hostAppMode ? 'Game Unavailable' : 'Not Enough Sparks',
@@ -1896,6 +1916,13 @@ export default function OrganizerPage() {
     const pauseHousieAuto = () => wsRef.current?.send(JSON.stringify({ type: 'BINGO_PAUSE' }));
     const resumeHousieAuto = () => wsRef.current?.send(JSON.stringify({ type: 'BINGO_RESUME' }));
     const endQuiz = () => wsRef.current?.send(JSON.stringify({ type: 'END_QUIZ' }));
+    const cancelCurrentGame = () => {
+        const guestCopy = playerCount > 0
+            ? ` ${playerCount} connected guest${playerCount === 1 ? '' : 's'} will be returned to Revelry.`
+            : '';
+        if (!window.confirm(`Cancel this game?${guestCopy} No results will be recorded.`)) return;
+        wsRef.current?.send(JSON.stringify({ type: 'CANCEL_GAME' }));
+    };
     const startMusicalChairsRound = () => wsRef.current?.send(JSON.stringify({ type: 'MC_START_ROUND' }));
     const stopMusicalChairsMusic = () => wsRef.current?.send(JSON.stringify({ type: 'MC_STOP_MUSIC' }));
     const eliminateMusicalChairsPlayer = (nickname: string) => wsRef.current?.send(JSON.stringify({ type: 'MC_ELIMINATE_PLAYER', nickname }));
@@ -2570,6 +2597,7 @@ export default function OrganizerPage() {
                         hostAppJoinLabel={hostAppJoinLabel}
                         onStartGame={startGame}
                         onToggleLock={() => wsRef.current?.send(JSON.stringify({ type: 'TOGGLE_LOCK' }))}
+                        onCancelGame={hostAppMode ? cancelCurrentGame : undefined}
                         onBackToGames={leaveLobbyForGameList}
                         onReviewContent={isQuizRuntimeGame(gameType) && quiz ? () => setReviewPeekOpen(true) : undefined}
                         onEditSetup={!hostAppMode && getLobbyEditTarget() && !(isQuizRuntimeGame(gameType) && quiz) ? editLobbySetup : undefined}
@@ -2719,6 +2747,7 @@ export default function OrganizerPage() {
                         onFinalCall={partyQuestsFinalCall}
                         onReveal={partyQuestsReveal}
                         onEndGame={endQuiz}
+                        onCancelGame={hostAppMode ? cancelCurrentGame : undefined}
                     />
                 )}
 

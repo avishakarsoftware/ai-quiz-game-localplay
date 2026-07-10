@@ -690,6 +690,7 @@ export default function SpectatorPage() {
             else if (msg.type === 'ROOM_CLOSED') {
                 roomClosedRef.current = true;
                 setRoomClosed(true);
+                setConnectionError(msg.message || 'The host ended this game session.');
                 if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                 setGameState('DISCONNECTED');
             }

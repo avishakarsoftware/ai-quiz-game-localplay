@@ -83,14 +83,17 @@ describe('PartyQuestsGame', () => {
         const onFinalCall = vi.fn();
         const onReveal = vi.fn();
         const onEndGame = vi.fn();
-        render(<PartyQuestsGame state={baseState()} controls="host" onFinalCall={onFinalCall} onReveal={onReveal} onEndGame={onEndGame} />);
+        const onCancelGame = vi.fn();
+        render(<PartyQuestsGame state={baseState()} controls="host" onFinalCall={onFinalCall} onReveal={onReveal} onEndGame={onEndGame} onCancelGame={onCancelGame} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Final Call' }));
         fireEvent.click(screen.getByRole('button', { name: 'Reveal Scores' }));
-        fireEvent.click(screen.getByRole('button', { name: 'End Game' }));
+        fireEvent.click(screen.getByRole('button', { name: 'End and reveal' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel game' }));
 
         expect(onFinalCall).toHaveBeenCalled();
         expect(onReveal).toHaveBeenCalled();
         expect(onEndGame).toHaveBeenCalled();
+        expect(onCancelGame).toHaveBeenCalled();
     });
 });

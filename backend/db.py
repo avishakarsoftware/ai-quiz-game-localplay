@@ -117,7 +117,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS generated_content (
             id TEXT PRIMARY KEY,
             wallet_id TEXT NOT NULL,
-            content_type TEXT NOT NULL CHECK (content_type IN ('quiz', 'mlt', 'drawing', 'housie', 'chit_pull')),
+            content_type TEXT NOT NULL CHECK (content_type IN ('quiz', 'mlt', 'drawing', 'housie', 'chit_pull', 'party_quests')),
             title TEXT NOT NULL DEFAULT '',
             payload TEXT NOT NULL,
             prompt TEXT,
@@ -280,14 +280,14 @@ def _migrate_generated_content_types() -> None:
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'generated_content'"
     ).fetchone()
     table_sql = row["sql"] if row else ""
-    required = ("'quiz'", "'mlt'", "'drawing'", "'housie'", "'chit_pull'")
+    required = ("'quiz'", "'mlt'", "'drawing'", "'housie'", "'chit_pull'", "'party_quests'")
     if all(item in table_sql for item in required):
         return
     conn.executescript("""
         CREATE TABLE generated_content_new (
             id TEXT PRIMARY KEY,
             wallet_id TEXT NOT NULL,
-            content_type TEXT NOT NULL CHECK (content_type IN ('quiz', 'mlt', 'drawing', 'housie', 'chit_pull')),
+            content_type TEXT NOT NULL CHECK (content_type IN ('quiz', 'mlt', 'drawing', 'housie', 'chit_pull', 'party_quests')),
             title TEXT NOT NULL DEFAULT '',
             payload TEXT NOT NULL,
             prompt TEXT,

@@ -22,6 +22,7 @@ interface LobbyScreenProps {
     onReviewContent?: () => void;
     reviewLabel?: string;
     onShowRules?: () => void;
+    onCancelGame?: () => void;
     hostAppMode?: boolean;
     hostAppJoinUrl?: string;
     hostAppJoinLabel?: string;
@@ -43,6 +44,7 @@ export default function LobbyScreen({
     onReviewContent,
     reviewLabel = 'Review questions',
     onShowRules,
+    onCancelGame,
     hostAppMode = false,
     hostAppJoinUrl = '',
     hostAppJoinLabel = 'Scan to join from Revelry',
@@ -212,6 +214,12 @@ export default function LobbyScreen({
             {onShowRules && (
                 <button type="button" onClick={onShowRules} className="btn btn-secondary w-full mb-3">
                     Rules
+                </button>
+            )}
+
+            {onCancelGame && (
+                <button type="button" onClick={onCancelGame} className="btn btn-secondary w-full mb-3">
+                    Cancel game
                 </button>
             )}
 

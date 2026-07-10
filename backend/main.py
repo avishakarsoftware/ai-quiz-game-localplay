@@ -171,8 +171,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="AI Quiz Game Backend", lifespan=lifespan)
-REVELRY_PARTY_GAME_TYPES = ("quiz", "wmlt", "drawing", "housie", "chit_pull")
-REVELRY_PARTY_GAME_TYPES_ERROR = 'game_type must be "quiz", "wmlt", "drawing", "housie", or "chit_pull"'
+REVELRY_PARTY_GAME_TYPES = ("quiz", "wmlt", "drawing", "housie", "chit_pull", "party_quests")
+REVELRY_PARTY_GAME_TYPES_ERROR = 'game_type must be "quiz", "wmlt", "drawing", "housie", "chit_pull", or "party_quests"'
 REVELRY_PARTY_GAME_START_TYPES = (
     *REVELRY_PARTY_GAME_TYPES,
     "musical_chairs",
@@ -1044,13 +1044,21 @@ GAME_CATALOG = [
         "supported_host_apps": ["revelry"],
         "supports_custom_content": True,
         "supports_images": False,
-        "can_create_content": False,
-        "can_edit_content": False,
+        "can_create_content": True,
+        "can_edit_content": True,
         "can_quick_start": True,
-        "supports_ai_generation": False,
-        "creation_modes": ["quick_start", "settings"],
+        "supports_ai_generation": True,
+        "creation_modes": ["template", "ai", "manual", "quick_start"],
         "default_content_available": True,
-        "embedded_authoring_supported": False,
+        "embedded_authoring_supported": True,
+        "requires_prepared_content_for_checkin": True,
+        "policy_opt_in_capabilities": [
+            "can_create_content",
+            "can_edit_content",
+            "supports_ai_generation",
+            "embedded_authoring_supported",
+            "requires_prepared_content_for_checkin",
+        ],
         "checkin_friendly": True,
         "supports_late_join": True,
         "can_start_with_first_player": True,
@@ -1558,7 +1566,7 @@ def _resolve_revelry_runtime_content(
         quiz_timestamps[content_id] = time.time()
         content_owners[content_id] = wallet_id
         return content_id, quiz_data
-    if game_type in ("wmlt", "drawing", "housie", "bingo", "chit_pull") and content_id:
+    if game_type in ("wmlt", "drawing", "housie", "bingo", "chit_pull", "party_quests") and content_id:
         if game_type == "wmlt" and content_id in mlt_scenarios:
             return content_id, mlt_scenarios[content_id]
         if game_type == "drawing" and content_id in drawing_games:
@@ -1598,6 +1606,10 @@ def _resolve_revelry_runtime_content(
             game_data = _sanitize_bingo_game(game_data)
             bingo_games[content_id] = game_data
             bingo_timestamps[content_id] = time.time()
+        elif game_type == "party_quests":
+            game_data = validate_party_quests_config(game_data)
+            if len(game_data.get("quests") or []) < 3:
+                raise HTTPException(status_code=422, detail="Invalid Party Quests content")
         else:
             game_data = sanitize_chit_pull_game(game_data)
             if not validate_chit_pull_game(game_data):
@@ -2449,6 +2461,32 @@ class RevelryPartyGameStartRequest(BaseModel):
         return value
 
 
+class RevelryPartyGameCancelRequest(BaseModel):
+    party_games_token: str
+    session_id: str
+    reason: str = "host_cancelled"
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str) -> str:
+        if value != "host_cancelled":
+            raise ValueError("reason must be host_cancelled")
+        return value
+
+
+class RevelrySessionCancelRequest(BaseModel):
+    external_context: RevelryExternalContext
+    actor: RevelryActor = Field(default_factory=RevelryActor)
+    reason: str = "host_cancelled"
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str) -> str:
+        if value != "host_cancelled":
+            raise ValueError("reason must be host_cancelled")
+        return value
+
+
 class RevelryPartyGameLaunchRequest(BaseModel):
     party_games_token: str
     session_id: str
@@ -2591,6 +2629,16 @@ def _host_app_catalog(context: RevelryExternalContext, actor: Optional[RevelryAc
         external_container_id=context.external_container_id,
         external_user_id=(actor.external_user_id if actor else context.host_user_id),
         include_planned=include_planned,
+    )
+
+
+def _host_app_catalog_game(context: RevelryExternalContext, game_type: str, actor: Optional[RevelryActor] = None) -> Optional[dict]:
+    return next(
+        (
+            game for game in _host_app_catalog(context, actor)
+            if game_type in {game.get("id"), game.get("game_type")}
+        ),
+        None,
     )
 
 
@@ -3002,6 +3050,8 @@ def _count_game_items(game_type: str, payload: dict) -> int:
         return len(game.get("patterns") or [])
     if game_type == "chit_pull":
         return len(game.get("chits") or [])
+    if game_type == "party_quests":
+        return len(game.get("quests") or [])
     if game_type == "quiz":
         return len(game.get("questions") or [])
     return 0
@@ -3014,7 +3064,7 @@ def _game_content_summary(content: dict) -> dict:
     return {
         "localplay_content_id": content["id"],
         "game_type": game_type,
-        "title": content.get("title") or ("Drawing Game" if game_type == "drawing" else "Housie" if game_type == "housie" else "Random Chit" if game_type == "chit_pull" else "Most Likely To"),
+        "title": content.get("title") or ("Drawing Game" if game_type == "drawing" else "Housie" if game_type == "housie" else "Random Chit" if game_type == "chit_pull" else "Party Quests" if game_type == "party_quests" else "Most Likely To"),
         "status": content.get("status") or "ready",
         "thumbnail_url": "",
         "question_count": count,
@@ -3040,7 +3090,7 @@ def _prepared_content_summary(content: dict) -> dict:
 def _workspace_payload(context: RevelryExternalContext, actor: Optional[RevelryActor] = None) -> dict:
     wallet_id = _revelry_party_wallet_id(context.external_container_id)
     packs = db.list_quiz_packs(wallet_id)
-    saved_games = db.list_game_content(wallet_id, ["wmlt", "drawing", "housie", "chit_pull"])
+    saved_games = db.list_game_content(wallet_id, ["wmlt", "drawing", "housie", "chit_pull", "party_quests"])
     prepared = [_quiz_pack_summary(pack) for pack in packs] + [_game_content_summary(game) for game in saved_games]
     prepared.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
     active = db.get_active_game_session(context.host_app, context.external_container_id)
@@ -3235,6 +3285,25 @@ def _create_revelry_session_from_context(
         and active
         and active.get("game_type") == game_type
     )
+    catalog_game = _host_app_catalog_game(context, game_type, actor)
+    if (
+        game_type == "party_quests"
+        and open_or_create
+        and (checkin_game_settings.get("default_for_checkin") or settings.get("default_for_checkin"))
+        and catalog_game
+        and catalog_game.get("requires_prepared_content_for_checkin")
+        and not requested_content_id
+        and not same_checkin_default
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "party_quests_setup_required",
+                "game_type": game_type,
+                "action_required": "host_configure_party_quests",
+                "message": "Set up Party Quests before enabling it for check-in.",
+            },
+        )
     if active and (same_content or same_checkin_default) and open_or_create:
         existing = dict(active)
         existing["_existing_session"] = True
@@ -3405,6 +3474,59 @@ async def _close_superseded_runtime_session(superseded: Optional[dict]) -> None:
         room_code,
         _elapsed_ms(started),
     )
+
+
+async def _cancel_revelry_session(
+    session: dict,
+    *,
+    context: RevelryExternalContext,
+    actor: RevelryActor,
+) -> tuple[dict, bool]:
+    if "manage_games" not in set(actor.capabilities or []):
+        raise HTTPException(status_code=403, detail="Missing capability to cancel games")
+    if session.get("host_app") != context.host_app or session.get("external_container_id") != context.external_container_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    status = str(session.get("status") or "")
+    if status == "cancelled":
+        return session, True
+    if status not in {"lobby", "active", "paused"}:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "session_not_cancellable",
+                "session_id": session.get("id"),
+                "status": status,
+                "action_required": "refresh_party_workspace",
+                "message": "This game session has already ended.",
+            },
+        )
+
+    message = "The host ended this Party Quests session." if session.get("game_type") == "party_quests" else "The host ended this game session."
+    now = _now_ts()
+    updated = db.update_game_session(session["id"], {
+        "status": "cancelled",
+        "joinable": False,
+        "closed_reason": "host_cancelled",
+        "closed_message": message,
+        "last_activity_at": now,
+        "updated_at": now,
+    }) or session
+    if session.get("room_code"):
+        await socket_manager.close_room(
+            session["room_code"],
+            reason="host_cancelled",
+            message=message,
+        )
+    await _send_revelry_callback("session.cancelled", {
+        "host_app": context.host_app,
+        "external_container_type": context.external_container_type,
+        "external_container_id": context.external_container_id,
+        "session": _format_session(updated),
+        "actor": _safe_actor_payload(actor),
+        "closed_reason": "host_cancelled",
+        "closed_message": message,
+    })
+    return updated, False
 
 
 @app.post("/integrations/revelry/party-games-link")
@@ -3583,6 +3705,25 @@ def _content_game_from_payload(game_type: str, title: str, payload: dict[str, An
         if not validate_chit_pull_game(game_data):
             raise HTTPException(status_code=422, detail="Invalid Random Chit content")
         return {"game": game_data}
+    if game_type == "party_quests":
+        raw_quests = game_data.get("quests")
+        if not isinstance(raw_quests, list):
+            raise HTTPException(status_code=422, detail="Party Quests needs at least 3 quests")
+        supplied = set()
+        for item in raw_quests:
+            value = (item.get("display") or item.get("text")) if isinstance(item, dict) else item
+            text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(value or ""))
+            text = re.sub(r"<\s*/?\s*(script|style|iframe)[^>]*>", "", text, flags=re.IGNORECASE)
+            text = re.sub(r"<[^>]+>", "", text)
+            text = re.sub(r"\s+", " ", text).strip()[:180].casefold()
+            if text:
+                supplied.add(text)
+        if len(supplied) < 3:
+            raise HTTPException(status_code=422, detail="Party Quests needs at least 3 unique quests")
+        cleaned = validate_party_quests_config({**game_data, "game_title": game_data.get("game_title") or title})
+        if len(cleaned.get("quests") or []) < 3:
+            raise HTTPException(status_code=422, detail="Party Quests needs at least 3 unique quests")
+        return {"game": cleaned}
     raise HTTPException(status_code=422, detail="Unsupported game_type")
 
 
@@ -3647,6 +3788,26 @@ async def _generate_party_prompt_content(context: RevelryExternalContext, reques
             game_data = sanitize_chit_pull_game(game_data)
             if not validate_chit_pull_game(game_data):
                 raise HTTPException(status_code=500, detail="Failed to generate chits")
+            return {"game": game_data}
+        if request.game_type == "party_quests":
+            theme = {
+                "party": "mingling",
+                "wholesome": "family",
+                "work": "work_safe",
+                "spicy": "party",
+            }.get(request.difficulty, request.difficulty if request.difficulty in {"easy", "medium", "hard"} else "mingling")
+            game_data = await generate_party_quests_content(
+                PartyQuestsGenerateRequest(
+                    prompt=prompt,
+                    theme=theme,
+                    num_quests=max(5, min(40, request.num_prompts)),
+                    quests_per_player=max(3, min(8, request.num_prompts)),
+                    duration_minutes=90,
+                    confirmation_mode="tap_confirm",
+                ),
+                provider,
+                model_override=model_override,
+            )
             return {"game": game_data}
         difficulty = request.difficulty if request.difficulty in config.VALID_DIFFICULTIES else "medium"
         game_data = await drawing_engine.generate_prompts(
@@ -3996,6 +4157,22 @@ async def create_revelry_party_game_launch_token(request: RevelryPartyGameLaunch
     }
 
 
+@app.post("/integrations/revelry/party-games/cancel")
+async def cancel_revelry_party_game(request: RevelryPartyGameCancelRequest):
+    launch_context = _resolve_party_games_token(request.party_games_token)
+    context = _external_context_from_launch_context(launch_context)
+    actor = _actor_from_launch_context(launch_context)
+    session = db.get_game_session(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    updated, already_terminal = await _cancel_revelry_session(session, context=context, actor=actor)
+    return {
+        "session": _format_session(updated),
+        "workspace": _workspace_payload(context, actor),
+        "already_terminal": already_terminal,
+    }
+
+
 @app.post("/integrations/revelry/party-games/content")
 async def save_revelry_party_game_content(request: RevelryPartyGamesContentSaveRequest):
     launch_context = _resolve_party_games_token(request.party_games_token)
@@ -4200,6 +4377,24 @@ async def create_revelry_launch_token(session_id: str, request: RevelryLaunchTok
     return {
         "launch_url": f"{base_url}/{path}?{query}",
         "launch_token_expires_at": _iso(expires),
+    }
+
+
+@app.post("/integrations/revelry/sessions/{session_id}/cancel")
+async def cancel_revelry_session(session_id: str, request: RevelrySessionCancelRequest, req: Request):
+    _require_revelry_auth(req)
+    session = db.get_game_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    updated, already_terminal = await _cancel_revelry_session(
+        session,
+        context=request.external_context,
+        actor=request.actor,
+    )
+    return {
+        "session": _format_session(updated),
+        "workspace": _workspace_payload(request.external_context, request.actor),
+        "already_terminal": already_terminal,
     }
 
 

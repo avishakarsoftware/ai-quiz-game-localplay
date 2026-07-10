@@ -930,7 +930,7 @@ export default function PlayerPage() {
                 clearPlayerSession();
                 if (hostAppMode) setHostAppTerminalError(true);
                 setState('JOIN');
-                setError('The host has left and the room was closed');
+                setError(msg.message || 'The host ended this game session.');
                 return;
             }
             if (msg.type === 'HOST_RECONNECTED') {

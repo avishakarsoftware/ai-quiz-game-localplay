@@ -68,16 +68,65 @@ def test_musical_chairs_is_host_app_quick_startable_in_gamma():
     assert musical_chairs["rules"]["title"] == "Musical Chairs Rules"
 
 
-def test_party_quests_is_host_app_quick_startable_in_gamma():
+def test_party_quests_supports_prepared_checkin_content_in_gamma():
     env = f"test-party-quests-{uuid.uuid4().hex}"
     games = effective_catalog(GAME_CATALOG, host_app="revelry", environment=env)
     party_quests = next(game for game in games if game["id"] == "party_quests")
 
     assert party_quests["launchable"] is True
     assert party_quests["can_quick_start"] is True
-    assert party_quests["can_create_content"] is False
+    assert party_quests["can_create_content"] is True
+    assert party_quests["can_edit_content"] is True
     assert party_quests["supports_custom_content"] is True
+    assert party_quests["supports_ai_generation"] is True
+    assert party_quests["embedded_authoring_supported"] is True
+    assert party_quests["requires_prepared_content_for_checkin"] is True
+    assert {"template", "ai", "manual", "quick_start"}.issubset(party_quests["creation_modes"])
+
+
+def test_party_quests_new_capabilities_require_explicit_policy_opt_in():
+    env = f"test-party-quests-rollout-{uuid.uuid4().hex}"
+    base_policy = [{
+        "game_id": "party_quests",
+        "enabled": True,
+        "status": "gamma",
+        "capability_overrides": {},
+    }]
+    games = effective_catalog(
+        GAME_CATALOG,
+        host_app="revelry",
+        environment=env,
+        loader=lambda _environment, _host_app: base_policy,
+    )
+    party_quests = next(game for game in games if game["id"] == "party_quests")
+
+    assert party_quests["can_quick_start"] is True
+    assert party_quests["can_create_content"] is False
+    assert party_quests["can_edit_content"] is False
     assert party_quests["supports_ai_generation"] is False
+    assert party_quests["embedded_authoring_supported"] is False
+    assert party_quests["requires_prepared_content_for_checkin"] is False
+
+    clear_policy_cache()
+    opted_in_policy = [{
+        **base_policy[0],
+        "capability_overrides": {
+            "can_create_content": True,
+            "can_edit_content": True,
+            "supports_ai_generation": True,
+            "embedded_authoring_supported": True,
+            "requires_prepared_content_for_checkin": True,
+        },
+    }]
+    games = effective_catalog(
+        GAME_CATALOG,
+        host_app="revelry",
+        environment=env,
+        loader=lambda _environment, _host_app: opted_in_policy,
+    )
+    party_quests = next(game for game in games if game["id"] == "party_quests")
+    assert party_quests["can_create_content"] is True
+    assert party_quests["requires_prepared_content_for_checkin"] is True
 
 
 def test_more_standalone_games_are_host_app_quick_startable_in_gamma():

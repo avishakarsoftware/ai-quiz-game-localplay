@@ -360,7 +360,7 @@ describe('PlayerPage', () => {
             // Room is closed by host
             simulateWsMessage({ type: 'ROOM_CLOSED' });
 
-            expect(screen.getByText('The host has left and the room was closed')).toBeInTheDocument();
+            expect(screen.getByText('The host ended this game session.')).toBeInTheDocument();
             expect(screen.getByRole('button', { name: 'Join' })).toBeInTheDocument();
         });
     });

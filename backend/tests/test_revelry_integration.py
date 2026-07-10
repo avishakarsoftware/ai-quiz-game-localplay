@@ -191,8 +191,11 @@ def test_catalog_lists_launchable_games():
     assert find_someone["default_for_checkin_supported"] is True
     assert find_someone["auto_start_on_first_checkin_default"] is True
     assert party_quests["can_quick_start"] is True
-    assert party_quests["can_create_content"] is False
-    assert party_quests["supports_ai_generation"] is False
+    assert party_quests["can_create_content"] is True
+    assert party_quests["can_edit_content"] is True
+    assert party_quests["supports_ai_generation"] is True
+    assert party_quests["embedded_authoring_supported"] is True
+    assert party_quests["requires_prepared_content_for_checkin"] is True
     assert party_quests["content_schema"]["kind"] == "party_quests_setup_v1"
     assert party_quests["rules"]["title"] == "Party Quests Rules"
 
@@ -286,6 +289,26 @@ def test_revelry_sessions_open_or_create_checkin_games(monkeypatch):
             "open_or_create": True,
             config_key: game_config,
         }
+        if game_type == "party_quests":
+            content = db.save_game_content(
+                f"revelry:party:{container_id}",
+                "party_quests",
+                "Prepared Party Quests",
+                {
+                    "game": {
+                        "game_title": "Prepared Party Quests",
+                        "quests": [
+                            "Find someone who shares your favorite snack.",
+                            "Meet someone who has visited another country.",
+                            "Find someone who can recommend a song.",
+                            "Meet someone who has tried a new hobby this year.",
+                            "Find someone wearing the same color as you.",
+                        ],
+                        **game_config,
+                    },
+                },
+            )
+            payload["settings"]["content_id"] = content["id"]
 
         first_res = client.post("/integrations/revelry/sessions", headers=_headers(), json=payload)
         assert first_res.status_code == 200, first_res.text
@@ -650,6 +673,13 @@ def test_runtime_callback_uses_safe_result_summary_and_game_event(monkeypatch):
     assert body["external_container_id"] == "party-runtime"
     assert body["session_id"] == "lp_runtime"
     assert re.match(r"^\d{4}-\d{2}-\d{2}T.*Z$", body["occurred_at"])
+    assert body["payload"]["session"] == {
+        "session_id": "lp_runtime",
+        "room_code": "RUN123",
+        "game_type": "quiz",
+        "status": "complete",
+        "joinable": False,
+    }
     assert body["payload"]["result_summary"]["top_results"] == [{"nickname": "Ava", "avatar": "🎉", "score": 100}]
     assert body["payload"]["result_summary"]["players"] == [{"nickname": "Ava", "avatar": "🎉", "score": 100}]
     assert body["payload"]["result_summary"]["leaderboard"] == [{"nickname": "Ava", "avatar": "🎉", "score": 100}]
@@ -1404,7 +1434,7 @@ def test_revelry_party_hub_can_quick_start_musical_chairs(monkeypatch):
     assert room.quiz["music_track_id"] == "upbeat-confetti"
 
 
-def test_revelry_party_hub_can_quick_start_party_quests(monkeypatch):
+def test_revelry_party_hub_requires_and_uses_prepared_party_quests(monkeypatch):
     monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
     db.init_db()
     container_id = f"party-quests-{uuid.uuid4().hex}"
@@ -1419,7 +1449,7 @@ def test_revelry_party_hub_can_quick_start_party_quests(monkeypatch):
             "external_user_id": "host-1",
             "display_name": "Ava",
             "role": "host",
-            "capabilities": ["operate_game", "manage_games"],
+            "capabilities": ["operate_game", "manage_games", "author_content"],
         },
     }
     link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
@@ -1436,8 +1466,12 @@ def test_revelry_party_hub_can_quick_start_party_quests(monkeypatch):
     assert catalog["party_quests"]["supports_late_join"] is True
     assert catalog["party_quests"]["default_for_checkin_supported"] is True
     assert catalog["party_quests"]["auto_start_on_first_checkin_default"] is True
+    assert catalog["party_quests"]["can_create_content"] is True
+    assert catalog["party_quests"]["can_edit_content"] is True
+    assert catalog["party_quests"]["supports_ai_generation"] is True
+    assert catalog["party_quests"]["requires_prepared_content_for_checkin"] is True
 
-    start_res = client.post(
+    missing_setup_res = client.post(
         "/integrations/revelry/party-games/start",
         json={
             "party_games_token": party_token,
@@ -1456,12 +1490,82 @@ def test_revelry_party_hub_can_quick_start_party_quests(monkeypatch):
             },
         },
     )
+    assert missing_setup_res.status_code == 409
+    missing_detail = missing_setup_res.json()["detail"]
+    assert missing_detail["code"] == "party_quests_setup_required"
+    assert missing_detail["action_required"] == "host_configure_party_quests"
+
+    duplicate_res = client.post(
+        "/integrations/revelry/party-games/content",
+        json={
+            "party_games_token": party_token,
+            "game_type": "party_quests",
+            "title": "Duplicate Quests",
+            "content_payload": {
+                "game": {
+                    "quests": ["<b>Meet someone new</b>", "Meet someone new", "  meet someone new  "],
+                    "quests_per_player": 3,
+                },
+            },
+        },
+    )
+    assert duplicate_res.status_code == 422
+    assert "at least 3 unique quests" in duplicate_res.text
+
+    quests = [
+        "Meet someone who has camped under the stars.",
+        "Find someone who can recommend a trail snack.",
+        "Meet someone who has tried rafting before.",
+        "Find someone who knows a campfire song.",
+        "Meet someone who has visited a national park.",
+    ]
+    save_res = client.post(
+        "/integrations/revelry/party-games/content",
+        json={
+            "party_games_token": party_token,
+            "game_type": "party_quests",
+            "title": "Ava's Adventure Quests",
+            "content_payload": {
+                "game": {
+                    "game_title": "Ava's Adventure Quests",
+                    "quests": quests,
+                    "duration_minutes": 45,
+                    "quests_per_player": 5,
+                    "confirmation_mode": "honor",
+                    "allow_late_join": True,
+                    "default_for_checkin": True,
+                    "auto_start_on_first_checkin": True,
+                    "checkin_join_policy": "resume_or_join",
+                },
+            },
+        },
+    )
+    assert save_res.status_code == 200, save_res.text
+    saved = save_res.json()["content"]
+    assert saved["game_type"] == "party_quests"
+    assert saved["question_count"] == 5
+    content_id = saved["localplay_content_id"]
+
+    start_res = client.post(
+        "/integrations/revelry/party-games/start",
+        json={
+            "party_games_token": party_token,
+            "game_type": "party_quests",
+            "content_id": content_id,
+            "open_or_create": True,
+            "settings": {
+                "content_id": content_id,
+                "party_quests_config": {"default_for_checkin": True},
+            },
+        },
+    )
     assert start_res.status_code == 200, start_res.text
     body = start_res.json()
     assert body["opened_existing"] is False
     room = socket_manager.rooms[body["session"]["room_code"]]
     assert room.game_type == "party_quests"
-    assert room.quiz["game_title"] == "Ava's Mixer"
+    assert room.quiz["game_title"] == "Ava's Adventure Quests"
+    assert [quest["display"] for quest in room.party_quests_config["quests"]] == quests
     assert room.party_quests_config["duration_minutes"] == 45
     assert room.party_quests_config["quests_per_player"] == 5
     assert room.party_quests_config["confirmation_mode"] == "honor"
@@ -1476,8 +1580,12 @@ def test_revelry_party_hub_can_quick_start_party_quests(monkeypatch):
         json={
             "party_games_token": party_token,
             "game_type": "party_quests",
+            "content_id": content_id,
             "open_or_create": True,
-            "settings": {"party_quests_config": {"default_for_checkin": True}},
+            "settings": {
+                "content_id": content_id,
+                "party_quests_config": {"default_for_checkin": True},
+            },
         },
     )
     assert reopen_res.status_code == 200, reopen_res.text
@@ -1499,8 +1607,12 @@ def test_revelry_party_hub_can_quick_start_party_quests(monkeypatch):
         json={
             "party_games_token": party_token,
             "game_type": "party_quests",
+            "content_id": content_id,
             "open_or_create": True,
-            "settings": {"party_quests_config": {"default_for_checkin": True}},
+            "settings": {
+                "content_id": content_id,
+                "party_quests_config": {"default_for_checkin": True},
+            },
         },
     )
     assert finished_reopen_res.status_code == 409
@@ -1508,6 +1620,103 @@ def test_revelry_party_hub_can_quick_start_party_quests(monkeypatch):
     assert finished_detail["code"] == "party_quests_session_finished"
     assert finished_detail["session_id"] == body["session"]["session_id"]
     assert finished_detail["action_required"] == "host_start_new_session"
+
+
+def test_revelry_party_hub_reopens_legacy_active_party_quests_without_content(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"legacy-party-quests-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Legacy Party",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["operate_game", "manage_games"],
+        },
+    }
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+    party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
+
+    legacy_start = client.post(
+        "/integrations/revelry/party-games/start",
+        json={"party_games_token": party_token, "game_type": "party_quests"},
+    )
+    assert legacy_start.status_code == 200, legacy_start.text
+    original = legacy_start.json()
+
+    reopen = client.post(
+        "/integrations/revelry/party-games/start",
+        json={
+            "party_games_token": party_token,
+            "game_type": "party_quests",
+            "open_or_create": True,
+            "settings": {"party_quests_config": {"default_for_checkin": True}},
+        },
+    )
+    assert reopen.status_code == 200, reopen.text
+    assert reopen.json()["opened_existing"] is True
+    assert reopen.json()["session"]["session_id"] == original["session"]["session_id"]
+    assert reopen.json()["session"]["room_code"] == original["session"]["room_code"]
+
+
+def test_revelry_party_hub_cancel_is_idempotent_and_closes_runtime(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    monkeypatch.setattr(config, "REVELRY_CALLBACK_URL", "https://api-gamma.revelryapp.me/api/games/localplay/callback")
+    calls = []
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda *args, **kwargs: _FakeAsyncClient(calls, *args, **kwargs))
+    db.init_db()
+    container_id = f"party-cancel-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Ava's Party",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["operate_game", "manage_games"],
+        },
+    }
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+    party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
+    start_res = client.post(
+        "/integrations/revelry/party-games/start",
+        json={"party_games_token": party_token, "game_type": "musical_chairs"},
+    )
+    assert start_res.status_code == 200, start_res.text
+    session = start_res.json()["session"]
+    assert session["room_code"] in socket_manager.rooms
+
+    cancel_res = client.post(
+        "/integrations/revelry/party-games/cancel",
+        json={"party_games_token": party_token, "session_id": session["session_id"]},
+    )
+    assert cancel_res.status_code == 200, cancel_res.text
+    assert cancel_res.json()["session"]["status"] == "cancelled"
+    assert cancel_res.json()["session"]["joinable"] is False
+    assert cancel_res.json()["workspace"]["active_session"] is None
+    assert cancel_res.json()["already_terminal"] is False
+    assert session["room_code"] not in socket_manager.rooms
+
+    second_res = client.post(
+        "/integrations/revelry/party-games/cancel",
+        json={"party_games_token": party_token, "session_id": session["session_id"]},
+    )
+    assert second_res.status_code == 200
+    assert second_res.json()["already_terminal"] is True
+    cancelled_callbacks = [call["body"] for call in calls if call["body"]["event_type"] == "game.cancelled"]
+    assert len(cancelled_callbacks) == 1
+    assert cancelled_callbacks[0]["payload"]["session"]["session_id"] == session["session_id"]
+    assert cancelled_callbacks[0]["payload"]["closed_reason"] == "host_cancelled"
 
 
 def test_revelry_party_hub_can_open_or_create_find_someone_checkin_session(monkeypatch):
@@ -1743,6 +1952,64 @@ def test_revelry_party_hub_can_generate_drawing_setup_prompts(monkeypatch):
         "Gingerbread house",
     ]
     assert db.list_game_content(f"revelry:party:{container_id}") == []
+
+
+def test_revelry_party_hub_can_generate_party_quests_without_saving(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-hub-quests-ai-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Camp Weekend",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["author_content", "operate_game"],
+        },
+    }
+
+    async def fake_generate(request, provider, model_override=""):
+        assert request.prompt == "camping and rafting icebreakers"
+        assert request.theme == "work_safe"
+        assert request.num_quests == 5
+        assert provider
+        return main.validate_party_quests_config({
+            "game_title": "Camp Weekend Quests",
+            "theme": request.theme,
+            "quests_per_player": 5,
+            "quests": [
+                "Meet someone who has camped under the stars.",
+                "Find someone who knows a trail song.",
+                "Meet someone who has tried rafting.",
+                "Find someone who can name a national park.",
+                "Meet someone who can recommend a camp snack.",
+            ],
+        })
+
+    monkeypatch.setattr(main, "generate_party_quests_content", fake_generate)
+    link_res = client.post("/integrations/revelry/party-games-link", headers=_headers(), json=payload)
+    party_token = link_res.json()["party_games_url"].split("party_games_token=", 1)[1]
+    generate_res = client.post(
+        "/integrations/revelry/party-games/prompts/generate",
+        json={
+            "party_games_token": party_token,
+            "game_type": "party_quests",
+            "prompt": "camping and rafting icebreakers",
+            "difficulty": "work",
+            "num_prompts": 5,
+        },
+    )
+
+    assert generate_res.status_code == 200, generate_res.text
+    game = generate_res.json()["content_payload"]["game"]
+    assert game["game_title"] == "Camp Weekend Quests"
+    assert game["quest_count"] == 5
+    assert db.list_game_content(f"revelry:party:{container_id}", game_types=["party_quests"]) == []
 
 
 def test_revelry_party_hub_rejects_invalid_catalog_game_content(monkeypatch):

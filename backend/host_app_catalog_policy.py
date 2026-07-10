@@ -20,6 +20,7 @@ ALLOWED_CAPABILITY_KEYS = {
     "supports_images",
     "payments_enabled",
     "embedded_authoring_supported",
+    "requires_prepared_content_for_checkin",
 }
 LIVE_STATUSES = {"live", "gamma"}
 LOCAL_ENVIRONMENTS = {"local", "dev", "development", "test", "testing"}
@@ -134,6 +135,9 @@ def _effective_game(game: dict[str, Any], policy: Optional[dict[str, Any]], cont
     effective = copy.deepcopy(game)
     effective["status"] = status
     overrides = policy.get("capability_overrides") or {}
+    for key in game.get("policy_opt_in_capabilities") or []:
+        if key in ALLOWED_CAPABILITY_KEYS and key not in overrides:
+            effective[key] = False
     for key, value in overrides.items():
         if key not in ALLOWED_CAPABILITY_KEYS:
             logger.warning("Ignoring unknown host-app catalog capability override: %s", key)

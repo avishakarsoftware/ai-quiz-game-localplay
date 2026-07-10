@@ -10,6 +10,7 @@ interface PartyQuestsGameProps {
     onFinalCall?: () => void;
     onReveal?: () => void;
     onEndGame?: () => void;
+    onCancelGame?: () => void;
 }
 
 function phaseLabel(phase?: string) {
@@ -89,6 +90,7 @@ export default function PartyQuestsGame({
     onFinalCall,
     onReveal,
     onEndGame,
+    onCancelGame,
 }: PartyQuestsGameProps) {
     const isHost = controls === 'host';
     const isPlayer = controls === 'player';
@@ -135,8 +137,9 @@ export default function PartyQuestsGame({
                             Reveal Scores
                         </button>
                         <button type="button" className="btn btn-primary" onClick={onEndGame} data-testid="organizer-end-game">
-                            End Game
+                            End and reveal
                         </button>
+                        {onCancelGame && <button type="button" className="btn btn-secondary" onClick={onCancelGame}>Cancel game</button>}
                     </div>
                 </section>
             )}

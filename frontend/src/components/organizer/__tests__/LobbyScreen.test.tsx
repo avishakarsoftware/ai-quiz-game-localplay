@@ -103,4 +103,21 @@ describe('LobbyScreen min-player gating', () => {
 
         expect(onReviewContent).toHaveBeenCalledTimes(1);
     });
+
+    it('offers host-app organizers an explicit cancel action', async () => {
+        const user = userEvent.setup();
+        const onCancelGame = vi.fn();
+        render(
+            <LobbyScreen
+                {...baseProps}
+                playerCount={1}
+                minPlayers={1}
+                onCancelGame={onCancelGame}
+            />,
+        );
+
+        await user.click(screen.getByRole('button', { name: 'Cancel game' }));
+
+        expect(onCancelGame).toHaveBeenCalledTimes(1);
+    });
 });

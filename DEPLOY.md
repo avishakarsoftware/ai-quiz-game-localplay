@@ -169,6 +169,21 @@ Random Chit host-app authoring adds `chit_pull` as a saved `generated_content.co
 
 Would You Rather, Never Have I Ever, Word Association, Acronym Game, Photo Clue, and Party Poker are Revelry quick-start/settings candidates only. They do not save `generated_content` rows through the host-app bridge and do not require a schema migration before host-app catalog policy enablement. Keep them policy-gated until embedded gamma QA covers start, join, spectator, reconnect, completion, and result polling. Photo Clue should not mirror raw uploaded photos into Revelry unless LocalPlay returns an explicit safe share payload. Party Poker must remain no-money/no-rewards.
 
+### Pending Party Quests staged-authoring rollout — July 9, 2026
+
+The LocalPlay implementation now supports party-scoped saved/AI Party Quests, deterministic Host/Player/TV preview, exact saved-content materialization, first-player check-in auto-start, and idempotent host cancellation. This work is committed/tested locally but is **not a declaration that either live database has the new content type**.
+
+Before deploying/enabling the staged flow in an environment:
+
+1. Apply the updated `generated_content.content_type` CHECK for that prefix so it includes `party_quests` (`games_gamma_generated_content` first; `games_generated_content` only after gamma passes).
+2. Verify a throwaway `party_quests` content row can be inserted/read/deleted through the LocalPlay API.
+3. Update the environment's `party_quests` host-app catalog row with explicit `true` overrides for `can_create_content`, `can_edit_content`, `supports_ai_generation`, and `embedded_authoring_supported`.
+4. Keep `requires_prepared_content_for_checkin=false` until Revelry stores and sends the ready party-scoped `localplay_content_id`.
+5. After the cross-app setup/return/open-or-create test passes, set `requires_prepared_content_for_checkin=true` and verify the structured `party_quests_setup_required` response for missing ids.
+6. Test saved setup, AI draft, preview, start-now, first-player auto-start, late join, lobby/live cancel, callback reconciliation, and legacy active-session reopen before promoting the same sequence to production.
+
+The capability evaluator treats those five new Party Quests capabilities as explicit policy opt-ins. Existing July 8 quick-start rows with empty/older overrides therefore stay quick-start-only after the code deploy; deploying code alone does not enable saved authoring or strict check-in.
+
 ## IONOS Directory Structure
 
 ```

@@ -1,8 +1,8 @@
 # LocalPlay Revelry Integration Spec
 
-Status: Gamma bridge plus party-scoped quiz authoring, generic WMLT/Drawing/Housie/Random Chit setup-save-start flow, catalog-driven party hub creation, and party hub start flow implemented; production expansion remains policy/QA gated. June 24, 2026 expanded LocalPlay host-app quick-start eligibility to Bluff, Find Someone Who, Random Chit, Mafia, Would You Rather, Never Have I Ever, Word Association, Acronym Game, Photo Clue, and Party Poker; policy enablement/embedded QA still gates actual Revelry exposure.
+Status: Gamma bridge plus party-scoped quiz authoring, generic WMLT/Drawing/Housie/Random Chit setup-save-start flow, catalog-driven party hub creation, and party hub start flow implemented; production expansion remains policy/QA gated. June 24, 2026 expanded LocalPlay host-app quick-start eligibility to Bluff, Find Someone Who, Random Chit, Mafia, Would You Rather, Never Have I Ever, Word Association, Acronym Game, Photo Clue, and Party Poker; policy enablement/embedded QA still gates actual Revelry exposure. The July 9, 2026 Party Quests staged setup/check-in/cancellation contract is implemented on the LocalPlay side and locally regression-tested; Supabase migration, explicit gamma capability opt-in, cross-app gamma QA, and Revelry pointer/arming work remain rollout gates.
 
-Last updated: 2026-07-06
+Last updated: 2026-07-09
 
 ## July 6, 2026 — Implementation-ready Revelry production expansion plan
 
@@ -17,7 +17,7 @@ Group A: low-risk quick-start/social games
 - `bluff`
 - `find_someone`
 - `chit_pull` quick start only unless production content schema explicitly supports saved/AI Random Chit
-- `party_quests` quick start/default content
+- `party_quests` compatibility quick start; target prepared setup/check-in staging is defined in the July 9 contract below
 
 Group B: rules-heavy or hidden-information games
 
@@ -102,6 +102,445 @@ LocalPlay has enabled the following Revelry host-app games on gamma: <game_ids>.
 Please update Revelry only where needed to render these catalog entries from LocalPlay, preserve category/search/rules affordances, and run the Games tab smoke for party hub open, host start, player join, watch route, and result polling. Do not hard-code game-specific LocalPlay URLs; use the catalog and LocalPlay launch/session APIs.
 ```
 
+## July 9, 2026 — Party Quests staging, check-in launch, and cancellation contract
+
+Status: LocalPlay implementation complete locally; not yet deployed. This section supersedes the earlier Party Quests quick-start/default-content contract below. The existing quick-start behavior remains a compatibility path during rollout, but it is not the target experience for a configured check-in game. Live gamma/prod policy rows continue to expose quick-start behavior until the new capability overrides are explicitly enabled.
+
+### Problem statement
+
+The first Party Quests bridge treated the game as quick-start-only. That made the catalog card launch a default room immediately, even though standalone LocalPlay already supports pack selection, AI generation, quest editing, duration, confirmation mode, and late-join settings. It also left three lifecycle gaps:
+
+- enabling Party Quests as a Revelry check-in game did not give the host a setup step;
+- `auto_start_on_first_checkin` was advertised and persisted as configuration but did not advance the LocalPlay runtime when the first real player joined;
+- a host could end Party Quests after entering live gameplay, but could not cancel an auto-created lobby from the party hub.
+
+The target flow separates **configure**, **preview**, **arm for check-in**, **live**, and **terminal** behavior. LocalPlay remains the game/content authority. Revelry stores only the party setting and LocalPlay content/session pointers.
+
+### User-visible lifecycle
+
+| Stage | Durable LocalPlay session? | Guests can join? | Results/callbacks? | Primary host actions |
+|---|---:|---:|---:|---|
+| Draft/setup | No | No | Content callbacks only after save | Choose pack, generate, edit, reorder, configure |
+| Ready | No | No | Safe prepared-content metadata | Edit, Preview, Arm for check-in, Start now |
+| Preview | No for MVP | No real guests | No session/result callbacks | Switch Host/Player/TV preview, return to edit |
+| Armed | No until Revelry receives the triggering check-in | No LocalPlay room yet | No game callback | Edit setup, disarm, start now |
+| Lobby | Yes | Yes | `session.created` | Host game, cancel game; auto-start may advance on first player join |
+| Live | Yes | Yes when late join is enabled | `game.started`, then completion/cancellation | Final call, end and reveal, cancel game |
+| Complete | Yes, terminal/non-joinable | No | Safe result summary and `game.completed` | View results, start a new version/session |
+| Cancelled | Yes, terminal/non-joinable | No | `game.cancelled`, no result podium | Return to hub, start again |
+
+Preview is orthogonal to the durable game-session state machine. It must not consume the one-active-game slot for the Revelry party.
+
+### LocalPlay catalog contract after implementation
+
+The static `party_quests` catalog ceiling becomes:
+
+```json
+{
+  "game_type": "party_quests",
+  "can_quick_start": true,
+  "can_create_content": true,
+  "can_edit_content": true,
+  "supports_ai_generation": true,
+  "embedded_authoring_supported": true,
+  "default_content_available": true,
+  "requires_prepared_content_for_checkin": true,
+  "checkin_friendly": true,
+  "supports_late_join": true,
+  "can_start_with_first_player": true,
+  "default_for_checkin_supported": true,
+  "auto_start_on_first_checkin_default": true,
+  "checkin_join_policy": "resume_or_join"
+}
+```
+
+Remote host-app policy may reduce these capabilities per environment. Production remains fail-closed. Do not enable `can_create_content`, `can_edit_content`, `supports_ai_generation`, or `requires_prepared_content_for_checkin` in production policy until the production content-type migration and gamma flow have passed.
+
+These five newly introduced capabilities are policy opt-ins for Party Quests: `can_create_content`, `can_edit_content`, `supports_ai_generation`, `embedded_authoring_supported`, and `requires_prepared_content_for_checkin`. When an environment already has a Party Quests policy row but omits one of these overrides, LocalPlay resolves that capability to `false`. This keeps the July 8 quick-start rows backward compatible. Enabling the new flow requires explicit `true` overrides after that environment's DDL and host flow are ready.
+
+`can_quick_start=true` remains for an explicit host action labelled **Start with starter quests**. It must not be used silently when a host enables Party Quests as the party's default check-in game.
+
+### Prepared Party Quests content
+
+LocalPlay persists Party Quests in the existing party-scoped `generated_content` storage using `content_type = "party_quests"`. Ownership is the Revelry party wallet (`revelry:party:<external_container_id>`). The saved payload is:
+
+```json
+{
+  "game": {
+    "game_title": "Camping and Rafting Quests",
+    "theme": "outdoor adventure",
+    "duration_minutes": 120,
+    "quests_per_player": 8,
+    "confirmation_mode": "tap_confirm",
+    "allow_late_join": true,
+    "allow_repeat_partner": false,
+    "max_completions_per_partner": 2,
+    "reveal_mode": "host_paced",
+    "quests": [
+      {
+        "display": "Find someone who has slept in a tent during rain.",
+        "category": "camping",
+        "points": 100
+      },
+      {
+        "display": "Meet someone who has rafted before.",
+        "category": "rafting",
+        "points": 100
+      },
+      {
+        "display": "Find someone who knows a campfire song.",
+        "category": "music",
+        "points": 150
+      }
+    ]
+  }
+}
+```
+
+Validation requirements:
+
+- title: 1-120 cleaned characters;
+- theme: 1-60 cleaned characters;
+- quest list: 3-120 unique non-empty quests;
+- quest text: at most 180 cleaned characters;
+- `quests_per_player`: 3-25 and no greater than the validated quest count;
+- `duration_minutes`: 10-240;
+- confirmation mode: `tap_confirm` or `honor` for the first bridge version;
+- points: normalized to the supported standard/hard values rather than trusting arbitrary client values;
+- unsupported/private fields are discarded by the server validator;
+- saved content must not include participant ids, completion state, scores, launch tokens, or raw provider prompts.
+
+The existing content APIs are canonical:
+
+```text
+POST /integrations/revelry/party-games/content
+GET  /integrations/revelry/party-games/content/{content_id}?party_games_token=...&include_payload=true
+DELETE /integrations/revelry/party-games/content/{content_id}
+POST /integrations/revelry/party-games/prompts/generate
+```
+
+Example save request:
+
+```json
+{
+  "party_games_token": "...",
+  "game_type": "party_quests",
+  "title": "Camping and Rafting Quests",
+  "content_id": "",
+  "status": "ready",
+  "content_payload": {
+    "game": {
+      "game_title": "Camping and Rafting Quests",
+      "theme": "outdoor adventure",
+      "duration_minutes": 120,
+      "quests_per_player": 8,
+      "confirmation_mode": "tap_confirm",
+      "allow_late_join": true,
+      "quests": [
+        {"display": "Find someone who can tie a useful knot.", "category": "camping", "points": 100},
+        {"display": "Meet someone who has rafted before.", "category": "rafting", "points": 100},
+        {"display": "Find someone who knows a campfire song.", "category": "music", "points": 150}
+      ]
+    }
+  }
+}
+```
+
+AI generation uses the same party-hub authoring token and billing mode as other host-app-managed generation:
+
+```json
+{
+  "party_games_token": "...",
+  "game_type": "party_quests",
+  "prompt": "Camping and rafting weekend, adults and children, adventurous but family friendly",
+  "difficulty": "wholesome",
+  "num_prompts": 20
+}
+```
+
+The response returns a validated `content_payload` suitable for editing. Generation never arms or starts the game and never saves until the host chooses **Save**. LocalPlay must use the Party Quests generator/validator, not the Drawing fallback generator.
+
+Once a content id has been used by a session, edits create a new `content_id` and emit `content.updated` with `previous_content_id` / `versioned_from_content_id`. Revelry updates its prepared/default-game pointer to the new id. Past sessions keep their original content id.
+
+Session materialization must resolve a supplied Party Quests `content_id` from the correct party wallet, validate the stored payload again, and create the runtime from that exact version. It must not ignore the id and materialize default quests. A missing id returns `404`; an id owned by another party returns `404` rather than disclosing ownership.
+
+### LocalPlay authoring and preview UX
+
+The Party Quests card in the LocalPlay-owned Revelry party hub uses **Set up Party Quests**, not **Start now**, when authoring is enabled. The setup surface reuses the standalone controls in host-app mode:
+
+1. choose a starter pack;
+2. optionally describe the party and generate quests with AI;
+3. edit, add, remove, and reorder quest cards;
+4. configure duration, quests per player, confirmation mode, and late joins;
+5. save as a party-scoped prepared game.
+
+The saved card exposes **Edit**, **Preview**, **Start now**, and, when Revelry supports the party setting, **Use at check-in**.
+
+MVP preview is deterministic and client-side. It loads the server-validated saved payload and offers three tabs:
+
+- **Host**: configured title, duration, confirmation mode, live-control examples, and sample leaderboard;
+- **Player**: one deterministic sample board, confirmation request, progress, and score presentation;
+- **TV**: title, time/status, aggregate progress, and sample leaderboard without private quest assignments.
+
+Preview uses clearly labelled sample participants, does not create a room or session, does not accept real joins, does not mutate content, does not award points, and emits no game/session/result callbacks. A future multi-device test room may use an explicit `preview_session=true` session class, but it must be excluded from the party's one-active-game constraint, auto-start triggers, analytics totals, Revelry results, and normal callbacks. That is outside this MVP.
+
+### Revelry check-in setting and ownership
+
+Revelry owns the party-level selection and trigger. It stores only a pointer/configuration such as:
+
+```json
+{
+  "provider": "localplay",
+  "game_type": "party_quests",
+  "localplay_content_id": "lp_content_uuid",
+  "enabled": true,
+  "auto_start_on_first_checkin": true,
+  "checkin_join_policy": "resume_or_join"
+}
+```
+
+Revelry must not copy quest text or generated payloads into its party record. Before enabling the setting, it must have a ready LocalPlay content id for the same party. The Revelry host flow should open the LocalPlay setup/hub, then refresh its LocalPlay workspace after return/callback and store the returned pointer.
+
+User-facing Revelry states should be distinguishable:
+
+- **Needs setup**: Party Quests selected but no ready `localplay_content_id`; auto-start cannot be enabled;
+- **Ready**: a prepared version exists but check-in use is off;
+- **Starts at check-in**: prepared pointer is armed and no live session exists;
+- **Live**: LocalPlay reports a joinable lobby/active session;
+- **Ended**: latest session is terminal; host must explicitly start/arm a new session.
+
+### Check-in open-or-create and real auto-start
+
+When the first guest checks in, Revelry calls the existing service-authorized session endpoint:
+
+```text
+POST /integrations/revelry/sessions
+```
+
+```json
+{
+  "external_context": {
+    "host_app": "revelry",
+    "external_container_type": "party",
+    "external_container_id": "party_uuid",
+    "external_container_title": "Camping and Rafting"
+  },
+  "actor": {
+    "external_user_id": "host_uuid",
+    "display_name": "Host",
+    "role": "host",
+    "capabilities": ["manage_games", "operate_game"]
+  },
+  "game_type": "party_quests",
+  "settings": {
+    "content_id": "lp_content_uuid",
+    "open_or_create": true,
+    "party_quests_config": {
+      "default_for_checkin": true,
+      "auto_start_on_first_checkin": true,
+      "checkin_join_policy": "resume_or_join"
+    }
+  }
+}
+```
+
+Required behavior:
+
+1. LocalPlay validates that the content is ready, is `party_quests`, and belongs to the party.
+2. If the same party already has an active Party Quests session for the same content/default setting, return it with `opened_existing=true`; do not create another room or callback.
+3. If another game is active, retain the normal structured `active_session_exists` conflict. Check-in automation must not silently replace another game.
+4. If the latest check-in session is terminal and no active session exists, return the existing structured `party_quests_session_finished` conflict until a host explicitly starts/re-arms a new session.
+5. On a new session, create a lobby from the prepared content and persist the auto-start setting in the runtime config.
+6. On the first successful real player WebSocket join, if the room is still in lobby, `auto_start_on_first_checkin=true`, and the minimum-player rule is met, LocalPlay starts Party Quests exactly once under the room lock. It broadcasts `GAME_STARTING`, creates assignments, sends private per-player state, marks the durable session active, and emits the normal started callback.
+7. Simultaneous first joins must not initialize the game twice. Later/repeated check-ins rejoin or join the existing runtime according to `resume_or_join`.
+8. If `auto_start_on_first_checkin=false`, the session stays in lobby until a host starts it.
+
+The first-player auto-start condition is based on a successful LocalPlay player join, not merely a Revelry attendance/check-in record. This prevents a session from becoming live before any guest has exchanged a launch token and opened the game.
+
+### Host end and cancel controls
+
+**End and reveal** and **Cancel game** are different operations:
+
+- **End and reveal** completes the game, calculates safe results, shows the podium, sets the session to `complete`, and emits `game.completed`.
+- **Cancel game** closes a lobby or live game without a podium/result summary, sets the session to `cancelled`, makes it non-joinable, notifies all connected clients, and emits `game.cancelled`.
+
+LocalPlay adds a browser-safe party-hub endpoint:
+
+```text
+POST /integrations/revelry/party-games/cancel
+```
+
+```json
+{
+  "party_games_token": "...",
+  "session_id": "lp_session_uuid",
+  "reason": "host_cancelled"
+}
+```
+
+It requires `manage_games`, verifies that the session belongs to the token's party, and returns:
+
+```json
+{
+  "session": {
+    "session_id": "lp_session_uuid",
+    "status": "cancelled",
+    "joinable": false,
+    "closed_reason": "host_cancelled"
+  },
+  "workspace": {
+    "active_session": null
+  },
+  "already_terminal": false
+}
+```
+
+LocalPlay also adds the service-authorized equivalent for recovery or a future Revelry-native control:
+
+```text
+POST /integrations/revelry/sessions/{session_id}/cancel
+```
+
+The service endpoint requires the shared integration authorization and accepts:
+
+```json
+{
+  "external_context": {
+    "host_app": "revelry",
+    "external_container_type": "party",
+    "external_container_id": "party_uuid"
+  },
+  "actor": {
+    "external_user_id": "host_uuid",
+    "role": "host",
+    "capabilities": ["manage_games"]
+  },
+  "reason": "host_cancelled"
+}
+```
+
+Both endpoints call one cancellation service and return the same session/workspace shape. They share these semantics:
+
+- lobby, active, and paused sessions are cancellable;
+- the runtime broadcasts `ROOM_CLOSED` with a friendly host-cancelled message before sockets close;
+- the durable row becomes `status=cancelled`, `joinable=false`, with `closed_reason`, `closed_message`, and `updated_at` set;
+- a repeated cancellation of the same cancelled session returns `200` with `already_terminal=true` and sends no duplicate callback;
+- complete, expired, or superseded sessions return `409` with `detail.code="session_not_cancellable"` and their terminal status;
+- a wrong-party session returns `404` to avoid disclosing its existence;
+- cancellation produces no result summary and never changes prepared content or the armed Revelry setting automatically.
+
+Party hub active-session cards show **Cancel game** for hosts with `manage_games`. The organizer lobby also shows **Cancel game**. During live Party Quests, the organizer shows **End and reveal** as the primary completion action and **Cancel game** as a secondary destructive action. Both cancellation surfaces require confirmation and explain how many connected guests will be removed.
+
+Guests receiving `ROOM_CLOSED` see **The host ended this Party Quests session** and a return-to-Revelry action when available. They must not enter an automatic reconnect loop for the cancelled room.
+
+### Workspace, callbacks, and privacy
+
+Workspace/prepared-content summaries may expose:
+
+- content id, game type, title, status/version, quest count, duration, theme label, updated time;
+- active session id, room code, lifecycle status, joinability, game title, content id, player count, and safe launch routes;
+- whether a prepared Party Quests item is compatible with check-in arming.
+
+They must not expose quest text, private player boards, player-to-player confirmation graphs, pending confirmations, provider prompts, or launch/organizer tokens.
+
+Cancellation emits the existing signed callback family with safe session metadata:
+
+```json
+{
+  "event_type": "game.cancelled",
+  "payload": {
+    "host_app": "revelry",
+    "external_container_type": "party",
+    "external_container_id": "party_uuid",
+    "session": {
+      "session_id": "lp_session_uuid",
+      "game_type": "party_quests",
+      "content_id": "lp_content_uuid",
+      "status": "cancelled",
+      "joinable": false,
+      "closed_reason": "host_cancelled"
+    }
+  }
+}
+```
+
+Revelry should update its mirrored active-session state from the callback and recover through party-workspace polling if delivery fails. Cancelling a session does not disarm the check-in configuration by itself; Revelry decides whether subsequent check-ins should create a fresh session. To avoid an immediate accidental restart, the recommended Revelry behavior is to set the party setting to **Ready/paused** when a host cancels and require an explicit **Resume at check-in** action.
+
+### Schema migration
+
+Before enabling saved Party Quests content, add `party_quests` to the `generated_content.content_type` constraint in:
+
+- local SQLite creation/migration code;
+- `sql/games-gamma-schema.sql`;
+- `sql/games-schema.sql`;
+- the live gamma Supabase constraint;
+- the live production Supabase constraint only after gamma validation.
+
+The database migration is additive. No existing content rows change. Deploy code that can read the new type only after gamma accepts the constraint, and do not enable the production catalog capability row until production DDL is verified. Record each environment migration in `DEPLOY.md`.
+
+### Backward compatibility and rollout
+
+Do not break existing Revelry parties that already have quick-start Party Quests configured without a content id.
+
+1. **LocalPlay compatibility release:** add saved content, preview, cancellation, and real first-player auto-start while continuing to accept an explicit host quick-start with starter quests.
+2. **Revelry gamma update:** add setup/return flow and store `localplay_content_id` in the check-in setting. Existing no-id settings render **Needs setup** but may continue their already-active session.
+3. **Strict gamma policy:** enable `requires_prepared_content_for_checkin`. New/terminal check-in auto-start calls without `content_id` return:
+
+```json
+{
+  "detail": {
+    "code": "party_quests_setup_required",
+    "action_required": "host_configure_party_quests",
+    "message": "Set up Party Quests before enabling it for check-in."
+  }
+}
+```
+
+4. Run the complete gamma acceptance suite below.
+5. Apply production DDL, deploy LocalPlay production, update Revelry production, then enable the strict production policy. Existing active sessions are never rewritten or cancelled by rollout.
+
+### Required tests and acceptance criteria
+
+LocalPlay backend/unit tests:
+
+- validate and sanitize Party Quests saved content, including duplicate/short/oversized quest cases;
+- save, load, update, immutable-after-use versioning, delete, and wrong-party isolation;
+- AI generation uses the Party Quests generator and returns validator-clean content;
+- session start with `content_id` materializes the exact saved settings/quests;
+- strict check-in mode rejects a missing content id with the structured setup-required response;
+- legacy explicit quick-start still materializes starter quests during compatibility rollout;
+- `open_or_create` returns one existing session and does not duplicate callbacks;
+- first real player join auto-starts once; two simultaneous joins cannot initialize twice;
+- `auto_start_on_first_checkin=false` remains in lobby;
+- lobby and live cancellation close sockets, update durable state, and emit one callback;
+- repeated cancel is idempotent; wrong-party/insufficient-capability/terminal-state cases are rejected;
+- cancelled sessions no longer appear as workspace `active_session` and cannot mint organizer/player launch tokens.
+
+LocalPlay frontend/Playwright tests:
+
+- Revelry party hub Party Quests action opens setup rather than immediately starting;
+- host chooses a pack, AI-generates, edits, reorders, saves, and reopens the saved setup;
+- Preview tabs render representative Host, Player, and TV states without creating a session;
+- saved setup starts manually and carries the exact title/settings into lobby/gameplay;
+- active lobby can be cancelled from the party hub;
+- live game offers both End and reveal and Cancel game with distinct outcomes;
+- first guest join auto-starts armed Party Quests; a late guest gets a private board;
+- cancellation moves organizer/player/spectator clients to a friendly terminal state without reconnect loops;
+- host-app mode shows no LocalPlay sparks/account/paywall chrome.
+
+Revelry gamma contract tests:
+
+- selecting Party Quests for check-in requires or creates a ready LocalPlay content pointer;
+- return from LocalPlay setup refreshes the party workspace and stores the new/versioned pointer;
+- first guest check-in sends that content id and `open_or_create=true`;
+- repeated guest check-ins reuse the same LocalPlay session;
+- a different active game yields the structured continue-or-replace conflict rather than silent replacement;
+- host can open the active LocalPlay hub, cancel it, and see Revelry clear the active-session card;
+- cancellation pauses/disarms automatic recreation until the host explicitly resumes it;
+- completed and cancelled sessions do not remain joinable in the Revelry Games tab.
+
+Production promotion is blocked until the Party Quests gamma setup -> preview -> arm -> first-player auto-start -> late join -> end/cancel flow passes with organizer, two player tabs, and spectator/TV coverage.
+
 ## June 24, 2026 — More standalone games exposed as quick-start candidates
 
 LocalPlay now declares these implemented standalone games as Revelry host-app-capable quick-start entries:
@@ -155,7 +594,9 @@ Photo Clue and Party Poker are now bridge-ready quick-start games, not embedded-
 
 They should not appear in the Revelry host-app catalog until host-app policy intentionally enables them and gamma embedded hub QA covers start, join, spectator, reconnect, completion, and result polling.
 
-## June 18, 2026 — Party Quests LocalPlay support
+## June 18, 2026 — Party Quests LocalPlay support (historical quick-start contract)
+
+This section records the first bridge slice. The July 9 staging/check-in/cancellation contract above supersedes it for new implementation work and rollout decisions.
 
 LocalPlay now implements `party_quests` as a standalone ambient social runtime and declares it in the static catalog as `host_app_supported=true`, `supported_host_apps=["revelry"]`, `can_quick_start=true`, and `can_create_content=false`.
 
@@ -2078,14 +2519,18 @@ Revelry's `gamma-checkin-game-playthrough.spec.ts` (`party_quests` + `find_someo
 `https://gamesapi.revelryapp.me`. All `/integrations/revelry/*` calls need the shared
 `REVELRY_INTEGRATION_SECRET` (Revelry mints server-side).
 
-**Launch handshake — two paths:**
+**Launch handshake — currently deployed compatibility paths as of 2026-07-08:**
 - **Content-backed** (quiz/wmlt/drawing with a saved deck): `POST /integrations/revelry/party-games-link`
   with `intent=start` **requires `content_id`** (else 422 "content_id is required for start intent").
-- **Quick-start incl. the check-in games** (`party_quests`, `find_someone`, `musical_chairs` — no saved
+- **Quick-start incl. the check-in games** (`party_quests`, `find_someone`, `musical_chairs` — currently no saved
   content): `POST .../party-games-link` `intent=hub` → returns `party_games_url` + `party_games_token`;
   then `POST .../party-games/start` `{party_games_token, game_type, settings:{}}` with **no `content_id`**.
   The launch-context actor must carry capability `operate_game` or `manage_games` (else 403). Embedded
   surface opens at `GET /integrations/revelry/games?party_games_token=…` → 302 → SPA `/revelry/games?…`.
+
+The July 9 Party Quests staging contract replaces the Party Quests branch of this handshake after its
+schema, LocalPlay authoring/runtime, and Revelry pointer-storage rollout is complete. `find_someone` and
+`musical_chairs` keep their current quick-start behavior unless their own specs later replace it.
 
 **Two independent gates a game must pass (both open for the check-in games as of 2026-07-08):**
 1. `game_type` validator (`REVELRY_PARTY_GAME_START_TYPES`) — includes `party_quests`, `find_someone`.
@@ -2174,6 +2619,7 @@ Recommended LocalPlay order:
 19. Backlog: add server-side draft/autosave recovery for generic WMLT/Drawing setup forms. Quiz authoring has browser-local draft isolation; generic setup forms should gain equivalent party-scoped draft ids before long editing flows become common.
 20. Backlog: move WMLT/Drawing default prompts and party-type recommendations into catalog/server config. Current MVP defaults are safe built-ins, but future party types should receive context-aware prompt suggestions without adding hub-side conditionals.
 21. Add a remote host-app catalog policy layer so Revelry game availability and per-game capabilities can be enabled, disabled, allowlisted, or gamma-only without a LocalPlay deploy. Done for backend policy evaluation with `backend/host_app_catalog_policy.py`, SQLite/Supabase `{TABLE_PREFIX}host_app_catalog_flags` storage, shared filtering for `/catalog`, party hub resolve, launch-context allowed game ids, authoring/content generation, start-intent links, and session creation. The implementation includes 30-60 second policy caching, production fail-closed behavior, static-capability ceilings, and regression tests for disabled, allowlisted, production-missing-policy, capability-intersection, unsupported-game, and action-time rejection cases.
+22. Implement the July 9 Party Quests staging contract: saved/AI content support, LocalPlay preview, prepared-content check-in enforcement, first-player runtime auto-start, hub/lobby/live cancellation, callbacks, and local regression coverage. Done on the LocalPlay side. Pending rollout work: apply gamma DDL, opt gamma policy capabilities in explicitly, complete cross-app gamma QA, complete the Revelry prepared-pointer/arming flow, then repeat the reviewed process for production.
 
 ## Open Questions
 

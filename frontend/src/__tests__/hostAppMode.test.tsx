@@ -528,4 +528,108 @@ describe('host-app mode filtering', () => {
             expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
         });
     });
+
+    it('opens Party Quests setup and saves an editable prepared deck', async () => {
+        window.history.pushState({}, '', '/revelry/games?party_games_token=party-token');
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    launch_context: {
+                        capabilities: ['author_content', 'operate_game'],
+                        external_container_title: 'Camp Weekend',
+                    },
+                    workspace: {
+                        active_session: null,
+                        prepared_content: [],
+                        catalog: [{
+                            id: 'party_quests',
+                            game_type: 'party_quests',
+                            title: 'Party Quests',
+                            description: 'Ambient party missions',
+                            launchable: true,
+                            can_create_content: true,
+                            can_edit_content: true,
+                            supports_ai_generation: true,
+                            embedded_authoring_supported: true,
+                            creation_modes: ['template', 'manual', 'ai'],
+                        }],
+                    },
+                }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    content: { localplay_content_id: 'quests-1', game_type: 'party_quests', title: 'Camp Weekend Quests' },
+                    workspace: { active_session: null, prepared_content: [], catalog: [] },
+                }),
+            });
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(<PartyHubPage />);
+
+        fireEvent.click(await screen.findByRole('button', { name: /set up party quests/i }));
+        expect(screen.getByRole('heading', { name: 'Party Quests' })).toBeInTheDocument();
+        expect((screen.getByLabelText('Quest 1') as HTMLTextAreaElement).value).toBeTruthy();
+        fireEvent.change(screen.getByLabelText('Quest 1'), { target: { value: 'Meet someone who has rafted before.' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save Party Quests' }));
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        const body = JSON.parse(fetchMock.mock.calls[1][1].body);
+        expect(body).toMatchObject({
+            party_games_token: 'party-token',
+            game_type: 'party_quests',
+            title: 'Camp Weekend Quests',
+            status: 'ready',
+        });
+        expect(body.content_payload.game.quests[0].display).toBe('Meet someone who has rafted before.');
+        expect(body.content_payload.game.quests_per_player).toBeLessThanOrEqual(body.content_payload.game.quests.length);
+    });
+
+    it('cancels an active host-app game from the party hub', async () => {
+        window.history.pushState({}, '', '/revelry/games?party_games_token=party-token');
+        vi.stubGlobal('confirm', vi.fn(() => true));
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    launch_context: {
+                        capabilities: ['manage_games', 'operate_game'],
+                        external_container_title: 'Camp Weekend',
+                    },
+                    workspace: {
+                        active_session: {
+                            session_id: 'lp-active',
+                            room_code: 'QUEST1',
+                            status: 'active',
+                            joinable: false,
+                            game_type: 'party_quests',
+                            feed_card: { title: 'Camp Weekend Quests' },
+                        },
+                        prepared_content: [],
+                        catalog: [],
+                    },
+                }),
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    session: { session_id: 'lp-active', status: 'cancelled', joinable: false },
+                    workspace: { active_session: null, prepared_content: [], catalog: [] },
+                }),
+            });
+        vi.stubGlobal('fetch', fetchMock);
+
+        render(<PartyHubPage />);
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Cancel game' }));
+
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+            party_games_token: 'party-token',
+            session_id: 'lp-active',
+            reason: 'host_cancelled',
+        });
+        await waitFor(() => expect(screen.queryByRole('heading', { name: /game in progress/i })).not.toBeInTheDocument());
+    });
 });

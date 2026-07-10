@@ -142,7 +142,7 @@ CREATE INDEX IF NOT EXISTS idx_games_webhook_events_processed
 CREATE TABLE IF NOT EXISTS games_generated_content (
   id TEXT PRIMARY KEY,
   wallet_id TEXT NOT NULL,
-  content_type TEXT NOT NULL CHECK (content_type IN ('quiz', 'mlt', 'drawing', 'housie', 'chit_pull')),
+  content_type TEXT NOT NULL CHECK (content_type IN ('quiz', 'mlt', 'drawing', 'housie', 'chit_pull', 'party_quests')),
   title TEXT NOT NULL DEFAULT '',
   payload JSONB NOT NULL,
   prompt TEXT,
@@ -156,7 +156,7 @@ ALTER TABLE games_generated_content
   DROP CONSTRAINT IF EXISTS games_generated_content_content_type_check;
 ALTER TABLE games_generated_content
   ADD CONSTRAINT games_generated_content_content_type_check
-  CHECK (content_type IN ('quiz', 'mlt', 'drawing', 'housie', 'chit_pull'));
+  CHECK (content_type IN ('quiz', 'mlt', 'drawing', 'housie', 'chit_pull', 'party_quests'));
 
 CREATE INDEX IF NOT EXISTS idx_games_generated_content_wallet
   ON games_generated_content(wallet_id, created_at DESC);

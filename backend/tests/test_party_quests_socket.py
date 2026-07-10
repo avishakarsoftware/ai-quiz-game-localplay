@@ -168,3 +168,61 @@ def test_party_quests_socket_confirmation_late_join_and_reveal(monkeypatch):
         finally:
             for ctx in reversed(player_contexts):
                 ctx.__exit__(None, None, None)
+
+
+def test_party_quests_checkin_auto_starts_when_first_guest_joins(monkeypatch):
+    monkeypatch.setattr(socket_manager, "start_cleanup_loop", lambda: None)
+    room = socket_manager.create_room(
+        "AUTOQ1",
+        {
+            "game_title": "Check-in Party Quests",
+            "quests": [
+                "Meet someone who knows a campfire song.",
+                "Find someone who can recommend a trail snack.",
+                "Meet someone who has tried rafting.",
+            ],
+            "quests_per_player": 3,
+            "duration_minutes": 30,
+            "allow_late_join": True,
+            "default_for_checkin": True,
+            "auto_start_on_first_checkin": True,
+        },
+        time_limit=30,
+        organizer_token="secret",
+        game_type="party_quests",
+        billing_mode="host_app_managed",
+    )
+    room.wallet_id = "revelry:party:auto-checkin"
+
+    with client.websocket_connect(player_url("AUTOQ1", "p1")) as player_ws:
+        player_ws.send_json({"type": "JOIN", "nickname": "Avi", "avatar": "🙂"})
+
+        assert recv_until(player_ws, "JOINED_ROOM")["room_code"] == "AUTOQ1"
+        assert recv_until(player_ws, "GAME_STARTING")["game_type"] == "party_quests"
+        sync = recv_quests_sync(player_ws)
+        assert sync["phase"] == "QUESTS_ACTIVE"
+        assert len(sync["my_board"]) == 3
+        assert room.state == "QUESTS_ACTIVE"
+
+
+def test_party_quests_checkin_can_wait_for_host_start(monkeypatch):
+    monkeypatch.setattr(socket_manager, "start_cleanup_loop", lambda: None)
+    room = socket_manager.create_room(
+        "WAITQ1",
+        {
+            "game_title": "Host-paced Party Quests",
+            "quests_per_player": 3,
+            "default_for_checkin": True,
+            "auto_start_on_first_checkin": False,
+        },
+        organizer_token="secret",
+        game_type="party_quests",
+        billing_mode="host_app_managed",
+    )
+    room.wallet_id = "revelry:party:host-paced"
+
+    with client.websocket_connect(player_url("WAITQ1", "p1")) as player_ws:
+        player_ws.send_json({"type": "JOIN", "nickname": "Avi", "avatar": "🙂"})
+        assert recv_until(player_ws, "JOINED_ROOM")["room_code"] == "WAITQ1"
+        assert room.state == "LOBBY"
+        assert room.party_quests_state == {}
