@@ -19,7 +19,7 @@ vi.mock('../../components/organizer/CustomQuizEditor', () => ({
 import RevelryAuthoringPage from '../RevelryAuthoringPage';
 
 // Resolve mock for chooser-flow tests. `content` non-null = editing existing.
-function stubResolve(content: unknown = null) {
+function stubResolve(content: unknown = null, gameType = 'quiz') {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.includes('/integrations/revelry/content/authoring-token/resolve')) {
@@ -32,6 +32,7 @@ function stubResolve(content: unknown = null) {
                     display: { container_label: 'Ava Party' },
                     return_url: 'https://revelry.example/return',
                 },
+                game_type: gameType,
                 mode: 'create',
                 localplay_content_id: null,
                 content,
@@ -79,6 +80,51 @@ describe('RevelryAuthoringPage', () => {
         stubResolve({ quiz: { quiz_title: 'Saved', questions: [{ id: 1, text: 'Saved question', options: ['A', 'B'], answer_index: 0, image_prompt: '' }] } });
         render(<RevelryAuthoringPage />);
         expect(await screen.findByText('Saved question')).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Create a quiz' })).toBeNull();
+    });
+
+    it('opens the Party Quests setup instead of the quiz chooser for a Party Quests token', async () => {
+        stubResolve(null, 'party_quests');
+        render(<RevelryAuthoringPage />);
+
+        await screen.findByRole('heading', { name: 'Party Quests' });
+        expect(screen.queryByRole('heading', { name: 'Create a quiz' })).toBeNull();
+        expect(screen.getByRole('button', { name: 'Generate Quest Block' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Save Party Quests' })).toBeInTheDocument();
+        expect(screen.getByLabelText('Quest 1')).toHaveValue('Talk to someone whose name starts with R.');
+    });
+
+    it('loads saved Party Quests into the direct authoring editor', async () => {
+        stubResolve({
+            content_payload: {
+                game: {
+                    game_title: 'Saved Camping Quests',
+                    theme: 'family',
+                    duration_minutes: 60,
+                    quests_per_player: 3,
+                    confirmation_mode: 'honor',
+                    allow_late_join: false,
+                    quests: [
+                        { display: 'Find someone who loves camping.', points: 100 },
+                        { display: 'Ask for a hiking recommendation.', points: 100 },
+                        { display: 'Meet someone who has seen a bear.', points: 150 },
+                    ],
+                },
+            },
+        }, 'party_quests');
+        render(<RevelryAuthoringPage />);
+
+        expect(await screen.findByLabelText('Quest 1')).toHaveValue('Find someone who loves camping.');
+        expect(screen.getByLabelText('Duration')).toHaveValue('60');
+        expect(screen.getByLabelText('Confirmation')).toHaveValue('honor');
+        expect(screen.getByLabelText('Late joins')).not.toBeChecked();
+    });
+
+    it('fails closed instead of showing quiz controls for an unsupported authoring token', async () => {
+        stubResolve(null, 'drawing');
+        render(<RevelryAuthoringPage />);
+
+        expect(await screen.findByText(/This game setup is not available/)).toBeInTheDocument();
         expect(screen.queryByRole('heading', { name: 'Create a quiz' })).toBeNull();
     });
 

@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
 import CustomQuizEditor from '../components/organizer/CustomQuizEditor';
+import PartyQuestsSetupScreen, {
+    defaultPartyQuestsConfig,
+    partyQuestsConfigFromPayload,
+    type PartyQuestSetupConfig,
+} from '../components/organizer/PartyQuestsSetupScreen';
 import { API_URL } from '../config';
 import { type Quiz } from '../types';
 import { returnToHostApp } from '../utils/hostAppReturn';
@@ -17,10 +22,12 @@ type AuthoringResolve = {
         };
         parent_origin?: string;
     };
+    game_type?: string;
     mode: string;
     localplay_content_id?: string | null;
     content?: {
         quiz?: Quiz;
+        content_payload?: Record<string, unknown>;
     } | null;
 };
 
@@ -40,6 +47,9 @@ export default function RevelryAuthoringPage() {
     const [generating, setGenerating] = useState(false);
     const [generationError, setGenerationError] = useState('');
     const [generationWarning, setGenerationWarning] = useState('');
+    const [partyProvider, setPartyProvider] = useState('');
+    const [partySaving, setPartySaving] = useState(false);
+    const [partyError, setPartyError] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     // Two-step authoring: pick AI vs custom before showing detailed inputs.
@@ -94,7 +104,7 @@ export default function RevelryAuthoringPage() {
         const url = new URL(returnUrl, window.location.origin);
         if (localplayContentId) {
             url.searchParams.set('localplay_content_id', localplayContentId);
-            url.searchParams.set('game_type', 'quiz');
+            url.searchParams.set('game_type', resolved?.game_type || 'quiz');
             url.searchParams.set('status', 'ready');
         }
         returnToHostApp(url.toString(), { parentOrigin: resolved?.launch_context.parent_origin });
@@ -126,6 +136,84 @@ export default function RevelryAuthoringPage() {
         const contentId = await saveQuiz(quiz, packId);
         returnToRevelry(contentId);
         return contentId;
+    }
+
+    async function generatePartyQuests(request: {
+        prompt: string;
+        theme: string;
+        numQuests: number;
+        questsPerPlayer: number;
+        durationMinutes: number;
+        confirmationMode: PartyQuestSetupConfig['confirmation_mode'];
+        provider: string;
+    }): Promise<PartyQuestSetupConfig | null> {
+        setPartyError('');
+        try {
+            const difficulty = request.theme === 'work_safe'
+                ? 'work'
+                : request.theme === 'family'
+                    ? 'wholesome'
+                    : 'party';
+            const res = await fetch(`${API_URL}/integrations/revelry/party-games/prompts/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    party_games_token: authoringToken,
+                    game_type: 'party_quests',
+                    prompt: request.prompt,
+                    difficulty,
+                    num_prompts: request.numQuests,
+                    provider: request.provider,
+                }),
+            });
+            if (!res.ok) throw new Error('generate_failed');
+            const data = await res.json();
+            const generated = partyQuestsConfigFromPayload(
+                data.content_payload || {},
+                resolved?.launch_context.external_container_title
+                    ? `${resolved.launch_context.external_container_title} Quests`
+                    : 'Party Quests',
+            );
+            return {
+                ...generated,
+                duration_minutes: request.durationMinutes,
+                quests_per_player: Math.min(request.questsPerPlayer, generated.quests.length),
+                confirmation_mode: request.confirmationMode,
+            };
+        } catch {
+            setPartyError('Could not generate quests. Try a different party description or edit the starter pack.');
+            return null;
+        }
+    }
+
+    async function savePartyQuests(config: PartyQuestSetupConfig) {
+        setPartySaving(true);
+        setPartyError('');
+        try {
+            const res = await fetch(`${API_URL}/integrations/revelry/content`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${authoringToken}`,
+                },
+                body: JSON.stringify({
+                    game_type: 'party_quests',
+                    title: config.game_title,
+                    content_id: currentContentId || resolved?.localplay_content_id || undefined,
+                    content_payload: { game: config },
+                    status: 'ready',
+                }),
+            });
+            if (!res.ok) throw new Error('save_failed');
+            const data = await res.json();
+            const contentId = data.localplay_content_id as string;
+            setCurrentContentId(contentId);
+            returnToRevelry(contentId);
+        } catch {
+            setPartyError('Could not save Party Quests. Please try again.');
+        } finally {
+            setPartySaving(false);
+        }
     }
 
     async function generateAiQuiz() {
@@ -221,6 +309,40 @@ export default function RevelryAuthoringPage() {
 
     if (error || !resolved) {
         return <main className="party-hub party-hub--center">{error || 'Open this from Revelry again.'}</main>;
+    }
+
+    if (resolved.game_type === 'party_quests') {
+        const fallback = defaultPartyQuestsConfig('mingling');
+        const title = resolved.launch_context.external_container_title
+            ? `${resolved.launch_context.external_container_title} Quests`
+            : 'Party Quests';
+        const initialConfig = resolved.content?.content_payload
+            ? partyQuestsConfigFromPayload(resolved.content.content_payload, title)
+            : { ...fallback, game_title: title };
+        return (
+            <>
+                {partyError && <p className="revelry-ai-authoring-error container-responsive">{partyError}</p>}
+                <PartyQuestsSetupScreen
+                    initialConfig={initialConfig}
+                    provider={partyProvider}
+                    setProvider={setPartyProvider}
+                    providers={[]}
+                    onGenerateQuests={generatePartyQuests}
+                    onCreate={(config) => { void savePartyQuests(config); }}
+                    onBack={() => returnToRevelry()}
+                    submitLabel={partySaving ? 'Saving...' : 'Save Party Quests'}
+                    submitting={partySaving}
+                />
+            </>
+        );
+    }
+
+    if (resolved.game_type && resolved.game_type !== 'quiz') {
+        return (
+            <main className="party-hub party-hub--center">
+                This game setup is not available from this link. Return to Revelry Games and open it again.
+            </main>
+        );
     }
 
     const containerScope = [

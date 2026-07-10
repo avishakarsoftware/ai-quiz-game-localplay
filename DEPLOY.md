@@ -182,6 +182,7 @@ Gamma rollout status:
 - Verified the live catalog, desktop setup/edit/save flow, Host/Player/TV sample preview, and a 390x844 mobile preview with no horizontal overflow. The temporary saved setup was deleted after the test.
 - `npm run test:e2e:gamma` passed on desktop and mobile (`2 passed`). The full pre-deploy suites were `1003` backend tests and `285` frontend tests, with the final focused additions also passing.
 - Docker Desktop's registry bridge stalled while resolving `python:3.12-slim`; the same official image was pulled and the exact prepared context was built on the deployment VM, after which the normal `--skip-build` backup/restart/health path completed. This was a local build-path issue, not a gamma service failure.
+- Revelry's staged-flow harness then exposed a direct-link routing gap: `POST /integrations/revelry/content/authoring-link` accepted `game_type=party_quests` but `/revelry/author` still rendered the quiz chooser. LocalPlay now dispatches the resolved authoring token by game type, loads/type-checks generic Party Quests content for edit, and returns the Party Quests setup UI. Deploy and re-run the direct authoring harness before enabling strict check-in.
 
 Production remains unchanged: the production generated-content constraint and production Party Quests capability row have not been promoted.
 

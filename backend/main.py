@@ -3582,8 +3582,13 @@ async def create_revelry_content_authoring_link(request: RevelryContentAuthoring
         raise HTTPException(status_code=422, detail="content_id is required for edit or duplicate")
     if request.content_id:
         wallet_id = _revelry_party_wallet_id(request.external_context.external_container_id)
-        if not db.get_quiz_pack(wallet_id, request.content_id):
+        pack = db.get_quiz_pack(wallet_id, request.content_id)
+        game_content = db.get_game_content(wallet_id, request.content_id)
+        content_game_type = "quiz" if pack else (game_content or {}).get("game_type", "")
+        if not pack and not game_content:
             raise HTTPException(status_code=404, detail="Content not found")
+        if content_game_type != request.game_type:
+            raise HTTPException(status_code=422, detail="content_id does not match game_type")
     token, expires, launch_context = _create_authoring_token(
         request.external_context,
         request.actor,
@@ -3615,8 +3620,13 @@ async def create_revelry_party_games_authoring_link(request: RevelryPartyGamesAu
         raise HTTPException(status_code=422, detail="content_id is required for edit or duplicate")
     if request.content_id:
         wallet_id = _revelry_party_wallet_id(context.external_container_id)
-        if not db.get_quiz_pack(wallet_id, request.content_id):
+        pack = db.get_quiz_pack(wallet_id, request.content_id)
+        game_content = db.get_game_content(wallet_id, request.content_id)
+        content_game_type = "quiz" if pack else (game_content or {}).get("game_type", "")
+        if not pack and not game_content:
             raise HTTPException(status_code=404, detail="Content not found")
+        if content_game_type != request.game_type:
+            raise HTTPException(status_code=422, detail="content_id does not match game_type")
     token, expires, next_context = _create_authoring_token(
         context,
         actor,
@@ -3642,10 +3652,23 @@ async def resolve_revelry_authoring_token(authoring_token: str):
     content = None
     content_id = claims.get("content_id") or ""
     if content_id:
-        pack = db.get_quiz_pack(_revelry_party_wallet_id(context.external_container_id), content_id)
-        if not pack:
+        wallet_id = _revelry_party_wallet_id(context.external_container_id)
+        pack = db.get_quiz_pack(wallet_id, content_id)
+        game_content = db.get_game_content(wallet_id, content_id)
+        if not pack and not game_content:
             raise HTTPException(status_code=404, detail="Content not found")
-        content = {"metadata": _quiz_pack_summary(pack), "quiz": _pack_to_quiz(pack)}
+        token_game_type = claims.get("game_type", "quiz")
+        content_game_type = "quiz" if pack else (game_content or {}).get("game_type", "")
+        if content_game_type != token_game_type:
+            raise HTTPException(status_code=422, detail="content_id does not match game_type")
+        content = (
+            {"metadata": _quiz_pack_summary(pack), "quiz": _pack_to_quiz(pack)}
+            if pack
+            else {
+                "metadata": _prepared_content_summary(game_content),
+                "content_payload": _game_content_payload(game_content),
+            }
+        )
     return {
         "launch_context": claims["launch_context"],
         "game_type": claims.get("game_type", "quiz"),

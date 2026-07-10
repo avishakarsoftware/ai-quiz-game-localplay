@@ -970,6 +970,88 @@ def test_revelry_authoring_link_save_and_fetch_content(monkeypatch):
     assert get_res.json()["quiz"]["quiz_title"] == "Party Facts"
 
 
+def test_revelry_party_quests_authoring_link_save_and_reopen(monkeypatch):
+    monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
+    db.init_db()
+    container_id = f"party-quests-author-{uuid.uuid4().hex}"
+    payload = {
+        "external_context": {
+            "host_app": "revelry",
+            "external_container_type": "party",
+            "external_container_id": container_id,
+            "external_container_title": "Camping Weekend",
+            "return_url": "https://app.revelryapp.me/party/1?tab=games",
+        },
+        "actor": {
+            "external_user_id": "host-1",
+            "display_name": "Ava",
+            "role": "host",
+            "capabilities": ["author_content"],
+        },
+        "game_type": "party_quests",
+        "mode": "create",
+    }
+
+    link_res = client.post("/integrations/revelry/content/authoring-link", headers=_headers(), json=payload)
+    assert link_res.status_code == 200
+    assert "/revelry/author?authoring_token=" in link_res.json()["authoring_url"]
+    token = link_res.json()["authoring_url"].split("authoring_token=", 1)[1]
+
+    resolve_res = client.get(f"/integrations/revelry/content/authoring-token/resolve?authoring_token={token}")
+    assert resolve_res.status_code == 200
+    assert resolve_res.json()["game_type"] == "party_quests"
+    assert resolve_res.json()["content"] is None
+
+    quest_config = {
+        "game_title": "Camping Weekend Quests",
+        "theme": "family",
+        "duration_minutes": 60,
+        "quests_per_player": 3,
+        "confirmation_mode": "tap_confirm",
+        "allow_late_join": True,
+        "quests": [
+            {"display": "Meet someone who has pitched a tent.", "category": "family", "points": 100},
+            {"display": "Find someone who likes campfire songs.", "category": "family", "points": 100},
+            {"display": "Ask someone for a hiking recommendation.", "category": "family", "points": 150},
+        ],
+    }
+    save_res = client.post(
+        "/integrations/revelry/content",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "game_type": "party_quests",
+            "title": quest_config["game_title"],
+            "content_payload": {"game": quest_config},
+            "status": "ready",
+        },
+    )
+    assert save_res.status_code == 200
+    content_id = save_res.json()["localplay_content_id"]
+    saved = db.get_game_content(f"revelry:party:{container_id}", content_id)
+    assert saved["game_type"] == "party_quests"
+
+    edit_payload = {**payload, "mode": "edit", "content_id": content_id}
+    edit_link_res = client.post("/integrations/revelry/content/authoring-link", headers=_headers(), json=edit_payload)
+    assert edit_link_res.status_code == 200
+    edit_token = edit_link_res.json()["authoring_url"].split("authoring_token=", 1)[1]
+    edit_resolve = client.get(
+        f"/integrations/revelry/content/authoring-token/resolve?authoring_token={edit_token}"
+    )
+    assert edit_resolve.status_code == 200
+    body = edit_resolve.json()
+    assert body["game_type"] == "party_quests"
+    assert body["localplay_content_id"] == content_id
+    assert body["content"]["content_payload"]["game"]["quests"][0]["display"] == quest_config["quests"][0]["display"]
+
+    mismatch = client.post(
+        "/integrations/revelry/content/authoring-link",
+        headers=_headers(),
+        json={**edit_payload, "game_type": "quiz"},
+    )
+    assert mismatch.status_code == 422
+    assert mismatch.json()["detail"] == "content_id does not match game_type"
+
+
 def test_revelry_authoring_token_can_generate_ai_quiz(monkeypatch):
     monkeypatch.setattr(config, "REVELRY_INTEGRATION_SECRET", "test-revelry-secret")
     db.init_db()

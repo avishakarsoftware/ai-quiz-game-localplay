@@ -274,6 +274,16 @@ The Party Quests card in the LocalPlay-owned Revelry party hub uses **Set up Par
 4. configure duration, quests per player, confirmation mode, and late joins;
 5. save as a party-scoped prepared game.
 
+The same Party Quests setup must open when Revelry requests a service-minted authoring link through `POST /integrations/revelry/content/authoring-link` with `game_type="party_quests"`. The returned `/revelry/author?authoring_token=...` page resolves the token and dispatches on its authoritative `game_type`:
+
+- `quiz` opens the AI/custom quiz chooser or existing quiz editor;
+- `party_quests` opens the Party Quests pack/AI/edit/reorder/settings surface directly;
+- an unsupported authoring game type fails closed with a useful error rather than falling back to quiz UI.
+
+For Party Quests create mode, the direct page starts with a party-titled starter pack and saves through `POST /integrations/revelry/content` using the authoring bearer token. For edit/duplicate mode, authoring-link validation and token resolution must load generic saved `generated_content`, verify that its stored `game_type` is `party_quests`, and return `content.content_payload`; quiz-only storage lookup is not sufficient. A mismatched `content_id` and requested `game_type` returns `422 content_id does not match game_type`.
+
+After a successful direct save, LocalPlay returns to the validated Revelry URL with `localplay_content_id`, `game_type=party_quests`, and `status=ready`. The normal content callback remains authoritative. Full payloads, tokens, quest text, and organizer credentials must not be placed in the return URL.
+
 The saved card exposes **Edit**, **Preview**, **Start now**, and, when Revelry supports the party setting, **Use at check-in**.
 
 MVP preview is deterministic and client-side. It loads the server-validated saved payload and offers three tabs:

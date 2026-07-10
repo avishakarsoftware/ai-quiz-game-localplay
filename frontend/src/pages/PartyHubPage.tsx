@@ -6,6 +6,7 @@ import GameRulesModal from '../components/GameRulesModal';
 import PartyQuestsPreview from '../components/PartyQuestsPreview';
 import PartyQuestsSetupScreen, {
     defaultPartyQuestsConfig,
+    partyQuestsConfigFromPayload,
     type PartyQuestSetupConfig,
 } from '../components/organizer/PartyQuestsSetupScreen';
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
@@ -321,33 +322,6 @@ function contentPayloadFromDraft(draft: SetupDraft) {
         };
     }
     return { game: { game_title: draft.title, prompts } };
-}
-
-function partyQuestsConfigFromPayload(payload: Record<string, unknown>, fallbackTitle = 'Party Quests'): PartyQuestSetupConfig {
-    const raw = payload?.game && typeof payload.game === 'object'
-        ? payload.game as Record<string, unknown>
-        : payload;
-    const theme = typeof raw.theme === 'string' ? raw.theme : 'mingling';
-    const fallback = defaultPartyQuestsConfig(theme);
-    const quests = Array.isArray(raw.quests)
-        ? raw.quests.map((item) => {
-            const quest = typeof item === 'object' && item ? item as Record<string, unknown> : {};
-            return {
-                display: String(quest.display || quest.text || '').trim(),
-                category: typeof quest.category === 'string' ? quest.category : theme,
-                points: Number(quest.points) > 100 ? 150 : 100,
-            };
-        }).filter((item) => item.display)
-        : fallback.quests;
-    return {
-        game_title: String(raw.game_title || fallbackTitle || 'Party Quests').slice(0, 120),
-        theme,
-        duration_minutes: Number(raw.duration_minutes) || fallback.duration_minutes,
-        quests_per_player: Math.min(Number(raw.quests_per_player) || fallback.quests_per_player, Math.max(3, quests.length)),
-        confirmation_mode: raw.confirmation_mode === 'honor' ? 'honor' : 'tap_confirm',
-        allow_late_join: raw.allow_late_join !== false,
-        quests,
-    };
 }
 
 export default function PartyHubPage() {
