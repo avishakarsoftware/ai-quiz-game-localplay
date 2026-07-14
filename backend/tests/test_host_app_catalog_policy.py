@@ -4,7 +4,7 @@ import config
 import db
 from game_rules import validate_catalog_rules, validate_rules
 from host_app_catalog_policy import clear_policy_cache, effective_catalog, is_game_allowed
-from main import GAME_CATALOG
+from main import GAME_CATALOG, REVELRY_PARTY_GAME_START_TYPES
 
 
 def setup_function():
@@ -34,6 +34,10 @@ def test_local_missing_policy_uses_static_host_app_catalog():
         "poker",
     }.issubset(game_ids)
     assert all(game.get("rules", {}).get("sections") for game in games)
+
+
+def test_revelry_start_game_type_allowlist_has_no_duplicates():
+    assert len(REVELRY_PARTY_GAME_START_TYPES) == len(set(REVELRY_PARTY_GAME_START_TYPES))
 
 
 def test_static_launchable_games_have_rules_metadata():

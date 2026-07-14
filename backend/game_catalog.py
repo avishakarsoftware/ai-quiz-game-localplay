@@ -19,7 +19,6 @@ REVELRY_PARTY_GAME_START_TYPES = (
     "bluff",
     "find_someone",
     "mafia",
-    "party_quests",
     "would_you_rather",
     "never_have_i_ever",
     "word_association",
