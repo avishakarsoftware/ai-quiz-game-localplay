@@ -39,6 +39,26 @@ As of the SPA rollout, the VM has both LocalPlay containers deployed:
 
 The older backup containers `revelry-platform` and `revelry-gamma` may exist on the VM. They are not managed by `scripts/deploy-gcp.sh`; the LocalPlay deploy script only stops/removes `games-backend` and `games-backend-gamma`.
 
+## Environment status ledger — the single source of truth for "what is live where"
+
+**Update this table in the same commit as any deploy, DB migration, or policy flip.** Specs must
+link here instead of restating environment status (stale spec headers were a recurring bug).
+
+| Capability / feature | Gamma | Prod | Notes |
+|---|---|---|---|
+| Deployed code (backend+SPA) | `6b6fffb5` +this-branch | `6b6fffb5` | July 13 promotion; IONOS public frontend last uploaded at `76f5a0b5` (testids) |
+| Login-streak bonus (SQL RPC) | ✅ live | ✅ live | applied 2026-07-08, targeted migration |
+| Check-in games policy (`party_quests`, `find_someone`) | ✅ enabled | ✅ enabled (quick-start only) | policy rows 2026-07-08 |
+| Party Quests staged flow (authoring caps + strict `requires_prepared_content_for_checkin`) | ✅ flipped 2026-07-09 | ❌ off | prod has the CODE since July 13; DDL + policy caps + strict flip still pending |
+| `generated_content.content_type` CHECK | quiz/mlt/drawing/housie/chit_pull/party_quests | quiz/mlt/drawing | prod DDL expansion pending |
+| Referrals (`REFERRALS_ENABLED` + referral RPCs) | ❌ off | ❌ off | SQL rendered, not applied; deliberate gate |
+| Native IAP (`REVENUECAT_WEBHOOK_SECRET`) | ✅ configured | ❌ unset | prod runbook: LAUNCH-CHECKLIST.md |
+| Web Stripe | test keys | ❌ no live keys | Phase 5 of LAUNCH-CHECKLIST.md |
+| Cross-app Playwright testids | ✅ | ✅ (incl. IONOS) | 8 testids, 2026-07-09 |
+| Room snapshot/restore (`ROOM_SNAPSHOT_ENABLED`) | pending this deploy | pending | shipped in code 2026-07-13; on by default |
+| Analytics (PostHog keys) | ❌ unset | ❌ unset | code no-ops until keys set |
+| Ads (`ads_enabled`) | ❌ | ❌ | SPEC-ADS not built |
+
 ### Recent gamma + prod deploy — July 13, 2026 (authoring-return docs/code promotion)
 
 Promoted repo HEAD `6b6fffb5` to gamma and prod with the normal backend-served SPA path. No schema migration, IONOS upload, or Party Quests production capability/policy flip was performed in this pass.
