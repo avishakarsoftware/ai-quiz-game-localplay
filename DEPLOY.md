@@ -39,6 +39,15 @@ As of the SPA rollout, the VM has both LocalPlay containers deployed:
 
 The older backup containers `revelry-platform` and `revelry-gamma` may exist on the VM. They are not managed by `scripts/deploy-gcp.sh`; the LocalPlay deploy script only stops/removes `games-backend` and `games-backend-gamma`.
 
+### Recent gamma + prod deploy — July 13, 2026 (authoring-return docs/code promotion)
+
+Promoted repo HEAD `6b6fffb5` to gamma and prod with the normal backend-served SPA path. No schema migration, IONOS upload, or Party Quests production capability/policy flip was performed in this pass.
+
+- **Gamma:** `./scripts/deploy-gcp.sh --gamma --with-frontend` -> `games-backend-gamma` (Supabase `games_gamma_`). DB backed up to `revelry-backups-gamma/revelry_20260713_224748.db`; health passed.
+- **Prod backend + fallback SPA:** `./scripts/deploy-gcp.sh --with-frontend` -> `games-backend` (Supabase `games_`). DB backed up to `revelry-backups/revelry_20260713_224934.db`; health passed.
+- **Verified:** `cd frontend && npm run test:e2e:gamma` passed on desktop+mobile (`2 passed`); `make test-remote-gamma` passed; `make test-remote-prod` passed. The remote smoke covered `/health`, Gemini provider/config, `/media/status`, SPA root, anonymous auth rejection, invalid token rejection, iOS checkout guard, first generation, idempotency, and token balance no-double-charge before room start.
+- **Policy note:** production remains on the existing conservative host-app policy. Party Quests staged/check-in production enablement still requires the explicit prod DDL/policy rollout described in `SPEC-REVELRY-INTEGRATION.md`; this deploy only promotes the backward-compatible code/docs state.
+
 ### Recent PROD deploy — June 29, 2026 (unified back nav + lobby review peek + grace prune + mint helper)
 
 Promoted runtime commit `435ed15` to gamma and prod. No schema migration required.
