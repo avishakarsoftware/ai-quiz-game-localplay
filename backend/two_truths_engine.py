@@ -3,6 +3,8 @@ import re
 import time
 from typing import Any
 
+from engine_common import make_clean_text
+_clean_text = make_clean_text(max_chars=180)
 
 PHASE_SUBMISSION = "TT_SUBMISSION"
 PHASE_VOTING = "TT_VOTING"
@@ -13,11 +15,6 @@ POINTS_CORRECT_GUESS = 500
 POINTS_FOOLED_VOTER = 250
 POINTS_FOOLED_EVERYONE_BONUS = 500
 MIN_STATEMENT_CHARS = 3
-
-
-def _clean_text(value: Any, max_chars: int = 180) -> str:
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(value or ""))
-    return re.sub(r"\s+", " ", text).strip()[:max_chars]
 
 
 def _norm(value: str) -> str:

@@ -11,6 +11,8 @@ import time
 import unicodedata
 from typing import Any, Optional
 
+from engine_common import clamp_int as _clamp_int, make_clean_text
+_clean_text = make_clean_text(max_chars=160)
 
 PHASE_WAITING_FOR_PHOTO = "PHOTO_WAITING_FOR_PHOTO"
 PHASE_GUESSING = "PHOTO_GUESSING"
@@ -26,14 +28,6 @@ DEFAULT_PROMPTS = [
 ]
 
 
-def _clean_text(value: Any, max_chars: int = 160) -> str:
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(value or ""))
-    text = re.sub(r"<\s*/?\s*(script|style|iframe)[^>]*>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:max_chars]
-
-
 def normalize_guess(value: Any) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
@@ -42,14 +36,6 @@ def normalize_guess(value: Any) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     text = re.sub(r"^(a|an|the)\s+", "", text)
     return text
-
-
-def _clamp_int(raw: dict, key: str, default: int, low: int, high: int) -> int:
-    try:
-        value = int(raw.get(key, default))
-    except (TypeError, ValueError):
-        value = default
-    return max(low, min(high, value))
 
 
 def _sanitize_prompt(raw: dict, index: int) -> Optional[dict]:

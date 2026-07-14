@@ -3,6 +3,8 @@ import re
 import time
 from typing import Any
 
+from engine_common import clamp_int as _clamp_int, make_clean_text
+_clean_text = make_clean_text(max_chars=180)
 
 PHASE_TURN = "STORY_TURN"
 PHASE_REVEAL = "STORY_REVEAL"
@@ -11,21 +13,6 @@ PHASE_PODIUM = "PODIUM"
 PLACEHOLDER_SENTENCE = "Then something unexpected happened."
 POINTS_SENTENCE = 100
 POINTS_ON_TIME = 25
-
-
-def _clean_text(value: Any, max_chars: int = 180) -> str:
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(value or ""))
-    text = re.sub(r"<\s*/?\s*(script|style|iframe)[^>]*>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:max_chars]
-
-
-def _clamp_int(raw: dict, key: str, default: int, low: int, high: int) -> int:
-    try:
-        value = int(raw.get(key, default))
-    except (TypeError, ValueError):
-        value = default
-    return max(low, min(high, value))
 
 
 def validate_config(raw: dict | None) -> dict:

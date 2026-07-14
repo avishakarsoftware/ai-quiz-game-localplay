@@ -6,6 +6,8 @@ import re
 import time
 from typing import Any, Optional
 
+from engine_common import clamp_int as _clamp_int, make_clean_text
+_clean_text = make_clean_text(max_chars=160)
 
 PHASE_SUBMITTING = "ACRONYM_SUBMITTING"
 PHASE_VOTING = "ACRONYM_VOTING"
@@ -17,14 +19,6 @@ DEFAULT_PROMPTS = [
     {"id": "acro_2", "acronym": "CAKE", "hint": "Make it delicious.", "category": "birthday"},
     {"id": "acro_3", "acronym": "DANCE", "hint": "Make it dramatic.", "category": "party"},
 ]
-
-
-def _clean_text(value: Any, max_chars: int = 160) -> str:
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(value or ""))
-    text = re.sub(r"<\s*/?\s*(script|style|iframe)[^>]*>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:max_chars]
 
 
 def normalize_acronym(value: Any) -> str:
@@ -48,14 +42,6 @@ def _entry_id(player_id: str, state: dict) -> str:
     # from the visible player list, while staying stable for submission edits.
     source = f"{state.get('started_at')}:{state.get('current_round_index', 0)}:{player_id}"
     return "entry_" + hashlib.sha1(source.encode("utf-8")).hexdigest()[:12]
-
-
-def _clamp_int(raw: dict, key: str, default: int, low: int, high: int) -> int:
-    try:
-        value = int(raw.get(key, default))
-    except (TypeError, ValueError):
-        value = default
-    return max(low, min(high, value))
 
 
 def _sanitize_prompt(raw: dict, index: int) -> Optional[dict]:

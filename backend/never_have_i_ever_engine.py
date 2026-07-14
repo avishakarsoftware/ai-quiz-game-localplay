@@ -5,6 +5,8 @@ import re
 import time
 from typing import Any, Optional
 
+from engine_common import clamp_int as _clamp_int, make_clean_text
+_clean_text = make_clean_text(max_chars=160)
 
 PHASE_ANSWERING = "NHIE_ANSWERING"
 PHASE_REVEAL = "NHIE_REVEAL"
@@ -20,22 +22,6 @@ DEFAULT_PROMPTS = [
     {"id": "nhie_2", "statement": "Never have I ever forgotten why I walked into a room.", "category": "classic"},
     {"id": "nhie_3", "statement": "Never have I ever laughed at the worst possible moment.", "category": "party"},
 ]
-
-
-def _clean_text(value: Any, max_chars: int = 160) -> str:
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(value or ""))
-    text = re.sub(r"<\s*/?\s*(script|style|iframe)[^>]*>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:max_chars]
-
-
-def _clamp_int(raw: dict, key: str, default: int, low: int, high: int) -> int:
-    try:
-        value = int(raw.get(key, default))
-    except (TypeError, ValueError):
-        value = default
-    return max(low, min(high, value))
 
 
 def _sanitize_prompt(raw: dict, index: int) -> Optional[dict]:

@@ -12,18 +12,11 @@ from typing import Any, Optional
 from card_engine import build_standard_deck, shuffle_cards
 from poker_hand_evaluator import rank_players
 
+from engine_common import clamp_int as _clamp_int
 
 PHASE_DECISION = "POKER_DECISION"
 PHASE_SHOWDOWN = "POKER_SHOWDOWN"
 PHASE_PODIUM = "PODIUM"
-
-
-def _clamp_int(raw: dict, key: str, default: int, low: int, high: int) -> int:
-    try:
-        value = int(raw.get(key, default))
-    except (TypeError, ValueError):
-        value = default
-    return max(low, min(high, value))
 
 
 def validate_config(raw: Optional[dict]) -> dict:

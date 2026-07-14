@@ -12,6 +12,8 @@ import time
 import unicodedata
 from typing import Any
 
+from engine_common import clamp_int as _clamp_int, make_clean_text
+_clean_text = make_clean_text(max_chars=180)
 
 PHASE_ANSWERING = "SURVEY_ANSWERING"
 PHASE_STEAL = "SURVEY_STEAL"
@@ -55,14 +57,6 @@ DEFAULT_ROUNDS = [
 ]
 
 
-def _clean_text(value: Any, max_chars: int = 180) -> str:
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(value or ""))
-    text = re.sub(r"<\s*/?\s*(script|style|iframe)[^>]*>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:max_chars]
-
-
 def _normalize(value: Any) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
@@ -70,14 +64,6 @@ def _normalize(value: Any) -> str:
     text = re.sub(r"[^a-z0-9\s]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return re.sub(r"^(a|an|the)\s+", "", text)
-
-
-def _clamp_int(raw: dict, key: str, default: int, low: int, high: int) -> int:
-    try:
-        value = int(raw.get(key, default))
-    except (TypeError, ValueError):
-        value = default
-    return max(low, min(high, value))
 
 
 def _sanitize_answer(raw: dict, index: int) -> dict | None:

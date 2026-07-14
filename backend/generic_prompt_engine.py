@@ -13,6 +13,8 @@ import time
 import unicodedata
 from typing import Any
 
+from engine_common import clamp_int as _clamp_int, make_clean_text
+_clean_text = make_clean_text(max_chars=220)
 
 PHASE_CHOICE = "GENERIC_CHOICE"
 PHASE_SUBMITTING = "GENERIC_SUBMITTING"
@@ -172,14 +174,6 @@ GAME_LIBRARY: dict[str, dict[str, Any]] = {
 }
 
 
-def _clean_text(value: Any, max_chars: int = 220) -> str:
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(value or ""))
-    text = re.sub(r"<\s*/?\s*(script|style|iframe)[^>]*>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:max_chars]
-
-
 def _normalize(value: Any) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
@@ -202,14 +196,6 @@ def _entry_id(player_id: str, state: dict) -> str:
     source = f"{state.get('started_at')}:{state.get('current_round_index', 0)}:{player_id}"
     digest = hashlib.sha1(source.encode("utf-8")).hexdigest()
     return f"entry_{digest[:12]}"
-
-
-def _clamp_int(raw: dict, key: str, default: int, low: int, high: int) -> int:
-    try:
-        value = int(raw.get(key, default))
-    except (TypeError, ValueError):
-        value = default
-    return max(low, min(high, value))
 
 
 def is_generic_prompt_game(game_type: str) -> bool:

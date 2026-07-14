@@ -3,6 +3,8 @@ import re
 import time
 from typing import Any
 
+from engine_common import clamp_int as _clamp_int, make_clean_text
+_clean_text = make_clean_text(max_chars=120)
 
 PHASE_ROLE_REVEAL = "MAFIA_ROLE_REVEAL"
 PHASE_NIGHT = "MAFIA_NIGHT"
@@ -60,21 +62,6 @@ ROLE_DISTRIBUTION = {
     14: {"mafia": 4, "detective": 1, "doctor": 1, "villager": 8},
     15: {"mafia": 4, "detective": 1, "doctor": 1, "villager": 9},
 }
-
-
-def _clean_text(value: Any, max_chars: int = 120) -> str:
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(value or ""))
-    text = re.sub(r"<\s*/?\s*(script|style|iframe)[^>]*>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", "", text)
-    return re.sub(r"\s+", " ", text).strip()[:max_chars]
-
-
-def _clamp_int(raw: dict, key: str, default: int, low: int, high: int) -> int:
-    try:
-        value = int(raw.get(key, default))
-    except (TypeError, ValueError):
-        value = default
-    return max(low, min(high, value))
 
 
 def validate_config(raw: dict | None) -> dict:

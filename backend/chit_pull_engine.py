@@ -3,6 +3,8 @@ import re
 import time
 from typing import Any
 
+from engine_common import clamp_int as _clamp_int, make_clean_text
+_clean_text = make_clean_text(max_chars=180)
 
 PHASE_READY = "CHIT_READY"
 PHASE_ACTIVE = "CHIT_ACTIVE"
@@ -33,24 +35,8 @@ UNSAFE_PATTERNS = [
 ]
 
 
-def _clean_text(value: Any, max_chars: int = 180) -> str:
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", str(value or ""))
-    text = re.sub(r"<\s*/?\s*(script|style|iframe)[^>]*>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:max_chars]
-
-
 def _normalize(value: Any) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
-
-
-def _clamp_int(raw: dict, key: str, default: int, low: int, high: int) -> int:
-    try:
-        value = int(raw.get(key, default))
-    except (TypeError, ValueError):
-        value = default
-    return max(low, min(high, value))
 
 
 def _is_unsafe(text: str) -> bool:
