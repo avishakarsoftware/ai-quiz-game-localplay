@@ -12,8 +12,11 @@ from socket_manager import Room, SocketManager
 
 @pytest.fixture(autouse=True)
 def snapshot_dir(tmp_path, monkeypatch):
+    import config
     d = tmp_path / "room_snapshots"
     monkeypatch.setattr(room_snapshot, "SNAPSHOT_DIR", str(d))
+    # conftest globally disables snapshots for test isolation; this module tests them.
+    monkeypatch.setattr(config, "ROOM_SNAPSHOT_ENABLED", True)
     return d
 
 

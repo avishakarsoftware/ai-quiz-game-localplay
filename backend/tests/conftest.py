@@ -5,12 +5,28 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import pytest
+import config
 import db
 import main
+import room_snapshot
 import tokens as tokens_mod
 
 # Standard test device ID used across test helpers
 TEST_DEVICE_ID = "00000000-0000-0000-0000-000000000001"
+
+
+@pytest.fixture(autouse=True)
+def isolate_room_snapshots(tmp_path, monkeypatch):
+    """Keep room snapshots out of the real data dir during tests.
+
+    Without this, every TestClient lifespan startup restores rooms leaked by
+    earlier test runs (50 snapshots -> MAX_ROOMS -> 429 on /room/create).
+    Snapshotting is disabled by default; test_room_snapshot re-enables it and
+    points SNAPSHOT_DIR at its own tmp dir.
+    """
+    monkeypatch.setattr(room_snapshot, "SNAPSHOT_DIR", str(tmp_path / "room_snapshots"))
+    monkeypatch.setattr(config, "ROOM_SNAPSHOT_ENABLED", False)
+    yield
 
 
 @pytest.fixture(autouse=True)
