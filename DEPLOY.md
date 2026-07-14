@@ -46,7 +46,7 @@ link here instead of restating environment status (stale spec headers were a rec
 
 | Capability / feature | Gamma | Prod | Notes |
 |---|---|---|---|
-| Deployed code (backend+SPA) | `6b6fffb5` +this-branch | `6b6fffb5` | July 13 promotion; IONOS public frontend last uploaded at `76f5a0b5` (testids) |
+| Deployed code (backend+SPA) | `d04e7f0c` (2026-07-14) | `6b6fffb5` | gamma has the refactor+snapshot train; IONOS public frontend last uploaded at `76f5a0b5` (testids) |
 | Login-streak bonus (SQL RPC) | ✅ live | ✅ live | applied 2026-07-08, targeted migration |
 | Check-in games policy (`party_quests`, `find_someone`) | ✅ enabled | ✅ enabled (quick-start only) | policy rows 2026-07-08 |
 | Party Quests staged flow (authoring caps + strict `requires_prepared_content_for_checkin`) | ✅ flipped 2026-07-09 | ❌ off | prod has the CODE since July 13; DDL + policy caps + strict flip still pending |
@@ -55,9 +55,17 @@ link here instead of restating environment status (stale spec headers were a rec
 | Native IAP (`REVENUECAT_WEBHOOK_SECRET`) | ✅ configured | ❌ unset | prod runbook: LAUNCH-CHECKLIST.md |
 | Web Stripe | test keys | ❌ no live keys | Phase 5 of LAUNCH-CHECKLIST.md |
 | Cross-app Playwright testids | ✅ | ✅ (incl. IONOS) | 8 testids, 2026-07-09 |
-| Room snapshot/restore (`ROOM_SNAPSHOT_ENABLED`) | pending this deploy | pending | shipped in code 2026-07-13; on by default |
+| Room snapshot/restore (`ROOM_SNAPSHOT_ENABLED`) | ✅ live + restart-verified | ❌ pending prod deploy | live-verified 2026-07-14: room `P93RR8` + player seat survived a real gamma container restart |
 | Analytics (PostHog keys) | ❌ unset | ❌ unset | code no-ops until keys set |
 | Ads (`ads_enabled`) | ❌ | ❌ | SPEC-ADS not built |
+
+### Recent gamma deploy — July 14, 2026 (refactor train + room snapshot/restore)
+
+Deployed commit `d04e7f0c` to gamma. Ships: engine_common extraction (one strict sanitization policy — 4 engines were below the documented tag-stripping baseline), GAME_CATALOG extracted from main.py, CI hardening (vitest in CI, e2e un-quarantined, pytest-timeout, Postgres parity suite — 8/8 green vs postgres:16), and **room snapshot/restore** (`ROOM_SNAPSHOT_ENABLED=true` default; snapshots at `/app/data/room_snapshots` on the mounted volume).
+
+**Deploy-path note:** the local `docker build` was blocked this pass (Docker Desktop VM couldn't reach Docker Hub and `python:3.12-slim` was no longer cached; host network fine — did NOT restart Docker Desktop because pihole/homeassistant run there). Fallback used and worth keeping: build the frontend locally, rsync the backend+static context to the VM, `docker build` **on the VM** (native x86 + datacenter network), then the script's normal stop/run/health steps. Consider adding `--build-on-vm` to deploy-gcp.sh.
+
+Verified live: health, 16-game revelry catalog with `party_quests` strict flag intact, SPA serving. **Restart drill on live gamma:** created room `P93RR8`, player joined via WSS, snapshot appeared on the volume within one 10s tick, `docker restart games-backend-gamma`, logs showed `Restored 1 room(s) from snapshots: P93RR8`, and the same session token got `RECONNECTED` with the seat intact. Local: backend 1031 passed, frontend 291 + tsc clean. Prod not deployed.
 
 ### Recent gamma + prod deploy — July 13, 2026 (authoring-return docs/code promotion)
 
