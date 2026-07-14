@@ -15,6 +15,7 @@ import httpx
 import random
 
 import config
+import room_snapshot
 import tokens as token_module
 from media_store import media_store
 from musical_chairs_engine import choose_eliminated, intensity_for_round, rank_grabs, total_rounds as mc_total_rounds, validate_config as validate_musical_chairs_config
@@ -822,6 +823,7 @@ class SocketManager:
     def __init__(self):
         self.rooms: Dict[str, Room] = {}
         self._cleanup_task: Optional[asyncio.Task] = None
+        self._snapshot_task: Optional[asyncio.Task] = None
         self.allowed_origins: List[str] = []
 
     def start_cleanup_loop(self):
@@ -835,6 +837,60 @@ class SocketManager:
             self._cleanup_task.cancel()
             self._cleanup_task = None
 
+    # --- Room snapshot/restore (live games survive deploys) ---
+
+    def start_snapshot_loop(self):
+        """Start the periodic room-snapshot task (see room_snapshot.py)."""
+        if config.ROOM_SNAPSHOT_ENABLED and self._snapshot_task is None:
+            self._snapshot_task = asyncio.create_task(self._snapshot_rooms_loop())
+
+    def stop_snapshot_loop(self):
+        """Cancel the snapshot task and take one final snapshot (deploy shutdown path)."""
+        if self._snapshot_task is not None:
+            self._snapshot_task.cancel()
+            self._snapshot_task = None
+        if config.ROOM_SNAPSHOT_ENABLED:
+            room_snapshot.save_all(self.rooms)
+
+    async def _snapshot_rooms_loop(self):
+        while True:
+            try:
+                await asyncio.sleep(config.ROOM_SNAPSHOT_INTERVAL_SECONDS)
+                room_snapshot.save_all(self.rooms)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Error in room snapshot loop")
+
+    def restore_rooms(self) -> int:
+        """Rebuild rooms from snapshots at startup. Returns the number restored.
+
+        Must run inside the event loop (restarts question timers). Reconnection
+        uses the existing machinery: session tokens + organizer_token were part
+        of the snapshot, so clients reclaim their seats like after any drop.
+        """
+        if not config.ROOM_SNAPSHOT_ENABLED:
+            return 0
+        restored = room_snapshot.load_all(
+            lambda code, game_data, time_limit, organizer_token, content_id, game_type, billing_mode: Room(
+                code, game_data, time_limit, organizer_token=organizer_token,
+                content_id=content_id, game_type=game_type, billing_mode=billing_mode,
+            ),
+            config.ROOM_TTL_SECONDS,
+        )
+        for room in restored:
+            if room.room_code in self.rooms:
+                continue
+            self.rooms[room.room_code] = room
+            if room.state == "QUESTION":
+                # Fresh countdown for the interrupted question; scoring still
+                # uses the original question_start_time.
+                room.timer_task = asyncio.create_task(self.question_timer(room))
+        if restored:
+            logger.info("Restored %d room(s) from snapshots: %s",
+                        len(restored), ", ".join(r.room_code for r in restored))
+        return len(restored)
+
     async def _cleanup_expired_rooms(self):
         """Periodically remove expired rooms."""
         while True:
@@ -843,6 +899,7 @@ class SocketManager:
                 expired = [code for code, room in self.rooms.items() if room.is_expired()]
                 for code in expired:
                     room = self.rooms.pop(code, None)
+                    room_snapshot.delete(code)
                     if room:
                         if room.timer_task:
                             room.timer_task.cancel()
@@ -877,6 +934,7 @@ class SocketManager:
             if room and room.organizer is None:
                 await room.broadcast({"type": "ROOM_CLOSED"})
                 self.rooms.pop(room_code, None)
+                room_snapshot.delete(room_code)
                 if room.timer_task:
                     room.timer_task.cancel()
                 await room.close_all_connections()
@@ -909,6 +967,7 @@ class SocketManager:
     async def close_room(self, room_code: str, reason: str = "cancelled", message: str = "This game was closed."):
         """Close and remove a runtime room, notifying connected clients first."""
         room = self.rooms.pop(room_code, None)
+        room_snapshot.delete(room_code)
         if not room:
             return
         await room.broadcast({

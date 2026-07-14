@@ -164,10 +164,15 @@ async def lifespan(app: FastAPI):
     _check_payment_config()
     db.init_db()
     await remote_config.init()
+    restored_rooms = socket_manager.restore_rooms()
+    if restored_rooms:
+        logger.info("Room snapshots restored %d live room(s) across restart", restored_rooms)
     socket_manager.start_cleanup_loop()
+    socket_manager.start_snapshot_loop()
     yield
     logger.info("Shutting down LocalPlay backend")
     socket_manager.stop_cleanup_loop()
+    socket_manager.stop_snapshot_loop()  # takes a final snapshot for the incoming process
 
 
 app = FastAPI(title="AI Quiz Game Backend", lifespan=lifespan)

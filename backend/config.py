@@ -91,6 +91,9 @@ ORGANIZER_RECONNECT_GRACE_SECONDS = int(os.getenv("ORGANIZER_RECONNECT_GRACE_SEC
 # suspend) while staying <= ROOM_TTL_SECONDS. The cleanup loop applies this
 # mid-lobby, not just at game start.
 LOBBY_RECONNECT_GRACE_SECONDS = int(os.getenv("LOBBY_RECONNECT_GRACE_SECONDS", "600"))
+# Room snapshot/restore (room_snapshot.py): live games survive deploys/restarts.
+ROOM_SNAPSHOT_ENABLED = os.getenv("ROOM_SNAPSHOT_ENABLED", "true").lower() == "true"
+ROOM_SNAPSHOT_INTERVAL_SECONDS = int(os.getenv("ROOM_SNAPSHOT_INTERVAL_SECONDS", "10"))
 MAX_ROOM_CODE_ATTEMPTS = 10
 DEFAULT_TIME_LIMIT = 15
 DEFAULT_NUM_QUESTIONS = 10
