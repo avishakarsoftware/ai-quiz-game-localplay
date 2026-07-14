@@ -14,7 +14,8 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          # Match the local dev venv (backend/venv is 3.14).
+          python-version: "3.14"
 
       - name: Install backend dependencies
         run: |
@@ -24,7 +25,56 @@ jobs:
       - name: Run unit & API tests
         run: |
           cd backend
-          python -m pytest tests/ -v --ignore=tests/test_e2e.py
+          python -m pytest tests/ -q --ignore=tests/test_e2e.py
+
+      # test_e2e.py runs sync-TestClient WebSocket flows that are timing-sensitive
+      # under full-suite load (intermittent one-test flakes when interleaved).
+      # Run it serially as its own step, mirroring the documented local practice.
+      # pytest.ini's pytest-timeout net converts any hang into a failed test with
+      # a stack dump instead of a stuck runner.
+      - name: Run e2e WebSocket tests (serial)
+        run: |
+          cd backend
+          python -m pytest tests/test_e2e.py -q
+
+  backend-postgres-parity:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: parity
+          POSTGRES_PASSWORD: parity
+          POSTGRES_DB: parity
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U parity"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install psycopg[binary]
+
+      # Applies the rendered sql/games-schema.sql to a real Postgres and
+      # exercises the RPCs (wallets, streak bonus, referrals) so the Supabase
+      # SQL can't silently drift from the SQLite semantics. The test module
+      # skips itself when PARITY_POSTGRES_DSN is unset (local runs without pg).
+      - name: Apply rendered schema + run RPC parity tests
+        env:
+          PARITY_POSTGRES_DSN: postgresql://parity:parity@localhost:5432/parity
+        run: |
+          cd backend
+          python -m pytest tests/test_postgres_parity.py -q
 
   frontend-build:
     runs-on: ubuntu-latest
@@ -44,6 +94,11 @@ jobs:
         run: |
           cd frontend
           npx tsc --noEmit
+
+      - name: Unit tests
+        run: |
+          cd frontend
+          npx vitest run
 
       - name: Build
         run: |
