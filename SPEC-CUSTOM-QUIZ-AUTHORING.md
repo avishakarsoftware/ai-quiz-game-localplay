@@ -109,7 +109,7 @@ For host-app launches such as Revelry:
 - Host app opens a LocalPlay-hosted authoring route with signed party/user context, `draft_id`, and `return_url`.
 - The embedded quiz authoring surface presents AI vs custom as a **two-step choice** rather than stacking both at once: a first "Create a quiz" step offers just **AI quiz** and **Custom quiz**, and only the chosen path's detailed UI (AI topic/difficulty/count form, or the question editor) is then shown. Opening an existing saved quiz skips the chooser and goes straight to the editor. See "two-step choice" under Revelry quiz creation in `SPEC-REVELRY-INTEGRATION.md`.
 - LocalPlay handles authoring, image upload, validation, local draft recovery, and saved content.
-- LocalPlay redirects back to the host app with canonical `localplay_content_id` and safe metadata hints.
+- LocalPlay returns to the host app with the canonical `localplay_content_id` and safe metadata hints. In embedded (iframe) mode it does **not** navigate its own frame — it posts `revelry.localplay.return_to_parent` to the parent, and (since 2026-07-09) mirrors the saved pointer in the message as `content: { localplay_content_id, game_type, status }` (also on `return_url`'s query string). The host app must reconcile in place and router-navigate — a full `window.location` reload on this message drops the host's session and signs them out. Top-level/direct and native flows fall back to navigating the same allowlisted `return_url`. Contract: `SPEC-REVELRY-INTEGRATION.md` → "postMessage Events".
 - Host app verifies the returned content server-side before storing a prepared game setup pointer or creating a session.
 - Universal/app links and explicitly allowlisted custom schemes should work for native return flows.
 
