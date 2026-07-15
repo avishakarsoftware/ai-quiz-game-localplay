@@ -90,13 +90,21 @@ When all tasks are ✅, the "promote to Production" action unblocks.
 
 ---
 
-## Phase 5 — Web Stripe go-live (optional; only to sell on web)
+## Phase 5 — Web Stripe go-live ✅ CONFIGURED 2026-07-15 (real-card test pending)
 
-Web currently can't sell in prod (`STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` unset). To enable:
-- Activate the Stripe account (business/bank/tax) → live mode.
-- Set prod `STRIPE_SECRET_KEY` (`sk_live_…`) + a live `/webhook/stripe` endpoint → `STRIPE_WEBHOOK_SECRET`.
-- Redeploy prod. Inline `price_data` needs no Stripe Product objects.
-- Test with a real card on `games.revelryapp.me`.
+**Status: live keys set + verified; one real-card test remaining.** On 2026-07-15 the prod `.env`
+was set with a live `sk_live_` `STRIPE_SECRET_KEY`, a `whsec_` `STRIPE_WEBHOOK_SECRET` (endpoint
+`https://gamesapi.revelryapp.me/webhook/stripe`, events `checkout.session.completed` /
+`charge.refunded` / `charge.dispute.created`), and `CHECKOUT_RETURN_URL=https://games.revelryapp.me/`;
+the container was recreated to load them. Verified live: `/webhook/stripe` → 400 (configured, was
+503), `/checkout/create` → a real `cs_live_` Checkout Session on `checkout.stripe.com`. Inline
+`price_data` (no Stripe Product objects). Live secrets backed up in
+`backupenv/quiz/local/localplay-prod-payment.env`.
+
+**Remaining:** one real-card purchase on `games.revelryapp.me` (small pack) → confirm
+`checkout.session.completed` credits sparks in prod logs → optionally refund to confirm clawback.
+(Note: the improved payment-modal frontend — cost context + terms — ships with the next web/IONOS
+deploy; the checkout *flow* already works with the currently-deployed frontend.)
 
 ---
 
