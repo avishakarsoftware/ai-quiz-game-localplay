@@ -46,7 +46,7 @@ link here instead of restating environment status (stale spec headers were a rec
 
 | Capability / feature | Gamma | Prod | Notes |
 |---|---|---|---|
-| Deployed code (backend+SPA) | `d04e7f0c` (2026-07-14) | `6b6fffb5` | gamma has the refactor+snapshot train; IONOS public frontend last uploaded at `76f5a0b5` (testids) |
+| Deployed code (backend+SPA) | `7a163171` (2026-07-14) | `7a163171` (2026-07-14) | gamma/prod have the refactor+snapshot train plus Revelry allowlist dedupe; IONOS public frontend last uploaded at `76f5a0b5` (testids) |
 | Login-streak bonus (SQL RPC) | ✅ live | ✅ live | applied 2026-07-08, targeted migration |
 | Check-in games policy (`party_quests`, `find_someone`) | ✅ enabled | ✅ enabled (quick-start only) | policy rows 2026-07-08 |
 | Party Quests staged flow (authoring caps + strict `requires_prepared_content_for_checkin`) | ✅ flipped 2026-07-09 | ❌ off | prod has the CODE since July 13; DDL + policy caps + strict flip still pending |
@@ -55,9 +55,18 @@ link here instead of restating environment status (stale spec headers were a rec
 | Native IAP (`REVENUECAT_WEBHOOK_SECRET`) | ✅ configured | ❌ unset | prod runbook: LAUNCH-CHECKLIST.md |
 | Web Stripe | test keys | ❌ no live keys | Phase 5 of LAUNCH-CHECKLIST.md |
 | Cross-app Playwright testids | ✅ | ✅ (incl. IONOS) | 8 testids, 2026-07-09 |
-| Room snapshot/restore (`ROOM_SNAPSHOT_ENABLED`) | ✅ live + restart-verified | ❌ pending prod deploy | live-verified 2026-07-14: room `P93RR8` + player seat survived a real gamma container restart |
+| Room snapshot/restore (`ROOM_SNAPSHOT_ENABLED`) | ✅ live + restart/reconnect-verified | ✅ deployed + smoke-verified | gamma live-verified 2026-07-14: room `V0QSIN` + player seat survived a real container restart and WebSocket reconnect; prod restart drill pending |
 | Analytics (PostHog keys) | ❌ unset | ❌ unset | code no-ops until keys set |
 | Ads (`ads_enabled`) | ❌ | ❌ | SPEC-ADS not built |
+
+### Recent gamma + prod deploy — July 14, 2026 (allowlist cleanup + snapshot promotion)
+
+Promoted commit `7a163171` to gamma and prod with the normal backend-served SPA path. Ships the July 14 refactor/snapshot train plus a Revelry start allowlist cleanup: `party_quests` is no longer duplicated in `REVELRY_PARTY_GAME_START_TYPES`, and a catalog-policy test now prevents duplicate start-type entries from creeping back in. No schema migration, policy flip, or IONOS upload was performed in this pass.
+
+- **Gamma:** `./scripts/deploy-gcp.sh --gamma --with-frontend` -> `games-backend-gamma` (Supabase `games_gamma_`). DB backed up to `revelry-backups-gamma/revelry_20260714_175818.db`; health passed.
+- **Gamma live restart drill:** created room `V0QSIN`, joined a player, confirmed the snapshot file existed on the mounted gamma data volume, restarted `games-backend-gamma`, saw logs restore `V0QSIN`, and reconnected the same player session successfully (`RECONNECTED_OK`).
+- **Prod backend + fallback SPA:** `./scripts/deploy-gcp.sh --with-frontend` -> `games-backend` (Supabase `games_`). DB backed up to `revelry-backups/revelry_20260714_180650.db`; health passed.
+- **Verified:** focused backend tests for catalog policy, room snapshot, and engine_common passed (`41 passed`); `backend/tests/test_websocket_async.py` passed (`6 passed`) outside the sandbox; broader backend suite reached `958 passed, 1 skipped` before the sandbox blocked localhost socket binding for that same WebSocket file. Remote smoke passed for gamma and prod (`make test-remote-gamma`, `make test-remote-prod`). Playwright catalog smoke passed for gamma and prod backend-served SPA (`2 passed` each).
 
 ### Recent gamma deploy — July 14, 2026 (refactor train + room snapshot/restore)
 
