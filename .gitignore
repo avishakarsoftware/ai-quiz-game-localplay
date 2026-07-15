@@ -41,6 +41,7 @@ revelryapp-*.json
 .env.*
 !.env.example
 !.env*.template
+backupenv/
 
 # Backup files
 *.bak
