@@ -1,24 +1,27 @@
 # LAUNCH-CHECKLIST — IAP / native app go-live
 
 Ordered, ready-to-run runbook to take Revelry Games (`me.revelryapp.quiz`) IAP + native apps live.
-Engineering is done and verified (real iOS purchase + Google auth on device, 2026-07-07). What remains is
-**config, store submissions, and the Play listing** — no code work. Cross-refs: `SPEC-IAP.md §0`,
+Engineering is done and verified (real iOS purchase + Google auth on device, 2026-07-07). Prod backend
+RevenueCat webhook auth is configured and deployed (verified 2026-07-14). What remains is
+**RevenueCat console hookup, store submissions, Play listing, and optional live Stripe keys** — no code work. Cross-refs: `SPEC-IAP.md §0`,
 `DEPLOY.md §3c/§3d`, secrets in `backupenv/quiz/local/iap-setup.md`.
 
-Status snapshot (verified 2026-07-07):
-- Prod backend **already has** the IAP code (`/webhook/revenuecat` → 503 = deployed-but-unconfigured) and
-  `ALLOWED_ORIGINS` **already includes** the capacitor/localhost origins.
-- Pending on prod: `REVENUECAT_WEBHOOK_SECRET` unset, `STRIPE_SECRET_KEY` unset.
+Status snapshot (verified 2026-07-14):
+- Prod backend has the IAP code and `REVENUECAT_WEBHOOK_SECRET`; unauthenticated
+  `POST /webhook/revenuecat` returns **401** (configured + rejecting unauthenticated traffic).
+- Prod `ALLOWED_ORIGINS` includes the capacitor/localhost origins.
+- Pending on prod: create the matching RevenueCat console webhook using the stored prod secret; `STRIPE_SECRET_KEY`
+  and `STRIPE_WEBHOOK_SECRET` remain unset for web checkout.
 
 ---
 
 ## Phase 1 — Prod IAP backend (server-side; ~15 min + one deploy)
 
-1. **Create a prod RevenueCat webhook** (distinct secret from gamma):
+1. **Create a prod RevenueCat webhook** (distinct secret from gamma; backend secret already exists on prod as of 2026-07-14):
    - Generate a secret (e.g. `python3 -c "import secrets;print('rcwh_rvly_prod_'+secrets.token_urlsafe(24))"`).
    - RevenueCat → Integrations → Webhooks → add `https://gamesapi.revelryapp.me/webhook/revenuecat`,
      Authorization header `Bearer <secret>`, HMAC off, environment **Production + Sandbox**, no event filter.
-2. **Set `REVENUECAT_WEBHOOK_SECRET` on prod** `.env` (the token, no `Bearer`):
+2. **Set `REVENUECAT_WEBHOOK_SECRET` on prod** `.env` (the token, no `Bearer`) — done 2026-07-14; command kept for rotation:
    ```bash
    gcloud compute ssh revelry-backend --zone us-central1-a --command '
      ENV=/home/revelry-games/app/.env
@@ -26,12 +29,13 @@ Status snapshot (verified 2026-07-07):
        && sudo sed -i "s#^REVENUECAT_WEBHOOK_SECRET=.*#REVENUECAT_WEBHOOK_SECRET=<secret>#" "$ENV" \
        || echo "REVENUECAT_WEBHOOK_SECRET=<secret>" | sudo tee -a "$ENV"'
    ```
-3. **Deploy prod** (also picks up latest master; `docker restart` does NOT re-read env, so a real deploy is required):
+3. **Deploy prod** (also picks up latest master; `docker restart` does NOT re-read env, so a real deploy is required) — done 2026-07-14:
    ```bash
    ./scripts/deploy-gcp.sh --with-frontend
    ```
 4. **Verify**: `curl -s -o /dev/null -w "%{http_code}\n" -X POST https://gamesapi.revelryapp.me/webhook/revenuecat -d '{}'`
-   → should be **401** (was 503). A bearer-authed synthetic `INITIAL_PURCHASE` should credit (mirror the gamma smoke test).
+   → should be **401** (verified 2026-07-14). After the RevenueCat console webhook is created with the same secret,
+   a bearer-authed synthetic `INITIAL_PURCHASE` should credit (mirror the gamma smoke test).
 
 ---
 
@@ -86,7 +90,7 @@ When all tasks are ✅, the "promote to Production" action unblocks.
 
 ## Phase 5 — Web Stripe go-live (optional; only to sell on web)
 
-Web currently can't sell (test keys only). To enable:
+Web currently can't sell in prod (`STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` unset). To enable:
 - Activate the Stripe account (business/bank/tax) → live mode.
 - Set prod `STRIPE_SECRET_KEY` (`sk_live_…`) + a live `/webhook/stripe` endpoint → `STRIPE_WEBHOOK_SECRET`.
 - Redeploy prod. Inline `price_data` needs no Stripe Product objects.

@@ -46,14 +46,14 @@ link here instead of restating environment status (stale spec headers were a rec
 
 | Capability / feature | Gamma | Prod | Notes |
 |---|---|---|---|
-| Deployed code (backend+SPA) | `684d8354` (2026-07-14) | `684d8354` (2026-07-14) | gamma/prod have Party Quests staging harness + launch metadata fix; IONOS public frontend last uploaded at `76f5a0b5` (testids) |
+| Deployed code (backend+SPA) | `684d8354` (2026-07-14) | `91b93f40` (2026-07-14) | gamma/prod have Party Quests staging harness + launch metadata fix; prod redeployed 2026-07-14 to load RevenueCat webhook secret; IONOS public frontend last uploaded at `76f5a0b5` (testids) |
 | Login-streak bonus (SQL RPC) | ✅ live | ✅ live | applied 2026-07-08, targeted migration |
 | Check-in games policy (`party_quests`, `find_someone`) | ✅ enabled | ✅ enabled | policy rows 2026-07-08; prod Party Quests upgraded from quick-start-only on 2026-07-14 |
 | Party Quests staged flow (authoring caps + strict `requires_prepared_content_for_checkin`) | ✅ flipped 2026-07-09 | ✅ flipped 2026-07-14 | production DDL/policy enabled after gamma strict harness passed |
 | `generated_content.content_type` CHECK | quiz/mlt/drawing/housie/chit_pull/party_quests | quiz/mlt/drawing/housie/chit_pull/party_quests | prod verified with disposable `party_quests` insert/delete on 2026-07-14 |
 | Referrals (`REFERRALS_ENABLED` + referral RPCs) | ❌ off | ❌ off | SQL rendered, not applied; deliberate gate |
-| Native IAP (`REVENUECAT_WEBHOOK_SECRET`) | ✅ configured | ❌ unset | prod runbook: LAUNCH-CHECKLIST.md |
-| Web Stripe | test keys | ❌ no live keys | Phase 5 of LAUNCH-CHECKLIST.md |
+| Native IAP (`REVENUECAT_WEBHOOK_SECRET`) | ✅ configured | ✅ backend secret live | prod unauth webhook probe returns 401; RevenueCat console prod webhook/store submissions still pending |
+| Web Stripe | ❌ unset | ❌ no live keys | `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` absent; Phase 5 of LAUNCH-CHECKLIST.md |
 | Cross-app Playwright testids | ✅ | ✅ (incl. IONOS) | 8 testids, 2026-07-09 |
 | Room snapshot/restore (`ROOM_SNAPSHOT_ENABLED`) | ✅ live + restart/reconnect-verified | ✅ deployed + smoke-verified | gamma live-verified 2026-07-14: room `V0QSIN` + player seat survived a real container restart and WebSocket reconnect; prod restart drill pending |
 | Analytics (PostHog keys) | ❌ unset | ❌ unset | code no-ops until keys set |
