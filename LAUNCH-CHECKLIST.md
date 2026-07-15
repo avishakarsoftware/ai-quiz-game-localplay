@@ -17,7 +17,7 @@ Status snapshot (verified 2026-07-14):
 
 ## Phase 1 — Prod IAP backend (server-side; ~15 min + one deploy) ✅ COMPLETE 2026-07-14
 
-**Status: DONE + verified.** RevenueCat prod webhook "Revelry Games Prod" is Active; a RevenueCat test event landed `200` authenticated in prod logs (bearer auth passed; dedup + `games_mark_webhook_processed` ran). Prod native IAP fulfillment is wired end-to-end. Steps below retained for rotation/reference.
+**Status: DONE + verified on both sides.** RevenueCat prod webhook "Revelry Games Prod" is Active; test event `E1662E2D-…` (env=SANDBOX, product=`test_product`) shows **Response 200 in the RevenueCat dashboard** and the same event id landed **authenticated + 200 in prod logs** (bearer auth passed; webhook_events dedup + `games_mark_webhook_processed` ran). Prod native IAP fulfillment is wired end-to-end. Steps below retained for rotation/reference.
 
 1. **Create a prod RevenueCat webhook** (distinct secret from gamma; backend secret already exists on prod as of 2026-07-14):
    - Generate a secret (e.g. `python3 -c "import secrets;print('rcwh_rvly_prod_'+secrets.token_urlsafe(24))"`).
