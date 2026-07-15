@@ -2438,7 +2438,7 @@ def _format_session(session: dict) -> dict:
         "session_id": session["id"],
         "room_code": session["room_code"],
         "game_type": session.get("game_type"),
-        "content_id": session.get("content_id"),
+        "content_id": session.get("content_id") or session.get("game_id"),
         "status": status,
         "joinable": joinable,
         "closed_reason": session.get("closed_reason"),
@@ -3716,6 +3716,9 @@ async def resolve_revelry_launch_token(launch_token: str, scope: str = ""):
     payload = {
         "session_id": session["id"],
         "room_code": session["room_code"],
+        "game_type": formatted.get("game_type"),
+        "content_id": formatted.get("content_id"),
+        "game_title": session.get("game_title") or (session.get("feed_card") or {}).get("title") or "",
         "scope": claims.get("scope"),
         "return_url": claims.get("return_url", ""),
         "launch_context": claims.get("launch_context") or {},

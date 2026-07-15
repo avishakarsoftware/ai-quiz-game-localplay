@@ -1611,7 +1611,11 @@ export default function OrganizerPage() {
                 const data = await res.json();
                 if (cancelled) return;
                 const display = data.launch_context?.display || {};
+                const launchedGameType = data.game_type as GameType | undefined;
+                const launchedContentId = String(data.content_id || '');
                 setRoomCode(data.room_code);
+                if (launchedGameType) setGameType(launchedGameType);
+                if (launchedContentId) setContentId(launchedContentId);
                 setHostAppJoinUrl(display.guest_join_url || data.launch_context?.guest_join_url || '');
                 setHostAppJoinLabel(display.guest_join_label || 'Scan to join from Revelry');
                 setHostAppReturnUrl(data.launch_context?.return_url || data.return_url || '');
@@ -1620,6 +1624,8 @@ export default function OrganizerPage() {
                 persistOrganizerSession({
                     roomCode: data.room_code,
                     organizerToken: data.organizer_token || '',
+                    gameType: launchedGameType || gameTypeRef.current,
+                    contentId: launchedContentId,
                     hostAppJoinUrl: display.guest_join_url || data.launch_context?.guest_join_url || '',
                     hostAppJoinLabel: display.guest_join_label || 'Scan to join from Revelry',
                     hostAppReturnUrl: data.launch_context?.return_url || data.return_url || '',

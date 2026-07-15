@@ -242,6 +242,8 @@ def test_revelry_session_create_launch_token_and_status(monkeypatch):
     assert resolve_res.status_code == 200
     resolved = resolve_res.json()
     assert resolved["room_code"] == body["room_code"]
+    assert resolved["game_type"] == "quiz"
+    assert resolved["content_id"] == session["game_id"]
     assert resolved["organizer_token"]
     assert resolved["launch_context"]["display"]["guest_join_url"] == "https://app.revelryapp.me/party/party-1/games/join"
 
@@ -815,7 +817,10 @@ def test_revelry_party_games_link_resolve_and_start_saved_pack(monkeypatch):
     launch_token = start_body["launch_url"].split("launch_token=", 1)[1].split("&", 1)[0]
     launch_res = client.get(f"/integrations/revelry/launch-token/resolve?scope=organizer&launch_token={launch_token}")
     assert launch_res.status_code == 200
-    launch_context = launch_res.json()["launch_context"]
+    launch_body = launch_res.json()
+    assert launch_body["game_type"] == "quiz"
+    assert launch_body["content_id"] == pack["id"]
+    launch_context = launch_body["launch_context"]
     assert launch_context["display"]["guest_join_url"] == "https://app.revelryapp.me/party/1/games/join"
     assert launch_context["display"]["guest_join_label"] == "Scan to join Ava's Birthday"
     assert "/revelry/games?party_games_token=" in launch_context["party_hub_url"]
@@ -1644,6 +1649,7 @@ def test_revelry_party_hub_requires_and_uses_prepared_party_quests(monkeypatch):
     assert start_res.status_code == 200, start_res.text
     body = start_res.json()
     assert body["opened_existing"] is False
+    assert body["session"]["content_id"] == content_id
     room = socket_manager.rooms[body["session"]["room_code"]]
     assert room.game_type == "party_quests"
     assert room.quiz["game_title"] == "Ava's Adventure Quests"

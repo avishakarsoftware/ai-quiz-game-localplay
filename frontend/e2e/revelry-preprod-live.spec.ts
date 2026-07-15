@@ -114,6 +114,28 @@ function contentPayloadFor(game: RevelryCatalogGame, title: string) {
       },
     };
   }
+  if (type === 'party_quests') {
+    return {
+      game: {
+        game_title: title,
+        theme: 'work_safe',
+        duration_minutes: 45,
+        quests_per_player: 5,
+        confirmation_mode: 'honor',
+        allow_late_join: true,
+        default_for_checkin: true,
+        auto_start_on_first_checkin: true,
+        checkin_join_policy: 'resume_or_join',
+        quests: [
+          { id: 'q1', display: 'Meet someone who has hosted a party game before.', category: 'mingling', points: 1 },
+          { id: 'q2', display: 'Find someone who can recommend a great snack.', category: 'food', points: 1 },
+          { id: 'q3', display: 'Meet someone who knows a good road trip song.', category: 'music', points: 1 },
+          { id: 'q4', display: 'Find someone who has tried a new hobby this year.', category: 'stories', points: 1 },
+          { id: 'q5', display: 'Meet someone who can teach you a two-word phrase in another language.', category: 'stories', points: 1 },
+        ],
+      },
+    };
+  }
   throw new Error(`No Revelry content fixture for ${type}. Add one before exposing the game in the Revelry catalog.`);
 }
 
@@ -261,7 +283,7 @@ test.describe('Revelry pre-prod live game matrix', () => {
       if (!game.can_create_content && !game.can_quick_start) {
         throw new Error(`${gameType(game)} is launchable in Revelry but has no tested create or quick-start path.`);
       }
-      if (game.can_create_content && !['chit_pull', 'drawing', 'housie', 'quiz', 'wmlt'].includes(gameType(game))) {
+      if (game.can_create_content && !['chit_pull', 'drawing', 'housie', 'party_quests', 'quiz', 'wmlt'].includes(gameType(game))) {
         throw new Error(`${gameType(game)} is exposed in Revelry but the pre-prod harness has no content fixture.`);
       }
 
