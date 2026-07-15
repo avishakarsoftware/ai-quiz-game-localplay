@@ -20,3 +20,11 @@ export const SPARK_PACKS: SparkPack[] = [
 ];
 
 export const DEFAULT_SPARK_SKU: SparkPack['sku'] = 'spark_pack_50';
+
+/**
+ * Per-action spark costs — mirror backend `config.COST_ROOM` / `config.COST_GENERATE`.
+ * Used in the purchase modal so pack sizes are meaningful ("what does a spark buy?").
+ * If the backend economy changes these, update here too.
+ */
+export const SPARK_COST_ROOM = 10;
+export const SPARK_COST_GENERATE = 1;

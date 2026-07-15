@@ -3,7 +3,7 @@ import { apiUrl, apiHeaders } from '../utils/api';
 import { getDeviceId, setCheckoutPending, clearCheckoutPending } from '../utils/storage';
 import { getPlatform } from '../utils/platform';
 import { isIAPConfigured, getNativePrices, buySparksNative } from '../utils/iap';
-import { SPARK_PACKS } from '../utils/sparkPacks';
+import { SPARK_PACKS, SPARK_COST_ROOM, SPARK_COST_GENERATE } from '../utils/sparkPacks';
 import { track } from '../utils/analytics';
 import SparkCoin from './SparkCoin';
 
@@ -177,6 +177,7 @@ export default function SparkPurchaseModal({ onSuccess, onClose }: SparkPurchase
             onClick={busySku ? undefined : onClose}
         >
             <div
+                data-testid="spark-purchase-modal"
                 style={{
                     background: 'var(--paper)', borderRadius: 8,
                     padding: '1.75rem 1.5rem', maxWidth: 400, width: '100%',
@@ -192,6 +193,10 @@ export default function SparkPurchaseModal({ onSuccess, onClose }: SparkPurchase
                     </h2>
                     <p style={{ color: 'var(--ink-2)', fontSize: '0.9rem', lineHeight: 1.5 }}>
                         Sparks are used to generate quizzes and host games.
+                    </p>
+                    {/* Cost context so the pack sizes are meaningful ("what does a spark buy?"). */}
+                    <p data-testid="spark-cost-context" style={{ color: 'var(--ink-mute)', fontSize: '0.78rem', marginTop: '0.5rem' }}>
+                        Host a game: {SPARK_COST_ROOM} ⚡ · Each AI quiz: {SPARK_COST_GENERATE} ⚡
                     </p>
                 </div>
 
@@ -254,6 +259,12 @@ export default function SparkPurchaseModal({ onSuccess, onClose }: SparkPurchase
                     </p>
                 )}
 
+                {canBuy && (
+                    <p data-testid="spark-purchase-terms" style={{ color: 'var(--ink-mute)', fontSize: '0.72rem', textAlign: 'center', marginTop: '0.9rem', lineHeight: 1.45 }}>
+                        One-time purchase — no subscription. Sparks never expire. Plus free sparks every day.
+                    </p>
+                )}
+
                 <button
                     className="btn"
                     onClick={onClose}
@@ -261,7 +272,7 @@ export default function SparkPurchaseModal({ onSuccess, onClose }: SparkPurchase
                     style={{
                         width: '100%', background: 'transparent', color: 'var(--ink-mute)',
                         fontWeight: 500, fontSize: '0.9rem', padding: '10px', border: 'none',
-                        cursor: busySku ? 'default' : 'pointer', marginTop: '0.75rem',
+                        cursor: busySku ? 'default' : 'pointer', marginTop: '0.5rem',
                     }}
                 >
                     {busySku ? 'Processing…' : 'Maybe Later'}
