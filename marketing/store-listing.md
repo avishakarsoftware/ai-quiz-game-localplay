@@ -1,4 +1,4 @@
-# Store Listing Copy — Revelry Quiz/Games
+# Store Listing Copy — Revelry Games
 
 Last updated: 2026-06-29
 

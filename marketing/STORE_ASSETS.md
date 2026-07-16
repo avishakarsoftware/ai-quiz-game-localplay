@@ -1,4 +1,4 @@
-# Store Asset Sizes — Revelry Quiz/Games
+# Store Asset Sizes — Revelry Games
 
 Reference for App Store + Google Play screenshot/asset dimensions, and the exact Playwright
 `viewport × deviceScaleFactor` recipe to hit each pixel size (image px = viewport × dsf).
