@@ -46,7 +46,7 @@ link here instead of restating environment status (stale spec headers were a rec
 
 | Capability / feature | Gamma | Prod | Notes |
 |---|---|---|---|
-| Deployed code (backend+SPA) | `684d8354` (2026-07-14) | `91b93f40` (2026-07-14) | gamma/prod have Party Quests staging harness + launch metadata fix; prod redeployed 2026-07-14 to load RevenueCat webhook secret; IONOS public frontend last uploaded at `76f5a0b5` (testids) |
+| Deployed code (backend+SPA) | `8ca4d57a` (2026-07-16) | `8ca4d57a` (2026-07-16) | Payment-UX deploy (cost context + terms). Gamma+prod backend SPA bundle `index-BfmpLaIh.js`; IONOS public frontend (`games.revelryapp.me`) uploaded `index-CPlKcEqO.js`. All three surfaces verified serving the payment-UX build; prod `/checkout/create` → live `cs_live` session. Zero backend `.py` changes since `91b93f40`. |
 | Login-streak bonus (SQL RPC) | ✅ live | ✅ live | applied 2026-07-08, targeted migration |
 | Check-in games policy (`party_quests`, `find_someone`) | ✅ enabled | ✅ enabled | policy rows 2026-07-08; prod Party Quests upgraded from quick-start-only on 2026-07-14 |
 | Party Quests staged flow (authoring caps + strict `requires_prepared_content_for_checkin`) | ✅ flipped 2026-07-09 | ✅ flipped 2026-07-14 | production DDL/policy enabled after gamma strict harness passed |
@@ -78,6 +78,12 @@ Promoted commit `7a163171` to gamma and prod with the normal backend-served SPA 
 - **Gamma live restart drill:** created room `V0QSIN`, joined a player, confirmed the snapshot file existed on the mounted gamma data volume, restarted `games-backend-gamma`, saw logs restore `V0QSIN`, and reconnected the same player session successfully (`RECONNECTED_OK`).
 - **Prod backend + fallback SPA:** `./scripts/deploy-gcp.sh --with-frontend` -> `games-backend` (Supabase `games_`). DB backed up to `revelry-backups/revelry_20260714_180650.db`; health passed.
 - **Verified:** focused backend tests for catalog policy, room snapshot, and engine_common passed (`41 passed`); `backend/tests/test_websocket_async.py` passed (`6 passed`) outside the sandbox; broader backend suite reached `958 passed, 1 skipped` before the sandbox blocked localhost socket binding for that same WebSocket file. Remote smoke passed for gamma and prod (`make test-remote-gamma`, `make test-remote-prod`). Playwright catalog smoke passed for gamma and prod backend-served SPA (`2 passed` each).
+
+### Recent gamma + prod + IONOS deploy — July 16, 2026 (payment UX + native v3.1.1)
+
+Deployed commit `8ca4d57a` to **all three web surfaces**: gamma + prod backend-served SPA (VM-build path — Docker Desktop was off; built the image on the VM and swapped both containers) and the IONOS public frontend (`npm run ionos:build` + additive scp; `config.json` was identical so no clobber). Ships the payment-UX improvements (cost context + purchase terms in Get Sparks). **Zero backend `.py` changes** since the prior prod image (`91b93f40`) — effectively a frontend refresh; the prod Stripe/RevenueCat env set 2026-07-15 was preserved. Verified live: gamma+prod serve `index-BfmpLaIh.js`, IONOS serves `index-CPlKcEqO.js` (all match their local builds containing `spark-cost-context`); prod `/webhook/stripe` → 400, `/webhook/revenuecat` → 401, `/checkout/create` → live `cs_live` Checkout Session. DB backed up on both.
+
+**Native builds (v3.1.1 / versionCode 6, build 6):** `npm run cap:sync:prod` baked the prod bundle (API=`gamesapi.revelryapp.me` + RC/OAuth keys, appName "Revelry Games") into both projects. **Android AAB built + signed** (`app-release.aab`, 8.6 MB, v2 upload keystore) — ready to upload to the Play Production track. **iOS: prepped, handed to Xcode** — the keychain has only an Apple *Development* cert (no Distribution cert) and no ASC upload creds, so the App Store archive must be done in Xcode (Archive → Distribute → App Store Connect, which creates the distribution cert via the signed-in Apple ID).
 
 ### Recent gamma deploy — July 14, 2026 (refactor train + room snapshot/restore)
 
