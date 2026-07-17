@@ -41,22 +41,44 @@ Status snapshot (verified 2026-07-14):
 
 ---
 
-## Phase 2 — Native app builds (point at prod)
+## Phase 2 — Native app builds (point at prod) ✅ BUILT 2026-07-16 (v3.1.1 / build 6)
 
 ```bash
 cd frontend
 npm run cap:sync:prod      # bakes VITE_API_URL=https://gamesapi.revelryapp.me + RC/OAuth keys
 ```
-- **iOS**: `npx cap open ios` → bump build if needed → **Archive** → upload to App Store Connect.
-- **Android**: `cd android && KEYSTORE_PASSWORD=… KEY_PASSWORD=… ./gradlew bundleRelease` (v2 keystore; bump
-  `versionCode`) → upload the AAB to the **Production** track (after the listing below is complete).
+Both builds verified prod-baked (`gamesapi.revelryapp.me`) with the payment UX (cost context + terms) and
+display name **Revelry Games**; bundle id stays `me.revelryapp.quiz`.
+
+- **iOS** — ✅ **v3.1.1 (6) archived + sent to App Store Connect 2026-07-16.** `npx cap open ios` → Archive →
+  Distribute → App Store Connect.
+  **Intricacy (do not attempt headless):** `xcodebuild -exportArchive` **cannot** produce an App Store build
+  here — it fails with `No signing certificate "iOS Distribution" found` + `No Accounts` (CLI has no signed-in
+  Apple ID to mint a distribution cert), and the auto-generated store profile came back missing
+  `com.apple.developer.applesignin` (*"Provisioning profile doesn't include the Sign In with Apple
+  capability"*). Xcode Organizer resolves both (creates the distribution cert via the signed-in Apple ID and
+  regenerates the profile). If Distribute ever errors on Sign In with Apple: developer.apple.com →
+  Identifiers → `me.revelryapp.quiz` → enable **Sign In with Apple**, then re-Distribute.
+- **Android** — ✅ **AAB built**: `frontend/android/app/build/outputs/bundle/release/app-release.aab`
+  (v3.1.1, versionCode **6**, signed with the v2 upload keystore). `cd android && KEYSTORE_PASSWORD=…
+  KEY_PASSWORD=… ./gradlew bundleRelease` (bump `versionCode` each upload). **Not yet uploaded** — goes to the
+  Production track after the Phase 4 listing is complete.
+
+**Dev-install path (no TestFlight needed):** paired devices install directly —
+`xcodebuild -scheme App -configuration Debug -sdk iphoneos -destination 'id=<udid>' -allowProvisioningUpdates build`
+then `xcrun devicectl device install app --device <udid> <App.app>`. Used 2026-07-16 to put v3.1.1 on Ruchi's
+iPhone (device is registered/paired; TestFlight tester list is empty — installs were never via TestFlight).
+Dev-signed builds expire ~7 days.
 
 ---
 
 ## Phase 3 — Store submissions
 
 ### App Store (iOS)
-- Submit the app build **with the 3 IAPs attached** for review (the consumables are "Ready to Submit").
+- ✅ **v3.1.1 (6) uploaded to App Store Connect 2026-07-16** (archived + distributed from Xcode).
+- Next: once processing completes, **submit for review with the 3 IAPs attached** (the consumables are
+  "Ready to Submit"). Optionally add internal TestFlight testers first — the app's tester list is currently
+  empty (0 testers).
 - Once approved, RevenueCat's App Store "Could not check" clears (it's cosmetic pre-approval).
 - Confirm the Paid Apps agreement is Active (Business → Agreements).
 
