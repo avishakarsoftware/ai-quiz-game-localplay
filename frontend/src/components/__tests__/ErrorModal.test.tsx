@@ -47,7 +47,7 @@ describe('ErrorModal', () => {
         onUpgrade={onUpgrade}
       />
     );
-    const upgradeBtn = screen.getByText(/110 Sparks/);
+    const upgradeBtn = screen.getByText('Get Sparks');
     expect(upgradeBtn).toBeInTheDocument();
     expect(screen.getByText('Maybe Later')).toBeInTheDocument();
     fireEvent.click(upgradeBtn);
@@ -58,7 +58,7 @@ describe('ErrorModal', () => {
     renderWithProvider(
       <ErrorModal title="Error" message="msg" upgradeAvailable={false} onDismiss={() => {}} />
     );
-    expect(screen.queryByText(/110 Sparks/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Get Sparks')).not.toBeInTheDocument();
     expect(screen.getByText('OK')).toBeInTheDocument();
   });
 
@@ -107,11 +107,11 @@ describe('ErrorModal', () => {
     expect(screen.getByText('110')).toBeInTheDocument();
     // The promo token amount
     expect(screen.getByText('220')).toBeInTheDocument();
-    // Button shows promo amount
-    expect(screen.getByText(/Get 220 Sparks/)).toBeInTheDocument();
+    // The CTA still routes to the purchase modal without quoting a pack size.
+    expect(screen.getByText('Get Sparks')).toBeInTheDocument();
   });
 
-  it('shows standard pricing when no promo is active', () => {
+  it('shows no promo badge when no promo is active', () => {
     // Clear promo
     mockConfig.pricing = {
       ...mockConfig.pricing,
@@ -127,9 +127,32 @@ describe('ErrorModal', () => {
         onUpgrade={() => {}}
       />
     );
-    // No promo badge
     expect(screen.queryByText('LAUNCH DEAL')).not.toBeInTheDocument();
-    // Standard amount in button
-    expect(screen.getByText(/Get 110 Sparks/)).toBeInTheDocument();
+    expect(screen.getByText('Get Sparks')).toBeInTheDocument();
+  });
+
+  // Regression: the CTA used to render "Get {token_pack_amount} Sparks — {token_pack_price}"
+  // from the pre-tier single-pack config, advertising a 110-for-$0.99 pack that does not
+  // exist (the real ladder is 50/$1.99, 200/$4.99, 500/$9.99, store-localized on native).
+  // The purchase modal owns tiers and prices; this modal must never quote either.
+  it('never advertises a pack size or price the purchase modal cannot honour', () => {
+    mockConfig.pricing = {
+      ...mockConfig.pricing,
+      token_pack_price: '$0.99',
+      token_pack_amount: 110,
+      promo: undefined,
+    };
+    const { container } = renderWithProvider(
+      <ErrorModal
+        title="Not Enough Sparks"
+        message="You need more sparks!"
+        upgradeAvailable
+        onDismiss={() => {}}
+        onUpgrade={() => {}}
+      />
+    );
+    expect(container.textContent).not.toMatch(/110/);
+    expect(container.textContent).not.toMatch(/\$\d/);
+    expect(screen.getByText('Get Sparks')).toBeInTheDocument();
   });
 });

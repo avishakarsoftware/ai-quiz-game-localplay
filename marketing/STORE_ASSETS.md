@@ -69,14 +69,28 @@ represent the native apps.
   SpectatorPage correctly waits for PODIUM on the final question (no app bug); the podium capture just
   needed the driver's `waitFor` to consume matched messages so Q2's waits weren't matching stale Q1 events.
 
-## Screens to capture (the "games in action" set)
-1. Catalog — "Choose a Game" (variety)
-2. AI Quiz setup — topic / difficulty / length
-3. Lobby — QR + room code ("everyone joins from their phone")
-4. Gameplay — a live quiz question (player view) + spectator/TV view
-5. Podium — winner celebration
-6. Variety — Who's Most Likely To and Drawing in action
-7. Get Sparks — purchase modal (also the IAP review screenshot)
+## Listing screenshots — automated
+
+`frontend/e2e/store-screenshots.spec.ts` captures the full listing set for all four targets above
+and writes it straight into `marketing/app-store/…` and `marketing/play-store/…`. It asserts each
+PNG's actual pixel size from the file header, so a wrong-sized image fails the test instead of
+reaching a store. It also asserts the podium has a real winner — an earlier run silently produced
+an "It's a Tie!" 0/0/0 board because the answer clicks never landed.
+
+```bash
+cd frontend
+PLAYWRIGHT_BASE_URL=https://games.revelryapp.me \
+LIVE_API_BASE_URL=https://gamesapi.revelryapp.me \
+STORE_SHOTS=1 npx playwright test e2e/store-screenshots.spec.ts --project chromium-desktop --workers=1
+```
+
+Rooms are created with fresh device ids (each gets the signup spark bonus, enough for one room), so
+a capture run costs nothing real. Without `STORE_SHOTS=1` the spec skips, so normal e2e runs never
+overwrite `marketing/`.
+
+Screens (7 per target): `01-catalog` (Most Popular), `02-quiz-setup`, `03-lobby` (QR + 3 joined
+players), `04-gameplay` (player view), `05-podium`, `06-player-join`, `07-get-sparks` (the IAP
+review screenshot). Listing copy + upload order: `store-listing.md`.
 
 ## Design assets (not screenshots)
 - [x] Google Play **feature graphic** 1024 × 500 → `marketing/play-store/feature-graphic.png`

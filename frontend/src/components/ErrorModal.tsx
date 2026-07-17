@@ -42,7 +42,6 @@ export default function ErrorModal({ title, message, upgradeAvailable, onDismiss
   const showUpgrade = upgradeAvailable && onUpgrade;
   const promo = config.pricing.promo;
   const hasPromo = !!(promo && promo.id && promo.token_pack_amount > 0 && promo.original_amount > 0 && !isPromoExpired(promo.expires));
-  const displayAmount = hasPromo ? promo.token_pack_amount : config.pricing.token_pack_amount;
   const countdown = useCountdown(promo?.expires);
 
   return (
@@ -123,7 +122,10 @@ export default function ErrorModal({ title, message, upgradeAvailable, onDismiss
                   cursor: 'pointer',
                 }}
               >
-                Get {displayAmount} Sparks — {config.pricing.token_pack_price}
+                {/* No amount/price here: SparkPurchaseModal owns the tier ladder, and on
+                    native RevenueCat returns store-localized prices, so any figure quoted
+                    here is wrong in every non-USD storefront. */}
+                Get Sparks
               </button>
             </>
           )}
