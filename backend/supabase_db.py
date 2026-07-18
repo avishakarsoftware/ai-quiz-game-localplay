@@ -555,6 +555,27 @@ def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: st
     return bool(result["success"]), int(result["balance"])
 
 
+def is_account_deleted(user_id: str) -> bool:
+    """True if this user id is on the deleted-accounts denylist (SPEC-ACCOUNT-DELETION §2)."""
+    if not user_id:
+        return False
+    return _first(_sb().select(
+        "deleted_accounts", filters={"user_id": f"eq.{user_id}"}, limit=1,
+    )) is not None
+
+
+def delete_account(user_id: str) -> bool:
+    """Delete the account and its data via the atomic RPC (SPEC-ACCOUNT-DELETION §3).
+
+    One RPC rather than several REST deletes, so a partial failure cannot leave a
+    half-deleted account (wallet gone, PII retained). Returns False if already deleted.
+    """
+    result = _sb().rpc("delete_account", {"p_user_id": user_id})
+    if isinstance(result, dict):
+        return bool(result.get("deleted"))
+    return bool(result)
+
+
 def merge_wallet(from_id: str, to_id: str):
     if from_id == to_id:
         return

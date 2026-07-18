@@ -12,6 +12,18 @@ import config
 
 logger = logging.getLogger(__name__)
 
+
+class AccountDeletedError(Exception):
+    """Raised when something tries to act on a deleted account (SPEC-ACCOUNT-DELETION §2).
+
+    Surfaced as HTTP 410 Gone. Distinct from "not found" on purpose: the caller is holding a
+    valid-looking session for an account that no longer exists, and silently creating a fresh
+    one would undo the deletion."""
+
+    def __init__(self, user_id: str = ""):
+        self.user_id = user_id
+        super().__init__("Account has been deleted")
+
 DB_DIR = os.getenv("DB_DIR", os.path.join(os.path.dirname(__file__), "data"))
 DB_PATH = os.path.join(DB_DIR, "revelry.db")
 
@@ -112,6 +124,16 @@ def init_db():
         CREATE TABLE IF NOT EXISTS webhook_events (
             event_id TEXT PRIMARY KEY,
             processed_at INTEGER NOT NULL
+        );
+
+        -- Deleted-account denylist (SPEC-ACCOUNT-DELETION §2).
+        -- Session tokens are stateless JWTs and cannot be revoked, so a live token held by a
+        -- just-deleted user would otherwise sail through auth and hit get_or_create_wallet,
+        -- recreating the account *with a fresh signup bonus*. This table is the revocation
+        -- list that makes deletion actually stick. Ids are opaque UUIDs, not PII.
+        CREATE TABLE IF NOT EXISTS deleted_accounts (
+            user_id TEXT PRIMARY KEY,
+            deleted_at INTEGER NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS generated_content (
@@ -638,6 +660,66 @@ def get_user(user_id: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
+def is_account_deleted(user_id: str) -> bool:
+    """True if this user id was deleted (SPEC-ACCOUNT-DELETION §2).
+
+    Checked on every authenticated request and before wallet creation: session JWTs are
+    stateless and outlive deletion, so this is what stops a live token from resurrecting
+    the account."""
+    if not user_id:
+        return False
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT 1 FROM deleted_accounts WHERE user_id = ? LIMIT 1", (user_id,)
+    ).fetchone()
+    return row is not None
+
+
+def delete_account(user_id: str) -> bool:
+    """Permanently delete a user account and its data (SPEC-ACCOUNT-DELETION §3).
+
+    Removes the users row (all PII), the wallet keyed on this user id (including any unspent
+    Spark balance), authored content, and legacy entitlement/usage rows — then denylists the id.
+
+    `token_transactions` is deliberately RETAINED: it is a financial record with retention
+    obligations, and it is what makes `credit_purchase` idempotent, so dropping it would let a
+    replayed or late webhook double-credit. It is pseudonymous once `users` is gone — its only
+    identifier is this random UUID. Do not "clean it up" by rewriting wallet_id; that breaks
+    idempotency. See the spec for the full rationale.
+
+    Runs in ONE transaction: a partial delete (wallet gone, PII kept) is the worst outcome.
+    Returns False if the account was already deleted, so the caller can answer 410 rather than
+    pretending it did work.
+    """
+    conn = _get_conn()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        already = conn.execute(
+            "SELECT 1 FROM deleted_accounts WHERE user_id = ? LIMIT 1", (user_id,)
+        ).fetchone()
+        if already:
+            conn.execute("ROLLBACK")
+            return False
+
+        # Wallet id == user id for signed-in users (get_wallet_id), so the user's Sparks and
+        # authored content hang off this same value.
+        conn.execute("DELETE FROM generated_content WHERE wallet_id = ?", (user_id,))
+        conn.execute("DELETE FROM wallets WHERE id = ?", (user_id,))
+        conn.execute("DELETE FROM entitlements WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM device_usage WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.execute(
+            "INSERT INTO deleted_accounts (user_id, deleted_at) VALUES (?, ?)",
+            (user_id, int(time.time())),
+        )
+        conn.execute("COMMIT")
+        logger.info("Account deleted: %s", user_id[:8])
+        return True
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
 def merge_device_to_user(user_id: str, device_id: str):
     """Link orphaned entitlements and usage from this device to the user.
     Only updates records that don't already belong to another user."""
@@ -877,6 +959,12 @@ def get_or_create_wallet(wallet_id: str, signup_bonus: bool = True) -> dict:
     row = conn.execute("SELECT * FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
     if row:
         return dict(row)
+
+    # Never re-create a wallet for a deleted account. A stateless session JWT outlives
+    # deletion, so without this the next request from a held token would rebuild the wallet
+    # AND hand out another signup bonus — deletion would be cosmetic, and farmable.
+    if is_account_deleted(wallet_id):
+        raise AccountDeletedError(wallet_id)
 
     now = int(time.time())
     bonus = config.SIGNUP_BONUS_TOKENS if signup_bonus else 0
@@ -1228,6 +1316,20 @@ def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: st
 
         row = conn.execute("SELECT balance FROM wallets WHERE id = ?", (wallet_id,)).fetchone()
         if not row:
+            # A refund or delayed purchase can land after the user deleted their account. The
+            # wallet is gone by then, and re-creating it here would silently resurrect the
+            # account (SPEC-ACCOUNT-DELETION §4.3). Record nothing and let the caller ack the
+            # webhook so the provider stops retrying.
+            deleted = conn.execute(
+                "SELECT 1 FROM deleted_accounts WHERE user_id = ? LIMIT 1", (wallet_id,)
+            ).fetchone()
+            if deleted:
+                conn.execute("ROLLBACK")
+                logger.info(
+                    "credit_purchase ignored for deleted account %s (ref=%s)",
+                    wallet_id[:8], reference_id,
+                )
+                return False, 0
             conn.execute(
                 "INSERT INTO wallets (id, balance, lifetime_purchased, last_daily_bonus_date, "
                 "ads_watched_today, ads_watched_date, created_at) VALUES (?, 0, 0, '', 0, '', ?)",
@@ -1902,6 +2004,8 @@ if config.DB_BACKEND == "supabase":
         "has_ever_purchased",
         "credit_purchase",
         "merge_wallet",
+        "delete_account",
+        "is_account_deleted",
         "migrate_entitlements_to_wallets",
         "admin_grant_tokens",
         "admin_lookup_wallet",

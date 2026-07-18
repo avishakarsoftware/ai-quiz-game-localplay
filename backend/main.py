@@ -5356,6 +5356,44 @@ async def auth_signin(request: SignInRequest, req: Request):
     return result
 
 
+class DeleteAccountRequest(BaseModel):
+    confirm: str = ""
+
+
+@app.delete("/account")
+async def delete_account(request: DeleteAccountRequest, req: Request):
+    """Permanently delete the signed-in user's account (SPEC-ACCOUNT-DELETION §4.1).
+
+    Required by App Store Review Guideline 5.1.1(v): an app that supports account creation
+    must let users delete the account from inside the app.
+    """
+    client_ip = _get_client_ip(req)
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests")
+
+    session = auth.get_session_from_request(req)
+    if not session:
+        # Also covers a session for an already-deleted account: get_session_from_request
+        # returns None for those, so a retry with a stale token reads as signed-out.
+        raise HTTPException(status_code=401, detail="Not signed in")
+
+    # Second gate: an explicit confirmation string, so a stray or malformed DELETE cannot
+    # destroy an account by accident.
+    if request.confirm != "DELETE":
+        raise HTTPException(status_code=400, detail="Confirmation required")
+
+    user_id = session["user_id"]
+    # Capture BEFORE deleting: afterwards this id intentionally resolves to nothing. No email
+    # or other PII in the payload — the point of the operation is to erase it.
+    analytics.capture_bg(user_id, "account_deleted")
+
+    deleted = db.delete_account(user_id)
+    if not deleted:
+        raise HTTPException(status_code=410, detail="Account already deleted")
+
+    return {"deleted": True}
+
+
 @app.get("/auth/me")
 async def auth_me(req: Request):
     session = auth.get_session_from_request(req)

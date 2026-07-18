@@ -51,7 +51,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_games_wallets_referral_code
 
 CREATE TABLE IF NOT EXISTS games_token_transactions (
   id BIGSERIAL PRIMARY KEY,
-  wallet_id TEXT NOT NULL REFERENCES games_wallets(id) ON DELETE CASCADE,
+  -- NOTE: no FK to wallets. It used to be `REFERENCES wallets(id) ON DELETE CASCADE`, which
+  -- meant deleting a wallet silently destroyed that user's whole purchase ledger. Account
+  -- deletion (SPEC-ACCOUNT-DELETION §3) deliberately RETAINS the ledger as a financial record
+  -- and as the idempotency guard for credit_purchase, so the cascade had to go. It also made
+  -- Postgres diverge from SQLite, which never had this FK — meaning tests asserted retention
+  -- while production would have cascaded. See the migration alongside this template.
+  wallet_id TEXT NOT NULL,
   amount INTEGER NOT NULL,
   reason TEXT NOT NULL,
   reference_id TEXT,
@@ -138,6 +144,15 @@ CREATE TABLE IF NOT EXISTS games_webhook_events (
 
 CREATE INDEX IF NOT EXISTS idx_games_webhook_events_processed
   ON games_webhook_events(processed_at);
+
+-- Deleted-account denylist (SPEC-ACCOUNT-DELETION §2).
+-- Session tokens are stateless JWTs that cannot be revoked, so a token minted before deletion
+-- still verifies afterwards. Without this list the next request would re-create the wallet
+-- (with a fresh signup bonus) and the deletion would be cosmetic. Ids are opaque UUIDs, not PII.
+CREATE TABLE IF NOT EXISTS games_deleted_accounts (
+  user_id TEXT PRIMARY KEY,
+  deleted_at BIGINT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS games_generated_content (
   id TEXT PRIMARY KEY,
@@ -319,6 +334,7 @@ ALTER TABLE games_device_usage ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_request_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_pending_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_webhook_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE games_deleted_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_generated_content ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_quiz_packs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_quiz_questions ENABLE ROW LEVEL SECURITY;
@@ -352,6 +368,10 @@ CREATE POLICY service_role_all_games_pending_tokens ON games_pending_tokens
 DROP POLICY IF EXISTS service_role_all_games_webhook_events ON games_webhook_events;
 CREATE POLICY service_role_all_games_webhook_events ON games_webhook_events
   FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS service_role_all_games_deleted_accounts ON games_deleted_accounts;
+CREATE POLICY service_role_all_games_deleted_accounts ON games_deleted_accounts
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+
 DROP POLICY IF EXISTS service_role_all_games_generated_content ON games_generated_content;
 CREATE POLICY service_role_all_games_generated_content ON games_generated_content
   FOR ALL TO service_role USING (true) WITH CHECK (true);
@@ -597,6 +617,44 @@ BEGIN
     (p_wallet_id, GREATEST(v_actual_credit, 0), 'purchase', p_reference_id, v_new_balance, COALESCE(p_metadata, ''), v_now);
 
   RETURN jsonb_build_object('success', true, 'balance', v_new_balance, 'duplicate', false);
+END;
+$$;
+
+-- Delete a user account and its data in ONE transaction (SPEC-ACCOUNT-DELETION §3).
+-- A partial delete (wallet gone, PII retained) is the worst possible outcome, which is why
+-- this is a single RPC rather than a sequence of REST calls from the app.
+--
+-- token_transactions is deliberately RETAINED: it is a financial record with retention
+-- obligations, and it is what makes credit_purchase idempotent, so dropping it would let a
+-- replayed or late webhook double-credit. It is pseudonymous once the users row is gone --
+-- its only identifier is the random UUID below. Do NOT "tidy" it by rewriting wallet_id.
+CREATE OR REPLACE FUNCTION games_delete_account(
+  p_user_id TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_now BIGINT := EXTRACT(EPOCH FROM NOW())::BIGINT;
+BEGIN
+  IF EXISTS (SELECT 1 FROM games_deleted_accounts WHERE user_id = p_user_id) THEN
+    RETURN jsonb_build_object('deleted', false, 'reason', 'already_deleted');
+  END IF;
+
+  -- wallet id == user id for signed-in users (see tokens.get_wallet_id), so the Sparks
+  -- balance and authored content hang off this same value.
+  DELETE FROM games_generated_content WHERE wallet_id = p_user_id;
+  DELETE FROM games_wallets WHERE id = p_user_id;
+  DELETE FROM games_entitlements WHERE user_id = p_user_id;
+  DELETE FROM games_device_usage WHERE user_id = p_user_id;
+  DELETE FROM games_users WHERE id = p_user_id;
+
+  INSERT INTO games_deleted_accounts (user_id, deleted_at)
+  VALUES (p_user_id, v_now);
+
+  RETURN jsonb_build_object('deleted', true);
 END;
 $$;
 
@@ -1077,6 +1135,7 @@ REVOKE EXECUTE ON FUNCTION games_debit_tokens(TEXT, INTEGER, TEXT, TEXT) FROM PU
 REVOKE EXECUTE ON FUNCTION games_credit_tokens(TEXT, INTEGER, TEXT, TEXT, TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION games_credit_purchase(TEXT, INTEGER, TEXT, TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION games_merge_wallet(TEXT, TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION games_delete_account(TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION games_grant_daily_bonus(TEXT, TEXT, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION games_grant_ad_reward(TEXT, TEXT, INTEGER, INTEGER, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION games_set_referral_code(TEXT, TEXT) FROM PUBLIC, anon, authenticated;

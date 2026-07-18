@@ -131,13 +131,38 @@ Settings drawer, in the account section, below Sign out:
 - **"Delete account"** in a destructive style, shown **only when signed in**.
 - Confirmation dialog stating plainly:
   - the account and **email** are permanently deleted
-  - **unspent Sparks are forfeited** (show the current balance — users must not discover this after
-    the fact), and purchases **cannot be restored** to a new account
+  - **unspent Sparks are forfeited** — see §4.2.1, this is the headline warning
+  - purchases **cannot be restored** to a new account
   - saved custom content is deleted
   - the action **cannot be undone**
 - Requires an explicit confirm (typed `DELETE`, matching the API contract).
 - On success: clear the local session/device state, sign out, return to the catalog as a guest,
   and show a confirmation toast.
+
+#### 4.2.1 Unspent Sparks warning (required)
+
+Losing paid-for currency is the most consequential and least obvious effect of deletion, and the
+one a user is most likely to regret. The dialog must therefore surface it **conditionally and
+concretely** — never as boilerplate:
+
+- **Balance > 0 →** show a prominent, visually distinct warning with the **exact live balance**,
+  fetched at dialog-open time (not a stale cached value):
+
+  > ⚡ **You still have 240 Sparks.**
+  > They will be permanently destroyed and cannot be recovered, refunded, or moved to another
+  > account — including if you sign in again with the same Google or Apple account.
+
+  Singular/plural must agree ("1 Spark"). If the balance is large, this is exactly the case where a
+  user should be given pause, so the warning ranks **above** the other consequences in the dialog.
+
+- **Balance == 0 →** omit the Sparks warning entirely. Warning someone about losing nothing is
+  noise that trains people to skip the dialog, which is precisely when they miss a real warning.
+
+- **Balance unavailable** (request fails) → do **not** silently show nothing, and do not block
+  deletion. Fall back to the non-numeric form: *"Any unspent Sparks will be permanently destroyed."*
+
+The number shown must come from the same `/tokens/balance` source the header badge uses, so the
+dialog can never contradict the balance the user is looking at.
 
 ### 4.3 After deletion
 
@@ -170,7 +195,12 @@ Settings drawer, in the account section, below Sign out:
 - the button is hidden when signed out, visible when signed in
 - confirmation is required; cancelling changes nothing
 - success clears session and returns to guest state
-- the dialog shows the live balance being forfeited
+- **Sparks warning (§4.2.1):**
+  - balance 240 → warning shown containing "240"
+  - balance 1 → singular wording ("1 Spark", not "1 Sparks")
+  - balance 0 → Sparks warning **not** rendered
+  - balance request fails → non-numeric fallback shown, deletion still possible
+  - the figure matches `/tokens/balance`, i.e. the dialog cannot contradict the header badge
 
 **E2E**: extend `legal-pages.spec.ts` or add an account spec asserting the deletion path is
 reachable in-app — that is precisely what Apple review checks.

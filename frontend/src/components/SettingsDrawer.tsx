@@ -6,6 +6,7 @@ import { useTokenBalance } from '../hooks/useTokenBalance';
 import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import TokenBadge from './TokenBadge';
 import ReferralSection from './ReferralSection';
+import DeleteAccountDialog from './DeleteAccountDialog';
 
 declare global {
     interface Window {
@@ -53,6 +54,7 @@ export function getNativeIdToken(loginResult: unknown): string {
 
 export default function SettingsDrawer() {
     const [open, setOpen] = useState(false);
+    const [showDeleteAccount, setShowDeleteAccount] = useState(false);
     const [muted, setMuted] = useState(soundManager.muted);
     const [vibration, setVibration] = useState(soundManager.vibrationEnabled);
     const [rulesAvailable, setRulesAvailable] = useState(false);
@@ -306,6 +308,16 @@ export default function SettingsDrawer() {
         track('signed_out', { source: 'settings' });
     };
 
+    const handleAccountDeleted = () => {
+        setShowDeleteAccount(false);
+        // The backend has already deleted the account; drop the local session so the app
+        // returns to guest state instead of holding a token for an account that is gone.
+        signOut();
+        window.dispatchEvent(new CustomEvent('refresh-sparks'));
+        track('account_deleted', { source: 'settings' });
+        setOpen(false);
+    };
+
     const showCurrentGameRules = () => {
         if (!rulesAvailable) return;
         setOpen(false);
@@ -408,6 +420,18 @@ export default function SettingsDrawer() {
                                 Sign Out
                             </button>
                         </div>
+                        {/* App Store Guideline 5.1.1(v): account creation requires in-app deletion. */}
+                        <button
+                            data-testid="delete-account-open"
+                            onClick={() => setShowDeleteAccount(true)}
+                            style={{
+                                background: 'none', border: 'none', padding: '4px 0',
+                                color: 'var(--accent)', fontSize: 12, textAlign: 'left',
+                                cursor: 'pointer', textDecoration: 'underline',
+                            }}
+                        >
+                            Delete account
+                        </button>
                     </div>
                 ) : (
                     <div className="settings-drawer-row" style={{ flexDirection: 'column', alignItems: 'center', gap: 10 }}>
@@ -508,6 +532,13 @@ export default function SettingsDrawer() {
                     <a href="privacy.html" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: 'var(--text-tertiary)', textDecoration: 'underline' }}>Privacy Policy</a>
                 </div>
             </div>
+
+            {showDeleteAccount && (
+                <DeleteAccountDialog
+                    onDeleted={handleAccountDeleted}
+                    onClose={() => setShowDeleteAccount(false)}
+                />
+            )}
         </>
     );
 }

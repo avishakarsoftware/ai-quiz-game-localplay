@@ -55,5 +55,9 @@
 			</array>
 		</dict>
 	</array>
+	<!-- We use only standard HTTPS/TLS, which is exempt encryption. Declaring this here
+	     stops App Store Connect asking on every single upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>

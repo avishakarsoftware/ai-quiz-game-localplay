@@ -177,3 +177,94 @@ def test_referral_daily_cap(conn):
         assert r["status"] == "ok"
     over = _rpc(conn, "games_redeem_referral", _wallet(conn), code, 20, MAX_BALANCE, cap, 0)
     assert over["status"] == "cap_reached"
+
+
+# ---------------------------------------------------------------------------
+# Account deletion (SPEC-ACCOUNT-DELETION)
+# ---------------------------------------------------------------------------
+# These exist because SQLite could not have caught the bug they cover: the ledger
+# used to be `REFERENCES games_wallets(id) ON DELETE CASCADE`, so deleting a wallet
+# destroyed the user's whole purchase history on Postgres while SQLite (no FK)
+# retained it. Every SQLite test asserted retention — i.e. the suite certified the
+# opposite of production behaviour.
+
+def _user(conn, user_id: str | None = None) -> str:
+    """Create a users row + the wallet keyed on that same id (wallet id == user id)."""
+    user_id = user_id or f"parity_user_{uuid.uuid4().hex[:12]}"
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO games_users (id, provider, provider_subject_id, email, created_at) "
+            "VALUES (%s, 'google', %s, %s, 0)",
+            (user_id, f"sub-{user_id}", f"{user_id}@example.com"),
+        )
+    _wallet(conn, user_id, signup_bonus=True)
+    return user_id
+
+
+def test_ledger_has_no_cascade_from_wallets(conn):
+    """The regression guard: no FK from token_transactions -> wallets."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT conname FROM pg_constraint "
+            "WHERE conrelid = 'games_token_transactions'::regclass AND contype = 'f'"
+        )
+        assert cur.fetchall() == [], (
+            "token_transactions must not FK-cascade from wallets — deleting an account "
+            "would destroy the retained purchase ledger (SPEC-ACCOUNT-DELETION §3)"
+        )
+
+
+def test_delete_account_removes_pii_wallet_and_content(conn):
+    user_id = _user(conn)
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO games_generated_content (id, wallet_id, content_type, title, payload, created_at) "
+            "VALUES (%s, %s, 'quiz', 'T', '{}'::jsonb, 0)",
+            (str(uuid.uuid4()), user_id),
+        )
+
+    assert _rpc(conn, "games_delete_account", user_id)["deleted"] is True
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM games_users WHERE id = %s", (user_id,))
+        assert cur.fetchone() is None, "PII must be gone"
+        cur.execute("SELECT 1 FROM games_wallets WHERE id = %s", (user_id,))
+        assert cur.fetchone() is None
+        cur.execute("SELECT 1 FROM games_generated_content WHERE wallet_id = %s", (user_id,))
+        assert cur.fetchone() is None
+
+
+def test_delete_account_retains_the_ledger(conn):
+    """The case the cascade silently broke."""
+    user_id = _user(conn)
+    _rpc(conn, "games_credit_purchase", user_id, 200, f"iap:TEST:{uuid.uuid4()}", "", MAX_BALANCE)
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM games_token_transactions WHERE wallet_id = %s", (user_id,))
+        before = cur.fetchone()[0]
+    assert before > 0
+
+    _rpc(conn, "games_delete_account", user_id)
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM games_token_transactions WHERE wallet_id = %s", (user_id,))
+        assert cur.fetchone()[0] == before, (
+            "the purchase ledger must survive account deletion — financial record + "
+            "credit_purchase idempotency guard"
+        )
+
+
+def test_delete_account_is_idempotent(conn):
+    user_id = _user(conn)
+    assert _rpc(conn, "games_delete_account", user_id)["deleted"] is True
+    second = _rpc(conn, "games_delete_account", user_id)
+    assert second["deleted"] is False
+    assert second["reason"] == "already_deleted"
+
+
+def test_denylist_records_the_deletion(conn):
+    user_id = _user(conn)
+    _rpc(conn, "games_delete_account", user_id)
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM games_deleted_accounts WHERE user_id = %s", (user_id,))
+        assert cur.fetchone() is not None

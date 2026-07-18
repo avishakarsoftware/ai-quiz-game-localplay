@@ -136,7 +136,13 @@ def get_session_from_request(req: Request) -> Optional[dict]:
     token = (req.headers.get("X-Session-Token") or "").strip()
     if not token:
         return None
-    return verify_session_token(token)
+    session = verify_session_token(token)
+    # Session tokens are stateless JWTs with no revocation list of their own, so a token minted
+    # before deletion still verifies fine. Treat a deleted user's session as signed-out: the
+    # request then falls back to guest/device behaviour instead of resurrecting the account.
+    if session and db.is_account_deleted(session.get("user_id", "")):
+        return None
+    return session
 
 
 # --- Sign-In Flow ---
