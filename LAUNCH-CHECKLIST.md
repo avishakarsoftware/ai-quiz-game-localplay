@@ -159,15 +159,19 @@ screenshots see `marketing/STORE_ASSETS.md`.
 Play Console → this app → complete each dashboard task:
 - [ ] **App access** — declare whether login is required (sign-in is optional; guest play works) + any test creds.
 - [ ] **Ads** — declare whether the app contains ads (currently no; update if AdMob is added).
-- [ ] **Content rating** — fill the IARC questionnaire (quiz/social; no objectionable content).
+- [ ] **Content rating** — IARC questionnaire; disclose AI-generated content + user-generated content.
 - [ ] **Target audience & content** — set age groups (13+; not designed for children — avoids Families policy).
-- [ ] **Data safety** — declare data collected: account (email on sign-in), device/analytics (PostHog if on),
+- [ ] **Data safety** — use the matrix in `marketing/store-privacy-declarations.md` (email = optional/sign-in only, purchase history, user IDs, app interactions, crash logs; no ads ID, no location, no payment details).
       purchases. No data sold; encrypted in transit.
 - [ ] **Government apps / Financial features / Health** — declare "no" as applicable.
 - [ ] **Main store listing** — app name **Revelry Games**, short + full description (from `store-listing.md`),
       **feature graphic**, **phone screenshots** (≥2; use `marketing/play-store/phone/` + `marketing/gameplay/`),
       tablet screenshots, app icon, category = **Games / Trivia**, contact email, privacy policy URL.
-- [ ] **Privacy policy URL** — host a privacy policy (e.g. `https://games.revelryapp.me/privacy`) and link it.
+- [x] **Privacy policy URL** — ✅ `https://games.revelryapp.me/privacy` (rewritten 2026-07-18 to cover
+      accounts + purchases; must stay consistent with the Data safety form).
+- [x] **Support URL** — ✅ `https://games.revelryapp.me/support` (new 2026-07-18; required by Apple).
+- [ ] **Fill both consoles from `marketing/store-privacy-declarations.md`** — ready-made App Privacy
+      and Data safety matrices derived from the real schema, so the forms and the policy agree.
 - [ ] **Store settings** — category, tags, contact details.
 
 When all tasks are ✅, the "promote to Production" action unblocks.
