@@ -7,7 +7,12 @@
 #   ./scripts/deploy-gcp.sh --skip-build   # Deploy with existing image on VM
 #   ./scripts/deploy-gcp.sh --with-frontend # Build frontend into backend image
 #   ./scripts/deploy-gcp.sh --gamma --with-frontend # Deploy gamma container
+#   ./scripts/deploy-gcp.sh --with-frontend --build-on-vm # Build the image ON the VM
 #   ./scripts/deploy-gcp.sh --bootstrap-vm # Create /home/revelry-games layout, then deploy
+#
+# --build-on-vm: ship the source build context and run `docker build` on the VM instead of
+# locally. Use when the local Docker daemon is off or can't reach Docker Hub. Also just faster
+# (native x86, datacenter network, a few MB of context vs a large image tarball).
 #
 # What this script does:
 #   1. Builds the Docker image locally
@@ -40,6 +45,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 INCLUDE_FRONTEND=false
 SKIP_BUILD=false
+BUILD_ON_VM=false
 ENVIRONMENT="prod"
 BOOTSTRAP_VM=false
 GOOGLE_WEB_CLIENT_ID="${GOOGLE_WEB_CLIENT_ID:-458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com}"
@@ -73,13 +79,17 @@ while [[ $# -gt 0 ]]; do
             ENVIRONMENT="gamma"
             shift
             ;;
+        --build-on-vm)
+            BUILD_ON_VM=true
+            shift
+            ;;
         --bootstrap-vm)
             BOOTSTRAP_VM=true
             shift
             ;;
         *)
             error "Unknown option: $1"
-            echo "Usage: ./scripts/deploy-gcp.sh [--skip-build] [--with-frontend] [--gamma] [--bootstrap-vm]"
+            echo "Usage: ./scripts/deploy-gcp.sh [--skip-build] [--with-frontend] [--gamma] [--build-on-vm] [--bootstrap-vm]"
             exit 1
             ;;
     esac
@@ -322,19 +332,39 @@ if [[ "$SKIP_BUILD" != "true" ]]; then
         build_context="$TEMP_BUILD_CONTEXT"
     fi
 
-    info "Building Docker image from $build_context..."
-    docker build --platform linux/amd64 -t "$IMAGE_NAME:latest" "$build_context"
+    if [[ "$BUILD_ON_VM" == "true" ]]; then
+        # Build on the VM instead of locally. Needed whenever the local Docker daemon is
+        # unavailable or can't reach Docker Hub (Docker Desktop off / base image not cached);
+        # also faster, since the VM is native x86 on a datacenter link and we ship the source
+        # context (a few MB) instead of a multi-hundred-MB image tarball.
+        REMOTE_CTX="/tmp/${IMAGE_NAME}-ctx"
+        info "Building on VM: syncing build context to $VM_NAME:$REMOTE_CTX..."
+        ssh_cmd "rm -rf $REMOTE_CTX && mkdir -p $REMOTE_CTX"
 
-    info "Saving image to tarball..."
-    IMAGE_TARBALL="/tmp/${IMAGE_NAME}.tar.gz"
-    docker save "$IMAGE_NAME:latest" | gzip > "$IMAGE_TARBALL"
+        CTX_TARBALL="/tmp/${IMAGE_NAME}-ctx.tar.gz"
+        tar -czf "$CTX_TARBALL" -C "$build_context" .
+        info "Context is $(du -h "$CTX_TARBALL" | cut -f1); copying..."
+        gcloud compute scp "$CTX_TARBALL" "$VM_NAME:$CTX_TARBALL" --zone "$VM_ZONE"
+        ssh_cmd "tar -xzf $CTX_TARBALL -C $REMOTE_CTX && rm $CTX_TARBALL"
+        rm "$CTX_TARBALL"
 
-    info "Copying image to VM ($(du -h "$IMAGE_TARBALL" | cut -f1))..."
-    gcloud compute scp "$IMAGE_TARBALL" "$VM_NAME:$IMAGE_TARBALL" --zone "$VM_ZONE"
+        info "Building Docker image on VM..."
+        ssh_cmd "cd $REMOTE_CTX && docker build -t $IMAGE_NAME:latest . && rm -rf $REMOTE_CTX"
+    else
+        info "Building Docker image from $build_context..."
+        docker build --platform linux/amd64 -t "$IMAGE_NAME:latest" "$build_context"
 
-    info "Loading image on VM..."
-    ssh_cmd "gunzip -c $IMAGE_TARBALL | docker load && rm $IMAGE_TARBALL"
-    rm "$IMAGE_TARBALL"
+        info "Saving image to tarball..."
+        IMAGE_TARBALL="/tmp/${IMAGE_NAME}.tar.gz"
+        docker save "$IMAGE_NAME:latest" | gzip > "$IMAGE_TARBALL"
+
+        info "Copying image to VM ($(du -h "$IMAGE_TARBALL" | cut -f1))..."
+        gcloud compute scp "$IMAGE_TARBALL" "$VM_NAME:$IMAGE_TARBALL" --zone "$VM_ZONE"
+
+        info "Loading image on VM..."
+        ssh_cmd "gunzip -c $IMAGE_TARBALL | docker load && rm $IMAGE_TARBALL"
+        rm "$IMAGE_TARBALL"
+    fi
 else
     info "Skipping build (--skip-build)"
 fi

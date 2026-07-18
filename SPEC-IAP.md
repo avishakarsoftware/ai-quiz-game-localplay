@@ -1,14 +1,14 @@
 # SPEC-IAP — Native In-App Purchases (Apple StoreKit + Google Play Billing)
 
-Status: **Implemented — prod payments fully configured (RevenueCat + Stripe live); native v3.1.1(6) built, iOS uploaded to App Store Connect. Remaining work is store submission + device purchase smokes** (2026-07-16)
+Status: **Implemented — prod payments fully configured (RevenueCat + Stripe live) and the paywall price fix deployed to all 3 web surfaces; native rebuilt as v3.1.2(7). Remaining work is store submission + device purchase smokes** (2026-07-17)
 Owner: Avi
 Related: `SPEC.md` (spark economy), `SPEC-ADS.md` (free Sparks via rewarded ads — the non-paid sibling to this spec), `DEPLOY.md` (§3c IAP runbook, §3d native sign-in, build contexts), `token_economy_migration.md`, VibePix `SPEC.md`/`server.js` (reference implementation)
 
 ---
 
-## 0. Status (as-built, updated 2026-07-16)
+## 0. Status (as-built, updated 2026-07-17)
 
-**Prod payments are configured on both rails** (re-verified 2026-07-16 by probing the live
+**Prod payments are configured on both rails** (re-verified by probing the live
 endpoints, not from memory):
 
 | Rail | Check | Result |
@@ -18,13 +18,13 @@ endpoints, not from memory):
 
 The prod RevenueCat console webhook is Active (test event `E1662E2D-…` → 200 both sides,
 2026-07-14) and live Stripe keys are set (`cs_live_` session created, 2026-07-15). Native is at
-**v3.1.1 / build 6** on both platforms; iOS is uploaded to App Store Connect.
+**v3.1.2 / build 7** on both platforms (iOS pending archive; Android AAB pending a keystore password).
 
-**⚠️ Known bug in the uploaded iOS build v3.1.1(6):** the out-of-sparks CTA advertises a
+**Paywall price bug — fixed and deployed on web (2026-07-17).** The out-of-sparks CTA advertised a
 **110-Spark pack for $0.99** that cannot be bought (retired single-pack config; the real ladder is
-50/200/500). Fixed on master 2026-07-16 (`ErrorModal`, regression test added) but **not** in the
-uploaded binary — shipping it as-is means the paywall misquotes the price. See "Sequencing" in
-`LAUNCH-CHECKLIST.md`.
+50/200/500, store-localized on native). Fixed in `ErrorModal` with a regression test, and **live on
+gamma + prod + IONOS**. Native rebuilt as **v3.1.2 / build 7** with the fix baked and verified in
+both bundles — **the previously-uploaded v3.1.1(6) is superseded and must not be submitted.**
 
 
 **✅ Verified on a real iOS device (2026-07-07):** native **Google sign-in** (`/auth/signin` → 200, user created/looked up in `games_gamma_users`) and a **real App Store sandbox purchase** end-to-end — StoreKit → RevenueCat → `POST /webhook/revenuecat` (200) → `credit_purchase` credited **50 sparks** (`store=APP_STORE`, `sku=spark_pack_50`, `credited=True`), tied to the signed-in user wallet. Confirms the RevenueCat "Could not check" dashboard warning is cosmetic — real purchases fulfill. Native Apple sign-in launched correctly (capability wired) but the test device's **child/Family-Sharing Apple ID** blocks it; retest on an adult Apple ID.
@@ -39,11 +39,12 @@ uploaded binary — shipping it as-is means the paywall misquotes the price. See
 - **RevenueCat** — project `Revelry Games` (`proj0cdf24b0`); iOS + Android apps (`me.revelryapp.quiz`); webhook → gamma (bearer). The **current** `default` offering has 3 packages (`rc_spark_pack_50/200/500`), each serving **both** the App Store product and the Play Store product (`me.revelryapp.quiz.sparks_*`). Play credential validated (service account granted the required Play permissions). NOTE: App Store products still show "Could not check" until the iOS IAPs are submitted/approved.
 - **Apple** — 3 consumables `me.revelryapp.quiz.sparks_50/200/500` created (Ready to Submit) + sandbox tester.
 - **Android Play (2026-07-06)** — lost original upload-key password → generated `revelry-quiz-upload-v2.keystore` (documented in `backupenv/quiz/local/`), Play **upload-key reset** approved. AAB **v5 (3.1.0)** with the BILLING permission published to **internal testing**. 3 one-time products created + **Active** ($1.99/$4.99/$9.99; purchase options `sparks-50/200/500`), imported into RevenueCat and mapped into the offering. Verified end-to-end on gamma: a synthetic `PLAY_STORE` webhook for each real store id (`me.revelryapp.quiz.sparks_50/200/500`) credits 50/200/500 and dedups on replay.
-- **Native sign-in** — wired (`utils/socialAuth.ts` `SocialLogin.initialize()`, iOS Google URL scheme in `Info.plist`); see §6.7. App version now **3.1.1 / build 6** (both platforms; display name **Revelry Games**).
+- **Native sign-in** — wired (`utils/socialAuth.ts` `SocialLogin.initialize()`, iOS Google URL scheme in `Info.plist`); see §6.7. App version now **3.1.2 / build 7** (both platforms; display name **Revelry Games**).
 
-**Done since (2026-07-14 → 07-16):** prod RevenueCat console webhook created + verified 200;
-live Stripe keys + `/webhook/stripe` endpoint configured on prod; native bumped to v3.1.1(6) and
-iOS archived + uploaded to App Store Connect; Android release AAB signed and built.
+**Done since (2026-07-14 → 07-17):** prod RevenueCat console webhook created + verified 200;
+live Stripe keys + `/webhook/stripe` endpoint configured on prod; paywall price fix deployed to
+gamma + prod + IONOS and verified in each served bundle; native bumped to **v3.1.2(7)** with the fix
+baked into both bundles. (v3.1.1(6) was uploaded to App Store Connect on 07-16 but is superseded.)
 
 **Pending (manual — console/Xcode/device). Full runbook: `LAUNCH-CHECKLIST.md`.**
 - **Native purchase smokes** — the one unproven path. Android: install via the tester opt-in link
@@ -53,8 +54,10 @@ iOS archived + uploaded to App Store Connect; Android release AAB signed and bui
   `checkout.session.completed` credits; optionally refund to confirm clawback.
 - **Apple sign-in on an adult Apple ID** — the flow works; the test device's child/Family-Sharing
   account blocked it.
-- **Store submission** — iOS: submit v3.1.1(6) for review with the 3 consumables attached, confirm
-  the Paid Apps agreement is Active. Play: upload the AAB, finish the listing tasks, promote.
+- **Store submission** — iOS: archive/upload **v3.1.2(7)** and submit for review with the 3
+  consumables attached (**not** the superseded v3.1.1(6)); confirm the Paid Apps agreement is Active.
+  Play: rebuild the AAB at versionCode 7 (needs the keystore password), upload, finish the listing
+  tasks, promote.
 
 ---
 

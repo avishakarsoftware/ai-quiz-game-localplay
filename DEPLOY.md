@@ -46,7 +46,7 @@ link here instead of restating environment status (stale spec headers were a rec
 
 | Capability / feature | Gamma | Prod | Notes |
 |---|---|---|---|
-| Deployed code (backend+SPA) | `8ca4d57a` (2026-07-16) | `8ca4d57a` (2026-07-16) | Payment-UX deploy (cost context + terms). Gamma+prod backend SPA bundle `index-BfmpLaIh.js`; IONOS public frontend (`games.revelryapp.me`) uploaded `index-CPlKcEqO.js`. All three surfaces verified serving the payment-UX build; prod `/checkout/create` → live `cs_live` session. Zero backend `.py` changes since `91b93f40`. |
+| Deployed code (backend+SPA) | `6144ebd0` (2026-07-17) | `6144ebd0` (2026-07-17) | Paywall price fix (`67af2407`). Gamma+prod backend SPA bundle `index-D2aAVhRM.js`; IONOS public frontend `index-6V9hgGrE.js` (differs by design — bakes an explicit `VITE_API_URL`). Built via the new `--build-on-vm` deploy path (Docker Desktop off). Zero backend `.py` changes since `91b93f40`. Post-deploy verified: prod `/webhook/stripe`→400, `/webhook/revenuecat`→401, `/health`→200, `/catalog`→33 games; payment-UX e2e 5/5 green against live prod. |
 | Login-streak bonus (SQL RPC) | ✅ live | ✅ live | applied 2026-07-08, targeted migration |
 | Check-in games policy (`party_quests`, `find_someone`) | ✅ enabled | ✅ enabled | policy rows 2026-07-08; prod Party Quests upgraded from quick-start-only on 2026-07-14 |
 | Party Quests staged flow (authoring caps + strict `requires_prepared_content_for_checkin`) | ✅ flipped 2026-07-09 | ✅ flipped 2026-07-14 | production DDL/policy enabled after gamma strict harness passed |
@@ -56,10 +56,42 @@ link here instead of restating environment status (stale spec headers were a rec
 | Web Stripe | test keys (local `backend/.env`) | ✅ live keys configured (real-card test pending) | 2026-07-15: prod `.env` set with `sk_live_` `STRIPE_SECRET_KEY` + `whsec_` `STRIPE_WEBHOOK_SECRET` + `CHECKOUT_RETURN_URL=https://games.revelryapp.me/`; container recreated. Verified: `/webhook/stripe`→400 (configured), `/checkout/create`→live `cs_live_` session on `checkout.stripe.com`. Live secrets backed up in `backupenv/quiz/local/localplay-prod-payment.env`. Remaining: one real-card end-to-end purchase to confirm credit + refund clawback. |
 | Cross-app Playwright testids | ✅ | ✅ (incl. IONOS) | 8 testids, 2026-07-09 |
 | Room snapshot/restore (`ROOM_SNAPSHOT_ENABLED`) | ✅ live + restart/reconnect-verified | ✅ deployed + smoke-verified | gamma live-verified 2026-07-14: room `V0QSIN` + player seat survived a real container restart and WebSocket reconnect; prod restart drill pending |
-| Paywall price accuracy (`ErrorModal` CTA) | ⚠️ stale build | ⚠️ stale build | **Fixed on master `67af2407`, NOT deployed anywhere.** All live surfaces (gamma, prod, IONOS) and the uploaded iOS **v3.1.1(6)** still render `Get 110 Sparks — $0.99` on the out-of-sparks path — a pack that cannot be bought (real ladder 50/200/500; native prices are store-localized). Deploy the web surfaces to clear this; the iOS binary needs a rebuild (see `LAUNCH-CHECKLIST.md` → "Sequencing decision"). |
+| Paywall price accuracy (`ErrorModal` CTA) | ✅ fixed + live | ✅ fixed + live (all 3 web surfaces) | Deployed 2026-07-17. The CTA no longer interpolates a pack size/price; verified on gamma, prod, and IONOS that the old `Sparks — {price}` template is **absent** and the literal `"Get Sparks"` is present in each served bundle. `token_pack_price`/`token_pack_amount:110` remain in the bundle as **inert config data** (nothing renders them) — retiring that dead single-pack config is tracked separately. **Native still needs the rebuilt binary**: v3.1.2(7) is prepped, the uploaded v3.1.1(6) is stale. |
 | Store listing assets (screenshots + copy) | n/a | ✅ refreshed `67af2407` | 7 screens × 4 store targets captured from prod at exact required px (`marketing/{app-store,play-store}/`), regenerable via `frontend/e2e/store-screenshots.spec.ts`; `store-listing.md` rewritten for **Revelry Games** + all 33 games. Not yet uploaded to either console. |
 | Analytics (PostHog keys) | ❌ unset | ❌ unset | code no-ops until keys set |
 | Ads (`ads_enabled`) | ❌ | ❌ | SPEC-ADS not built |
+
+### Recent gamma + prod + IONOS deploy — July 17, 2026 (paywall price fix + `--build-on-vm`)
+
+Deployed `6144ebd0` (fix `67af2407`) to **all three web surfaces**. The out-of-sparks CTA was
+advertising `Get 110 Sparks — $0.99` — a pack that cannot be bought — from the retired single-pack
+config; the real ladder is 50/200/500 and native prices are store-localized by RevenueCat. This was
+the highest-intent purchase path, and the web rail is the one already taking real money.
+
+**Deploy path — `--build-on-vm` is now a real flag.** Docker Desktop was off again (pihole /
+homeassistant run there; deliberately not restarted). Rather than hand-roll production deploy
+commands a second time, the fallback documented on 07-16 was implemented as
+`./scripts/deploy-gcp.sh --with-frontend --build-on-vm`: it tars the build context, ships it, and
+runs `docker build` on the VM, then follows the script's normal backup/stop/run/health path. Also
+faster than the local path (native x86, datacenter link, a few MB of context instead of a large
+image tarball). Gamma first, verified, then prod.
+
+**Verification.** Grepping for `"110 Sparks"` would have been a false negative — that string never
+existed in the bundle, since the old code was a template with interpolated values. The real test is
+that the old `Sparks — ` template is **absent** and the literal `"Get Sparks"` is **present**:
+confirmed on gamma (`index-D2aAVhRM.js`), prod (same), and IONOS (`index-6V9hgGrE.js`). `config.json`
+was byte-identical to live before upload, so no feature-flag clobber; uploaded additively (no
+`--delete`). Post-deploy: prod `/webhook/stripe`→400, `/webhook/revenuecat`→401, both `/health`→200,
+IONOS→200, `/catalog`→33 games, and `e2e/payment-ux.spec.ts` 5/5 green against live prod. DB backed
+up on both (`revelry_20260717_230323.db` gamma, `revelry_20260717_230508.db` prod).
+
+**Native v3.1.2 / build 7 prepped** (iOS `MARKETING_VERSION` 3.1.2 / `CURRENT_PROJECT_VERSION` 7;
+Android `versionName` 3.1.2 / `versionCode` 7). `cap:sync:prod` baked both bundles — verified the
+main chunk (not a small vendor chunk) carries the fix, `gamesapi.revelryapp.me`, the RevenueCat
+publishable keys, and appName "Revelry Games". iOS handed to Xcode for Archive → Distribute.
+**Android AAB not rebuilt** — the release keystore password was not available in
+`backupenv/quiz/local/`, the keychain, or the environment; it must be supplied to run
+`KEYSTORE_PASSWORD=… KEY_PASSWORD=… ./gradlew bundleRelease`.
 
 ### Recent gamma/prod deploy — July 14, 2026 (Party Quests strict staging harness + launch metadata)
 

@@ -17,7 +17,25 @@ Status snapshot (re-verified against the live endpoints 2026-07-16):
 
 ---
 
-## Sequencing decision — the uploaded iOS build has a paywall bug (open, 2026-07-16)
+## Sequencing decision — ✅ RESOLVED 2026-07-17: option A (rebuild)
+
+**Chosen: A — rebuild.** The web fix is **deployed and verified live** on gamma, prod, and IONOS
+(the rail already taking real money). Native is bumped to **v3.1.2 / build 7** with the fix baked
+and verified in both bundles; iOS is open in Xcode for Archive → Distribute.
+
+**Do not submit the previously-uploaded v3.1.1 (6)** — it still carries the bug. Submit v3.1.2 (7).
+
+Remaining for this decision:
+- [ ] iOS: Archive → Distribute → App Store Connect from the open Xcode window (v3.1.2/7).
+- [ ] Android: rebuild the AAB at versionCode 7 — **needs the keystore password**, which was not
+      found in `backupenv/quiz/local/`, the login keychain, or the environment:
+      `cd frontend/android && KEYSTORE_PASSWORD=… KEY_PASSWORD=… ./gradlew bundleRelease`
+
+Original analysis retained below for context.
+
+---
+
+## Original analysis — the uploaded iOS build has a paywall bug (2026-07-16)
 
 **The uploaded `v3.1.1 (6)` misquotes the price at the moment of purchase.** When a host runs out
 of sparks, the CTA renders `Get 110 Sparks — $0.99` from the retired single-pack remote config. That
@@ -30,15 +48,12 @@ Fixed on master 2026-07-16 (`frontend/src/components/ErrorModal.tsx` — CTA now
 regression test asserts the modal never renders a pack size or a price). **The fix is not in the
 uploaded binary.**
 
-Pick one before submitting:
+Options considered:
 
 | Option | What it means |
 |---|---|
-| **A — rebuild (recommended)** | Bump to v3.1.2 / build 7, `npm run cap:sync:prod`, re-archive, upload, submit that. Costs one build cycle; ships an accurate paywall. |
+| **A — rebuild (chosen)** | Bump to v3.1.2 / build 7, `npm run cap:sync:prod`, re-archive, upload, submit that. Costs one build cycle; ships an accurate paywall. |
 | **B — ship (6) as-is** | Submit the uploaded build and fix next release. The bug is a wrong price shown *before* checkout — the actual charge is always correct and comes from the store. Risk is user trust and a possible App Store metadata/IAP-accuracy rejection. |
-
-Whichever you pick, **deploy the web fix** (gamma → prod) so `games.revelryapp.me` isn't showing the
-stale price — the web rail is live on Stripe today.
 
 ---
 
@@ -102,8 +117,8 @@ Dev-signed builds expire ~7 days.
 ## Phase 3 — Store submissions
 
 ### App Store (iOS)
-- ✅ **v3.1.1 (6) uploaded to App Store Connect 2026-07-16** (archived + distributed from Xcode).
-- ⚠️ **First: resolve the paywall-bug sequencing decision above** (rebuild as v3.1.2(7), or accept (6)).
+- ⚠️ **v3.1.1 (6) is uploaded but SUPERSEDED — do not submit it** (carries the paywall bug).
+- [ ] **Archive + upload v3.1.2 (7)** from Xcode (already open, prod-baked and verified).
 - [ ] **Submit for review with the 3 IAPs attached** — the consumables are "Ready to Submit". Attaching
       them to the *first* submission matters: IAPs reviewed separately can lag the binary.
 - [ ] **Confirm the Paid Apps agreement is Active** (Business → Agreements) — if it is not, purchases
@@ -121,8 +136,11 @@ Dev-signed builds expire ~7 days.
 `marketing/store-listing.md` (name **Revelry Games**, all 33 games, v3.1.1 release notes).
 
 ### Google Play
-- [ ] **Upload the signed release AAB** — `frontend/android/app/build/outputs/bundle/release/app-release.aab`
-      (v3.1.1, versionCode **6**, v2 upload keystore). Bump `versionCode` for any re-upload.
+- [ ] **Rebuild the AAB at versionCode 7** — the existing artifact is v3.1.1/6 and carries the paywall
+      bug. Needs the release keystore password (not found in `backupenv/quiz/local/`, the keychain, or
+      the env): `cd frontend/android && KEYSTORE_PASSWORD=… KEY_PASSWORD=… ./gradlew bundleRelease`
+      → `app/build/outputs/bundle/release/app-release.aab` (keystore `~/keystores/revelry-quiz-upload-v2.keystore`).
+- [ ] **Upload the signed release AAB.** Bump `versionCode` for any re-upload.
 - [ ] Complete the listing tasks (Phase 4).
 - [ ] **Promote to a closed/open testing track first**, run the license-tester purchase gate
       (Phase 6), then promote to Production. Products are already Active + mapped in RevenueCat.
