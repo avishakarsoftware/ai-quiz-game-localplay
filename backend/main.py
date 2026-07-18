@@ -126,6 +126,20 @@ def _frontend_file_response(full_path: str):
         return FileResponse(candidate)
     if full_path == "assets" or full_path.startswith("assets/"):
         raise HTTPException(status_code=404, detail="Not found")
+
+    # Extensionless static pages, mirroring Apache MultiViews on the IONOS frontend so that
+    # /privacy and /support resolve identically on every surface. Without this the backend-served
+    # SPA answers those paths with index.html -- a 200 that renders an empty shell, which is
+    # exactly how a broken store Support URL can look healthy. Store review hits these URLs.
+    if full_path and "." not in Path(full_path).name:
+        html_candidate = (frontend_root / f"{full_path}.html").resolve()
+        try:
+            html_candidate.relative_to(frontend_root)
+        except ValueError:
+            return FileResponse(_frontend_index_path())
+        if html_candidate.is_file():
+            return FileResponse(html_candidate)
+
     return FileResponse(_frontend_index_path())
 
 
