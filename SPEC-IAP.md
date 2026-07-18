@@ -1,12 +1,31 @@
 # SPEC-IAP — Native In-App Purchases (Apple StoreKit + Google Play Billing)
 
-Status: **Implemented — backend + frontend on master; gamma native IAP verified; prod RevenueCat backend configured** (2026-07-14)
+Status: **Implemented — prod payments fully configured (RevenueCat + Stripe live); native v3.1.1(6) built, iOS uploaded to App Store Connect. Remaining work is store submission + device purchase smokes** (2026-07-16)
 Owner: Avi
 Related: `SPEC.md` (spark economy), `SPEC-ADS.md` (free Sparks via rewarded ads — the non-paid sibling to this spec), `DEPLOY.md` (§3c IAP runbook, §3d native sign-in, build contexts), `token_economy_migration.md`, VibePix `SPEC.md`/`server.js` (reference implementation)
 
 ---
 
-## 0. Status (as-built, updated 2026-07-14)
+## 0. Status (as-built, updated 2026-07-16)
+
+**Prod payments are configured on both rails** (re-verified 2026-07-16 by probing the live
+endpoints, not from memory):
+
+| Rail | Check | Result |
+|---|---|---|
+| RevenueCat | `POST /webhook/revenuecat` unauthenticated | **401** — secret set, rejecting unauthenticated traffic |
+| Stripe | `POST /webhook/stripe` unsigned | **400** — configured (was 503 when unset) |
+
+The prod RevenueCat console webhook is Active (test event `E1662E2D-…` → 200 both sides,
+2026-07-14) and live Stripe keys are set (`cs_live_` session created, 2026-07-15). Native is at
+**v3.1.1 / build 6** on both platforms; iOS is uploaded to App Store Connect.
+
+**⚠️ Known bug in the uploaded iOS build v3.1.1(6):** the out-of-sparks CTA advertises a
+**110-Spark pack for $0.99** that cannot be bought (retired single-pack config; the real ladder is
+50/200/500). Fixed on master 2026-07-16 (`ErrorModal`, regression test added) but **not** in the
+uploaded binary — shipping it as-is means the paywall misquotes the price. See "Sequencing" in
+`LAUNCH-CHECKLIST.md`.
+
 
 **✅ Verified on a real iOS device (2026-07-07):** native **Google sign-in** (`/auth/signin` → 200, user created/looked up in `games_gamma_users`) and a **real App Store sandbox purchase** end-to-end — StoreKit → RevenueCat → `POST /webhook/revenuecat` (200) → `credit_purchase` credited **50 sparks** (`store=APP_STORE`, `sku=spark_pack_50`, `credited=True`), tied to the signed-in user wallet. Confirms the RevenueCat "Could not check" dashboard warning is cosmetic — real purchases fulfill. Native Apple sign-in launched correctly (capability wired) but the test device's **child/Family-Sharing Apple ID** blocks it; retest on an adult Apple ID.
 
@@ -20,13 +39,22 @@ Related: `SPEC.md` (spark economy), `SPEC-ADS.md` (free Sparks via rewarded ads 
 - **RevenueCat** — project `Revelry Games` (`proj0cdf24b0`); iOS + Android apps (`me.revelryapp.quiz`); webhook → gamma (bearer). The **current** `default` offering has 3 packages (`rc_spark_pack_50/200/500`), each serving **both** the App Store product and the Play Store product (`me.revelryapp.quiz.sparks_*`). Play credential validated (service account granted the required Play permissions). NOTE: App Store products still show "Could not check" until the iOS IAPs are submitted/approved.
 - **Apple** — 3 consumables `me.revelryapp.quiz.sparks_50/200/500` created (Ready to Submit) + sandbox tester.
 - **Android Play (2026-07-06)** — lost original upload-key password → generated `revelry-quiz-upload-v2.keystore` (documented in `backupenv/quiz/local/`), Play **upload-key reset** approved. AAB **v5 (3.1.0)** with the BILLING permission published to **internal testing**. 3 one-time products created + **Active** ($1.99/$4.99/$9.99; purchase options `sparks-50/200/500`), imported into RevenueCat and mapped into the offering. Verified end-to-end on gamma: a synthetic `PLAY_STORE` webhook for each real store id (`me.revelryapp.quiz.sparks_50/200/500`) credits 50/200/500 and dedups on replay.
-- **Native sign-in** — wired (`utils/socialAuth.ts` `SocialLogin.initialize()`, iOS Google URL scheme in `Info.plist`); see §6.7. App version bumped to **3.1.0 / build 5** (both platforms).
+- **Native sign-in** — wired (`utils/socialAuth.ts` `SocialLogin.initialize()`, iOS Google URL scheme in `Info.plist`); see §6.7. App version now **3.1.1 / build 6** (both platforms; display name **Revelry Games**).
 
-**Pending (manual — console/Xcode/device):**
-- **Native device test** — the only thing left to prove real purchases end-to-end. Android: install the internal-testing build on a device via the tester opt-in link with a **license tester**, buy a pack, confirm the live webhook credits sparks. iOS: real device + sandbox account (see also the Apple-approval note below).
-- **Native sign-in console** — "Sign in with Apple" capability in Xcode; GCP Android OAuth client (package `me.revelryapp.quiz` + Play App Signing SHA-1).
-- **Web Stripe** — set `STRIPE_SECRET_KEY` + a `/webhook/stripe` endpoint per env (test on gamma, live on prod); inline `price_data` needs no Price objects.
-- **Prod** — add the prod RevenueCat console webhook, submit/ship native builds, and complete the remaining store review/listing work.
+**Done since (2026-07-14 → 07-16):** prod RevenueCat console webhook created + verified 200;
+live Stripe keys + `/webhook/stripe` endpoint configured on prod; native bumped to v3.1.1(6) and
+iOS archived + uploaded to App Store Connect; Android release AAB signed and built.
+
+**Pending (manual — console/Xcode/device). Full runbook: `LAUNCH-CHECKLIST.md`.**
+- **Native purchase smokes** — the one unproven path. Android: install via the tester opt-in link
+  as a **license tester**, buy a pack, confirm the live webhook credits. iOS: real/sandbox purchase
+  on the submitted build. *Do not broadly release before these pass.*
+- **Web Stripe real-card test** — one small live purchase on `games.revelryapp.me` → confirm
+  `checkout.session.completed` credits; optionally refund to confirm clawback.
+- **Apple sign-in on an adult Apple ID** — the flow works; the test device's child/Family-Sharing
+  account blocked it.
+- **Store submission** — iOS: submit v3.1.1(6) for review with the 3 consumables attached, confirm
+  the Paid Apps agreement is Active. Play: upload the AAB, finish the listing tasks, promote.
 
 ---
 
@@ -35,7 +63,7 @@ Related: `SPEC.md` (spark economy), `SPEC-ADS.md` (free Sparks via rewarded ads 
 Let the **native iOS and Android apps** sell Sparks through the platform stores, the same way the
 **web** app sells them through Stripe. Today:
 
-- Web checkout (Stripe) is fully built (`/checkout/create`, `/webhook/stripe`) — only missing live keys.
+- Web checkout (Stripe) is fully built (`/checkout/create`, `/webhook/stripe`) — live keys set on prod 2026-07-15.
 - The native iOS app **blocks** Stripe (`platform == "ios"` → `403`) but has **no IAP path** to fulfill the purchase, so iOS cannot sell anything.
 - The native Android app would currently **fall through to Stripe** — a Google Play policy violation, because Sparks are digital goods consumed in-app. (Mitigated only by the fact that the Play build is still in Draft.)
 
