@@ -27,10 +27,18 @@ const PAGES = [
             /RevenueCat/,
             /Supabase/,
             /do not sell your personal information/i,
+            // Contact address must be one that actually receives mail: support@ is a live IONOS
+            // alias, privacy@ was never created (it was published in the pre-2026-07 policy and
+            // would have bounced). Play requires a working data-deletion contact.
+            /support@revelryapp\.me/,
+        ],
+        mustNotContain: [
+            // The pre-2026-07 policy claimed no accounts and no purchases. Both are now false.
+            /No Account Required/i,
+            /does not require account registration/i,
+            // privacy@ was never created as a mailbox — it must not reappear anywhere.
             /privacy@revelryapp\.me/,
         ],
-        // The pre-2026-07 policy claimed no accounts and no purchases. Both are now false.
-        mustNotContain: [/No Account Required/i, /does not require account registration/i],
     },
     {
         path: '/support',

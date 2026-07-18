@@ -57,7 +57,7 @@ we do not link user data with third-party data for advertising, and there is no 
 **Overview answers**
 - Does your app collect or share required user data? **Yes**
 - Is all user data encrypted in transit? **Yes** (HTTPS/WSS everywhere)
-- Do you provide a way to request data deletion? **Yes** — `privacy@revelryapp.me`, documented in
+- Do you provide a way to request data deletion? **Yes** — `support@revelryapp.me`, documented in
   the policy §5 and on the support page. Provide that URL in the deletion-request field.
 
 | Data type | Collected | Shared | Optional? | Purpose |
