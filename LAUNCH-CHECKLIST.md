@@ -139,7 +139,17 @@ Dev-signed builds expire ~7 days.
 `marketing/app-store/iphone-6.7/` + `ipad-12.9/` (7 screens each, exact required px) and
 `marketing/store-listing.md` (name **Revelry Games**, all 33 games, v3.1.1 release notes).
 
-### Google Play
+### Google Play — ✅ SUBMITTED FOR REVIEW 2026-07-20
+
+**All 12 changes sent to Google 2026-07-20 (~4:45 AM PT); status "Changes in review".** Managed
+publishing OFF → on approval the app goes LIVE in production automatically (176 countries; Korea
+excluded pending GRAC). Submitted: production release **8 (3.1.2)** (AD_ID-free bundle), all
+content declarations, IARC rating (ESRB Teen / PEGI 18 / AU R18+), Data safety, listing +
+screenshots + feature graphic, Games→Trivia, contacts. Internal testing also serves 8 (3.1.2)
+(superseded v5, which was blocking the ad-ID check). Reviews typically complete within 7 days.
+**After approval: run the license-tester purchase smoke immediately** (Play Billing is live then).
+
+#### Original checklist (completed)
 - [ ] **Rebuild the AAB at versionCode 7** — the existing artifact is v3.1.1/6 and carries the paywall
       bug. Needs the release keystore password (not found in `backupenv/quiz/local/`, the keychain, or
       the env): `cd frontend/android && KEYSTORE_PASSWORD=… KEY_PASSWORD=… ./gradlew bundleRelease`
