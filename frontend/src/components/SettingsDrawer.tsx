@@ -242,9 +242,12 @@ export default function SettingsDrawer() {
             await ensureSocialLoginInitialized();
             const result = await SocialLogin.login({
                 provider,
-                options: provider === 'google'
-                    ? { scopes: ['email'] }
-                    : { scopes: ['email'] },
+                // Google: NEVER pass scopes. The plugin's defaults already include
+                // email/profile/openid on both platforms, and any custom scope on Android
+                // requires a hand-modified MainActivity — without it login rejects with
+                // "You CANNOT use scopes without modifying the main activity."
+                // Apple: email must be requested explicitly or the identity token omits it.
+                options: provider === 'google' ? {} : { scopes: ['email'] },
             });
             const idToken = getNativeIdToken(result);
             if (!idToken) throw new Error('No ID token received');
