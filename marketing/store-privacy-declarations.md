@@ -50,6 +50,43 @@ we do not link user data with third-party data for advertising, and there is no 
 > Apple's "Financial Info" trips people up: we sell things but never see card data, so the honest
 > answer is **Purchase History = yes, Payment Info = no**.
 
+### The Facebook SDK in the iOS binary — why "tracking = No" is still correct
+
+**The app binary contains Meta's Facebook SDK (`FacebookCore`, `FacebookLogin`, `FBAEMKit`), and
+the app has no Facebook feature.** This looks alarming in a privacy review, so the reasoning is
+recorded here rather than re-derived under time pressure.
+
+**How it gets there:** `@capgo/capacitor-social-login` — the plugin used for *Google and Apple*
+sign-in — declares `facebook-ios-sdk` unconditionally in its `Package.swift`
+(`node_modules/@capgo/capacitor-social-login/Package.swift:15`), pulling in the `FacebookCore` and
+`FacebookLogin` products. It is a transitive dependency, not a choice we made, and there is no
+build flag to opt out.
+
+**Why it is inert** — verified 2026-07-18, all three independently true:
+
+| Check | Result |
+|---|---|
+| App source references Facebook | **None.** `frontend/src/` has zero matches; `socialAuth.ts` initializes only `google` (+ `apple` on iOS). |
+| `FacebookAppID` / FB URL scheme in `Info.plist` | **Absent.** The SDK has no app identity to authenticate against. |
+| Plugin's `FacebookProvider.initialize()` | **Empty function body** — literally `// No initialization required`. Every entry point guards on `AccessToken.current`, which is permanently nil. |
+
+An SDK that is never initialized and has no App ID configured cannot collect, transmit, or link any
+data. Apple defines *tracking* as linking user data with third-party data for targeted advertising
+or sharing with a data broker — none of which can occur here. **"No" is the truthful answer.**
+
+**If App Review asks**, the reply is: *"The Facebook SDK is a transitive dependency of the
+Capacitor social-login plugin we use for Sign in with Google and Sign in with Apple. It is never
+initialized, no Facebook App ID is configured, and the app exposes no Facebook functionality."*
+
+**Deliberately not removed.** Excluding it means patching `Package.swift` inside `node_modules`
+(silently lost on every `npm install` unless `patch-package` is adopted). A subtly wrong patch
+breaks Google/Apple sign-in — a far worse outcome than a reviewer question. Revisit only if Apple
+actually objects, or if the plugin is replaced for other reasons.
+
+**This changes if Facebook login is ever enabled**, or if the SDK is initialized for any reason —
+at that point it becomes a real data path and both store forms plus
+[`privacy.html`](../frontend/public/privacy.html) must be revised.
+
 ---
 
 ## Google Play — Data safety
