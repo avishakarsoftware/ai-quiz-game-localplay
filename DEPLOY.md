@@ -46,7 +46,8 @@ link here instead of restating environment status (stale spec headers were a rec
 
 | Capability / feature | Gamma | Prod | Notes |
 |---|---|---|---|
-| Deployed code (backend+SPA) | `6144ebd0` (2026-07-17) | `6144ebd0` (2026-07-17) | Paywall price fix (`67af2407`). Gamma+prod backend SPA bundle `index-D2aAVhRM.js`; IONOS public frontend `index-6V9hgGrE.js` (differs by design — bakes an explicit `VITE_API_URL`). Built via the new `--build-on-vm` deploy path (Docker Desktop off). Zero backend `.py` changes since `91b93f40`. Post-deploy verified: prod `/webhook/stripe`→400, `/webhook/revenuecat`→401, `/health`→200, `/catalog`→33 games; payment-UX e2e 5/5 green against live prod. |
+| Deployed code (backend+SPA) | `f4d89f5a` (2026-07-19) | `f4d89f5a` (2026-07-19) | Account-deletion deploy. `DELETE /account` live on both (present in openapi.json). **IONOS public frontend still serves `index-6V9hgGrE.js` (paywall fix, pre-deletion-UI)** — needs an `ionos:build` + upload for web UI parity; not a store gate. Post-deploy verified: prod stripe→400, rc→401, health→200; synthetic deletion cycle green on BOTH envs (see below). |
+| Account deletion (migration + endpoint) | ✅ live + verified | ✅ live + verified | 2026-07-19: `sql/migrations/20260718T000000_account_deletion.sql` applied via Management API (gamma first, then prod): `*_deleted_accounts` denylist + `*_delete_account` RPC created, `*_token_transactions_wallet_id_fkey` **CASCADE dropped** (constraint names pre-verified against pg_constraint on both prefixes). Synthetic account cycle on each env: user+wallet(240)+ledger row → RPC delete → user/wallet gone, **ledger retained**, denylisted, re-delete `already_deleted`; live resurrection probe (`/tokens/balance` with the deleted id) returned 200/balance:0 and created **no wallet, no signup bonus**. All test rows cleaned (0 residue). |
 | Login-streak bonus (SQL RPC) | ✅ live | ✅ live | applied 2026-07-08, targeted migration |
 | Check-in games policy (`party_quests`, `find_someone`) | ✅ enabled | ✅ enabled | policy rows 2026-07-08; prod Party Quests upgraded from quick-start-only on 2026-07-14 |
 | Party Quests staged flow (authoring caps + strict `requires_prepared_content_for_checkin`) | ✅ flipped 2026-07-09 | ✅ flipped 2026-07-14 | production DDL/policy enabled after gamma strict harness passed |
@@ -600,7 +601,7 @@ automatically). So the Android order is **build a signed AAB → upload to inter
 
 - **Signing / upload key:** the original `revelry-quiz-upload.keystore` password was lost and is
   unrecoverable. A **new upload keystore** was generated — `~/keystores/revelry-quiz-upload-v2.keystore`
-  (alias `revelry-quiz`; password in `backupenv/quiz/local/keystore.properties`); `app/build.gradle` defaults
+  (alias `revelry-quiz`; password in `~/Desktop/dev/antigravity/backupenv/quiz/local/keystore.properties` (dev-root backupenv, NOT the repo-local `backupenv/`)); `app/build.gradle` defaults
   to it. Since the app uses **Play App Signing**, this only needed an **upload-key reset** (Play Console →
   Test and release → Setup → App signing → Request upload key reset → upload
   `~/keystores/revelry-quiz-upload-v2.pem`) — no impact to app identity or other apps. **Approved.**
@@ -608,7 +609,7 @@ automatically). So the Android order is **build a signed AAB → upload to inter
   ```bash
   cd frontend && npm run cap:sync:gamma
   cd android
-  KEYSTORE_PASSWORD='<see backupenv/quiz/local/keystore.properties>' \
+  KEYSTORE_PASSWORD='<see ~/Desktop/dev/antigravity/backupenv/quiz/local/keystore.properties>' \
   KEY_PASSWORD='<same>' ./gradlew bundleRelease   # → app/build/outputs/bundle/release/app-release.aab
   ```
   AAB **v5 (3.1.0)** uploaded to **internal testing** (bump `versionCode` for each new upload).

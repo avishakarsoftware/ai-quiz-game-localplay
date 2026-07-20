@@ -27,9 +27,13 @@ and verified in both bundles; iOS is open in Xcode for Archive → Distribute.
 
 Remaining for this decision:
 - [ ] iOS: Archive → Distribute → App Store Connect from the open Xcode window (v3.1.2/7).
-- [ ] Android: rebuild the AAB at versionCode 7 — **needs the keystore password**, which was not
-      found in `backupenv/quiz/local/`, the login keychain, or the environment:
-      `cd frontend/android && KEYSTORE_PASSWORD=… KEY_PASSWORD=… ./gradlew bundleRelease`
+      **Verify before archiving that the synced bundle is `index-Cp1gjoTq.js`** — it contains the
+      account-deletion UI; the earlier `index-CIs1AnyA.js` sync predates it.
+- [x] Android AAB **rebuilt 2026-07-19** at v3.1.2 / versionCode 7, signed, contents verified
+      (deletion UI ×2, prod API, zero stale-paywall template):
+      `frontend/android/app/build/outputs/bundle/release/app-release.aab`.
+      Keystore password is at `~/Desktop/dev/antigravity/backupenv/quiz/local/keystore.properties`
+      (the **dev-root** backupenv — NOT the repo-local `backupenv/`, which is a different dir).
 
 Original analysis retained below for context.
 
