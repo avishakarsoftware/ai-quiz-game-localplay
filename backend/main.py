@@ -5789,7 +5789,14 @@ async def entitlement_status_compat(req: Request):
 
 @app.post("/tokens/ad-reward")
 async def ad_reward(req: Request):
-    """Grant tokens for watching an ad. V1: trust client + daily cap + rate limit."""
+    """Grant tokens for watching an ad.
+
+    LOCKED by default: this is a trust-the-client stub with no ad verification, so it is
+    farmable free sparks (SPEC-ADS §0). It returns 403 unless ADS_ENABLED is explicitly set —
+    which must not happen until server-side ad verification (SSV) replaces this stub.
+    """
+    if not config.ADS_ENABLED:
+        raise HTTPException(status_code=403, detail="Ad rewards are not available.")
     client_ip = _get_client_ip(req)
     if not _check_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait.")

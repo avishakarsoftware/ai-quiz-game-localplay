@@ -417,9 +417,24 @@ class TestMigrateEntitlements:
 class TestAdRewardEndpoint:
     """Test the /tokens/ad-reward HTTP endpoint."""
 
-    def test_ad_reward_success(self):
+    def test_ad_reward_locked_by_default(self, monkeypatch):
+        """Farm guard: with ADS_ENABLED false (the default/secure state), the endpoint 403s
+        for anyone, regardless of a valid device id — it has no ad verification (SPEC-ADS §0)."""
         from fastapi.testclient import TestClient
         from main import app, _rate_limit_store
+        monkeypatch.setattr(config, "ADS_ENABLED", False)
+        _rate_limit_store.clear()
+        client = TestClient(app)
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        res = client.post("/tokens/ad-reward", headers={"X-Device-Id": TEST_DEVICE})
+        assert res.status_code == 403
+        # And no sparks were granted.
+        assert db.get_wallet_balance(TEST_DEVICE) == 0
+
+    def test_ad_reward_success(self, monkeypatch):
+        from fastapi.testclient import TestClient
+        from main import app, _rate_limit_store
+        monkeypatch.setattr(config, "ADS_ENABLED", True)
         _rate_limit_store.clear()
         client = TestClient(app)
         # Create wallet for the device
@@ -432,9 +447,10 @@ class TestAdRewardEndpoint:
         assert data["new_balance"] == config.AD_REWARD_TOKENS
         assert data["ads_remaining_today"] == config.MAX_ADS_PER_DAY - 1
 
-    def test_ad_reward_daily_cap(self):
+    def test_ad_reward_daily_cap(self, monkeypatch):
         from fastapi.testclient import TestClient
         from main import app, _rate_limit_store
+        monkeypatch.setattr(config, "ADS_ENABLED", True)
         _rate_limit_store.clear()
         client = TestClient(app)
         db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
@@ -446,9 +462,10 @@ class TestAdRewardEndpoint:
         res = client.post("/tokens/ad-reward", headers={"X-Device-Id": TEST_DEVICE})
         assert res.status_code == 429
 
-    def test_ad_reward_no_device_id(self):
+    def test_ad_reward_no_device_id(self, monkeypatch):
         from fastapi.testclient import TestClient
         from main import app, _rate_limit_store
+        monkeypatch.setattr(config, "ADS_ENABLED", True)
         _rate_limit_store.clear()
         client = TestClient(app)
         res = client.post("/tokens/ad-reward")
@@ -616,9 +633,10 @@ class TestSignupBonusZero:
 class TestAdRewardEndpointRateLimit:
     """Ad reward endpoint should be rate-limited."""
 
-    def test_ad_reward_rate_limited(self):
+    def test_ad_reward_rate_limited(self, monkeypatch):
         from fastapi.testclient import TestClient
         from main import app, _rate_limit_store
+        monkeypatch.setattr(config, "ADS_ENABLED", True)
         client = TestClient(app)
         headers = {"X-Device-Id": TEST_DEVICE}
 
