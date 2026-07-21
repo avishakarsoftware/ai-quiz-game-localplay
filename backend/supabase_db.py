@@ -539,7 +539,13 @@ def redeem_referral(referee_id: str, code: str) -> dict:
         "p_max_per_day": config.MAX_REFERRALS_PER_DAY,
         "p_since": _utc_midnight_epoch(),
     })
-    return result if isinstance(result, dict) else {"status": "invalid_code"}
+    if not isinstance(result, dict):
+        return {"status": "invalid_code"}
+    # The RPC returns the referee balance as `balance`; the SQLite wrapper and the
+    # /referral/redeem response use `new_balance`. Normalize so both DB backends match.
+    if "balance" in result and "new_balance" not in result:
+        result["new_balance"] = result["balance"]
+    return result
 
 
 def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:

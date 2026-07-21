@@ -33,8 +33,29 @@ def test_redeem_credits_both_parties_once():
     result = db.redeem_referral("ref-referee", code)
     assert result["status"] == "ok"
     assert result["reward"] == config.REFERRAL_REWARD
+    # /referral/redeem returns result["new_balance"] — the SQLite path must supply it.
+    assert result["new_balance"] == config.REFERRAL_REWARD
     assert db.get_wallet_balance("ref-referee") == config.REFERRAL_REWARD
     assert db.get_wallet_balance("ref-referrer") == config.REFERRAL_REWARD
+
+
+def test_supabase_redeem_normalizes_balance_to_new_balance(monkeypatch):
+    """The Postgres RPC returns the referee balance as `balance`; the /referral/redeem
+    response and the SQLite wrapper use `new_balance`. Regression for the Supabase path
+    reporting new_balance=0 even though both wallets were credited (fixed 2026-07-21)."""
+    import supabase_db
+
+    class _FakeSb:
+        def rpc(self, name, params):
+            assert name == "redeem_referral"
+            return {"status": "ok", "reward": 20, "balance": 20, "referrer_id": "r"}
+
+    monkeypatch.setattr(supabase_db, "_sb", lambda: _FakeSb())
+    monkeypatch.setattr(supabase_db, "_effective_max_balance", lambda _wid: 1000)
+    out = supabase_db.redeem_referral("referee", "ABC123")
+    assert out["status"] == "ok"
+    assert out["new_balance"] == 20      # normalized from `balance`
+    assert out["balance"] == 20          # original key preserved
 
 
 def test_self_referral_blocked():
