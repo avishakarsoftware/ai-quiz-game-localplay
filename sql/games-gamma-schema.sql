@@ -89,6 +89,19 @@ CREATE TABLE IF NOT EXISTS games_gamma_achievements (
 CREATE INDEX IF NOT EXISTS idx_games_gamma_achievements_wallet
   ON games_gamma_achievements(wallet_id);
 
+-- Share-card snapshots (SPEC-SHARE-CARD). Durable store so an OG-unfurl link survives a process
+-- restart / works across instances (was in-memory only). TTL-evicted by created_at in the app layer.
+CREATE TABLE IF NOT EXISTS games_gamma_share_snapshots (
+  token TEXT PRIMARY KEY,
+  game_type TEXT NOT NULL DEFAULT '',
+  winner TEXT NOT NULL DEFAULT '',
+  top_score INTEGER NOT NULL DEFAULT 0,
+  player_count INTEGER NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_games_gamma_share_snapshots_created
+  ON games_gamma_share_snapshots(created_at);
+
 CREATE TABLE IF NOT EXISTS games_gamma_entitlements (
   id TEXT PRIMARY KEY,
   user_id TEXT,
@@ -355,9 +368,13 @@ ALTER TABLE games_gamma_host_app_catalog_flags ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_gamma_game_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_gamma_rejections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_gamma_achievements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE games_gamma_share_snapshots ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS service_role_all_games_gamma_achievements ON games_gamma_achievements;
 CREATE POLICY service_role_all_games_gamma_achievements ON games_gamma_achievements
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS service_role_all_games_gamma_share_snapshots ON games_gamma_share_snapshots;
+CREATE POLICY service_role_all_games_gamma_share_snapshots ON games_gamma_share_snapshots
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS service_role_all_games_gamma_users ON games_gamma_users;
 CREATE POLICY service_role_all_games_gamma_users ON games_gamma_users

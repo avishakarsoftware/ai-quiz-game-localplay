@@ -89,6 +89,19 @@ CREATE TABLE IF NOT EXISTS __PREFIX__achievements (
 CREATE INDEX IF NOT EXISTS idx___PREFIX__achievements_wallet
   ON __PREFIX__achievements(wallet_id);
 
+-- Share-card snapshots (SPEC-SHARE-CARD). Durable store so an OG-unfurl link survives a process
+-- restart / works across instances (was in-memory only). TTL-evicted by created_at in the app layer.
+CREATE TABLE IF NOT EXISTS __PREFIX__share_snapshots (
+  token TEXT PRIMARY KEY,
+  game_type TEXT NOT NULL DEFAULT '',
+  winner TEXT NOT NULL DEFAULT '',
+  top_score INTEGER NOT NULL DEFAULT 0,
+  player_count INTEGER NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx___PREFIX__share_snapshots_created
+  ON __PREFIX__share_snapshots(created_at);
+
 CREATE TABLE IF NOT EXISTS __PREFIX__entitlements (
   id TEXT PRIMARY KEY,
   user_id TEXT,
@@ -355,9 +368,13 @@ ALTER TABLE __PREFIX__host_app_catalog_flags ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__game_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__rejections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__achievements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE __PREFIX__share_snapshots ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS service_role_all___PREFIX__achievements ON __PREFIX__achievements;
 CREATE POLICY service_role_all___PREFIX__achievements ON __PREFIX__achievements
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS service_role_all___PREFIX__share_snapshots ON __PREFIX__share_snapshots;
+CREATE POLICY service_role_all___PREFIX__share_snapshots ON __PREFIX__share_snapshots
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS service_role_all___PREFIX__users ON __PREFIX__users;
 CREATE POLICY service_role_all___PREFIX__users ON __PREFIX__users

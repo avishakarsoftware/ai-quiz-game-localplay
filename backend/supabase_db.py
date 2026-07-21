@@ -595,6 +595,29 @@ def list_achievements(wallet_id: str) -> dict:
     return {row["badge_id"]: row["awarded_at"] for row in (rows or [])}
 
 
+# --- Share-card snapshots (SPEC-SHARE-CARD) — mirror db.py. ---
+def save_share_snapshot(token: str, game_type: str, winner: str, top_score: int,
+                        player_count: int, created_at: int) -> None:
+    _sb().upsert("share_snapshots", {
+        "token": token,
+        "game_type": game_type,
+        "winner": winner,
+        "top_score": int(top_score),
+        "player_count": int(player_count),
+        "created_at": int(created_at),
+    }, on_conflict="token")
+
+
+def get_share_snapshot(token: str) -> dict | None:
+    row = _first(_sb().select("share_snapshots", filters={"token": f"eq.{token}"}, limit=1))
+    if not row:
+        return None
+    snap = {k: row.get(k) for k in ("game_type", "winner", "top_score", "player_count", "created_at")}
+    if int(time.time()) - int(snap["created_at"]) > config.SHARE_TTL_SECONDS:
+        return None
+    return snap
+
+
 def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:
     if amount <= 0:
         raise ValueError(f"credit_purchase amount must be positive, got {amount}")

@@ -136,6 +136,18 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_achievements_wallet ON achievements(wallet_id);
 
+        -- Share-card snapshots (SPEC-SHARE-CARD). Durable store so an OG-unfurl link survives a
+        -- process restart / works across instances (was in-memory only). TTL-evicted by created_at.
+        CREATE TABLE IF NOT EXISTS share_snapshots (
+            token TEXT PRIMARY KEY,
+            game_type TEXT NOT NULL DEFAULT '',
+            winner TEXT NOT NULL DEFAULT '',
+            top_score INTEGER NOT NULL DEFAULT 0,
+            player_count INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_share_snapshots_created ON share_snapshots(created_at);
+
         -- Deleted-account denylist (SPEC-ACCOUNT-DELETION §2).
         -- Session tokens are stateless JWTs and cannot be revoked, so a live token held by a
         -- just-deleted user would otherwise sail through auth and hit get_or_create_wallet,
@@ -1415,6 +1427,36 @@ def list_achievements(wallet_id: str) -> dict:
     return {row["badge_id"]: row["awarded_at"] for row in rows}
 
 
+# --- Share-card snapshots (SPEC-SHARE-CARD) ---
+def save_share_snapshot(token: str, game_type: str, winner: str, top_score: int,
+                        player_count: int, created_at: int) -> None:
+    """Persist a share snapshot. Prunes rows older than SHARE_TTL_SECONDS opportunistically."""
+    conn = _get_conn()
+    cutoff = int(time.time()) - config.SHARE_TTL_SECONDS
+    conn.execute("DELETE FROM share_snapshots WHERE created_at < ?", (cutoff,))
+    conn.execute(
+        "INSERT OR REPLACE INTO share_snapshots "
+        "(token, game_type, winner, top_score, player_count, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (token, game_type, winner, int(top_score), int(player_count), int(created_at)),
+    )
+    conn.commit()
+
+
+def get_share_snapshot(token: str) -> dict | None:
+    """Return a share snapshot by token, or None if missing/expired."""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT game_type, winner, top_score, player_count, created_at "
+        "FROM share_snapshots WHERE token = ?", (token,)
+    ).fetchone()
+    if not row:
+        return None
+    snap = dict(row)
+    if int(time.time()) - snap["created_at"] > config.SHARE_TTL_SECONDS:
+        return None
+    return snap
+
+
 def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:
     """Credit purchased tokens and increment lifetime_purchased. Returns (success, new_balance).
     Idempotent: if reference_id was already credited, returns current balance without double-crediting.
@@ -2126,6 +2168,8 @@ if config.DB_BACKEND == "supabase":
         "gift_sparks",
         "award_achievement",
         "list_achievements",
+        "save_share_snapshot",
+        "get_share_snapshot",
         "has_ever_purchased",
         "credit_purchase",
         "merge_wallet",

@@ -1,6 +1,6 @@
 # SPEC-SHARE-CARD — Shareable result cards
 
-Status: **Proposed — not started** (2026-07-07)
+Status: **Implemented** — v1 OG text + static image live; snapshots persisted to DB (2026-07-21)
 Owner: Avi
 Related: `SPEC-ANALYTICS.md`, `SPEC-REFERRAL.md` (share plumbing), `backend/main.py` (SPA serving, `PUBLIC_BASE_URL`)
 
@@ -25,10 +25,15 @@ is the recognizable brand card. Good enough to ship and measure.
 
 ## 2. Backend
 
-### Result snapshot store (in-memory + TTL, mirrors quiz storage)
-On game completion, the host can mint a share token. Store a minimal snapshot keyed by a short opaque token:
-`{token: {game_type, winner_nickname, top_score, player_count, created_at}}`. TTL (e.g. `SHARE_TTL_SECONDS`
-= 7 days) + max-count eviction (mirror `_evict_old_quizzes`). No PII beyond a chosen nickname.
+### Result snapshot store (DB-persisted + in-memory cache + TTL)
+On game completion, the host can mint a share token. A minimal snapshot is stored keyed by a short opaque
+token: `{game_type, winner, top_score, player_count, created_at}`. TTL = `SHARE_TTL_SECONDS` (7 days).
+**Durable:** snapshots are written to the `share_snapshots` table (`db.save/get_share_snapshot`, mirrored in
+`supabase_db`, migration `20260721T030000_share_snapshots{,_gamma}.sql`) so a link resolves after a process
+restart / on any instance — with an in-memory write-through cache for the hot path. DB access is best-effort:
+if it fails (e.g. Supabase before the migration is applied), `share.py` degrades to memory-only and never
+500s a share. In-memory max-count eviction still bounds the cache; the DB store is TTL-pruned on write.
+No PII beyond a chosen nickname.
 
 ### `POST /share/game` `{leaderboard-ish minimal payload}` → `{token, share_url}`
 Host-authenticated enough to prevent spam: rate-limited (reuse `_check_rate_limit`), sanitize nickname via
@@ -64,7 +69,7 @@ the existing HTML/control-char stripping. `share_url = f"{PUBLIC_BASE_URL}/share
   generic page (200); XSS attempt in nickname is escaped in output; TTL/eviction prunes; rate limit on create.
 
 ## 6. Deferred / future
-- Dynamic per-result OG image (SVG→PNG). - Persisting snapshots to DB for durable links.
+- Dynamic per-result OG image (SVG→PNG). (Persisting snapshots to DB for durable links — **done** 2026-07-21.)
 
 ## 7. Files touched
 - `backend/config.py` (share consts), `backend/share.py` (new: snapshot store + HTML render) **or** inline in

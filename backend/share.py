@@ -1,17 +1,26 @@
 """Shareable result cards (SPEC-SHARE-CARD).
 
 Mints short tokens for a minimal end-of-game result snapshot and renders an OG-unfurl HTML page.
-v1: dynamic OG *text* (winner + score) + a static branded image; snapshots are in-memory with TTL +
-max-count eviction (mirrors the quiz store). No PII beyond a chosen nickname (sanitized + escaped).
+Dynamic OG *text* (winner + score) + a static branded image. No PII beyond a chosen nickname
+(sanitized + escaped).
+
+Snapshots are persisted to the DB (`db.save/get_share_snapshot`) so a shared link survives a process
+restart and works across instances, with an in-memory write-through cache for the hot path. DB access
+is best-effort: if it fails (e.g. Supabase before the share_snapshots migration is applied), the module
+degrades to memory-only — exactly the old behaviour — and never 500s a share.
 """
 import html
+import logging
 import re
 import secrets
 import time
 
 import config
+import db
 
-# token -> {game_type, winner, top_score, player_count, created_at}
+logger = logging.getLogger(__name__)
+
+# token -> {game_type, winner, top_score, player_count, created_at} — hot-path cache over the DB.
 _snapshots: dict[str, dict] = {}
 
 _PRETTY_GAME = {
@@ -43,21 +52,36 @@ def create_snapshot(game_type: str, winner: str, top_score: int, player_count: i
     """Store a result snapshot, return its share token."""
     _evict()
     token = secrets.token_urlsafe(9)
-    _snapshots[token] = {
+    snap = {
         "game_type": _sanitize(game_type, 24),
         "winner": _sanitize(winner, 24),
         "top_score": max(0, int(top_score or 0)),
         "player_count": max(0, int(player_count or 0)),
-        "created_at": time.time(),
+        "created_at": int(time.time()),
     }
+    _snapshots[token] = snap
+    try:
+        db.save_share_snapshot(token, snap["game_type"], snap["winner"],
+                               snap["top_score"], snap["player_count"], snap["created_at"])
+    except Exception:  # noqa: BLE001 — durability is a bonus; never fail a share on DB trouble
+        logger.debug("share snapshot DB persist failed; using in-memory only", exc_info=True)
     return token
 
 
 def get_snapshot(token: str) -> dict | None:
     snap = _snapshots.get(token)
+    if snap is None:
+        # Cache miss (e.g. after a restart or on another instance) — try the durable store.
+        try:
+            snap = db.get_share_snapshot(token)
+        except Exception:  # noqa: BLE001 — degrade to "not found", never 500 a share
+            logger.debug("share snapshot DB read failed", exc_info=True)
+            snap = None
+        if snap is not None:
+            _snapshots[token] = snap
     if not snap:
         return None
-    if time.time() - snap["created_at"] > config.SHARE_TTL_SECONDS:
+    if int(time.time()) - int(snap["created_at"]) > config.SHARE_TTL_SECONDS:
         _snapshots.pop(token, None)
         return None
     return snap

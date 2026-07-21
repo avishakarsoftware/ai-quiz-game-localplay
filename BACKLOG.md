@@ -2,6 +2,13 @@
 
 ## Done
 
+- **Share-card snapshots persisted to DB (SPEC-SHARE-CARD).** Share/OG-unfurl links were in-memory only —
+  they died on process restart and didn't work multi-instance. Added a `share_snapshots` table +
+  `db.save/get_share_snapshot` (+ Supabase parity via insert/select wrappers + `20260721T030000_share_snapshots{,_gamma}.sql`
+  migration); `share.py` now write-throughs to the DB with the in-memory dict as a hot-path cache. DB access
+  is best-effort — a failure (e.g. Supabase pre-migration) degrades to memory-only and never 500s a share, so
+  applying the migration is a transparent no-flag upgrade. Tests: backend 11 (4 new: survives cache loss,
+  TTL after cache loss, create/read degrade on DB failure). **Not yet deployed / table not yet applied on Supabase.**
 - **Achievements / badges v1 (SPEC-ACHIEVEMENTS).** Idempotent per-wallet badges (`achievements` table,
   composite PK) awarded from clean economy choke-points — `welcome` (lazy on first view), `first_referral`
   (both parties), `first_gift` (sender). `GET /achievements` returns the backend-authoritative catalog with
@@ -57,7 +64,7 @@ Supabase RPC via `sql/templates/games-schema.template.sql` and the `REFERRALS_EN
 - **Ad-supported sparks (SPEC-ADS).** Rewarded AdMob video → server-verified (SSV) spark grant. Needs an
   AdMob account + a device; not autonomously testable. `ads_enabled` flag already ships `false`.
 - **Share card: dynamic per-result OG image.** v1 uses a static branded image; a rendered SVG→PNG per-result
-  card would unfurl richer. Also: persist share snapshots to DB (currently in-memory, per-process).
+  card would unfurl richer. (Persisting share snapshots to DB — **done** 2026-07-21, see Done section.)
 - **Remote config: admin write endpoint.** v1 is file-edited on the server; an admin-gated `POST /config`
   would allow live edits without SSH.
 - **Analytics: turn on.** Needs a PostHog project + `POSTHOG_API_KEY` (backend) / `VITE_POSTHOG_KEY` (build);
