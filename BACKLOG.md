@@ -2,6 +2,14 @@
 
 ## Done
 
+- **Achievements / badges v1 (SPEC-ACHIEVEMENTS).** Idempotent per-wallet badges (`achievements` table,
+  composite PK) awarded from clean economy choke-points — `welcome` (lazy on first view), `first_referral`
+  (both parties), `first_gift` (sender). `GET /achievements` returns the backend-authoritative catalog with
+  earned flags; `_award_badge` is best-effort (gated + try/except, never breaks the primary action). Supabase
+  parity via `award_achievement` RPC + table/RLS (template + rendered + `20260721T020000_achievements{,_gamma}.sql`),
+  gated on `ACHIEVEMENTS_ENABLED`; `achievements_enabled` flag on `/config/public`. Frontend `AchievementsSection`
+  in the settings drawer. Tests: backend 9, frontend 3. Game-completion + purchase badges deferred (game_history
+  is in-memory, not per-wallet). **Not yet deployed / not yet activated on Supabase.**
 - **Spark gifting (SPEC-GIFTING).** Send N sparks wallet→wallet, addressed by the recipient's referral
   ("friend") code. One atomic debit-then-credit; idempotent on a client key; self-gift blocked;
   `invalid_amount`/`insufficient`/`recipient_full` (conserves sparks at the cap)/`daily_cap` guards; per-sender
@@ -40,9 +48,6 @@ Candidate next features, all wallet/DB-centric so they're fully unit-testable ag
 patterns. Each should ship as: spec → backend + pytest → frontend + vitest → commit, plus a ready-to-apply
 Supabase RPC via `sql/templates/games-schema.template.sql` and the `REFERRALS_ENABLED`-style activation gate.
 
-- **Achievements / badges.** Award badges on milestones (first game, Nth game, big win, streak day N,
-  first purchase, first referral). New `achievements` table + award-on-event hooks (idempotent per
-  wallet+badge) + a badges list in the drawer/profile. Read-mostly; low economy risk.
 - **Game-history / stats screen.** Per-wallet "games played / won / favorite mode / current streak"
   summary. A `game_history` write on game completion + a `/stats` read endpoint + a simple stats UI.
   (Note: some history already exists server-side — audit `game_history`/`MAX_GAME_HISTORY` before building.)

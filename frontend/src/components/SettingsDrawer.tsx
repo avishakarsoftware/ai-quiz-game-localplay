@@ -7,6 +7,7 @@ import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import TokenBadge from './TokenBadge';
 import ReferralSection from './ReferralSection';
 import GiftSection from './GiftSection';
+import AchievementsSection from './AchievementsSection';
 import DeleteAccountDialog from './DeleteAccountDialog';
 
 declare global {
@@ -378,6 +379,9 @@ export default function SettingsDrawer() {
 
                 {/* Spark gifting (SPEC-GIFTING) */}
                 {remoteConfig.feature_flags.gifting_enabled === true && <GiftSection />}
+
+                {/* Achievements / badges (SPEC-ACHIEVEMENTS) */}
+                {remoteConfig.feature_flags.achievements_enabled === true && <AchievementsSection />}
 
                 {/* Home button */}
                 <div

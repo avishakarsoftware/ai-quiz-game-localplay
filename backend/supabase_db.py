@@ -578,6 +578,23 @@ def gift_sparks(sender_id: str, recipient_code: str, amount: int, idempotency_ke
     return result
 
 
+# --- Achievements / badges (SPEC-ACHIEVEMENTS) — mirror db.py. ---
+def award_achievement(wallet_id: str, badge_id: str) -> bool:
+    if badge_id not in config.ACHIEVEMENT_IDS:
+        return False
+    result = _sb().rpc("award_achievement", {
+        "p_wallet_id": wallet_id,
+        "p_badge_id": badge_id,
+    })
+    return bool(isinstance(result, dict) and result.get("awarded"))
+
+
+def list_achievements(wallet_id: str) -> dict:
+    rows = _sb().select("achievements", filters={"wallet_id": f"eq.{wallet_id}"},
+                        select="badge_id,awarded_at")
+    return {row["badge_id"]: row["awarded_at"] for row in (rows or [])}
+
+
 def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:
     if amount <= 0:
         raise ValueError(f"credit_purchase amount must be positive, got {amount}")

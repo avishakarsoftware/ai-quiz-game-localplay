@@ -31,6 +31,7 @@ export interface RemoteConfig {
     ads_enabled?: boolean;
     referral_enabled?: boolean;
     gifting_enabled?: boolean;
+    achievements_enabled?: boolean;
   };
   // Catalog gating: when present + non-empty, only these game ids are offered (absent ⇒ all enabled).
   enabled_game_types?: string[];
@@ -63,6 +64,7 @@ export const DEFAULT_CONFIG: RemoteConfig = {
     ads_enabled: false,
     referral_enabled: false,
     gifting_enabled: false,
+    achievements_enabled: false,
   },
   enabled_game_types: undefined,   // absent ⇒ all games enabled
   economy: { cost_room: 10, cost_generate: 1 },

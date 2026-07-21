@@ -78,6 +78,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx___PREFIX__purchase_once
   ON __PREFIX__token_transactions(wallet_id, reference_id, reason)
   WHERE reference_id IS NOT NULL AND reason = 'purchase';
 
+-- Achievements / badges (SPEC-ACHIEVEMENTS). One row per (wallet, badge); the PK makes awarding
+-- idempotent. badge_id is validated in the app layer against config.ACHIEVEMENT_IDS.
+CREATE TABLE IF NOT EXISTS __PREFIX__achievements (
+  wallet_id TEXT NOT NULL,
+  badge_id TEXT NOT NULL,
+  awarded_at BIGINT NOT NULL,
+  PRIMARY KEY (wallet_id, badge_id)
+);
+CREATE INDEX IF NOT EXISTS idx___PREFIX__achievements_wallet
+  ON __PREFIX__achievements(wallet_id);
+
 CREATE TABLE IF NOT EXISTS __PREFIX__entitlements (
   id TEXT PRIMARY KEY,
   user_id TEXT,
@@ -343,7 +354,11 @@ ALTER TABLE __PREFIX__game_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__host_app_catalog_flags ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__game_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__rejections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE __PREFIX__achievements ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS service_role_all___PREFIX__achievements ON __PREFIX__achievements;
+CREATE POLICY service_role_all___PREFIX__achievements ON __PREFIX__achievements
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS service_role_all___PREFIX__users ON __PREFIX__users;
 CREATE POLICY service_role_all___PREFIX__users ON __PREFIX__users
   FOR ALL TO service_role USING (true) WITH CHECK (true);
@@ -1082,6 +1097,28 @@ BEGIN
 END;
 $$;
 
+-- Idempotently award a badge. Returns {awarded: bool} — true only on the first insert.
+CREATE OR REPLACE FUNCTION __PREFIX__award_achievement(
+  p_wallet_id TEXT,
+  p_badge_id TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_now BIGINT := EXTRACT(EPOCH FROM NOW())::BIGINT;
+  v_inserted INTEGER;
+BEGIN
+  INSERT INTO __PREFIX__achievements (wallet_id, badge_id, awarded_at)
+  VALUES (p_wallet_id, p_badge_id, v_now)
+  ON CONFLICT (wallet_id, badge_id) DO NOTHING;
+  GET DIAGNOSTICS v_inserted = ROW_COUNT;
+  RETURN jsonb_build_object('awarded', v_inserted > 0);
+END;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- Usage RPCs. These preserve the current one-day rolling free-tier window.
 -- ---------------------------------------------------------------------------
@@ -1234,6 +1271,7 @@ REVOKE EXECUTE ON FUNCTION __PREFIX__grant_ad_reward(TEXT, TEXT, INTEGER, INTEGE
 REVOKE EXECUTE ON FUNCTION __PREFIX__set_referral_code(TEXT, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION __PREFIX__redeem_referral(TEXT, TEXT, INTEGER, INTEGER, INTEGER, BIGINT) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION __PREFIX__gift_sparks(TEXT, TEXT, INTEGER, TEXT, INTEGER, INTEGER, INTEGER, INTEGER, INTEGER, BIGINT) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION __PREFIX__award_achievement(TEXT, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION __PREFIX__claim_device_usage(TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION __PREFIX__claim_user_usage(TEXT, TEXT, INTEGER) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION __PREFIX__mark_webhook_processed(TEXT) FROM PUBLIC, anon, authenticated;
@@ -1249,6 +1287,7 @@ GRANT EXECUTE ON FUNCTION __PREFIX__grant_ad_reward(TEXT, TEXT, INTEGER, INTEGER
 GRANT EXECUTE ON FUNCTION __PREFIX__set_referral_code(TEXT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION __PREFIX__redeem_referral(TEXT, TEXT, INTEGER, INTEGER, INTEGER, BIGINT) TO service_role;
 GRANT EXECUTE ON FUNCTION __PREFIX__gift_sparks(TEXT, TEXT, INTEGER, TEXT, INTEGER, INTEGER, INTEGER, INTEGER, INTEGER, BIGINT) TO service_role;
+GRANT EXECUTE ON FUNCTION __PREFIX__award_achievement(TEXT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION __PREFIX__claim_device_usage(TEXT, INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION __PREFIX__claim_user_usage(TEXT, TEXT, INTEGER) TO service_role;
 GRANT EXECUTE ON FUNCTION __PREFIX__mark_webhook_processed(TEXT) TO service_role;

@@ -5853,8 +5853,10 @@ async def referral_redeem(body: ReferralRedeemRequest, req: Request):
         analytics.capture_bg(wallet_id, "spark_earned",
                              {"source": "referral", "amount": result.get("reward", 0)})
         analytics.capture_bg(wallet_id, "referral_redeemed", {"role": "referee"})
+        _award_badge(wallet_id, "first_referral")
         if result.get("referrer_id"):
             analytics.capture_bg(result["referrer_id"], "referral_redeemed", {"role": "referrer"})
+            _award_badge(result["referrer_id"], "first_referral")
         return {"redeemed": True, "reward": result.get("reward", 0),
                 "new_balance": result.get("new_balance", 0)}
     _errmap = {
@@ -5897,6 +5899,7 @@ async def gift_sparks(body: GiftSparksRequest, req: Request):
         if not result.get("duplicate"):
             analytics.capture_bg(wallet_id, "spark_sent",
                                  {"amount": result.get("amount", 0)})
+            _award_badge(wallet_id, "first_gift")
             if result.get("recipient_id"):
                 analytics.capture_bg(result["recipient_id"], "spark_received",
                                      {"amount": result.get("amount", 0)})
@@ -5913,6 +5916,42 @@ async def gift_sparks(body: GiftSparksRequest, req: Request):
     }
     code_status, detail = _errmap.get(status, (400, "Could not send the gift."))
     raise HTTPException(status_code=code_status, detail=detail)
+
+
+# Achievements run on SQLite automatically. On Supabase they need the achievements table + award RPC
+# (sql/games-schema.sql) applied first, then ACHIEVEMENTS_ENABLED=true — until then the endpoint 503s.
+_ACHIEVEMENTS_SUPPORTED = config.DB_BACKEND != "supabase" or config.ACHIEVEMENTS_ENABLED
+
+
+def _award_badge(wallet_id: str, badge_id: str) -> None:
+    """Best-effort badge award (SPEC-ACHIEVEMENTS). Idempotent, and NEVER allowed to break the
+    primary action that triggered it — a badge is a side effect, not a precondition."""
+    if not _ACHIEVEMENTS_SUPPORTED or not wallet_id:
+        return
+    try:
+        if db.award_achievement(wallet_id, badge_id):
+            analytics.capture_bg(wallet_id, "achievement_earned", {"badge": badge_id})
+    except Exception:  # noqa: BLE001 — awarding must never surface to the caller
+        logger.warning("award_achievement failed for %s/%s", wallet_id[:8], badge_id, exc_info=True)
+
+
+@app.get("/achievements")
+async def get_achievements(req: Request):
+    """Return the full badge catalog with per-wallet earned flags (SPEC-ACHIEVEMENTS)."""
+    if not _ACHIEVEMENTS_SUPPORTED:
+        raise HTTPException(status_code=503, detail="Achievements are not available yet.")
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    tokens.ensure_wallet(wallet_id)
+    # Everyone with a wallet earns "welcome" on first view, so the list is never empty.
+    _award_badge(wallet_id, "welcome")
+    earned = db.list_achievements(wallet_id)
+    badges = [
+        {**badge, "earned": badge["id"] in earned, "awarded_at": earned.get(badge["id"])}
+        for badge in config.ACHIEVEMENT_CATALOG
+    ]
+    return {"badges": badges, "earned_count": len(earned)}
 
 
 class ShareGameRequest(BaseModel):
@@ -5958,6 +5997,7 @@ async def public_config():
     ff["ads_enabled"] = False  # no ad SDK yet (SPEC-ADS)
     ff["referral_enabled"] = _REFERRALS_SUPPORTED
     ff["gifting_enabled"] = _GIFTING_SUPPORTED
+    ff["achievements_enabled"] = _ACHIEVEMENTS_SUPPORTED
     cfg["feature_flags"] = ff
     cfg.setdefault("enabled_game_types", None)
     return cfg

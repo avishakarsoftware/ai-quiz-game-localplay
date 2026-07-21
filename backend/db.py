@@ -126,6 +126,16 @@ def init_db():
             processed_at INTEGER NOT NULL
         );
 
+        -- Achievements / badges (SPEC-ACHIEVEMENTS). One row per (wallet, badge); the PK makes
+        -- awarding idempotent (INSERT OR IGNORE). badge_id is validated against config.ACHIEVEMENT_IDS.
+        CREATE TABLE IF NOT EXISTS achievements (
+            wallet_id TEXT NOT NULL,
+            badge_id TEXT NOT NULL,
+            awarded_at INTEGER NOT NULL,
+            PRIMARY KEY (wallet_id, badge_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_achievements_wallet ON achievements(wallet_id);
+
         -- Deleted-account denylist (SPEC-ACCOUNT-DELETION §2).
         -- Session tokens are stateless JWTs and cannot be revoked, so a live token held by a
         -- just-deleted user would otherwise sail through auth and hit get_or_create_wallet,
@@ -1381,6 +1391,30 @@ def gift_sparks(sender_id: str, recipient_code: str, amount: int, idempotency_ke
         raise
 
 
+# --- Achievements / badges (SPEC-ACHIEVEMENTS) ---
+def award_achievement(wallet_id: str, badge_id: str) -> bool:
+    """Idempotently award a badge. Returns True only on the first award (so callers can fire a
+    one-time analytics/notification), False if already held or the badge id is unknown."""
+    if badge_id not in config.ACHIEVEMENT_IDS:
+        return False
+    conn = _get_conn()
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO achievements (wallet_id, badge_id, awarded_at) VALUES (?, ?, ?)",
+        (wallet_id, badge_id, int(time.time())),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def list_achievements(wallet_id: str) -> dict:
+    """Return {badge_id: awarded_at} for every badge this wallet has earned."""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT badge_id, awarded_at FROM achievements WHERE wallet_id = ?", (wallet_id,)
+    ).fetchall()
+    return {row["badge_id"]: row["awarded_at"] for row in rows}
+
+
 def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:
     """Credit purchased tokens and increment lifetime_purchased. Returns (success, new_balance).
     Idempotent: if reference_id was already credited, returns current balance without double-crediting.
@@ -2090,6 +2124,8 @@ if config.DB_BACKEND == "supabase":
         "get_or_create_referral_code",
         "redeem_referral",
         "gift_sparks",
+        "award_achievement",
+        "list_achievements",
         "has_ever_purchased",
         "credit_purchase",
         "merge_wallet",
