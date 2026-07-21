@@ -4,6 +4,7 @@
 import { API_URL } from '../config';
 import { getDeviceId, getSessionToken } from './storage';
 import { getPlatform } from './platform';
+import { randomId } from './ids';
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.0.0';
 const APP_BUILD = import.meta.env.VITE_APP_BUILD || '1';
@@ -39,5 +40,5 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
 }
 
 export function generateIdempotencyKey(): string {
-    return crypto.randomUUID();
+    return randomId();
 }

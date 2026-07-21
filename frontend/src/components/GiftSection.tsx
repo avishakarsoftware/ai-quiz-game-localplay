@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { apiFetch } from '../utils/api';
+import { apiFetch, generateIdempotencyKey } from '../utils/api';
 import { track } from '../utils/analytics';
 
 /**
@@ -12,7 +12,7 @@ export default function GiftSection() {
     const [amount, setAmount] = useState('');
     const [msg, setMsg] = useState('');
     const [busy, setBusy] = useState(false);
-    const keyRef = useRef<string>(crypto.randomUUID());
+    const keyRef = useRef<string>(generateIdempotencyKey());
 
     const send = useCallback(async () => {
         const recipient = code.trim().toUpperCase();
@@ -30,7 +30,7 @@ export default function GiftSection() {
                 setMsg(data.duplicate ? 'Already sent — no charge.' : `🎁 Sent ${data.amount} sparks!`);
                 setCode('');
                 setAmount('');
-                keyRef.current = crypto.randomUUID();   // next gift is a distinct transaction
+                keyRef.current = generateIdempotencyKey();   // next gift is a distinct transaction
                 window.dispatchEvent(new CustomEvent('refresh-sparks'));
                 if (!data.duplicate) track('spark_sent_client', { amount: data.amount });
             } else {

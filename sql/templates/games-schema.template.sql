@@ -1048,6 +1048,8 @@ DECLARE
   v_sender_bal INTEGER;
   v_reference_id TEXT;
   v_prior INTEGER;
+  v_prior_amount INTEGER;
+  v_prior_recipient_id TEXT;
   v_count INTEGER;
   v_sum INTEGER;
   v_new_sender INTEGER;
@@ -1058,6 +1060,26 @@ BEGIN
     RETURN jsonb_build_object('status', 'invalid_amount');
   END IF;
 
+  v_reference_id := CASE WHEN COALESCE(p_key, '') <> '' THEN 'gift:' || p_sender_id || ':' || p_key ELSE '' END;
+
+  -- Idempotent replay: the same keyed send returns its original result, nothing moves.
+  -- Check before recipient lookup so a changed retry body cannot fail or misreport the old gift.
+  IF v_reference_id <> '' THEN
+    SELECT sent.balance_after, ABS(sent.amount), recv.wallet_id
+      INTO v_prior, v_prior_amount, v_prior_recipient_id
+      FROM __PREFIX__token_transactions sent
+      LEFT JOIN __PREFIX__token_transactions recv
+        ON recv.reference_id = sent.reference_id AND recv.reason = 'gift_received'
+      WHERE sent.reference_id = v_reference_id AND sent.wallet_id = p_sender_id
+        AND sent.reason = 'gift_sent'
+      LIMIT 1;
+    IF FOUND THEN
+      RETURN jsonb_build_object('status', 'ok', 'duplicate', true, 'amount', v_prior_amount,
+                                'original_amount', v_prior_amount,
+                                'new_balance', v_prior, 'recipient_id', v_prior_recipient_id);
+    END IF;
+  END IF;
+
   SELECT id, balance INTO v_recipient_id, v_recipient_bal
   FROM __PREFIX__wallets WHERE referral_code = p_code;
   IF v_recipient_id IS NULL THEN
@@ -1065,18 +1087,6 @@ BEGIN
   END IF;
   IF v_recipient_id = p_sender_id THEN
     RETURN jsonb_build_object('status', 'self_gift');
-  END IF;
-
-  v_reference_id := CASE WHEN COALESCE(p_key, '') <> '' THEN 'gift:' || p_sender_id || ':' || p_key ELSE '' END;
-
-  -- Idempotent replay: an identical keyed send returns its prior result, nothing moves.
-  IF v_reference_id <> '' THEN
-    SELECT balance_after INTO v_prior FROM __PREFIX__token_transactions
-      WHERE reference_id = v_reference_id AND wallet_id = p_sender_id AND reason = 'gift_sent' LIMIT 1;
-    IF FOUND THEN
-      RETURN jsonb_build_object('status', 'ok', 'duplicate', true, 'amount', p_amount,
-                                'new_balance', v_prior, 'recipient_id', v_recipient_id);
-    END IF;
   END IF;
 
   -- Lock the sender row for the debit.

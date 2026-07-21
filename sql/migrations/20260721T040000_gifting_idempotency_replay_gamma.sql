@@ -1,9 +1,6 @@
--- Spark gifting activation (SPEC-GIFTING) — targeted Supabase migration.
--- Extracted verbatim from the rendered sql/games-schema.sql (do NOT hand-edit the RPC body).
--- Apply to GAMMA first (games_gamma_ prefix), verify, then PROD (games_ prefix).
--- After applying: set GIFTING_ENABLED=true and recreate the backend container.
--- Idempotent: CREATE OR REPLACE FUNCTION / REVOKE / GRANT. Depends on the referral migration
--- (wallets.referral_code is the recipient handle) — apply 20260721T000000_referrals.sql first.
+-- Spark gifting idempotency replay hardening (SPEC-GIFTING).
+-- Gamma follow-up migration for environments that already applied 20260721T010000_gifting_gamma.sql.
+-- Replaces the RPC so keyed retries replay the stored transaction details before recipient lookup.
 
 CREATE OR REPLACE FUNCTION games_gamma_gift_sparks(
   p_sender_id TEXT,
@@ -42,8 +39,6 @@ BEGIN
 
   v_reference_id := CASE WHEN COALESCE(p_key, '') <> '' THEN 'gift:' || p_sender_id || ':' || p_key ELSE '' END;
 
-  -- Idempotent replay: the same keyed send returns its original result, nothing moves.
-  -- Check before recipient lookup so a changed retry body cannot fail or misreport the old gift.
   IF v_reference_id <> '' THEN
     SELECT sent.balance_after, ABS(sent.amount), recv.wallet_id
       INTO v_prior, v_prior_amount, v_prior_recipient_id
@@ -69,7 +64,6 @@ BEGIN
     RETURN jsonb_build_object('status', 'self_gift');
   END IF;
 
-  -- Lock the sender row for the debit.
   SELECT balance INTO v_sender_bal FROM games_gamma_wallets WHERE id = p_sender_id FOR UPDATE;
   v_sender_bal := COALESCE(v_sender_bal, 0);
   IF v_sender_bal < p_amount THEN
@@ -83,7 +77,6 @@ BEGIN
     RETURN jsonb_build_object('status', 'daily_cap', 'new_balance', v_sender_bal);
   END IF;
 
-  -- Re-read the recipient under a lock; reject if it can't hold the full gift (conserve sparks).
   SELECT balance INTO v_recipient_bal FROM games_gamma_wallets WHERE id = v_recipient_id FOR UPDATE;
   IF v_recipient_bal + p_amount > p_max_balance THEN
     RETURN jsonb_build_object('status', 'recipient_full', 'new_balance', v_sender_bal);

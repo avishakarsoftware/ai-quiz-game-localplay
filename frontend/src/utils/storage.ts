@@ -3,6 +3,8 @@
  * All token/ID reads go through this wrapper so native apps can switch to
  * Keychain (iOS) / Keystore (Android) in the future.
  */
+import { randomId } from './ids';
+
 const DEVICE_ID_KEY = 'revelry_device_id';
 const CHECKOUT_PENDING_KEY = 'checkout_pending';
 const CHECKOUT_SESSION_KEY = 'checkout_session_id';
@@ -39,7 +41,7 @@ function remove(key: string): void {
 export function getDeviceId(): string {
     let id = get(DEVICE_ID_KEY);
     if (!id) {
-        id = crypto.randomUUID();
+        id = randomId();
         set(DEVICE_ID_KEY, id);
     }
     return id;

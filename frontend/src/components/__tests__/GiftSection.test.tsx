@@ -11,7 +11,7 @@ interface GiftCall { code: string; amount: number; idempotency_key: string }
 
 function mockGift(handler: (call: GiftCall) => { ok: boolean; status?: number; body: unknown }) {
     const calls: GiftCall[] = [];
-    global.fetch = vi.fn((url: string, init?: RequestInit) => {
+    globalThis.fetch = vi.fn((url: string, init?: RequestInit) => {
         if (String(url).includes('/tokens/gift')) {
             const call = JSON.parse(String(init?.body)) as GiftCall;
             calls.push(call);

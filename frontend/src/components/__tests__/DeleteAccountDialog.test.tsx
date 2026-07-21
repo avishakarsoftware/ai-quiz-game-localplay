@@ -11,7 +11,7 @@ import DeleteAccountDialog from '../DeleteAccountDialog';
  */
 
 function mockBalance(balance: number | null, ok = true) {
-    global.fetch = vi.fn((url: string, init?: RequestInit) => {
+    globalThis.fetch = vi.fn((url: string, init?: RequestInit) => {
         if (String(url).includes('/tokens/balance')) {
             return Promise.resolve({
                 ok,
@@ -94,7 +94,7 @@ describe('DeleteAccountDialog — confirmation gate', () => {
         render(<DeleteAccountDialog onDeleted={() => {}} onClose={onClose} />);
         fireEvent.click(await screen.findByText('Cancel'));
         expect(onClose).toHaveBeenCalled();
-        expect(global.fetch).not.toHaveBeenCalledWith(
+        expect(globalThis.fetch).not.toHaveBeenCalledWith(
             expect.stringContaining('/account'),
             expect.objectContaining({ method: 'DELETE' }),
         );

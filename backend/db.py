@@ -1337,6 +1337,25 @@ def gift_sparks(sender_id: str, recipient_code: str, amount: int, idempotency_ke
     reference_id = f"gift:{sender_id}:{key}" if key else ""
     conn.execute("BEGIN IMMEDIATE")
     try:
+        # Idempotency: a prior keyed send with the same reference replays its original result, no movement.
+        # Check this before recipient lookup so retries remain stable even if the client/body changes.
+        if reference_id:
+            prior = conn.execute(
+                "SELECT sent.amount, sent.balance_after, recv.wallet_id AS recipient_id "
+                "FROM token_transactions sent "
+                "LEFT JOIN token_transactions recv ON recv.reference_id = sent.reference_id "
+                "  AND recv.reason = 'gift_received' "
+                "WHERE sent.reference_id = ? AND sent.wallet_id = ? AND sent.reason = 'gift_sent' "
+                "LIMIT 1",
+                (reference_id, sender_id),
+            ).fetchone()
+            if prior:
+                conn.execute("ROLLBACK")
+                original_amount = abs(int(prior["amount"]))
+                return {"status": "ok", "duplicate": True, "amount": original_amount,
+                        "original_amount": original_amount,
+                        "new_balance": prior["balance_after"], "recipient_id": prior["recipient_id"]}
+
         recipient = conn.execute(
             "SELECT id, balance FROM wallets WHERE referral_code = ?", (code,)
         ).fetchone()
@@ -1347,18 +1366,6 @@ def gift_sparks(sender_id: str, recipient_code: str, amount: int, idempotency_ke
         if recipient_id == sender_id:
             conn.execute("ROLLBACK")
             return {"status": "self_gift"}
-
-        # Idempotency: a prior keyed send with the same reference replays its result, no movement.
-        if reference_id:
-            prior = conn.execute(
-                "SELECT balance_after FROM token_transactions "
-                "WHERE reference_id = ? AND wallet_id = ? AND reason = 'gift_sent' LIMIT 1",
-                (reference_id, sender_id),
-            ).fetchone()
-            if prior:
-                conn.execute("ROLLBACK")
-                return {"status": "ok", "duplicate": True, "amount": amount,
-                        "new_balance": prior["balance_after"], "recipient_id": recipient_id}
 
         srow = conn.execute("SELECT balance FROM wallets WHERE id = ?", (sender_id,)).fetchone()
         sender_balance = srow["balance"] if srow else 0

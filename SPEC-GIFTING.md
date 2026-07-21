@@ -41,8 +41,10 @@ gifting depends on the referral migration being applied first. Both transaction 
 1. `GIFT_MIN_AMOUNT ≤ amount ≤ GIFT_MAX_AMOUNT` (else `invalid_amount`).
 2. Look up recipient by `referral_code` (uppercased/trimmed); not found → `invalid_code`.
 3. `recipient != sender` (else `self_gift`).
-4. **Idempotency:** a prior `gift_sent` row with the same `reference_id` replays its result
-   (`{status: ok, duplicate: true, …}`) — nothing moves.
+4. **Idempotency:** a prior `gift_sent` row with the same sender/key `reference_id` replays its original
+   result (`{status: ok, duplicate: true, …}`) before recipient/balance/cap checks — nothing moves. The
+   replayed `amount` and `recipient_id` must come from the stored transaction, not the retry body, so a
+   changed retry payload cannot misreport what actually moved or who received it.
 5. Sender balance ≥ amount (else `insufficient`).
 6. Per-sender daily caps: `COUNT(gift_sent today) < MAX_GIFTS_PER_DAY` **and**
    `SUM(sent today) + amount ≤ MAX_GIFT_TOKENS_PER_DAY` (else `daily_cap`).
@@ -66,16 +68,19 @@ per IP. Resolve sender via `tokens.get_wallet_id` (device id / session). Maps st
 `gift_sparks` RPC in `sql/templates/games-schema.template.sql` (rendered to `sql/games-schema.sql` +
 `sql/games-gamma-schema.sql`), doing the whole guarded transaction server-side with row locks.
 `supabase_db.gift_sparks` validates the amount before the RPC and normalizes the RPC's `balance` →
-`new_balance`. Added to `db.py`'s `_SUPABASE_EXPORTS`. Targeted migration:
-`sql/migrations/20260721T010000_gifting.sql` (+ `_gamma`). **To activate on gamma/prod:** apply the
-migration (after the referral migration), then set `GIFTING_ENABLED=true` and recreate the container.
+`new_balance`. Added to `db.py`'s `_SUPABASE_EXPORTS`. Targeted migrations:
+`sql/migrations/20260721T010000_gifting.sql` (+ `_gamma`) for first activation and
+`20260721T040000_gifting_idempotency_replay.sql` (+ `_gamma`) for the replay hardening follow-up.
+**To activate on gamma/prod:** apply the migrations (after the referral migration), then set
+`GIFTING_ENABLED=true` and recreate the container.
 
 ## 6. Frontend
 
 - `GiftSection` in `SettingsDrawer`: friend-code + amount inputs + **Send**. Hidden unless
   `feature_flags.gifting_enabled === true`.
-- One idempotency key (`crypto.randomUUID()`) is held per in-flight attempt: reused on a retry after a
-  failure (safe), rotated only after a confirmed success. Success toasts "Sent N sparks" (or
+- One idempotency key (`randomId()`, backed by `crypto.randomUUID()` when available with a webview-safe
+  RFC4122 fallback) is held per in-flight attempt: reused on a retry after a failure (safe), rotated
+  only after a confirmed success. Success toasts "Sent N sparks" (or
   "Already sent — no charge." on a duplicate replay), clears the form, fires `refresh-sparks`.
 
 ## 7. Abuse considerations (v1, documented)
@@ -96,6 +101,8 @@ migration (after the referral migration), then set `GIFTING_ENABLED=true` and re
 - `backend/config.py` (5 gift vars), `backend/db.py` (`gift_sparks` + export), `backend/supabase_db.py`
   (`gift_sparks` wrapper), `backend/main.py` (`/tokens/gift` + `/config/public` flag),
   `backend/tests/test_gifting.py`.
-- SQL: `sql/templates/games-schema.template.sql` (+ rendered pair) + `sql/migrations/20260721T010000_gifting{,_gamma}.sql`.
+- SQL: `sql/templates/games-schema.template.sql` (+ rendered pair) +
+  `sql/migrations/20260721T010000_gifting{,_gamma}.sql` and
+  `sql/migrations/20260721T040000_gifting_idempotency_replay{,_gamma}.sql`.
 - Frontend: `GiftSection.tsx`, `SettingsDrawer.tsx` (wire + gate), `types/remoteConfig.ts` (flag),
   `GiftSection.test.tsx`.

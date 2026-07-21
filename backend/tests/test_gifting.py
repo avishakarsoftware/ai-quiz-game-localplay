@@ -107,6 +107,40 @@ def test_idempotency_key_replays_without_double_send():
     assert db.get_wallet_balance("gift-r8") == 20                        # credited once
 
 
+def test_idempotency_replay_reports_original_amount_when_retry_body_changes():
+    """A retry with the same key but a changed body must replay the original transaction details.
+    Otherwise clients can show "sent 80" even though only 20 moved."""
+    _fresh("gift-s8b", balance=100)
+    _fresh("gift-r8b")
+    code = db.get_or_create_referral_code("gift-r8b")
+    first = db.gift_sparks("gift-s8b", code, 20, idempotency_key="same-key")
+    second = db.gift_sparks("gift-s8b", code, 80, idempotency_key="same-key")
+    assert first["status"] == "ok"
+    assert second["status"] == "ok"
+    assert second["duplicate"] is True
+    assert second["amount"] == 20
+    assert second["original_amount"] == 20
+    assert second["new_balance"] == 80
+    assert db.get_wallet_balance("gift-s8b") == 80
+    assert db.get_wallet_balance("gift-r8b") == 20
+
+
+def test_idempotency_replay_ignores_changed_recipient_code():
+    _fresh("gift-s8c", balance=100)
+    _fresh("gift-r8c-original")
+    _fresh("gift-r8c-other")
+    original_code = db.get_or_create_referral_code("gift-r8c-original")
+    other_code = db.get_or_create_referral_code("gift-r8c-other")
+    first = db.gift_sparks("gift-s8c", original_code, 20, idempotency_key="same-key-recipient")
+    second = db.gift_sparks("gift-s8c", other_code, 20, idempotency_key="same-key-recipient")
+    assert first["status"] == "ok"
+    assert second["status"] == "ok"
+    assert second["duplicate"] is True
+    assert second["recipient_id"] == "gift-r8c-original"
+    assert db.get_wallet_balance("gift-r8c-original") == 20
+    assert db.get_wallet_balance("gift-r8c-other") == 0
+
+
 def test_daily_count_cap_enforced(monkeypatch):
     monkeypatch.setattr(config, "MAX_GIFTS_PER_DAY", 2)
     monkeypatch.setattr(config, "MAX_GIFT_TOKENS_PER_DAY", 10000)        # keep the token cap out of the way
@@ -189,6 +223,22 @@ def test_endpoint_happy_path_returns_sent():
                          json={"code": code, "amount": 25, "idempotency_key": "e1"})
     assert res.status_code == 200
     assert res.json() == {"sent": True, "amount": 25, "new_balance": 75, "duplicate": False}
+    assert db.get_wallet_balance(recipient) == 25
+
+
+def test_endpoint_duplicate_replay_reports_original_amount():
+    _fresh(TEST_DEVICE_ID, balance=100)
+    recipient = _uuid()
+    _fresh(recipient)
+    code = db.get_or_create_referral_code(recipient)
+    client = _client()
+    first = client.post("/tokens/gift", headers={"X-Device-Id": TEST_DEVICE_ID},
+                        json={"code": code, "amount": 25, "idempotency_key": "http-dupe"})
+    second = client.post("/tokens/gift", headers={"X-Device-Id": TEST_DEVICE_ID},
+                         json={"code": code, "amount": 75, "idempotency_key": "http-dupe"})
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json() == {"sent": True, "amount": 25, "new_balance": 75, "duplicate": True}
     assert db.get_wallet_balance(recipient) == 25
 
 

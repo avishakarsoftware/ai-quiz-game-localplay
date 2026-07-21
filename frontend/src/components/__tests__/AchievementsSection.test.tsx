@@ -14,7 +14,7 @@ const CATALOG = [
 ];
 
 function mockAchievements(body: unknown, ok = true) {
-    global.fetch = vi.fn((url: string) => {
+    globalThis.fetch = vi.fn((url: string) => {
         if (String(url).includes('/achievements')) {
             return Promise.resolve({ ok, status: ok ? 200 : 500, json: () => Promise.resolve(body) } as Response);
         }

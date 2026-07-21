@@ -22,7 +22,7 @@
   `invalid_amount`/`insufficient`/`recipient_full` (conserves sparks at the cap)/`daily_cap` guards; per-sender
   daily count + token caps. `POST /tokens/gift` (rate-limited, gated by `_GIFTING_SUPPORTED`); `gifting_enabled`
   flag on `/config/public`. Supabase parity via `gift_sparks` RPC (template + rendered + `20260721T010000_gifting{,_gamma}.sql`
-  migration) + `supabase_db` wrapper + override-list entry, gated on `GIFTING_ENABLED`. Frontend `GiftSection`
+  migration plus `20260721T040000_gifting_idempotency_replay{,_gamma}.sql` follow-up) + `supabase_db` wrapper + override-list entry, gated on `GIFTING_ENABLED`. Frontend `GiftSection`
   in the settings drawer with per-attempt idempotency key (reused on retry, rotated on success). Emits
   `spark_sent`/`spark_received`. Tests: backend 14 (db + endpoint + Supabase wrapper), frontend 4. **Not yet
   deployed / not yet activated on Supabase.**
