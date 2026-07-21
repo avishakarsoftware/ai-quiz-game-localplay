@@ -17,7 +17,8 @@ function mergeWithDefaults(data: Partial<RemoteConfig>): RemoteConfig {
     ...DEFAULT_CONFIG,
     ...data,
     operations: { ...DEFAULT_CONFIG.operations, ...data.operations },
-    pricing: { ...DEFAULT_CONFIG.pricing, ...data.pricing },
+    // `pricing` (legacy single-pack block) is no longer part of RemoteConfig — any pricing
+    // keys still present in served config are ignored via the top-level `...data` spread.
     feature_flags: { ...DEFAULT_CONFIG.feature_flags, ...data.feature_flags },
     economy: { ...DEFAULT_CONFIG.economy, ...data.economy },
     enabled_game_types: Array.isArray(data.enabled_game_types) ? data.enabled_game_types : undefined,

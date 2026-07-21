@@ -20,20 +20,11 @@ export interface RemoteConfig {
     force_config_refresh?: boolean;
     min_supported_version?: string;
   };
-  pricing: {
-    pass_price?: string;
-    duration_hours?: number;
-    token_pack_price: string;
-    token_pack_amount: number;
-    label: string;
-    promo?: {
-      id: string;                   // e.g. "launch_2026" — must match backend PROMO_ID
-      original_amount: number;      // "normal" amount to show struck through
-      token_pack_amount: number;    // actual amount they get
-      badge: string;                // e.g. "LAUNCH DEAL" or "2X SPARKS!"
-      expires?: string;             // ISO date — optional countdown
-    };
-  };
+  // NOTE: the legacy single-pack `pricing` block (token_pack_*, label, promo) was removed
+  // 2026-07-21 — it described the retired one-pack economy (110-for-$0.99) that no longer
+  // exists (the live ladder is 50/200/500, store-localized on native via RevenueCat). No
+  // component read it after the ErrorModal promo UI was deleted. Extra `pricing` keys still
+  // present in served config.json / /config/public are simply ignored.
   feature_flags: {
     show_upgrade_button: boolean;
     enable_image_generation: boolean;
@@ -64,11 +55,6 @@ export const DEFAULT_CONFIG: RemoteConfig = {
     kill_payments: false,
     force_config_refresh: false,
     min_supported_version: '1.0.0',
-  },
-  pricing: {
-    token_pack_price: '$0.99',
-    token_pack_amount: 110,
-    label: '110 Spark Pack',
   },
   feature_flags: {
     show_upgrade_button: true,

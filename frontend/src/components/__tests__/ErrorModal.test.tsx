@@ -7,7 +7,6 @@ import { type RemoteConfig, DEFAULT_CONFIG } from '../../types/remoteConfig';
 const mockConfig: RemoteConfig = {
   ...DEFAULT_CONFIG,
   feature_flags: { ...DEFAULT_CONFIG.feature_flags, show_upgrade_button: true },
-  pricing: { ...DEFAULT_CONFIG.pricing },
 };
 
 vi.mock('../../hooks/useRemoteConfig', () => ({
@@ -81,67 +80,10 @@ describe('ErrorModal', () => {
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
-  it('shows promo badge and strikethrough amount when promo is active', () => {
-    // Set promo on the mock config
-    mockConfig.pricing = {
-      ...mockConfig.pricing,
-      promo: {
-        id: 'launch_2026',
-        original_amount: 110,
-        token_pack_amount: 220,
-        badge: 'LAUNCH DEAL',
-        expires: new Date(Date.now() + 86400000).toISOString(), // tomorrow
-      },
-    };
-    renderWithProvider(
-      <ErrorModal
-        title="Limit"
-        message="Out of sparks"
-        upgradeAvailable
-        onDismiss={() => {}}
-        onUpgrade={() => {}}
-      />
-    );
-    expect(screen.getByText('LAUNCH DEAL')).toBeInTheDocument();
-    // The strikethrough original amount
-    expect(screen.getByText('110')).toBeInTheDocument();
-    // The promo token amount
-    expect(screen.getByText('220')).toBeInTheDocument();
-    // The CTA still routes to the purchase modal without quoting a pack size.
-    expect(screen.getByText('Get Sparks')).toBeInTheDocument();
-  });
-
-  it('shows no promo badge when no promo is active', () => {
-    // Clear promo
-    mockConfig.pricing = {
-      ...mockConfig.pricing,
-      token_pack_amount: 110,
-      promo: undefined,
-    };
-    renderWithProvider(
-      <ErrorModal
-        title="Limit"
-        message="Out of sparks"
-        upgradeAvailable
-        onDismiss={() => {}}
-        onUpgrade={() => {}}
-      />
-    );
-    expect(screen.queryByText('LAUNCH DEAL')).not.toBeInTheDocument();
-    expect(screen.getByText('Get Sparks')).toBeInTheDocument();
-  });
-
-  // Regression: the CTA used to render "Get {token_pack_amount} Sparks — {token_pack_price}"
-  // from the pre-tier single-pack config, advertising a 110-for-$0.99 pack that does not
-  // exist (the real ladder is 50/$1.99, 200/$4.99, 500/$9.99, store-localized on native).
-  // The purchase modal owns tiers and prices; this modal must never quote either.
-  it('never advertises a pack size or price the purchase modal cannot honour', () => {
-    mockConfig.pricing = {
-      ...mockConfig.pricing,
-      token_pack_price: '$0.99',
-      token_pack_amount: 110,
-      promo: undefined,
-    };
+  // The single-pack promo UI (LAUNCH DEAL badge, strikethrough 110→220 sparks) was removed
+  // 2026-07-21 — it rendered amounts from the retired one-pack economy. The upgrade CTA must
+  // now be a plain "Get Sparks" that routes to the purchase modal, quoting no pack or price.
+  it('never advertises a pack size, price, or promo badge the purchase modal cannot honour', () => {
     const { container } = renderWithProvider(
       <ErrorModal
         title="Not Enough Sparks"
@@ -151,8 +93,9 @@ describe('ErrorModal', () => {
         onUpgrade={() => {}}
       />
     );
-    expect(container.textContent).not.toMatch(/110/);
-    expect(container.textContent).not.toMatch(/\$\d/);
     expect(screen.getByText('Get Sparks')).toBeInTheDocument();
+    expect(screen.queryByText('LAUNCH DEAL')).not.toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/110|220/);   // dead single-pack amounts
+    expect(container.textContent).not.toMatch(/\$\d/);       // no hardcoded price
   });
 });

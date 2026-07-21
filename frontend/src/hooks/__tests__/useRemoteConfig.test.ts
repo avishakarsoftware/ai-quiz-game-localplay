@@ -8,7 +8,6 @@ function mergeWithDefaults(data: Record<string, unknown>) {
     ...DEFAULT_CONFIG,
     ...data,
     operations: { ...DEFAULT_CONFIG.operations, ...(data.operations as object || {}) },
-    pricing: { ...DEFAULT_CONFIG.pricing, ...(data.pricing as object || {}) },
     feature_flags: { ...DEFAULT_CONFIG.feature_flags, ...(data.feature_flags as object || {}) },
     announcements: Array.isArray(data.announcements) ? data.announcements : DEFAULT_CONFIG.announcements,
   };
@@ -32,12 +31,6 @@ describe('mergeWithDefaults', () => {
     expect(result.operations.maintenance_message).toBe(DEFAULT_CONFIG.operations.maintenance_message);
   });
 
-  it('deep-merges pricing with defaults', () => {
-    const result = mergeWithDefaults({ pricing: { pass_price: '$1.99' } });
-    expect(result.pricing.pass_price).toBe('$1.99');
-    expect(result.pricing.duration_hours).toBe(DEFAULT_CONFIG.pricing.duration_hours);
-  });
-
   it('deep-merges feature_flags with defaults', () => {
     const result = mergeWithDefaults({ feature_flags: { show_upgrade_button: true } });
     expect(result.feature_flags.show_upgrade_button).toBe(true);
@@ -56,10 +49,17 @@ describe('mergeWithDefaults', () => {
   });
 
   it('handles missing nested objects gracefully', () => {
-    // If operations/pricing/feature_flags are undefined, should still return defaults
+    // If operations/feature_flags are undefined, should still return defaults
     const result = mergeWithDefaults({ version: 2 });
     expect(result.operations).toEqual(DEFAULT_CONFIG.operations);
-    expect(result.pricing).toEqual(DEFAULT_CONFIG.pricing);
+    expect(result.feature_flags).toEqual(DEFAULT_CONFIG.feature_flags);
+  });
+
+  it('ignores a stale legacy `pricing` block in served config', () => {
+    // config.json / /config/public may still carry a pricing block; it must be a harmless
+    // passthrough (no crash) now that nothing reads it.
+    const result = mergeWithDefaults({ pricing: { token_pack_amount: 110 } } as Record<string, unknown>);
+    expect(result.operations).toEqual(DEFAULT_CONFIG.operations);
     expect(result.feature_flags).toEqual(DEFAULT_CONFIG.feature_flags);
   });
 });
