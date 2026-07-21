@@ -30,6 +30,7 @@ export interface RemoteConfig {
     enable_image_generation: boolean;
     ads_enabled?: boolean;
     referral_enabled?: boolean;
+    gifting_enabled?: boolean;
   };
   // Catalog gating: when present + non-empty, only these game ids are offered (absent ⇒ all enabled).
   enabled_game_types?: string[];
@@ -61,6 +62,7 @@ export const DEFAULT_CONFIG: RemoteConfig = {
     enable_image_generation: true,
     ads_enabled: false,
     referral_enabled: false,
+    gifting_enabled: false,
   },
   enabled_game_types: undefined,   // absent ⇒ all games enabled
   economy: { cost_room: 10, cost_generate: 1 },

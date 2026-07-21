@@ -2,6 +2,15 @@
 
 ## Done
 
+- **Spark gifting (SPEC-GIFTING).** Send N sparks wallet→wallet, addressed by the recipient's referral
+  ("friend") code. One atomic debit-then-credit; idempotent on a client key; self-gift blocked;
+  `invalid_amount`/`insufficient`/`recipient_full` (conserves sparks at the cap)/`daily_cap` guards; per-sender
+  daily count + token caps. `POST /tokens/gift` (rate-limited, gated by `_GIFTING_SUPPORTED`); `gifting_enabled`
+  flag on `/config/public`. Supabase parity via `gift_sparks` RPC (template + rendered + `20260721T010000_gifting{,_gamma}.sql`
+  migration) + `supabase_db` wrapper + override-list entry, gated on `GIFTING_ENABLED`. Frontend `GiftSection`
+  in the settings drawer with per-attempt idempotency key (reused on retry, rotated on success). Emits
+  `spark_sent`/`spark_received`. Tests: backend 14 (db + endpoint + Supabase wrapper), frontend 4. **Not yet
+  deployed / not yet activated on Supabase.**
 - **Legacy sync E2E WebSocket timeout hardening.** Hardened `backend/tests/test_e2e.py` so sync `TestClient` websocket receives have a real wall-clock timeout, timeout errors include the message types already seen, room-created handshakes are explicit, and `START_GAME` drains `GAME_STARTING` for organizer/player/spectator sockets before tests advance to `NEXT_QUESTION`. This keeps the legacy export/import and reset flows from hanging indefinitely when lifecycle messages such as `PING` or `GAME_STARTING` arrive before `QUESTION`.
 - **Generic Prompt Party engine plus 10 standalone games.** Implemented shared `generic_prompt_party` mechanics and catalog entries for Hot Takes, This or That, Caption Contest, Pitch Battle, Roast & Toast, Desert Island, Memory Lane, Rapid Fire, One Word Vibes, and Emoji Story. The shared runtime supports choice voting, text submissions with voting, grouped text reveals, late joins, reconnect/spectator sync, rules metadata, podium/history summaries, frontend organizer/player/spectator UI, engine unit tests, and websocket flow coverage. Follow-ups: AI/custom authoring, richer occasion packs, multi-tab Playwright matrix, and a separate Revelry host-app bridge/policy pass.
 - **Party Quests MVP + LocalPlay staged check-in flow.** Implemented `party_quests` as an ambient social game with curated and AI-generated editable quest decks, party-scoped saved content, deterministic Host/Player/TV preview, duration/quest-count/confirmation/late-join settings, exact saved-version room materialization, first-real-player check-in auto-start, per-player boards, tap-confirm/honor completions, late joins, organizer/player/spectator sync, final reveal, idempotent host cancellation, safe callbacks, and local backend/frontend regression coverage. Gamma now has the content-type migration and four non-breaking authoring capabilities enabled; strict prepared-content check-in remains gated until Revelry gamma is deployed and the pointer/arming flow passes. Direct service-minted Party Quests authoring links now dispatch to the Party Quests editor instead of the quiz-only page and support type-safe create/edit resolution. Production remains quick-start-only. This staged flow **resolves two operational gaps hit in the field (2026-07-09):** (1) *check-in auto-start bypassing host setup* → now strict `requires_prepared_content_for_checkin` plus the setup UI + Host/Player/TV preview, so a check-in game must be configured first (gamma flip applied 2026-07-09); (2) *no host stop control* → now `POST /integrations/revelry/party-games/cancel` (`_cancel_revelry_session`, idempotent, one callback) with a "Cancel game" button in `PartyHubPage` and `LobbyScreen`. **Both are live on gamma only.** Residual: **production still has neither** until the prod rollout (see DEPLOY.md "Party Quests staged-authoring gamma rollout" → step 4), so a prod host today cannot self-cancel a stray check-in session — one had to be cancelled at the DB level on 2026-07-09 (`lp_b83ca5c0…`, "Rafting and Camping"). Follow-ups: pair-code confirmation, the multi-tab live Playwright rollout matrix, and the production rollout (DDL → deploy → authoring caps → strict flip).
@@ -31,10 +40,6 @@ Candidate next features, all wallet/DB-centric so they're fully unit-testable ag
 patterns. Each should ship as: spec → backend + pytest → frontend + vitest → commit, plus a ready-to-apply
 Supabase RPC via `sql/templates/games-schema.template.sql` and the `REFERRALS_ENABLED`-style activation gate.
 
-- **Spark gifting.** Let a player send N sparks to another wallet: atomic debit-then-credit in one
-  transaction, idempotent on a client-supplied key, self-gift blocked, per-day/amount caps, rate-limited
-  endpoint. Nearly a clone of the referral redeem flow. Frontend: a "gift sparks" affordance (enter
-  code/id + amount) in the settings drawer. Emits `spark_sent`/`spark_received` analytics.
 - **Achievements / badges.** Award badges on milestones (first game, Nth game, big win, streak day N,
   first purchase, first referral). New `achievements` table + award-on-event hooks (idempotent per
   wallet+badge) + a badges list in the drawer/profile. Read-mostly; low economy risk.

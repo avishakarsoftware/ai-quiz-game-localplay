@@ -152,6 +152,15 @@ MAX_REFERRALS_PER_DAY = int(os.getenv("MAX_REFERRALS_PER_DAY", "10"))
 # Referrals run on SQLite automatically. On Supabase they require the referral RPCs from
 # sql/games-schema.sql to be applied first — set REFERRALS_ENABLED=true AFTER applying them.
 REFERRALS_ENABLED = os.getenv("REFERRALS_ENABLED", "false").lower() == "true"
+# Spark gifting (SPEC-GIFTING): send sparks wallet→wallet, addressed by the recipient's referral
+# code (their public "friend code"). Atomic debit-then-credit, idempotent on a client key.
+GIFT_MIN_AMOUNT = int(os.getenv("GIFT_MIN_AMOUNT", "1"))
+GIFT_MAX_AMOUNT = int(os.getenv("GIFT_MAX_AMOUNT", "100"))  # per-gift ceiling
+MAX_GIFTS_PER_DAY = int(os.getenv("MAX_GIFTS_PER_DAY", "20"))  # per-sender count cap
+MAX_GIFT_TOKENS_PER_DAY = int(os.getenv("MAX_GIFT_TOKENS_PER_DAY", "200"))  # per-sender total-sparks cap
+# Like REFERRALS_ENABLED: works on SQLite automatically; on Supabase needs the gift_sparks RPC
+# applied first, then GIFTING_ENABLED=true.
+GIFTING_ENABLED = os.getenv("GIFTING_ENABLED", "false").lower() == "true"
 # Shareable result cards (SPEC-SHARE-CARD): in-memory result snapshots for OG unfurl links.
 SHARE_TTL_SECONDS = int(os.getenv("SHARE_TTL_SECONDS", str(7 * 86400)))
 MAX_SHARE_SNAPSHOTS = int(os.getenv("MAX_SHARE_SNAPSHOTS", "500"))

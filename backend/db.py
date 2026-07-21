@@ -1293,6 +1293,94 @@ def redeem_referral(referee_id: str, code: str) -> dict:
         raise
 
 
+# --- Spark gifting (SPEC-GIFTING) ---
+def gift_sparks(sender_id: str, recipient_code: str, amount: int, idempotency_key: str = "") -> dict:
+    """Transfer `amount` sparks from `sender_id` to the wallet that owns `recipient_code`
+    (the recipient's referral/"friend" code). One atomic debit-then-credit. Idempotent on the
+    (sender, idempotency_key) pair so a retried request never double-sends.
+
+    Returns a status dict: status ∈
+      {ok, invalid_amount, invalid_code, self_gift, insufficient, recipient_full, daily_cap}.
+    On ok: {status, amount, new_balance, recipient_id, duplicate?}. `duplicate` is True when an
+    identical keyed request already went through (the reply is replayed, nothing moves)."""
+    if not isinstance(amount, int) or not (config.GIFT_MIN_AMOUNT <= amount <= config.GIFT_MAX_AMOUNT):
+        return {"status": "invalid_amount"}
+    code = (recipient_code or "").strip().upper()
+    if not code:
+        return {"status": "invalid_code"}
+    key = (idempotency_key or "").strip()[:64]
+    conn = _get_conn()
+    now = int(time.time())
+    since = _utc_midnight_epoch()
+    reference_id = f"gift:{sender_id}:{key}" if key else ""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        recipient = conn.execute(
+            "SELECT id, balance FROM wallets WHERE referral_code = ?", (code,)
+        ).fetchone()
+        if not recipient:
+            conn.execute("ROLLBACK")
+            return {"status": "invalid_code"}
+        recipient_id = recipient["id"]
+        if recipient_id == sender_id:
+            conn.execute("ROLLBACK")
+            return {"status": "self_gift"}
+
+        # Idempotency: a prior keyed send with the same reference replays its result, no movement.
+        if reference_id:
+            prior = conn.execute(
+                "SELECT balance_after FROM token_transactions "
+                "WHERE reference_id = ? AND wallet_id = ? AND reason = 'gift_sent' LIMIT 1",
+                (reference_id, sender_id),
+            ).fetchone()
+            if prior:
+                conn.execute("ROLLBACK")
+                return {"status": "ok", "duplicate": True, "amount": amount,
+                        "new_balance": prior["balance_after"], "recipient_id": recipient_id}
+
+        srow = conn.execute("SELECT balance FROM wallets WHERE id = ?", (sender_id,)).fetchone()
+        sender_balance = srow["balance"] if srow else 0
+        if sender_balance < amount:
+            conn.execute("ROLLBACK")
+            return {"status": "insufficient", "new_balance": sender_balance}
+
+        # Per-sender daily caps: number of gifts AND total sparks sent since UTC midnight.
+        cap = conn.execute(
+            "SELECT COUNT(*) AS c, COALESCE(-SUM(amount), 0) AS s FROM token_transactions "
+            "WHERE wallet_id = ? AND reason = 'gift_sent' AND created_at >= ?",
+            (sender_id, since),
+        ).fetchone()
+        if cap["c"] >= config.MAX_GIFTS_PER_DAY or cap["s"] + amount > config.MAX_GIFT_TOKENS_PER_DAY:
+            conn.execute("ROLLBACK")
+            return {"status": "daily_cap", "new_balance": sender_balance}
+
+        # Conserve sparks: never debit the sender if the recipient can't hold the full gift.
+        if recipient["balance"] + amount > config.MAX_TOKEN_BALANCE:
+            conn.execute("ROLLBACK")
+            return {"status": "recipient_full", "new_balance": sender_balance}
+
+        new_sender = sender_balance - amount
+        conn.execute("UPDATE wallets SET balance = ? WHERE id = ?", (new_sender, sender_id))
+        conn.execute(
+            "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at) "
+            "VALUES (?, ?, 'gift_sent', ?, ?, ?)",
+            (sender_id, -amount, reference_id or None, new_sender, now),
+        )
+        new_recipient = recipient["balance"] + amount
+        conn.execute("UPDATE wallets SET balance = ? WHERE id = ?", (new_recipient, recipient_id))
+        conn.execute(
+            "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, created_at) "
+            "VALUES (?, ?, 'gift_received', ?, ?, ?)",
+            (recipient_id, amount, reference_id or None, new_recipient, now),
+        )
+        conn.execute("COMMIT")
+        logger.info("Gift sent: sender=%s recipient=%s amount=%d", sender_id[:8], recipient_id[:8], amount)
+        return {"status": "ok", "amount": amount, "new_balance": new_sender, "recipient_id": recipient_id}
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
 def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:
     """Credit purchased tokens and increment lifetime_purchased. Returns (success, new_balance).
     Idempotent: if reference_id was already credited, returns current balance without double-crediting.
@@ -2001,6 +2089,7 @@ if config.DB_BACKEND == "supabase":
         "check_and_grant_ad_reward",
         "get_or_create_referral_code",
         "redeem_referral",
+        "gift_sparks",
         "has_ever_purchased",
         "credit_purchase",
         "merge_wallet",

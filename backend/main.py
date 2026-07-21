@@ -5867,6 +5867,54 @@ async def referral_redeem(body: ReferralRedeemRequest, req: Request):
     raise HTTPException(status_code=code_status, detail=detail)
 
 
+class GiftSparksRequest(BaseModel):
+    code: str = ""
+    amount: int = 0
+    idempotency_key: str = ""
+
+
+# Gifting runs on SQLite automatically. On Supabase it needs the gift_sparks RPC (sql/games-schema.sql)
+# applied first, then GIFTING_ENABLED=true — until then the endpoint 503s and the UI hides the section.
+_GIFTING_SUPPORTED = config.DB_BACKEND != "supabase" or config.GIFTING_ENABLED
+
+
+@app.post("/tokens/gift")
+async def gift_sparks(body: GiftSparksRequest, req: Request):
+    """Send sparks to another player's wallet by their friend (referral) code (SPEC-GIFTING).
+    Atomic debit-then-credit; idempotent on the client-supplied idempotency_key so a retry is safe."""
+    if not _GIFTING_SUPPORTED:
+        raise HTTPException(status_code=503, detail="Gifting is not available yet.")
+    client_ip = _get_client_ip(req)
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait.")
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=400, detail="X-Device-Id header is required")
+    tokens.ensure_wallet(wallet_id)
+    result = db.gift_sparks(wallet_id, body.code, body.amount, body.idempotency_key)
+    status = result.get("status")
+    if status == "ok":
+        if not result.get("duplicate"):
+            analytics.capture_bg(wallet_id, "spark_sent",
+                                 {"amount": result.get("amount", 0)})
+            if result.get("recipient_id"):
+                analytics.capture_bg(result["recipient_id"], "spark_received",
+                                     {"amount": result.get("amount", 0)})
+        return {"sent": True, "amount": result.get("amount", 0),
+                "new_balance": result.get("new_balance", 0),
+                "duplicate": bool(result.get("duplicate"))}
+    _errmap = {
+        "invalid_amount": (400, f"Gift amount must be between {config.GIFT_MIN_AMOUNT} and {config.GIFT_MAX_AMOUNT} sparks."),
+        "invalid_code": (404, "That friend code isn't valid."),
+        "self_gift": (400, "You can't gift sparks to yourself."),
+        "insufficient": (402, "You don't have enough sparks for that gift."),
+        "recipient_full": (409, "That player's spark balance is already full."),
+        "daily_cap": (429, "You've hit today's gifting limit. Try again tomorrow."),
+    }
+    code_status, detail = _errmap.get(status, (400, "Could not send the gift."))
+    raise HTTPException(status_code=code_status, detail=detail)
+
+
 class ShareGameRequest(BaseModel):
     game_type: str = ""
     winner: str = ""
@@ -5909,6 +5957,7 @@ async def public_config():
     ff.setdefault("enable_image_generation", True)
     ff["ads_enabled"] = False  # no ad SDK yet (SPEC-ADS)
     ff["referral_enabled"] = _REFERRALS_SUPPORTED
+    ff["gifting_enabled"] = _GIFTING_SUPPORTED
     cfg["feature_flags"] = ff
     cfg.setdefault("enabled_game_types", None)
     return cfg

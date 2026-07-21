@@ -548,6 +548,36 @@ def redeem_referral(referee_id: str, code: str) -> dict:
     return result
 
 
+def gift_sparks(sender_id: str, recipient_code: str, amount: int, idempotency_key: str = "") -> dict:
+    """Supabase wrapper for spark gifting (SPEC-GIFTING) — mirrors db.gift_sparks. The RPC does the
+    whole atomic debit-then-credit + guards behind one server-side transaction. Uses the flat token
+    cap: a recipient who couldn't hold the full gift is rejected (recipient_full), never truncated —
+    so no sparks are destroyed. Normalizes the RPC's `balance` → `new_balance`."""
+    if not isinstance(amount, int) or not (config.GIFT_MIN_AMOUNT <= amount <= config.GIFT_MAX_AMOUNT):
+        return {"status": "invalid_amount"}
+    code = (recipient_code or "").strip().upper()
+    if not code:
+        return {"status": "invalid_code"}
+    key = (idempotency_key or "").strip()[:64]
+    result = _sb().rpc("gift_sparks", {
+        "p_sender_id": sender_id,
+        "p_code": code,
+        "p_amount": amount,
+        "p_key": key,
+        "p_min_amount": config.GIFT_MIN_AMOUNT,
+        "p_max_amount": config.GIFT_MAX_AMOUNT,
+        "p_max_per_day": config.MAX_GIFTS_PER_DAY,
+        "p_max_tokens_per_day": config.MAX_GIFT_TOKENS_PER_DAY,
+        "p_max_balance": config.MAX_TOKEN_BALANCE,
+        "p_since": _utc_midnight_epoch(),
+    })
+    if not isinstance(result, dict):
+        return {"status": "invalid_code"}
+    if "balance" in result and "new_balance" not in result:
+        result["new_balance"] = result["balance"]
+    return result
+
+
 def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:
     if amount <= 0:
         raise ValueError(f"credit_purchase amount must be positive, got {amount}")

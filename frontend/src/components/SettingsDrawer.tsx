@@ -6,6 +6,7 @@ import { useTokenBalance } from '../hooks/useTokenBalance';
 import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import TokenBadge from './TokenBadge';
 import ReferralSection from './ReferralSection';
+import GiftSection from './GiftSection';
 import DeleteAccountDialog from './DeleteAccountDialog';
 
 declare global {
@@ -374,6 +375,9 @@ export default function SettingsDrawer() {
 
                 {/* Referral / invite rewards (SPEC-REFERRAL) */}
                 {remoteConfig.feature_flags.referral_enabled === true && <ReferralSection />}
+
+                {/* Spark gifting (SPEC-GIFTING) */}
+                {remoteConfig.feature_flags.gifting_enabled === true && <GiftSection />}
 
                 {/* Home button */}
                 <div
