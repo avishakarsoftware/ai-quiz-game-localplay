@@ -1,6 +1,6 @@
 # SPEC-ANALYTICS — Product analytics (PostHog)
 
-Status: **Frontend already built; this spec adds backend capture + identify wiring + build-script baking** (2026-07-07)
+Status: **Implemented (frontend + backend capture/identify + build-script key baking) — inert until PostHog keys are set.** `POSTHOG_API_KEY` (backend) / `VITE_POSTHOG_KEY` (build) are unset on all environments, so capture no-ops. See DEPLOY.md's env-status ledger. (reviewed 2026-07-21)
 Owner: Avi
 Related: `SPEC-IAP.md` (purchase events), `SPEC-REFERRAL.md`, `SPEC-ADS.md`, `frontend/src/utils/analytics.ts`
 

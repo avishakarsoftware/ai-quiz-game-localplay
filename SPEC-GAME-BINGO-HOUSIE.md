@@ -1,5 +1,8 @@
 # LocalPlay Bingo / Housie Game Spec
 
+Status: **Implemented** — the Bingo-family engine with Housie (`backend/housie_engine.py`) as the first full
+ruleset and custom Bingo (`backend/bingo_engine.py`) on top. Reviewed 2026-07-21.
+
 ## Overview
 
 Add a reusable **Bingo-family engine** to LocalPlay, with **Housie** as the first full game and configurable Bingo as the first generic Bingo ruleset.

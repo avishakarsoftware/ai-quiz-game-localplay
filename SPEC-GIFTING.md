@@ -1,8 +1,9 @@
 # SPEC-GIFTING — Spark gifting (wallet → wallet)
 
-Status: **Implemented, feature-gated for Supabase rollout** (2026-07-21)
+Status: **Built on master 2026-07-21, gated OFF — NOT yet deployed / not activated on Supabase** (works on
+SQLite locally). Activation runbook in §5; live status tracked in DEPLOY.md's env-status ledger.
 Owner: Avi
-Related: `SPEC-REFERRAL.md` (shared code/idempotency pattern), `SPEC.md` (spark economy), `SPEC-ANALYTICS.md`
+Related: `SPEC-REFERRAL.md` (shared friend-code/idempotency pattern), `SPEC.md` (spark economy), `SPEC-ANALYTICS.md`
 
 ---
 

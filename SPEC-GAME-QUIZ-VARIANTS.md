@@ -1,5 +1,8 @@
 # LocalPlay Quiz Variant Games Spec
 
+Status: **Implemented** — the quiz-variant modes reuse the proven quiz runtime (covered by
+`backend/tests/test_quiz_modes.py`). Reviewed 2026-07-21.
+
 ## Purpose
 
 Add five polished party-friendly games that reuse LocalPlay's proven quiz runtime:

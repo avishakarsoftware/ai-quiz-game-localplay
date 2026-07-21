@@ -1,6 +1,7 @@
 # SPEC-ACHIEVEMENTS — Achievements / badges
 
-Status: **Implemented (v1: economy events), feature-gated for Supabase rollout** (2026-07-21)
+Status: **Built on master 2026-07-21 (v1: economy events), gated OFF — NOT yet deployed / not activated on
+Supabase** (works on SQLite locally). Activation runbook in §4; live status tracked in DEPLOY.md's ledger.
 Owner: Avi
 Related: `SPEC-REFERRAL.md`, `SPEC-GIFTING.md` (award trigger sites), `SPEC-ANALYTICS.md`
 

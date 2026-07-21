@@ -1,6 +1,6 @@
 # SPEC-ACCOUNT-DELETION — In-app account deletion
 
-Status: **Draft — not implemented** (2026-07-18)
+Status: **Implemented — live + verified on gamma + prod** (deleted-account denylist + `delete_account` RPC + `DELETE /account`; account-deletion UI shipped to all three web surfaces 2026-07-19). See DEPLOY.md's env-status ledger. (reviewed 2026-07-21)
 Owner: Avi
 Related: `SPEC-IAP.md` (wallets, purchases), `LAUNCH-CHECKLIST.md` (submission blocker),
 `frontend/public/privacy.html` (§5 rights), `marketing/store-privacy-declarations.md`

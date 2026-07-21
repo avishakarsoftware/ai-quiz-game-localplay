@@ -1,5 +1,8 @@
 # LocalPlay Image Game Platform Spec
 
+Status: **Phase 0 media layer implemented** — in-memory assets + IONOS upload signing; image-centric game
+modes (e.g. Photo Clue) build on it incrementally. Reviewed 2026-07-21.
+
 ## Purpose
 
 Build image support as a reusable LocalPlay platform capability, then use it to unlock multiple image-centric game modes.

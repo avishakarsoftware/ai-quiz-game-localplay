@@ -1,5 +1,8 @@
 # LocalPlay Supabase Migration Spec
 
+Status: **Implemented — Supabase is live on gamma + prod** (the persistence backend for both; SQLite remains
+local-dev + rollback only). Reviewed 2026-07-21; see DEPLOY.md's env-status ledger for details.
+
 ## Goal
 
 Move LocalPlay's persistent server data from VM-local SQLite to the shared Supabase Postgres project already used by VibePix.

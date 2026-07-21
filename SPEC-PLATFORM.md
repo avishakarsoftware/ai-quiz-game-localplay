@@ -1,5 +1,8 @@
 # LocalPlay Platform Spec
 
+Status: **Forward-looking vision, partially implemented** (reviewed 2026-07-21). For what's actually built
+see `SPEC.md`; for per-environment live status see DEPLOY.md's ledger.
+
 This document describes the intended platform direction for LocalPlay. It is forward-looking. For the current implemented system, see `SPEC.md`. For the detailed LocalPlay-side Revelry bridge contract, see `SPEC-REVELRY-INTEGRATION.md`.
 
 ## Vision

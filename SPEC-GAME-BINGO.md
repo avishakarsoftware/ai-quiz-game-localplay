@@ -1,5 +1,8 @@
 # LocalPlay Custom Bingo Game Spec
 
+Status: **Implemented** — Custom Bingo on the shared Bingo-family engine (`backend/bingo_engine.py`;
+`BINGO_ENABLED` defaults true). Reviewed 2026-07-21.
+
 ## Overview
 
 Add **Bingo** as a standalone LocalPlay game card built on the existing Bingo-family engine.

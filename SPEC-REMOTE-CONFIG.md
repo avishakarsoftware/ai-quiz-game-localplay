@@ -1,6 +1,8 @@
 # SPEC-REMOTE-CONFIG — Server-driven config & feature flags
 
-Status: **Frontend already built; this spec adds a backend endpoint + schema extension** (2026-07-07)
+Status: **Implemented** — the frontend hook + the backend-effective `GET /config/public` endpoint (economy +
+feature flags: `referral_enabled`, `gifting_enabled`, `achievements_enabled`, `ads_enabled`, catalog gating)
+are live. Admin write endpoint remains a follow-up. (reviewed 2026-07-21)
 Owner: Avi
 Related: `frontend/src/hooks/useRemoteConfig.ts`, `frontend/src/types/remoteConfig.ts`, `frontend/public/config.json`, `backend/config.py` (`REMOTE_CONFIG_URL`)
 

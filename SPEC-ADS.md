@@ -1,6 +1,6 @@
 # SPEC-ADS — Ad-Supported Sparks (rewarded video → free Sparks)
 
-Status: **Proposed — not started** (2026-07-06)
+Status: **Not built** (rewarded-AdMob SSV design below is unimplemented — no ad SDK). **Farm hole closed 2026-07-21:** the legacy trust-the-client `/tokens/ad-reward` stub is now gated behind `ADS_ENABLED` (default false → 403), built on master but not yet deployed. See DEPLOY.md's env-status ledger.
 Owner: Avi
 Related: `SPEC-IAP.md` (paid Sparks / RevenueCat), `SPEC.md` (spark economy), `DEPLOY.md` (build contexts, env per environment), VibePix (no ads — this is net-new for the platform)
 
@@ -8,10 +8,10 @@ Related: `SPEC-IAP.md` (paid Sparks / RevenueCat), `SPEC.md` (spark economy), `D
 
 ## 0. Status (as-built)
 
-- **Backend endpoint exists but is insecure/unused:** `POST /tokens/ad-reward` ([main.py:6221](backend/main.py:6221)) is a **"trust the client"** stub — any caller with a `X-Device-Id` gets `AD_REWARD_TOKENS` sparks, bounded only by an IP rate limit and a per-wallet daily cap (`db.check_and_grant_ad_reward`, [db.py:986](backend/db.py:986)). There is **no ad**, **no SDK**, and **no proof an ad was watched**. It is farmable free sparks (rotate device ids on web; replay on native).
-- **No frontend:** there is no "watch ad" button. The misleading *"watch an ad to earn free sparks"* copy was removed from the four Not-Enough-Sparks modals on 2026-07-06 (commit `ce612fb8`).
+- **Backend endpoint exists but is a trust-the-client stub — now LOCKED:** `POST /tokens/ad-reward` was a stub that granted `AD_REWARD_TOKENS` sparks to any caller with a `X-Device-Id` (bounded only by an IP rate limit + a per-wallet daily cap, `db.check_and_grant_ad_reward`). No ad, no SDK, no proof an ad was watched → farmable free sparks. **As of 2026-07-21 (commit `672b7fb0`) it is gated behind `config.ADS_ENABLED` (default false) and returns 403** until server-side verification replaces the stub, closing the farm hole. The reward-logic path underneath is unchanged and only reachable when `ADS_ENABLED` is explicitly set.
+- **No frontend:** there is no "watch ad" button (nothing calls the endpoint). The misleading *"watch an ad to earn free sparks"* copy was removed from the four Not-Enough-Sparks modals on 2026-07-06 (commit `ce612fb8`).
 - **DB:** `wallets.ads_watched_today` / `ads_watched_date` columns exist and reset per UTC day. `check_and_grant_ad_reward` writes an `ad_reward` transaction with `reference_id = NULL` (no idempotency key yet).
-- **Config:** `AD_REWARD_TOKENS = 5`, `MAX_ADS_PER_DAY = 5` ([config.py:143](backend/config.py:143)). No AdMob ids anywhere.
+- **Config:** `AD_REWARD_TOKENS = 5`, `MAX_ADS_PER_DAY = 5`, and `ADS_ENABLED = false` (the kill switch above; `backend/config.py`). No AdMob ids anywhere.
 - **Supabase parity:** `supabase_db.check_and_grant_ad_reward` → `grant_ad_reward` RPC ([supabase_db.py:482](backend/supabase_db.py:482)); same NULL-reference shape.
 
 **Net:** the economy plumbing (cap, counter, transaction ledger) is in place; the **ad itself and the fraud-proof fulfillment are missing.** This spec adds a real rewarded-ad integration and flips fulfillment from client-triggered to **server-verified**.

@@ -1,5 +1,8 @@
 # LocalPlay Velvet Theme Redesign Spec
 
+Status: **Implemented — the Velvet theme is live** (tokens in `frontend/src/index.css`; reworked TV host
+surface shipped). Reviewed 2026-07-21.
+
 ## Overview
 
 Replace the current "game show purple" aesthetic with **Velvet** — a late-night lounge theme with midnight purple, neon magenta, electric mint, and warm cream text. This is primarily a frontend change. Backend APIs and WebSocket message contracts should stay unchanged; a small frontend-only `INTRO` presentation state is allowed.

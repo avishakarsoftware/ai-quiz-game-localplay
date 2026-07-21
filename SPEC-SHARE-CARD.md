@@ -1,6 +1,8 @@
 # SPEC-SHARE-CARD — Shareable result cards
 
-Status: **Implemented** — v1 OG text + static image live; snapshots persisted to DB (2026-07-21)
+Status: **Implemented** — v1 dynamic OG text + static image + Share button are live. **DB persistence for
+snapshots is built on master 2026-07-21 but NOT yet deployed** (the `share_snapshots` table isn't applied on
+Supabase yet; `share.py` degrades to in-memory until it is). See DEPLOY.md's env-status ledger.
 Owner: Avi
 Related: `SPEC-ANALYTICS.md`, `SPEC-REFERRAL.md` (share plumbing), `backend/main.py` (SPA serving, `PUBLIC_BASE_URL`)
 

@@ -1,5 +1,8 @@
 # LocalPlay System Spec
 
+Status: **Living baseline — describes the system as currently implemented** (reviewed 2026-07-21). For
+per-environment live status see DEPLOY.md's ledger; for the forward-looking vision see `SPEC-PLATFORM.md`.
+
 This document describes the system as it exists now. It is intended as a baseline for planning new games and platform upgrades.
 
 For the forward-looking LocalPlay platform vision, including the future Revelry integration boundary, see `SPEC-PLATFORM.md`.

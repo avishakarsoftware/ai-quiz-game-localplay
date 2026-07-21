@@ -1,8 +1,9 @@
 # SPEC-REFERRAL — Invite / referral rewards
 
-Status: **Implemented, feature-gated for Supabase rollout** (2026-07-08)
+Status: **Live on gamma + prod** (activated 2026-07-21; works on SQLite locally without the flag).
+See DEPLOY.md's env-status ledger for authoritative live status.
 Owner: Avi
-Related: `SPEC.md` (spark economy), `backend/db.py` (idempotency pattern), `SPEC-ANALYTICS.md`
+Related: `SPEC.md` (spark economy), `SPEC-GIFTING.md` (shares the friend-code + idempotency pattern), `backend/db.py`, `SPEC-ANALYTICS.md`
 
 ---
 
@@ -57,9 +58,10 @@ Resolve wallet (`tokens.get_wallet_id`; require device id / session). Lazily cre
 - `SettingsDrawer`: "Invite friends — you both get N sparks" → shows the code + a **Share** button
   (reuse the `@capacitor/share` / `navigator.share` pattern already in `LobbyScreen`) and a **Redeem a code**
   input.
-- The referral UI is hidden unless remote config says `feature_flags.referral_enabled === true`. Static/default
-  config stays `false`; Supabase deployments should expose it only after the referral SQL/RPCs are applied and
-  `REFERRALS_ENABLED=true` is set on the backend.
+- The referral UI is hidden unless remote config says `feature_flags.referral_enabled === true` (backend derives
+  this from `_REFERRALS_SUPPORTED` on `/config/public`). Static/default config stays `false`; Supabase deployments
+  expose it only after the referral SQL/RPCs are applied and `REFERRALS_ENABLED=true` is set. **Both were done on
+  gamma + prod 2026-07-21, so referrals are live in all environments.**
 - On app open, if URL has `?ref=CODE` and this wallet hasn't redeemed, prompt/auto-fill the redeem field
   (don't auto-submit — show the user what they're claiming).
 - On redeem success, toast "+N sparks", refresh balance, fire `referral_redeemed`.

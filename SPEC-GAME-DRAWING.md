@@ -1,5 +1,8 @@
 # LocalPlay DrawingGame Spec
 
+Status: **Implemented** — DrawingGame is live (`backend/drawing_engine.py`, `DrawingCanvas` frontend).
+Reviewed 2026-07-21.
+
 ## Overview
 
 Add a drawing-and-guessing game to LocalPlay under the product-neutral name **DrawingGame**.
