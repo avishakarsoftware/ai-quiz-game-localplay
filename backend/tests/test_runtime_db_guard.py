@@ -40,6 +40,13 @@ def test_sqlite_in_named_deploy_environment_is_rejected(monkeypatch):
         config.validate_runtime_db_config()
 
 
+def test_sqlite_in_prod_alias_environment_is_rejected(monkeypatch):
+    # Other LocalPlay policy code treats "prod" as production; the DB guard must too.
+    _set(monkeypatch, backend="sqlite", env="prod")
+    with pytest.raises(config.RuntimeConfigError):
+        config.validate_runtime_db_config()
+
+
 def test_supabase_without_credentials_is_rejected(monkeypatch):
     _set(monkeypatch, backend="supabase", url="", key="", env="gamma")
     with pytest.raises(config.RuntimeConfigError, match="SUPABASE_URL"):

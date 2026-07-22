@@ -1449,7 +1449,7 @@ guards now prevent that:
 - **Deploy-time:** `scripts/deploy-gcp.sh` refuses to deploy gamma/prod when the remote `.env` has
   `DB_BACKEND=sqlite`. Override for a deliberate rollback with `ALLOW_SQLITE_DEPLOY=true ./scripts/deploy-gcp.sh …`.
 - **Runtime:** `config.validate_runtime_db_config()` runs at app startup and crashes the container with a
-  clear message if it looks like a deployed environment (Supabase creds present, or `ENVIRONMENT` = gamma/prod)
+  clear message if it looks like a deployed environment (Supabase creds present, or `ENVIRONMENT` = gamma/prod/production)
   but `DB_BACKEND != supabase` — or if `DB_BACKEND=supabase` without both Supabase vars.
 
 Rolling back to SQLite (only meaningful in the now-closed initial rollout window; a fresh SQLite file starts

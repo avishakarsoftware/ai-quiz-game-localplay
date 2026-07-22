@@ -309,7 +309,7 @@ class RuntimeConfigError(RuntimeError):
 # note that if DB_BACKEND is misconfigured to sqlite AND LOCALPLAY_ENV/APP_ENV is unset, ENVIRONMENT
 # degrades to "local" — which is exactly why the guard below leans primarily on the Supabase-creds
 # signal, not on ENVIRONMENT alone.
-_DEPLOYED_ENVIRONMENTS = ("gamma", "production")
+_DEPLOYED_ENVIRONMENTS = ("gamma", "prod", "production")
 
 
 def validate_runtime_db_config() -> None:
