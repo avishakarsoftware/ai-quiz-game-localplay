@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import httpx
 from fastapi.testclient import TestClient
 from main import app
+import config
 from quiz_engine import AIQuotaExceeded, DailyLimitExceeded, QuizEngine, PROVIDERS
 from mlt_engine import MLTEngine, PROVIDERS as MLT_PROVIDERS
 
@@ -171,6 +172,14 @@ class TestQuotaEndpoints:
 class TestQuotaInEngine:
     """Test that the engine handles AIQuotaExceeded correctly."""
 
+    @pytest.fixture(autouse=True)
+    def _gemini_key(self, monkeypatch):
+        # The direct `_generate_gemini` tests exercise the Gemini HTTP path via a mocked httpx
+        # client, so the engine must get past its "is the key configured?" guard. CI sets no
+        # GEMINI_API_KEY (these passed locally only because of the .env key, failed in CI). A dummy
+        # value is enough — the real network client is mocked.
+        monkeypatch.setattr(config, "GEMINI_API_KEY", "test-gemini-key")
+
     async def test_daily_count_rolls_back_on_quota_exceeded(self):
         engine = QuizEngine()
         initial_count = engine._daily_count
@@ -220,6 +229,11 @@ class TestQuotaInEngine:
 @pytest.mark.asyncio(loop_scope="function")
 class TestMLTQuotaInEngine:
     """Test that the MLT engine handles AIQuotaExceeded correctly."""
+
+    @pytest.fixture(autouse=True)
+    def _gemini_key(self, monkeypatch):
+        # Same as TestQuotaInEngine: the mocked-httpx MLT tests need to pass the key-configured guard.
+        monkeypatch.setattr(config, "GEMINI_API_KEY", "test-gemini-key")
 
     async def test_mlt_daily_count_rolls_back_on_quota_exceeded(self):
         engine = MLTEngine()
