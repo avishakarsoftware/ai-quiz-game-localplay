@@ -556,8 +556,10 @@ def gift_sparks(sender_id: str, recipient_code: str, amount: int, idempotency_ke
     if not isinstance(amount, int) or not (config.GIFT_MIN_AMOUNT <= amount <= config.GIFT_MAX_AMOUNT):
         return {"status": "invalid_amount"}
     code = (recipient_code or "").strip().upper()
-    if not code:
-        return {"status": "invalid_code"}
+    # NOTE: do not short-circuit an empty code here — defer to the RPC. On a keyed retry the RPC
+    # replays the original gift *before* the recipient/empty-code check, so an empty (or changed)
+    # retry body must not turn into an early invalid_code. This keeps the Supabase path identical to
+    # the SQLite db.gift_sparks path, which does the same. (An empty code with no prior still → invalid_code.)
     key = (idempotency_key or "").strip()[:64]
     result = _sb().rpc("gift_sparks", {
         "p_sender_id": sender_id,

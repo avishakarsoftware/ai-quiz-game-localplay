@@ -141,6 +141,31 @@ def test_idempotency_replay_ignores_changed_recipient_code():
     assert db.get_wallet_balance("gift-r8c-other") == 0
 
 
+def test_idempotency_replay_ignores_emptied_recipient_code():
+    """SQLite↔Postgres parity: a same-key retry whose code is now empty must replay the original gift,
+    NOT return invalid_code. The `gift_sparks` RPC checks the replay before the recipient/empty-code
+    guard; db.gift_sparks must do the same, or the two backends disagree on this input."""
+    _fresh("gift-s8d", balance=100)
+    _fresh("gift-r8d")
+    code = db.get_or_create_referral_code("gift-r8d")
+    first = db.gift_sparks("gift-s8d", code, 20, idempotency_key="same-key-empty")
+    second = db.gift_sparks("gift-s8d", "   ", 20, idempotency_key="same-key-empty")
+    assert first["status"] == "ok"
+    assert second["status"] == "ok"
+    assert second["duplicate"] is True
+    assert second["recipient_id"] == "gift-r8d"
+    assert db.get_wallet_balance("gift-s8d") == 80          # debited once
+    assert db.get_wallet_balance("gift-r8d") == 20
+
+
+def test_empty_code_without_prior_is_invalid():
+    """The other side of the parity coin: an empty code with no prior gift is still invalid_code."""
+    _fresh("gift-s8e", balance=100)
+    assert db.gift_sparks("gift-s8e", "   ", 20, idempotency_key="no-prior")["status"] == "invalid_code"
+    assert db.gift_sparks("gift-s8e", "", 20, idempotency_key="")["status"] == "invalid_code"
+    assert db.get_wallet_balance("gift-s8e") == 100
+
+
 def test_daily_count_cap_enforced(monkeypatch):
     monkeypatch.setattr(config, "MAX_GIFTS_PER_DAY", 2)
     monkeypatch.setattr(config, "MAX_GIFT_TOKENS_PER_DAY", 10000)        # keep the token cap out of the way
@@ -199,6 +224,26 @@ def test_supabase_gift_validates_amount_before_rpc(monkeypatch):
     monkeypatch.setattr(supabase_db, "_sb", lambda: _boom())
     assert supabase_db.gift_sparks("s", "ABC123", 0)["status"] == "invalid_amount"
     assert supabase_db.gift_sparks("s", "ABC123", config.GIFT_MAX_AMOUNT + 1)["status"] == "invalid_amount"
+
+
+def test_supabase_gift_defers_empty_code_to_rpc(monkeypatch):
+    """Parity: the wrapper must NOT short-circuit an empty code — the RPC replays a prior gift before
+    its recipient/empty-code check, so the wrapper has to call it (an empty p_code reaches the RPC)."""
+    import supabase_db
+
+    seen = {}
+
+    class _FakeSb:
+        def rpc(self, name, params):
+            seen["called"] = True
+            seen["p_code"] = params["p_code"]
+            return {"status": "ok", "duplicate": True, "amount": 20, "balance": 80, "recipient_id": "r"}
+
+    monkeypatch.setattr(supabase_db, "_sb", lambda: _FakeSb())
+    out = supabase_db.gift_sparks("sender", "   ", 20, idempotency_key="k")
+    assert seen.get("called") is True      # RPC was called, not short-circuited
+    assert seen["p_code"] == ""            # empty code passed through for the RPC to decide
+    assert out["status"] == "ok" and out["duplicate"] is True
 
 
 # --- HTTP endpoint (/tokens/gift) ---

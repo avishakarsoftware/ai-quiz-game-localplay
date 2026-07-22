@@ -1328,8 +1328,6 @@ def gift_sparks(sender_id: str, recipient_code: str, amount: int, idempotency_ke
     if not isinstance(amount, int) or not (config.GIFT_MIN_AMOUNT <= amount <= config.GIFT_MAX_AMOUNT):
         return {"status": "invalid_amount"}
     code = (recipient_code or "").strip().upper()
-    if not code:
-        return {"status": "invalid_code"}
     key = (idempotency_key or "").strip()[:64]
     conn = _get_conn()
     now = int(time.time())
@@ -1337,8 +1335,10 @@ def gift_sparks(sender_id: str, recipient_code: str, amount: int, idempotency_ke
     reference_id = f"gift:{sender_id}:{key}" if key else ""
     conn.execute("BEGIN IMMEDIATE")
     try:
-        # Idempotency: a prior keyed send with the same reference replays its original result, no movement.
-        # Check this before recipient lookup so retries remain stable even if the client/body changes.
+        # Idempotency: a prior keyed send with the same reference replays its original result, no
+        # movement. Checked before the recipient/empty-code validation so a changed (or now-empty)
+        # retry body can't fail or misreport the original gift. This ordering mirrors the Postgres
+        # gift_sparks RPC exactly — both backends must give identical answers on a replay.
         if reference_id:
             prior = conn.execute(
                 "SELECT sent.amount, sent.balance_after, recv.wallet_id AS recipient_id "
@@ -1356,6 +1356,9 @@ def gift_sparks(sender_id: str, recipient_code: str, amount: int, idempotency_ke
                         "original_amount": original_amount,
                         "new_balance": prior["balance_after"], "recipient_id": prior["recipient_id"]}
 
+        if not code:
+            conn.execute("ROLLBACK")
+            return {"status": "invalid_code"}
         recipient = conn.execute(
             "SELECT id, balance FROM wallets WHERE referral_code = ?", (code,)
         ).fetchone()
