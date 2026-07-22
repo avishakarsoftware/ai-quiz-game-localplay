@@ -174,6 +174,10 @@ def _check_payment_config():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting LocalPlay backend")
+    # Fail fast BEFORE touching the DB: a deployed container accidentally on SQLite loses all data on
+    # the next rebuild. Raises RuntimeConfigError (→ startup crash) on that misconfig. No-op for local
+    # dev / tests, which set no Supabase vars. See config.validate_runtime_db_config.
+    config.validate_runtime_db_config()
     _check_secret_strength()
     _check_payment_config()
     db.init_db()

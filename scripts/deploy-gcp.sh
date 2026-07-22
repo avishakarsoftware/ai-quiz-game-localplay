@@ -117,6 +117,9 @@ validate_remote_db_config() {
     if [[ "$ENVIRONMENT" == "gamma" ]]; then
         expected_prefix="games_gamma_"
     fi
+    # Deployed targets must run on Supabase — SQLite in a container is ephemeral (data lost on every
+    # rebuild). The old rollout-window rollback path stays reachable via ALLOW_SQLITE_DEPLOY=true.
+    local allow_sqlite="${ALLOW_SQLITE_DEPLOY:-false}"
     ssh_cmd "
         set -e
         env_file='$REMOTE_ENV_FILE'
@@ -145,7 +148,13 @@ validate_remote_db_config() {
                 echo 'DB_BACKEND=supabase requires SUPABASE_SERVICE_KEY in $REMOTE_ENV_FILE' >&2
                 exit 1
             fi
-        elif [ \"\$db_backend\" != 'sqlite' ]; then
+        elif [ \"\$db_backend\" = 'sqlite' ]; then
+            if [ '$allow_sqlite' != 'true' ]; then
+                echo 'Refusing to deploy $ENVIRONMENT on DB_BACKEND=sqlite: SQLite in a deployed container is ephemeral (all wallet/purchase data is destroyed on the next rebuild). Set DB_BACKEND=supabase in '\"\$env_file\"', or re-run with ALLOW_SQLITE_DEPLOY=true for a deliberate rollback.' >&2
+                exit 1
+            fi
+            echo 'WARNING: deploying $ENVIRONMENT on SQLite (ALLOW_SQLITE_DEPLOY=true override). Data will NOT persist across container rebuilds.' >&2
+        else
             echo 'Unsupported DB_BACKEND in $REMOTE_ENV_FILE: '\"\$db_backend\" >&2
             exit 1
         fi

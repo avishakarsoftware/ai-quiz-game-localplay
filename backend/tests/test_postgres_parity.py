@@ -32,6 +32,11 @@ DAILY_BONUS = 10   # STREAK_BASE
 STREAK_STEP = 5    # c_step constant inside games_grant_daily_bonus
 STREAK_MAX = 30    # c_max constant inside games_grant_daily_bonus
 MAX_BALANCE = 1000
+# Gifting (SPEC-GIFTING) — mirrors config.py defaults.
+GIFT_MIN = 1
+GIFT_MAX = 100
+GIFTS_PER_DAY = 20
+GIFT_TOKENS_PER_DAY = 200
 
 
 @pytest.fixture(scope="module")
@@ -268,3 +273,176 @@ def test_denylist_records_the_deletion(conn):
     with conn.cursor() as cur:
         cur.execute("SELECT 1 FROM games_deleted_accounts WHERE user_id = %s", (user_id,))
         assert cur.fetchone() is not None
+
+
+# ---------------------------------------------------------------------------
+# Spark gifting (SPEC-GIFTING)
+# ---------------------------------------------------------------------------
+# The gift_sparks RPC is the most complex economy RPC and it already drifted once from the SQLite
+# path (the idempotency replay reported the retry body instead of the original gift). These lock the
+# RPC to the same behaviour test_gifting.py asserts on SQLite — especially the replay edge cases.
+
+def _credit(conn, wallet_id: str, amount: int) -> None:
+    _rpc(conn, "games_credit_tokens", wallet_id, amount, "test_seed", None, "", MAX_BALANCE)
+
+
+def _gift(conn, sender: str, code: str, amount: int, key: str):
+    # p_since=0 → every gift counts toward "today" so the per-day caps are exercisable.
+    return _rpc(conn, "games_gift_sparks", sender, code, amount, key,
+                GIFT_MIN, GIFT_MAX, GIFTS_PER_DAY, GIFT_TOKENS_PER_DAY, MAX_BALANCE, 0)
+
+
+def _recipient_with_code(conn) -> tuple[str, str]:
+    recipient = _wallet(conn, signup_bonus=False)
+    code = "GIFT" + uuid.uuid4().hex[:2].upper()
+    _rpc(conn, "games_set_referral_code", recipient, code)
+    return recipient, code
+
+
+def test_gift_happy_path_moves_sparks(conn):
+    sender = _wallet(conn, signup_bonus=False)
+    _credit(conn, sender, 100)
+    recipient, code = _recipient_with_code(conn)
+    r = _gift(conn, sender, code, 30, "k1")
+    assert r["status"] == "ok" and r["amount"] == 30
+    assert r["new_balance"] == 70 and r["recipient_id"] == recipient
+    assert _balance(conn, sender) == 70
+    assert _balance(conn, recipient) == 30
+
+
+def test_gift_replay_reports_original_amount_on_changed_body(conn):
+    sender = _wallet(conn, signup_bonus=False)
+    _credit(conn, sender, 100)
+    _recipient, code = _recipient_with_code(conn)
+    first = _gift(conn, sender, code, 20, "same")
+    second = _gift(conn, sender, code, 80, "same")  # changed amount, same key
+    assert first["status"] == "ok"
+    assert second["status"] == "ok" and second["duplicate"] is True
+    assert second["amount"] == 20 and second["original_amount"] == 20
+    assert second["new_balance"] == 80
+    assert _balance(conn, sender) == 80  # moved once
+
+
+def test_gift_replay_ignores_emptied_recipient_code(conn):
+    """The exact SQLite↔Postgres divergence that was fixed: a same-key retry whose code is now empty
+    must replay the original gift, not return invalid_code. The replay is checked before the
+    recipient/empty-code guard in both backends."""
+    sender = _wallet(conn, signup_bonus=False)
+    _credit(conn, sender, 100)
+    recipient, code = _recipient_with_code(conn)
+    first = _gift(conn, sender, code, 20, "empty-replay")
+    second = _gift(conn, sender, "", 20, "empty-replay")
+    assert first["status"] == "ok"
+    assert second["status"] == "ok" and second["duplicate"] is True
+    assert second["recipient_id"] == recipient
+    assert _balance(conn, sender) == 80
+
+
+def test_gift_empty_code_without_prior_is_invalid(conn):
+    sender = _wallet(conn, signup_bonus=False)
+    _credit(conn, sender, 100)
+    assert _gift(conn, sender, "", 20, "no-prior")["status"] == "invalid_code"
+    assert _balance(conn, sender) == 100
+
+
+def test_gift_self_gift_blocked(conn):
+    sender = _wallet(conn, signup_bonus=False)
+    _credit(conn, sender, 100)
+    code = "SELF" + uuid.uuid4().hex[:2].upper()
+    _rpc(conn, "games_set_referral_code", sender, code)
+    assert _gift(conn, sender, code, 10, "k")["status"] == "self_gift"
+    assert _balance(conn, sender) == 100
+
+
+def test_gift_insufficient_balance(conn):
+    sender = _wallet(conn, signup_bonus=False)
+    _credit(conn, sender, 5)
+    _recipient, code = _recipient_with_code(conn)
+    r = _gift(conn, sender, code, 10, "k")
+    assert r["status"] == "insufficient"
+    assert _balance(conn, sender) == 5
+
+
+def test_gift_recipient_at_cap_conserves_sparks(conn):
+    sender = _wallet(conn, signup_bonus=False)
+    _credit(conn, sender, 100)
+    recipient, code = _recipient_with_code(conn)
+    _credit(conn, recipient, MAX_BALANCE)  # fill to cap
+    r = _gift(conn, sender, code, 10, "k")
+    assert r["status"] == "recipient_full"
+    assert _balance(conn, sender) == 100                # not debited
+    assert _balance(conn, recipient) == MAX_BALANCE
+
+
+def test_gift_invalid_amounts(conn):
+    sender = _wallet(conn, signup_bonus=False)
+    _credit(conn, sender, 100)
+    _recipient, code = _recipient_with_code(conn)
+    assert _gift(conn, sender, code, 0, "a")["status"] == "invalid_amount"
+    assert _gift(conn, sender, code, GIFT_MAX + 1, "b")["status"] == "invalid_amount"
+    assert _balance(conn, sender) == 100
+
+
+def test_gift_daily_token_cap(conn):
+    sender = _wallet(conn, signup_bonus=False)
+    _credit(conn, sender, MAX_BALANCE)
+    _r1, c1 = _recipient_with_code(conn)
+    _r2, c2 = _recipient_with_code(conn)
+    # GIFT_TOKENS_PER_DAY = 200; send 100 + 100 then a third must exceed the daily total.
+    assert _gift(conn, sender, c1, 100, "t1")["status"] == "ok"
+    assert _gift(conn, sender, c2, 100, "t2")["status"] == "ok"
+    assert _gift(conn, sender, c1, 1, "t3")["status"] == "daily_cap"
+
+
+# ---------------------------------------------------------------------------
+# Achievements (SPEC-ACHIEVEMENTS)
+# ---------------------------------------------------------------------------
+
+def test_award_achievement_is_idempotent(conn):
+    wallet = _wallet(conn, signup_bonus=False)
+    r1 = _rpc(conn, "games_award_achievement", wallet, "first_gift")
+    assert r1["awarded"] is True                 # first award
+    r2 = _rpc(conn, "games_award_achievement", wallet, "first_gift")
+    assert r2["awarded"] is False                # already held
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM games_achievements WHERE wallet_id = %s AND badge_id = 'first_gift'",
+            (wallet,),
+        )
+        assert cur.fetchone()[0] == 1
+
+
+def test_award_achievement_multiple_badges_coexist(conn):
+    wallet = _wallet(conn, signup_bonus=False)
+    for badge in ("welcome", "first_referral", "first_gift"):
+        assert _rpc(conn, "games_award_achievement", wallet, badge)["awarded"] is True
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM games_achievements WHERE wallet_id = %s", (wallet,))
+        assert cur.fetchone()[0] == 3
+
+
+# ---------------------------------------------------------------------------
+# Share-card snapshots (SPEC-SHARE-CARD) — no RPC; the app upserts/selects directly.
+# ---------------------------------------------------------------------------
+
+def test_share_snapshots_table_roundtrips(conn):
+    assert _regclass(conn, "public.games_share_snapshots") is not None
+    token = f"tok_{uuid.uuid4().hex[:8]}"
+    with conn.cursor() as cur:
+        # Mirrors supabase_db.save_share_snapshot's upsert on the token PK.
+        cur.execute(
+            "INSERT INTO games_share_snapshots (token, game_type, winner, top_score, player_count, created_at) "
+            "VALUES (%s, 'quiz', 'Ada', 42, 5, 0) ON CONFLICT (token) DO NOTHING",
+            (token,),
+        )
+        cur.execute(
+            "SELECT winner, top_score, player_count FROM games_share_snapshots WHERE token = %s",
+            (token,),
+        )
+        assert cur.fetchone() == ("Ada", 42, 5)
+
+
+def _regclass(conn, qualified: str):
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regclass(%s)", (qualified,))
+        return cur.fetchone()[0]

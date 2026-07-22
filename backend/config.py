@@ -299,3 +299,46 @@ def setup_logging():
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=handlers,
     )
+
+
+class RuntimeConfigError(RuntimeError):
+    """A fatal environment misconfiguration caught at startup (fail-fast, not a runtime surprise)."""
+
+
+# Environments that must never run on SQLite. ENVIRONMENT is derived at import time (see top of file);
+# note that if DB_BACKEND is misconfigured to sqlite AND LOCALPLAY_ENV/APP_ENV is unset, ENVIRONMENT
+# degrades to "local" — which is exactly why the guard below leans primarily on the Supabase-creds
+# signal, not on ENVIRONMENT alone.
+_DEPLOYED_ENVIRONMENTS = ("gamma", "production")
+
+
+def validate_runtime_db_config() -> None:
+    """Fail fast if a deployment is accidentally pointed at SQLite (or Supabase without credentials).
+
+    SQLite in a deployed container is EPHEMERAL: the DB file lives in the container's writable layer
+    and is destroyed on every rebuild unless a volume is mounted, so a gamma/prod container silently
+    running on SQLite loses all wallet/purchase data on the next deploy. Supabase is mandatory there.
+
+    The reliable "this is a real deployment" signal is the presence of Supabase credentials — nobody
+    sets SUPABASE_URL/SUPABASE_SERVICE_KEY for genuine local SQLite dev. ENVIRONMENT is a secondary
+    signal (only meaningful when LOCALPLAY_ENV/APP_ENV is set explicitly). Called at app startup, not
+    at import, so the test suite and plain local dev (no Supabase vars) are never affected.
+    """
+    has_supabase_creds = bool(SUPABASE_URL or SUPABASE_SERVICE_KEY)
+    is_named_deploy = ENVIRONMENT in _DEPLOYED_ENVIRONMENTS
+
+    if DB_BACKEND != "supabase" and (has_supabase_creds or is_named_deploy):
+        raise RuntimeConfigError(
+            f"Refusing to start: DB_BACKEND={DB_BACKEND!r} but this looks like a deployed environment "
+            f"(ENVIRONMENT={ENVIRONMENT!r}, SUPABASE_URL set={bool(SUPABASE_URL)}, "
+            f"SUPABASE_SERVICE_KEY set={bool(SUPABASE_SERVICE_KEY)}). SQLite in a deployed container is "
+            "ephemeral — its data is destroyed on the next container rebuild. Set DB_BACKEND=supabase "
+            "(with SUPABASE_URL + SUPABASE_SERVICE_KEY), or, for genuine local SQLite dev, unset the "
+            "SUPABASE_* vars and LOCALPLAY_ENV/APP_ENV."
+        )
+
+    if DB_BACKEND == "supabase" and not (SUPABASE_URL and SUPABASE_SERVICE_KEY):
+        raise RuntimeConfigError(
+            "Refusing to start: DB_BACKEND=supabase but SUPABASE_URL and/or SUPABASE_SERVICE_KEY is "
+            "missing. The Supabase adapter cannot function without both."
+        )

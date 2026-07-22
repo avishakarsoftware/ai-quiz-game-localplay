@@ -1443,14 +1443,25 @@ The deploy script validates the prefix before deploy:
 - Gamma must use `TABLE_PREFIX=games_gamma_`.
 - `DB_BACKEND=supabase` requires both `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`.
 
-Prod or gamma can be rolled back to SQLite during the initial rollout window by restoring the intended `.env` file to `DB_BACKEND=sqlite` and redeploying the matching target:
+**Fail-fast guards (2026-07-21).** SQLite in a deployed container is ephemeral — the DB file is destroyed on
+every rebuild — so a gamma/prod container silently running on SQLite loses all wallet/purchase data. Two
+guards now prevent that:
+- **Deploy-time:** `scripts/deploy-gcp.sh` refuses to deploy gamma/prod when the remote `.env` has
+  `DB_BACKEND=sqlite`. Override for a deliberate rollback with `ALLOW_SQLITE_DEPLOY=true ./scripts/deploy-gcp.sh …`.
+- **Runtime:** `config.validate_runtime_db_config()` runs at app startup and crashes the container with a
+  clear message if it looks like a deployed environment (Supabase creds present, or `ENVIRONMENT` = gamma/prod)
+  but `DB_BACKEND != supabase` — or if `DB_BACKEND=supabase` without both Supabase vars.
+
+Rolling back to SQLite (only meaningful in the now-closed initial rollout window; a fresh SQLite file starts
+empty, so this discards the Supabase data) requires the override on **both** layers — set the `.env` to
+`DB_BACKEND=sqlite` and pass `ALLOW_SQLITE_DEPLOY=true`:
 
 ```bash
-# Production rollback
-./scripts/deploy-gcp.sh --with-frontend
+# Production rollback (deliberate; discards Supabase data)
+ALLOW_SQLITE_DEPLOY=true ./scripts/deploy-gcp.sh --with-frontend
 
 # Gamma rollback
-./scripts/deploy-gcp.sh --gamma --with-frontend
+ALLOW_SQLITE_DEPLOY=true ./scripts/deploy-gcp.sh --gamma --with-frontend
 ```
 
 Rollback caveat: writes accepted by Supabase after cutover must be replayed manually into SQLite if you need a fully current rollback database.
