@@ -56,6 +56,19 @@
   played: guests never authenticate, so the host's wallet is the only attributable identity. Tests:
   backend 15, frontend 7. **Not yet deployed / table not yet applied on Supabase.**
 
+- **Odd One Out: socket + frontend wiring (SPEC-GAME-ODD-ONE-OUT §9).** Engine done and tested (30
+  tests, commit `93feb599`); catalog entry deliberately `launchable: False` / `status: planned` so a
+  game that can't start is never offered. Remaining: the ~48 socket_manager touchpoints listed in the
+  spec, plus organizer/player screens. Do it test-first — assert over the wire that a non-odd
+  player's payload never contains the minority prompt, since per-viewer prompt scoping is what's most
+  likely to break in translation.
+- **Derive socket_manager's game-type sets from the catalog.** Adding a game means editing ~12
+  hardcoded game-type tuples in socket_manager with *different* semantics (podium/summary path, valid
+  `new_game_type` on reset, "simple round" reconnect/sync shape, …). Nothing forces you to find them
+  all, so a miss is a silent runtime gap discovered only by playing the game. The catalog already
+  records each game's `runtime_type`; deriving these sets from it — one per distinct purpose, not one
+  merged set — would make new games correct by construction. Surfaced while adding game #34.
+
 ## Platform / Persistence
 
 - **LLM model bump: hold 2.5-flash-lite → move early Oct 2026.** Stay on `gemini-2.5-flash-lite` (the current default for free + premium, `GEMINI_MODEL` / `GEMINI_PREMIUM_MODEL` in `backend/config.py`, plus the checked-in `.env` and gamma/prod VM `.env`) **through September 2026**, then migrate to the newer flash-lite (e.g. `gemini-3.x-flash-lite`) at the **beginning of October 2026**. Scope when the time comes: bump the two config defaults + `GEMINI_IMAGE_MODEL` if the image model also moves, update `backend/.env`, `model_comparison.py`, and the `test_remote_config.py` fixtures; verify generation quality/latency/cost on gamma first; then set `GEMINI_MODEL` on the gamma/prod VM `.env` and recreate the containers. No code migration — it's env-driven.

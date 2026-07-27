@@ -90,3 +90,50 @@ edit, not a code change.
   other games and can follow).
 - Multiple odd ones per round.
 - Images/photos as answers (the media layer exists, but text keeps v1 honest and fast).
+
+## 9. Integration status — engine done, socket/frontend NOT wired
+
+**The engine and catalog entry are committed (`93feb599`) and fully tested (30 tests). The game is
+NOT playable yet** — `socket_manager` has no `odd_one_out` branch, so creating a room of this type
+will not start a round. It is `status: "gamma"` in the catalog but must not be offered to hosts
+until the wiring below lands.
+
+### Why this was stopped rather than half-done
+
+`socket_manager.py` carries **~48 touchpoints** for a comparable game (measured against
+`would_you_rather`), including hardcoded game-type tuples repeated in ~12 places with *different*
+semantics — one gates the podium/summary path, one gates the valid `new_game_type` on reset, several
+gate the "simple round" reconnect/sync shape. They are not interchangeable, so they can't be
+collapsed into one constant without reading each. A partially-wired game is worse than an unwired
+one: it appears in the catalog and fails at start time.
+
+### Wiring checklist (verified line references as of `93feb599`)
+
+1. **Import** engine functions with an `ooo_` prefix, near the `would_you_rather_engine` import
+   (~L179).
+2. **`Room.__init__`** (~L375) and **`reset_for_new_game`** (~L503): `self.ooo_config` /
+   `self.ooo_state`.
+3. **`total_rounds()`** (~L563) → `config["total_rounds"]`.
+4. **Public game state** (~L614) → `ooo_public_state(...)`.
+5. **START_GAME** (~L1494): build initial state; refuse below `MIN_ODD_ONE_OUT_PLAYERS` with a
+   host-visible error rather than starting a degenerate round.
+6. **Message handlers**: player `OOO_ANSWER` / `OOO_VOTE` (~L2662 block); organizer
+   `OOO_START_VOTING` / `OOO_REVEAL` / `OOO_NEXT_ROUND` (~L1722 block).
+7. **Membership tuples** — add `odd_one_out` to each after reading its purpose: ~L1118, L1318,
+   L1623, L1640, L1855, L1899, L2161, L2280.
+8. **Reset** (~L1948): `validate_config({})` branch.
+9. **Podium** → `record_game_completion` already handles it once the podium path includes the type.
+
+### Do this test-first
+
+Model on an existing socket test (`test_ws_flow.py` / `test_mafia_socket.py`) and write the flow
+test *before* the wiring, so "wired correctly" has a definition. The per-viewer prompt scoping is
+the thing most likely to break in translation: assert over the wire that a non-odd player's payload
+never contains the minority prompt.
+
+### Related debt this exposed
+
+Adding game #35 requires touching ~12 hardcoded tuples with no compiler or test forcing you to find
+them all — a missed one is a silent runtime gap. The catalog already knows each game's
+`runtime_type`; deriving these sets from it (per distinct purpose, not one merged set) would make new
+games cheap and correct by construction. Tracked in BACKLOG.

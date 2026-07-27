@@ -744,15 +744,19 @@ GAME_CATALOG = [
         "runtime_type": "odd_one_out",
         "title": "Odd One Out",
         "description": "Everyone answers the same question — except one player, who got a different one. Spot the impostor.",
-        "status": "gamma",
-        "launchable": True,
-        "host_app_supported": True,
-        "supported_host_apps": ["revelry"],
+        # NOT launchable yet: the engine is complete and tested but socket_manager has no
+        # odd_one_out branch, so a room of this type would never start a round. Offering it would
+        # be a broken entry in the picker. Flip launchable/quick_start together with the wiring
+        # (SPEC-GAME-ODD-ONE-OUT §9 has the checklist).
+        "status": "planned",
+        "launchable": False,
+        "host_app_supported": False,
+        "supported_host_apps": [],
         "supports_custom_content": True,
         "supports_images": False,
         "can_create_content": False,
         "can_edit_content": False,
-        "can_quick_start": True,
+        "can_quick_start": False,
         "supports_ai_generation": False,
         "creation_modes": ["settings"],
         "default_content_available": True,
