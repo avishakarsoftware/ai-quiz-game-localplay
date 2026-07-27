@@ -14,15 +14,20 @@ Related: `SPEC-ANALYTICS.md`, `SPEC-REFERRAL.md` (share plumbing), `backend/main
 
 After a game, let the host share a result — "I scored N in Revelry Games!" — as a link that unfurls with
 rich Open Graph preview (title/description/image) in iMessage, WhatsApp, Slack, etc. Drives installs and
-pairs with the referral loop. **v1 = dynamic OG text + a static branded image** (fully device-free);
-dynamic per-result image generation is deferred.
+pairs with the referral loop. v1 shipped dynamic OG text + a static branded image; **the per-result
+image landed 2026-07-27** — see the section at the end of this doc.
 
-## 1. Scope decision (why static image)
+## 1. Scope decision (historical — the deferred option shipped 2026-07-27)
+
+> Kept for the reasoning, but the verdict below is out of date: the per-result image was built with
+> Pillow primitives rather than an SVG→PNG pipeline, which avoided the runtime dependency that made
+> it look expensive here. See the final section.
+
 
 | Option | Unfurl quality | Effort / risk | Verdict |
 |---|---|---|---|
 | Dynamic OG **text** + static branded image | Title/desc are per-result (score, winner); image is the brand card | Trivial, no image pipeline, works offline of any renderer | **v1** |
-| Dynamic per-result **image** (render score onto a card) | Fully personalized image | Needs an SVG→PNG/headless render path on the server; heavier, a device/runtime dep | **Deferred** (logged) |
+| Dynamic per-result **image** (render score onto a card) | Fully personalized image | Needs an SVG→PNG/headless render path on the server; heavier, a device/runtime dep | ~~Deferred~~ **shipped 2026-07-27** (no new dep — Pillow primitives) |
 
 The unfurl still shows the winner + score in the **title/description**, which is what humans read; the image
 is the recognizable brand card. Good enough to ship and measure.
@@ -48,8 +53,8 @@ the existing HTML/control-char stripping. `share_url = f"{PUBLIC_BASE_URL}/share
 - Returns a small self-contained HTML doc with OG + Twitter meta:
   - `og:title` = `"{winner} won with {top_score} in Revelry Games!"` (or generic if no snapshot)
   - `og:description` = `"{player_count} players • {pretty game_type}. Start your own AI game night."`
-  - `og:image` = a **static** asset (existing `marketing/play-store/feature-graphic.png` copied to a served
-    static path, or `frontend/public/icons/` — must be a stable absolute URL under `PUBLIC_BASE_URL`).
+  - `og:image` = the **per-result card** `/share/game/{token}/image.png` when the token resolves;
+    the static brand asset otherwise.
   - `og:url` = the canonical share URL; a `<meta http-equiv=refresh>` / JS redirect + a visible CTA button to
     the app (`PUBLIC_BASE_URL`) so a human who clicks lands in the app.
 - All interpolated values HTML-escaped (defense-in-depth even though sanitized on store).
@@ -73,7 +78,8 @@ the existing HTML/control-char stripping. `share_url = f"{PUBLIC_BASE_URL}/share
   generic page (200); XSS attempt in nickname is escaped in output; TTL/eviction prunes; rate limit on create.
 
 ## 6. Deferred / future
-- Dynamic per-result OG image (SVG→PNG). (Persisting snapshots to DB for durable links — **done** 2026-07-21.)
+- Nothing outstanding. (Per-result OG image — **done** 2026-07-27. Persisting snapshots to DB for
+  durable links — **done** 2026-07-21.)
 
 ## 7. Files touched
 - `backend/config.py` (share consts), `backend/share.py` (new: snapshot store + HTML render) **or** inline in
