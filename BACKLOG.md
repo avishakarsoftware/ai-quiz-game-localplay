@@ -83,7 +83,18 @@
   4th near-identical function). Catalog: 37 games, 36 launchable. Tests: frontend 3 (assert all four
   occasion decks stay on the shared bingo runtime, and that no game id is duplicated).
 
-- **Flaky e2e tests when run alongside other socket suites.** Running `test_e2e.py` together with
+- **Flaky e2e tests when run alongside other socket suites.** *Investigated 2026-07-27 — NOT fixed,
+  but the diagnosis is now sharp.* The failure is always "waiting for QUESTION after **no messages**":
+  nothing arrives at all, so the socket is **wedged, not slow**. Raising the receive timeout 8s → 45s
+  changed nothing except how long a failing run takes — measured over 5 runs, passing runs are 14s and
+  failing runs are ~60s, and the difference is exactly the timeout. So a bigger timeout is not the fix
+  and the constant has been put back to a modest 15s with a comment saying so. Root cause is cross-file
+  shared state; prime suspects are the module-level `TestClient(app)` per test file (each creates its
+  own anyio portal, and 13 files also poke module-level `socket_manager.rooms`) and the cleanup-loop
+  task surviving between files. Next step: give the socket suites one shared TestClient fixture, or run
+  `test_e2e.py` in its own pytest process. **Confirmed pre-existing** — reproduced with the working tree
+  stashed at `0b86c619`.
+- ~~[old] Flaky e2e tests.~~ Running `test_e2e.py` together with
   `test_ws_flow`/`test_websocket_integration`/`test_socket_unit`/`test_mafia_socket`/`test_generic_prompt_socket`
   fails non-deterministically — three consecutive runs on a clean tree gave 1 failed, 2 failed, then 0
   failed, with a *different* test failing each time (`TestExportImportE2E::test_generate_export_import_play`,

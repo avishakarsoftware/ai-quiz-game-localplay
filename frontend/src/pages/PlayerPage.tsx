@@ -1167,6 +1167,14 @@ export default function PlayerPage() {
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'ACRO_VOTE', entry_id: entryId }));
     };
+    const submitOddAnswer = (text: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'OOO_ANSWER', text }));
+    };
+    const submitOddVote = (accused: string) => {
+        soundManager.hapticsSelect();
+        wsRef.current?.send(JSON.stringify({ type: 'OOO_VOTE', accused }));
+    };
     const submitPhotoClueReady = (assetId: string, imageUrl?: string) => {
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'PHOTO_CLUE_UPLOAD_READY', asset_id: assetId, image_url: imageUrl || '' }));
@@ -1696,6 +1704,8 @@ export default function PlayerPage() {
                             onWordSubmit={submitWordAssociation}
                             onAcronymSubmit={submitAcronymExpansion}
                             onAcronymVote={voteAcronymEntry}
+                            onOddAnswer={submitOddAnswer}
+                            onOddVote={submitOddVote}
                         />
                     </>
                 )}

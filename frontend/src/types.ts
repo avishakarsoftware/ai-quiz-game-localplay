@@ -68,7 +68,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type SimpleSocialGameType = 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym';
+export type SimpleSocialGameType = 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'odd_one_out';
 
 export type GenericPromptGameType = 'hot_takes' | 'this_or_that' | 'caption_contest' | 'pitch_battle' | 'roast_toast' | 'desert_island' | 'memory_lane' | 'rapid_fire' | 'one_word_vibes' | 'emoji_story';
 
@@ -790,7 +790,46 @@ export interface AcronymState {
     completed_at?: number | null;
 }
 
-export type SimpleSocialState = WouldYouRatherState | NeverHaveIEverState | WordAssociationState | AcronymState;
+export interface OddOneOutAnswer {
+    player_id: string;
+    text: string;
+}
+
+export interface OddOneOutState {
+    phase: 'ODD_ANSWERING' | 'ODD_VOTING' | 'ODD_REVEAL' | 'PODIUM' | string;
+    game_title?: string;
+    current_round_index: number;
+    round_count: number;
+    /**
+     * The prompt THIS viewer was given. The backend resolves it per viewer — the odd one out
+     * receives a different question and nobody else ever sees it, so this field is deliberately
+     * not the same string for every player.
+     */
+    prompt?: string;
+    you_are_odd?: boolean;
+    your_answer?: string;
+    your_vote?: string;
+    answer_count: number;
+    vote_count: number;
+    player_count: number;
+    /** Present from the voting phase onward. */
+    answers?: OddOneOutAnswer[];
+    standings?: SimpleSocialStanding[];
+    round_result?: {
+        odd_player_id: string;
+        caught: boolean;
+        vote_counts: Record<string, number>;
+        majority_prompt: string;
+        minority_prompt: string;
+        answers: Record<string, string>;
+        votes: Record<string, string>;
+    };
+    is_final_round?: boolean;
+    /** Host view only — who still owes an answer. Never includes prompts. */
+    awaiting?: string[];
+}
+
+export type SimpleSocialState = WouldYouRatherState | NeverHaveIEverState | WordAssociationState | AcronymState | OddOneOutState;
 
 export interface GenericPromptEntry {
     entry_id: string;

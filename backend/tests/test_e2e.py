@@ -35,7 +35,16 @@ DEVICE_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 HEADERS_A = {"X-Device-Id": DEVICE_A}
 HEADERS_B = {"X-Device-Id": DEVICE_B}
 GENEROUS_TOKENS = 500  # enough for many generates + room starts
-DEFAULT_WS_RECEIVE_TIMEOUT = 8.0
+# Hang guard, not a performance assertion — its job is to fail with context instead of blocking
+# forever. Overridable via LOCALPLAY_WS_TEST_TIMEOUT when debugging.
+#
+# Do NOT reach for a bigger number to "fix" the known cross-suite flake (BACKLOG). Measured: when
+# this file runs alongside the other socket suites it intermittently fails with "waiting for
+# QUESTION after NO messages" — no messages arrive at all, so the socket is wedged rather than slow.
+# Raising 8s -> 45s changed nothing except how long a failing run takes (14s when passing, ~60s when
+# failing, i.e. the timeout itself accounts for the difference). The root cause is cross-file shared
+# state, and it needs fixing there.
+DEFAULT_WS_RECEIVE_TIMEOUT = float(os.getenv("LOCALPLAY_WS_TEST_TIMEOUT", "15"))
 
 
 # ---------------------------------------------------------------------------

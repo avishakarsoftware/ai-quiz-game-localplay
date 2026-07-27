@@ -3,6 +3,7 @@ import {
     type AcronymState,
     type GameType,
     type NeverHaveIEverState,
+    type OddOneOutState,
     type PlayerInfo,
     type SimpleSocialState,
     type WordAssociationState,
@@ -11,7 +12,7 @@ import {
 import { getGameModeConfig } from '../gameModes';
 
 interface SimpleSocialGameProps {
-    gameType: Extract<GameType, 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym'>;
+    gameType: Extract<GameType, 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'odd_one_out'>;
     state: SimpleSocialState | null;
     players?: PlayerInfo[];
     viewerName?: string;
@@ -21,6 +22,8 @@ interface SimpleSocialGameProps {
     onWordSubmit?: (word: string) => void;
     onAcronymSubmit?: (text: string) => void;
     onAcronymVote?: (entryId: string) => void;
+    onOddAnswer?: (text: string) => void;
+    onOddVote?: (accused: string) => void;
     onReveal?: () => void;
     onStartVoting?: () => void;
     onNextRound?: () => void;
@@ -39,6 +42,7 @@ function phaseCopy(gameType: SimpleSocialGameProps['gameType'], phase?: string) 
     if (gameType === 'would_you_rather') return 'Choose your side';
     if (gameType === 'never_have_i_ever') return 'Answer privately';
     if (gameType === 'word_association') return 'Submit your first thought';
+    if (gameType === 'odd_one_out') return phase === 'ODD_VOTING' ? 'Spot the odd one out' : 'Answer your question';
     return 'Create your expansion';
 }
 
@@ -64,6 +68,8 @@ export default function SimpleSocialGame({
     onWordSubmit,
     onAcronymSubmit,
     onAcronymVote,
+    onOddAnswer,
+    onOddVote,
     onReveal,
     onStartVoting,
     onNextRound,
@@ -94,19 +100,24 @@ export default function SimpleSocialGame({
     const nhie = state as NeverHaveIEverState;
     const word = state as WordAssociationState;
     const acro = state as AcronymState;
+    const odd = state as OddOneOutState;
     const submitted =
         gameType === 'would_you_rather' ? Boolean(wyr.your_vote)
             : gameType === 'never_have_i_ever' ? Boolean(nhie.your_answer)
                 : gameType === 'word_association' ? Boolean(word.your_submission)
-                    : Boolean(acro.your_submission);
+                    : gameType === 'odd_one_out' ? Boolean(odd.your_answer)
+                        : Boolean(acro.your_submission);
     const counts = state as { submitted_votes?: number; submitted_answers?: number; submitted_count?: number };
-    const submittedCount = counts.submitted_votes ?? counts.submitted_answers ?? counts.submitted_count ?? 0;
+    const submittedCount = counts.submitted_votes ?? counts.submitted_answers ?? counts.submitted_count
+        ?? (gameType === 'odd_one_out' ? (odd.phase === 'ODD_VOTING' ? odd.vote_count : odd.answer_count) : 0)
+        ?? 0;
 
     const submitText = () => {
         const clean = text.trim();
         if (!clean) return;
         if (gameType === 'word_association') onWordSubmit?.(clean);
         if (gameType === 'acronym') onAcronymSubmit?.(clean);
+        if (gameType === 'odd_one_out') onOddAnswer?.(clean);
         setText('');
     };
 
@@ -185,6 +196,88 @@ export default function SimpleSocialGame({
                     </>
                 )}
 
+                {gameType === 'odd_one_out' && (
+                    <>
+                        {/* The prompt is per-viewer: the odd one out is shown a DIFFERENT question and
+                            nobody else ever sees it. The host view intentionally has no prompt at all,
+                            because the host screen is usually visible to the whole room. */}
+                        {odd.prompt ? (
+                            <>
+                                {odd.you_are_odd && (
+                                    <p className="text-[--accent-magenta] text-sm font-bold uppercase tracking-wide" data-testid="odd-you-are-odd">
+                                        Your question is different — blend in
+                                    </p>
+                                )}
+                                <h2 className="text-2xl md:text-4xl">{odd.prompt}</h2>
+                            </>
+                        ) : (
+                            !isReveal && !isPodium && (
+                                <p className="text-[--text-tertiary]">
+                                    Everyone has a question on their phone. One of them is different.
+                                </p>
+                            )
+                        )}
+
+                        {isPlayer && odd.phase === 'ODD_ANSWERING' && (
+                            <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto]">
+                                <input
+                                    className="input-field"
+                                    value={text}
+                                    onChange={(event) => setText(event.target.value)}
+                                    placeholder={odd.your_answer || 'One short answer'}
+                                    aria-label="Your answer"
+                                />
+                                <button type="button" className="btn btn-primary" disabled={!text.trim()} onClick={submitText}>
+                                    {odd.your_answer ? 'Update' : 'Submit'}
+                                </button>
+                            </div>
+                        )}
+
+                        {odd.phase === 'ODD_VOTING' && (
+                            <div className="common-ground-scoreboard mt-5">
+                                {(odd.answers || []).map((answer) => {
+                                    const isMine = answer.player_id === viewerName;
+                                    const isVoted = odd.your_vote === answer.player_id;
+                                    return (
+                                        <button
+                                            key={answer.player_id}
+                                            type="button"
+                                            className={`common-ground-vote ${isVoted ? 'is-selected' : ''}`}
+                                            // You cannot accuse yourself — the backend rejects it too.
+                                            disabled={!isPlayer || isMine}
+                                            onClick={() => onOddVote?.(answer.player_id)}
+                                            data-testid={`odd-vote-${answer.player_id}`}
+                                        >
+                                            <strong>{answer.player_id}{isMine ? ' (you)' : ''}</strong>
+                                            <small>{voteLabel(answer.text)}</small>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {isReveal && odd.round_result && (
+                            <div className="common-ground-scoreboard mt-5" data-testid="odd-reveal">
+                                <div>
+                                    <strong>
+                                        {odd.round_result.odd_player_id} was the odd one out —{' '}
+                                        {odd.round_result.caught ? 'caught!' : 'they got away'}
+                                    </strong>
+                                </div>
+                                {/* Showing BOTH questions is the payoff: it makes the round legible in hindsight. */}
+                                <div>
+                                    <strong>Everyone else</strong>
+                                    <small>{odd.round_result.majority_prompt}</small>
+                                </div>
+                                <div>
+                                    <strong>{odd.round_result.odd_player_id}</strong>
+                                    <small>{odd.round_result.minority_prompt}</small>
+                                </div>
+                            </div>
+                        )}
+                    </>
+                )}
+
                 {gameType === 'acronym' && (
                     <>
                         <p className="text-[--text-tertiary] text-sm font-bold uppercase tracking-wide">{acro.prompt?.hint || 'Make it funny'}</p>
@@ -239,7 +332,10 @@ export default function SimpleSocialGame({
             {isHost && !isPodium && (
                 <div className="common-ground-actions mt-5">
                     {gameType === 'acronym' && acro.phase === 'ACRONYM_SUBMITTING' && <button type="button" className="btn btn-secondary" disabled={submittedCount === 0} onClick={onStartVoting}>Start Voting</button>}
-                    {((gameType !== 'acronym' && !isReveal) || acro.phase === 'ACRONYM_VOTING') && <button type="button" className="btn btn-secondary" disabled={gameType !== 'acronym' && submittedCount === 0} onClick={onReveal}>Reveal</button>}
+                    {/* Odd One Out has the same two-step shape as Acronym: close answering, then reveal. */}
+                    {gameType === 'odd_one_out' && odd.phase === 'ODD_ANSWERING' && <button type="button" className="btn btn-secondary" disabled={submittedCount === 0} onClick={onStartVoting}>Start Voting</button>}
+                    {gameType === 'odd_one_out' && odd.phase === 'ODD_VOTING' && <button type="button" className="btn btn-secondary" onClick={onReveal}>Reveal</button>}
+                    {((!['acronym', 'odd_one_out'].includes(gameType) && !isReveal) || acro.phase === 'ACRONYM_VOTING') && <button type="button" className="btn btn-secondary" disabled={!['acronym', 'odd_one_out'].includes(gameType) && submittedCount === 0} onClick={onReveal}>Reveal</button>}
                     {isReveal && <button type="button" className="btn btn-primary btn-glow" onClick={onNextRound}>Next Round</button>}
                     <button type="button" className="btn btn-secondary" onClick={onEndGame} data-testid="organizer-end-game">End Game</button>
                 </div>

@@ -255,8 +255,16 @@ def next_round(state: dict) -> dict:
 
 
 def standings(state: dict) -> list[dict]:
+    """Ranked standings in the shape the simple-social family already uses.
+
+    `rank` is included because the shared frontend helpers (`sortedStandings`) sort on it — this
+    game conforms to the family contract rather than making the component special-case it.
+    """
     ordered = sorted(state["scores"].items(), key=lambda kv: (-kv[1], kv[0]))
-    return [{"player_id": pid, "score": score} for pid, score in ordered]
+    return [
+        {"player_id": pid, "score": score, "rank": index + 1}
+        for index, (pid, score) in enumerate(ordered)
+    ]
 
 
 def public_state(state: dict, viewer_id: str | None = None, host: bool = False) -> dict:
@@ -275,8 +283,14 @@ def public_state(state: dict, viewer_id: str | None = None, host: bool = False) 
 
     payload: dict[str, Any] = {
         "phase": state["phase"],
+        # Family field names (current_round_index / round_count) so the shared frontend round
+        # label and standings helpers work without a per-game branch. round_index/total_rounds
+        # are kept as aliases because the engine's own tests and callers read them.
+        "current_round_index": state["round_index"],
+        "round_count": state["config"]["total_rounds"],
         "round_index": state["round_index"],
         "total_rounds": state["config"]["total_rounds"],
+        "game_title": "Odd One Out",
         "answer_count": len(state["answers"]),
         "vote_count": len(state["votes"]),
         "player_count": len(state["scores"]),

@@ -2002,14 +2002,21 @@ export default function OrganizerPage() {
         else if (gameType === 'never_have_i_ever') wsRef.current?.send(JSON.stringify({ type: 'NHIE_REVEAL' }));
         else if (gameType === 'word_association') wsRef.current?.send(JSON.stringify({ type: 'WORD_REVEAL' }));
         else if (gameType === 'acronym') wsRef.current?.send(JSON.stringify({ type: 'ACRO_REVEAL' }));
+        else if (gameType === 'odd_one_out') wsRef.current?.send(JSON.stringify({ type: 'OOO_REVEAL' }));
     };
     const nextSimpleSocialRound = () => {
         if (gameType === 'would_you_rather') wsRef.current?.send(JSON.stringify({ type: 'WYR_NEXT_ROUND' }));
+        else if (gameType === 'odd_one_out') wsRef.current?.send(JSON.stringify({ type: 'OOO_NEXT_ROUND' }));
         else if (gameType === 'never_have_i_ever') wsRef.current?.send(JSON.stringify({ type: 'NHIE_NEXT_ROUND' }));
         else if (gameType === 'word_association') wsRef.current?.send(JSON.stringify({ type: 'WORD_NEXT_ROUND' }));
         else if (gameType === 'acronym') wsRef.current?.send(JSON.stringify({ type: 'ACRO_NEXT_ROUND' }));
     };
     const startAcronymVoting = () => wsRef.current?.send(JSON.stringify({ type: 'ACRO_START_VOTING' }));
+    // Acronym and Odd One Out are the two-step simple-social games (close input, then reveal).
+    const startSimpleSocialVoting = () => {
+        if (gameType === 'odd_one_out') wsRef.current?.send(JSON.stringify({ type: 'OOO_START_VOTING' }));
+        else startAcronymVoting();
+    };
     const revealPhotoClue = () => wsRef.current?.send(JSON.stringify({ type: 'PHOTO_CLUE_REVEAL' }));
     const nextPhotoClueRound = () => wsRef.current?.send(JSON.stringify({ type: 'PHOTO_CLUE_NEXT_ROUND' }));
     const revealPokerHand = () => wsRef.current?.send(JSON.stringify({ type: 'POKER_REVEAL' }));
@@ -2827,7 +2834,7 @@ export default function OrganizerPage() {
                         players={players}
                         controls="host"
                         onReveal={revealSimpleSocialRound}
-                        onStartVoting={startAcronymVoting}
+                        onStartVoting={startSimpleSocialVoting}
                         onNextRound={nextSimpleSocialRound}
                         onEndGame={endQuiz}
                     />
