@@ -39,6 +39,31 @@ As of the SPA rollout, the VM has both LocalPlay containers deployed:
 
 The older backup containers `revelry-platform` and `revelry-gamma` may exist on the VM. They are not managed by `scripts/deploy-gcp.sh`; the LocalPlay deploy script only stops/removes `games-backend` and `games-backend-gamma`.
 
+## 🚫 NEVER run `supabase db push` (or `db reset` / `db diff --linked`)
+
+**Hard rule, no exceptions.** Apply schema changes only as targeted, idempotent SQL through the
+Management API `/database/query` endpoint — the pattern used by every migration in
+`sql/migrations/` and documented below.
+
+Why this is not merely a style preference here:
+
+- **One Supabase project hosts BOTH environments.** Production is the `games_` prefix and gamma is
+  `games_gamma_` inside the *same* database. A whole-schema operation cannot target one of them, so
+  a push aimed at gamma can reach production tables.
+- **The project is shared beyond LocalPlay.** Other Revelry work lives in the same project. A
+  declarative push reconciles the database against local migration history and will happily drop
+  or alter objects it doesn't know about — including tables this repo never created.
+- **`sql/migrations/` is not a Supabase CLI migration history.** These files are hand-extracted,
+  idempotent fragments (`CREATE TABLE IF NOT EXISTS`, `CREATE OR REPLACE FUNCTION`, `DROP POLICY
+  IF EXISTS` + `CREATE POLICY`). The CLI has no record of them, so it would consider the live
+  schema wildly drifted and "fix" it.
+- There is deliberately **no `supabase/` directory and no linked project** in this repo. Keep it
+  that way; linking is what makes an accidental `db push` possible.
+
+The correct flow, every time: render from the template → extract the targeted migration → apply to
+**gamma first** → verify the objects exist (`pg_proc` / `pg_tables`) → apply to prod → verify →
+update the ledger below in the same commit.
+
 ## Environment status ledger — the single source of truth for "what is live where"
 
 **Update this table in the same commit as any deploy, DB migration, or policy flip.** Specs must
