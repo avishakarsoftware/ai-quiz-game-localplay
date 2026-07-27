@@ -84,13 +84,23 @@ def get_snapshot(token: str) -> dict | None:
     if int(time.time()) - int(snap["created_at"]) > config.SHARE_TTL_SECONDS:
         _snapshots.pop(token, None)
         return None
+    # Stamp the token on so render_html can build the per-result image URL. The DB row doesn't
+    # carry it back (it's the lookup key), and the memory cache is keyed by it too.
+    if not snap.get("token"):
+        snap = {**snap, "token": token}
     return snap
 
 
 def render_html(snap: dict | None) -> str:
     """Render a self-contained OG-unfurl page. Unknown/expired token → generic branded page."""
     app_url = config.PUBLIC_BASE_URL or "/"
-    og_image = f"{config.PUBLIC_BASE_URL}/og-image.png" if config.PUBLIC_BASE_URL else ""
+    # Per-result card when we know the result; the static brand image otherwise. The image is most
+    # of the tappable area in WhatsApp/iMessage, so a generic logo reads as an ad while a card
+    # naming the winner reads as something that happened.
+    if snap and snap.get("token"):
+        og_image = f"{config.PUBLIC_BASE_URL}/share/game/{snap['token']}/image.png" if config.PUBLIC_BASE_URL else ""
+    else:
+        og_image = f"{config.PUBLIC_BASE_URL}/og-image.png" if config.PUBLIC_BASE_URL else ""
 
     if snap:
         pretty = _PRETTY_GAME.get(snap["game_type"], "party game")
@@ -118,6 +128,8 @@ def render_html(snap: dict | None) -> str:
 <meta property="og:description" content="{desc_e}">
 <meta property="og:url" content="{app_url_e}">
 {og_image_tag}
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{title_e}">
 <meta name="twitter:description" content="{desc_e}">

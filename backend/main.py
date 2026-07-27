@@ -59,6 +59,7 @@ import db
 import auth
 import analytics
 import share
+import share_image
 import remote_config
 from game_rules import attach_rules
 from host_app_catalog_policy import clear_policy_cache, effective_catalog, is_game_allowed
@@ -6086,6 +6087,41 @@ async def get_share_card(token: str):
     """Render the OG-unfurl page for a result card. Unknown/expired token → generic branded page."""
     snap = share.get_snapshot(token)
     return Response(content=share.render_html(snap), media_type="text/html")
+
+
+# Cache for a day: a snapshot is immutable once minted, and crawlers plus every recipient's chat
+# client will each fetch this. immutable tells them not to revalidate.
+_SHARE_IMAGE_CACHE_CONTROL = "public, max-age=86400, immutable"
+
+
+@app.get("/share/game/{token}/image.png")
+async def get_share_card_image(token: str):
+    """Per-result OG image (SPEC-SHARE-CARD).
+
+    NEVER raises. Crawlers fetch an OG image once, eagerly, and do not retry — a 500 here means the
+    link unfurls bare forever. Any failure (unknown token, expired snapshot, a Pillow problem)
+    redirects to the static branded image, so the preview degrades instead of breaking.
+    """
+    static_fallback = f"{config.PUBLIC_BASE_URL}/og-image.png" if config.PUBLIC_BASE_URL else "/og-image.png"
+    try:
+        snap = share.get_snapshot(token)
+        if not snap:
+            return RedirectResponse(static_fallback, status_code=302)
+        png = share_image.render_card(
+            winner=snap.get("winner") or "",
+            top_score=snap.get("top_score") or 0,
+            player_count=snap.get("player_count") or 0,
+            # Reuse the catalog title so the card never shows a raw id like "would_you_rather".
+            game_label=_game_display_name(snap.get("game_type") or "") or "party game",
+        )
+        return Response(
+            content=png,
+            media_type="image/png",
+            headers={"Cache-Control": _SHARE_IMAGE_CACHE_CONTROL},
+        )
+    except Exception:  # noqa: BLE001 — see docstring; a broken image must not break the unfurl
+        logger.warning("Share image render failed for token %s", token[:8], exc_info=True)
+        return RedirectResponse(static_fallback, status_code=302)
 
 
 @app.get("/config/public")

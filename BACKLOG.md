@@ -133,8 +133,11 @@ Supabase RPC via `sql/templates/games-schema.template.sql` and the `REFERRALS_EN
 
 - **Ad-supported sparks (SPEC-ADS).** Rewarded AdMob video → server-verified (SSV) spark grant. Needs an
   AdMob account + a device; not autonomously testable. `ads_enabled` flag already ships `false`.
-- **Share card: dynamic per-result OG image.** v1 uses a static branded image; a rendered SVG→PNG per-result
-  card would unfurl richer. (Persisting share snapshots to DB — **done** 2026-07-21, see Done section.)
+- ~~**Share card: dynamic per-result OG image.**~~ **DONE 2026-07-27** — `GET /share/game/{token}/image.png`
+  renders a 1200x630 card naming the winner (Pillow primitives, not SVG: cairosvg isn't installed and
+  Pillow already ships). Uses Pillow's bundled scalable face so it works in the font-less slim container —
+  pinned by a test that clears the system-font candidates. Never 500s (crawlers fetch once and don't
+  retry): any failure 302s to the static brand image. Tests: backend 19. See SPEC-SHARE-CARD.
 - ~~**Remote config: admin write endpoint.**~~ **DONE 2026-07-27** — the fetched config lives on IONOS and
   can't be written from the backend, so this shipped as a persisted **override layer** (`app_settings` table)
   deep-merged over the fetched config, with `GET/PUT/DELETE /admin/config` behind `ADMIN_API_KEY`. Overrides

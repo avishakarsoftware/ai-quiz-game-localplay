@@ -80,3 +80,36 @@ the existing HTML/control-char stripping. `share_url = f"{PUBLIC_BASE_URL}/share
   `main.py`, `backend/main.py` (2 routes + static og image path), `backend/tests/test_share_card.py`.
 - Frontend: podium Share button in `SpectatorPage`/`OrganizerPage`, reuse share util.
 - Copy a static branded image into a served static location for `og:image`.
+
+## Per-result OG image (added 2026-07-27)
+
+`GET /share/game/{token}/image.png` renders a 1200x630 PNG naming the winner, and `render_html`
+points `og:image` at it whenever the token resolves. Previously every shared result unfurled with
+the same static logo.
+
+**Why it matters:** in WhatsApp/iMessage the image is most of the tappable area. A generic logo reads
+as an ad and gets ignored; a card reading "Priya WON — 980 points" reads as something that happened.
+Share links are one of the few organic install paths, so this is a growth lever.
+
+**Pillow, drawn with primitives — not SVG.** Pillow is already in `requirements.txt`; cairosvg is not
+installed and pulling in a system-library-backed dependency for one image is a poor trade. So
+`share_image.py` draws the card directly.
+
+**No font files.** The prod container is `python:3.12-slim` with essentially no system fonts, and
+bundling a TTF means shipping a binary plus its licence. `ImageFont.load_default(size=...)`
+(Pillow >= 10.1) returns a real scalable FreeTypeFont from Pillow's own bundled face, so the card
+renders identically on macOS and in the container. A nicer system face is preferred when present.
+**A test pins this** by clearing `_FONT_CANDIDATES` — without it, the card would render only on a
+developer's Mac and silently degrade in prod.
+
+**It must never 500.** Crawlers fetch an OG image once, eagerly, and do not retry, so a failure
+means the link unfurls bare *forever*. Unknown token, expired snapshot, or any render error → 302 to
+the static brand image. Tested, including a forced renderer explosion and hostile token strings.
+
+**Other details:** `Cache-Control: public, max-age=86400, immutable` (a snapshot is immutable once
+minted and every recipient's client refetches); the game label comes from the catalog via
+`_game_display_name`, so a card can never read `would_you_rather`; a long nickname is auto-shrunk
+then ellipsised, because the nickname is the one user-controlled string and an overflow would crop
+away the winner's name — the whole point of the image.
+
+Tests: `backend/tests/test_share_image.py` (19).
