@@ -46,16 +46,16 @@ link here instead of restating environment status (stale spec headers were a rec
 
 | Capability / feature | Gamma | Prod | Notes |
 |---|---|---|---|
-| Deployed code (backend+SPA) | `f4d89f5a` (2026-07-19) | `f4d89f5a` (2026-07-19) | Account-deletion deploy. `DELETE /account` live on both (present in openapi.json). IONOS public frontend updated 2026-07-19 to `index-C84KNWsC.js` (deletion UI verified live; `config.json` byte-identical, no clobber) — all three web surfaces now carry the account-deletion build. Post-deploy verified: prod stripe→400, rc→401, health→200; synthetic deletion cycle green on BOTH envs (see below). |
+| Deployed code (backend+SPA) | `b0c1fc03` (2026-07-26) | `b0c1fc03` (2026-07-26) | Growth-features deploy (see 2026-07-26 entry below). All three web surfaces current: gamma + prod backend SPA, and IONOS `index-CXMMX1TT.js` (byte-identical to the local build; `config.json` byte-identical to live, so no flag clobber). Post-deploy verified on prod: `/tokens/ad-reward`→**403** (farm hole closed), stripe→400, rc→401, health→200, `/catalog`→33 games. |
 | Account deletion (migration + endpoint) | ✅ live + verified | ✅ live + verified | 2026-07-19: `sql/migrations/20260718T000000_account_deletion.sql` applied via Management API (gamma first, then prod): `*_deleted_accounts` denylist + `*_delete_account` RPC created, `*_token_transactions_wallet_id_fkey` **CASCADE dropped** (constraint names pre-verified against pg_constraint on both prefixes). Synthetic account cycle on each env: user+wallet(240)+ledger row → RPC delete → user/wallet gone, **ledger retained**, denylisted, re-delete `already_deleted`; live resurrection probe (`/tokens/balance` with the deleted id) returned 200/balance:0 and created **no wallet, no signup bonus**. All test rows cleaned (0 residue). |
 | Login-streak bonus (SQL RPC) | ✅ live | ✅ live | applied 2026-07-08, targeted migration |
 | Check-in games policy (`party_quests`, `find_someone`) | ✅ enabled | ✅ enabled | policy rows 2026-07-08; prod Party Quests upgraded from quick-start-only on 2026-07-14 |
 | Party Quests staged flow (authoring caps + strict `requires_prepared_content_for_checkin`) | ✅ flipped 2026-07-09 | ✅ flipped 2026-07-14 | production DDL/policy enabled after gamma strict harness passed |
 | `generated_content.content_type` CHECK | quiz/mlt/drawing/housie/chit_pull/party_quests | quiz/mlt/drawing/housie/chit_pull/party_quests | prod verified with disposable `party_quests` insert/delete on 2026-07-14 |
 | Referrals (`REFERRALS_ENABLED` + referral RPCs) | ✅ live | ✅ live | Activated 2026-07-21 (commit `acd284b9`): referral RPCs applied to both prefixes + `REFERRALS_ENABLED=true` + containers recreated; synthetic RPC guards + live end-to-end HTTP flow verified. Also fixed the Supabase `new_balance` response key. Works on SQLite locally without the flag. |
-| Spark gifting (`GIFTING_ENABLED` + `gift_sparks` RPC) | ❌ off | ❌ off | Built on master 2026-07-21 (commit `49ad0782`), gated OFF. Migrations `sql/migrations/20260721T010000_gifting{,_gamma}.sql` and follow-up `20260721T040000_gifting_idempotency_replay{,_gamma}.sql` authored but NOT applied; `GIFTING_ENABLED` unset. Works on SQLite locally. To activate: apply migrations → set `GIFTING_ENABLED=true` → recreate container. |
-| Achievements v1 (`ACHIEVEMENTS_ENABLED` + `award_achievement` RPC) | ❌ off | ❌ off | Built on master 2026-07-21 (commit `c80598a5`), gated OFF. Migration `sql/migrations/20260721T020000_achievements{,_gamma}.sql` authored but NOT applied; `ACHIEVEMENTS_ENABLED` unset. Works on SQLite locally. To activate: apply migration → set `ACHIEVEMENTS_ENABLED=true` → recreate container. |
-| Share-card DB persistence (`share_snapshots` table) | ❌ not applied | ❌ not applied | Built on master 2026-07-21 (commit `1a301f90`). Migration `sql/migrations/20260721T030000_share_snapshots{,_gamma}.sql` authored but NOT applied. No flag — `share.py` is best-effort and degrades to in-memory until the table exists, so applying it is a transparent no-downtime upgrade. |
+| Spark gifting (`GIFTING_ENABLED` + `gift_sparks` RPC) | ✅ live + verified | ⚙️ schema applied, flag OFF | Migrations applied to **both** prefixes 2026-07-26 (`20260721T010000_gifting{,_gamma}.sql` then `20260721T040000_gifting_idempotency_replay{,_gamma}.sql`, in timestamp order — the latter supersedes the former's function body). `pg_proc` shows a single `gift_sparks/10` overload on each prefix (no signature drift). **Gamma `GIFTING_ENABLED=true`**, container recreated, live end-to-end smoke green: 5 sparks moved 30→25 / 30→35, and a replay of the same idempotency key returned `duplicate:true` moving nothing. **Prod schema is ready but `GIFTING_ENABLED` is still unset** — flip + recreate container to activate. |
+| Achievements v1 (`ACHIEVEMENTS_ENABLED` + `award_achievement` RPC) | ✅ live + verified | ⚙️ schema applied, flag OFF | Migration applied to **both** prefixes 2026-07-26 (`20260721T020000_achievements{,_gamma}.sql`): `*_achievements` table + `*_award_achievement/2` verified present. **Gamma `ACHIEVEMENTS_ENABLED=true`**, container recreated; live `GET /achievements` returned `welcome`+`first_gift` earned after the gifting smoke. **Prod schema ready, flag unset.** UI renders as "**Badges**" (not the literal word "Achievements") in `SettingsDrawer.tsx`, gated on `achievements_enabled === true` — so it ships dormant in any build. |
+| Share-card DB persistence (`share_snapshots` table) | ✅ applied | ✅ applied | Migration `20260721T030000_share_snapshots{,_gamma}.sql` applied to both prefixes 2026-07-26; `*_share_snapshots` table verified present. No flag — `share.py` is best-effort and was already degrading to in-memory, so this was a transparent no-downtime upgrade. |
 | Native IAP (`REVENUECAT_WEBHOOK_SECRET`) | ✅ configured | ✅ live + verified (both sides) | RevenueCat prod webhook "Revelry Games Prod" (`gamesapi.revelryapp.me/webhook/revenuecat`, Bearer, Both env, all apps/events, HMAC off) created + Active 2026-07-14. **Test event `E1662E2D-1609-4EBF-8A70-241FCCDA68B5` (env=SANDBOX, product=`test_product`) confirmed 200 on BOTH sides** — RevenueCat dashboard shows Response 200, and prod logs show the same event id authenticated + processed (webhook_events dedup + `games_mark_webhook_processed`). **Store rollout (2026-07-16):** iOS **v3.1.1 (6) archived + uploaded to App Store Connect** (review submission with the 3 IAPs attached still pending); Android release AAB **built** (v3.1.1/versionCode 6, prod-baked, signed) but **not yet uploaded** to the Production track. Real customer purchases still gated on store approval/promotion. |
 | Web Stripe | test keys (local `backend/.env`) | ✅ live keys configured (real-card test pending) | 2026-07-15: prod `.env` set with `sk_live_` `STRIPE_SECRET_KEY` + `whsec_` `STRIPE_WEBHOOK_SECRET` + `CHECKOUT_RETURN_URL=https://games.revelryapp.me/`; container recreated. Verified: `/webhook/stripe`→400 (configured), `/checkout/create`→live `cs_live_` session on `checkout.stripe.com`. Live secrets backed up in `backupenv/quiz/local/localplay-prod-payment.env`. Remaining: one real-card end-to-end purchase to confirm credit + refund clawback. |
 | Cross-app Playwright testids | ✅ | ✅ (incl. IONOS) | 8 testids, 2026-07-09 |
@@ -65,7 +65,52 @@ link here instead of restating environment status (stale spec headers were a rec
 | Store listing assets (screenshots + copy) | n/a | ✅ refreshed `67af2407` | 7 screens × 4 store targets captured from prod at exact required px (`marketing/{app-store,play-store}/`), regenerable via `frontend/e2e/store-screenshots.spec.ts`; `store-listing.md` rewritten for **Revelry Games** + all 33 games. Not yet uploaded to either console. |
 | Store-required legal pages (`/privacy`, `/support`) | ✅ live | ✅ live (all 3 surfaces) | Deployed 2026-07-18 (`72d03165`). Privacy policy rewritten to match reality (accounts + purchases + all processors); new support page for Apple's required Support URL. Extensionless paths now resolve on the backend SPA too (MultiViews-style), not just IONOS. Guarded by `e2e/legal-pages.spec.ts` (asserts rendered content, not status — the old `/support` returned **200** while rendering 11 chars) and `backend/tests/test_frontend_static.py`. Store console values: `https://games.revelryapp.me/privacy` + `/support`. |
 | Analytics (PostHog keys) | ❌ unset | ❌ unset | code no-ops until keys set |
-| Ads (`ADS_ENABLED` / `ads_enabled`) | ❌ | ❌ | Rewarded-AdMob SSV (SPEC-ADS) still unbuilt (no ad SDK). The legacy trust-the-client `/tokens/ad-reward` stub was farmable; as of 2026-07-21 (commit `672b7fb0`) it is gated behind `ADS_ENABLED` (default false → 403) in code — **built on master, NOT yet deployed**, so prod still runs the old farmable endpoint until the next backend deploy. Do NOT set `ADS_ENABLED=true` until SSV replaces the stub. |
+| Ads (`ADS_ENABLED` / `ads_enabled`) | ❌ off (locked) | ❌ off (locked) | Rewarded-AdMob SSV (SPEC-ADS) still unbuilt (no ad SDK). The legacy trust-the-client `/tokens/ad-reward` stub was farmable (any caller rotating device ids could mint the daily cap). Gated behind `ADS_ENABLED` (default false → 403) in commit `672b7fb0`; **deployed 2026-07-26 — `/tokens/ad-reward` now returns 403 on gamma AND prod**, verified live. The hole was open on prod from 2026-07-21 until this deploy. Do NOT set `ADS_ENABLED=true` until SSV replaces the stub. |
+
+### Recent gamma + prod + IONOS deploy — July 26, 2026 (growth features + ad-reward lockdown)
+
+Promoted `b0c1fc03` to **all three web surfaces**, and applied the four outstanding Supabase
+migrations to **both** prefixes. Prod had been sitting on `f4d89f5a` (2026-07-19) for a week.
+
+**The urgent bit: prod's `/tokens/ad-reward` was live and farmable.** It is a trust-the-client stub
+with no ad verification, so anyone rotating device ids could mint the daily spark cap indefinitely.
+The `ADS_ENABLED` gate (commit `672b7fb0`, 2026-07-21) had been sitting on master undeployed for
+five days. Prod now returns **403**, verified live.
+
+**Migrations (Management API, gamma first, then prod).** Applied in timestamp order —
+`…010000_gifting` → `…020000_achievements` → `…030000_share_snapshots` →
+`…040000_gifting_idempotency_replay`. Order matters: the `040000` follow-up **replaces** the
+`gift_sparks` body created by `010000`, so applying them out of order silently leaves the old
+replay semantics. Verified afterwards via `pg_proc`/`pg_tables` that each prefix has exactly one
+`gift_sparks/10` overload (no signature drift from a partial apply) plus `award_achievement/2`,
+`*_achievements`, and `*_share_snapshots`.
+
+Two snags worth recording for the next person driving the Management API from a script:
+- `api.supabase.com` sits behind Cloudflare, which **403s (code 1010)** the default
+  `Python-urllib/3.x` User-Agent. Send a normal UA.
+- The Supabase CLI stores its token in the keychain via go-keyring as
+  `go-keyring-base64:<base64 of the real sbp_ token>` — reading `security find-generic-password -w`
+  raw yields a value the API rejects with "JWT could not be decoded". Strip the prefix and b64-decode.
+
+**Flags.** Gamma has `GIFTING_ENABLED=true` + `ACHIEVEMENTS_ENABLED=true` (container recreated —
+`docker restart` does not re-read `--env-file`). Live smoke on gamma: gift moved 5 sparks
+(30→25 sender, 30→35 recipient), replaying the same idempotency key returned `duplicate:true` and
+moved nothing, and `GET /achievements` showed `welcome`+`first_gift` earned. **Prod schema is
+applied but both flags remain OFF** — deliberately, to soak on gamma first.
+
+**IONOS.** `npm run ionos:build` → `index-CXMMX1TT.js`, uploaded additively (`scp -r dist/*` +
+`rsync dist/.htaccess`, no `--delete`). `dist/config.json` was byte-identical to the live file, so
+no feature-flag clobber. The served bundle is **byte-identical** (`cmp`) to the local build and
+carries the gifting UI, the "Badges" section, `Get Sparks`, and zero `LAUNCH DEAL` promo remnants.
+
+**Native.** `cap:sync:prod` baked the prod bundle into iOS at **v3.1.3 (9)**; verified in the main
+chunk: prod API, no gamma leak, the Google sign-in fix (`options: G==="google"?{}:{scopes:["email"]}`
+— Google gets `{}`, Apple keeps `scopes`), deletion UI, gifting + Badges UI, no stale promo.
+**Android was deliberately NOT rebuilt** — v3.1.3(9) is in Play review since 2026-07-20 and
+re-uploading restarts the review clock for zero user-visible gain (both new features ship dormant).
+**iOS could not be archived from CLI**: the keychain holds only an Apple *Development* cert (0
+Distribution certs, 0 provisioning profiles), so Archive → Distribute must happen in Xcode under a
+signed-in Apple ID. A `CODE_SIGNING_ALLOWED=NO` Release build was run to prove it compiles first.
 
 ### Recent gamma + prod + IONOS deploy — July 17, 2026 (paywall price fix + `--build-on-vm`)
 
