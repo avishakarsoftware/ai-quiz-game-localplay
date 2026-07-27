@@ -705,7 +705,7 @@ export default function OrganizerPage() {
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('POKER');
         }
-        else if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED') {
+        else if (msg.type === 'PLAYER_LEFT' || msg.type === 'PLAYER_DISCONNECTED' || msg.type === 'PLAYERS_REMOVED') {
             setPlayerCount(msg.player_count as number);
             setPlayers(msg.players as PlayerInfo[] || []);
         }
@@ -2603,6 +2603,7 @@ export default function OrganizerPage() {
                         hostAppJoinLabel={hostAppJoinLabel}
                         onStartGame={startGame}
                         onToggleLock={() => wsRef.current?.send(JSON.stringify({ type: 'TOGGLE_LOCK' }))}
+                        onRemoveOfflinePlayers={() => wsRef.current?.send(JSON.stringify({ type: 'REMOVE_OFFLINE_PLAYERS' }))}
                         onCancelGame={hostAppMode ? cancelCurrentGame : undefined}
                         onBackToGames={leaveLobbyForGameList}
                         onReviewContent={isQuizRuntimeGame(gameType) && quiz ? () => setReviewPeekOpen(true) : undefined}

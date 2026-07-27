@@ -662,6 +662,27 @@ class Room:
     def lobby_roster(self) -> List[dict]:
         return self.player_public_list(include_offline=True, include_status=True)
 
+    def remove_offline_lobby_player(self, nickname: str) -> bool:
+        """Drop ONE offline lobby seat by nickname. Returns False if it isn't removable.
+
+        Deliberately refuses to remove a *connected* player: this is seat cleanup for guests
+        whose phone slept or who wandered off, not a moderation/kick tool. Kicking someone who
+        is actively in the lobby is a different feature with a different abuse surface.
+        """
+        if self.state != "LOBBY" or not nickname:
+            return False
+        for client_id, player in list(self.players.items()):
+            if player.get("nickname") != nickname:
+                continue
+            if self.is_player_connected(client_id):
+                return False
+            self.players.pop(client_id, None)
+            self.teams.pop(nickname, None)
+            self.power_ups.pop(nickname, None)
+            self.player_tokens.pop(nickname, None)
+            return True
+        return False
+
     def prune_expired_lobby_players(self, *, force: bool = False) -> List[str]:
         if self.state != "LOBBY":
             return []
@@ -2016,6 +2037,28 @@ class SocketManager:
                 if room.state == "LOBBY":
                     room.locked = not room.locked
                     await room.broadcast({"type": "ROOM_LOCK_STATUS", "locked": room.locked})
+
+            # Host seat cleanup. Offline seats are held for LOBBY_RECONNECT_GRACE_SECONDS (10 min)
+            # so a slept phone keeps its place, but that leaves the lobby cluttered with greyed-out
+            # ghosts the host can't clear — and some games gate their minimum-player check on the
+            # roster. These let the host reclaim the seats without waiting out the grace period.
+            elif msg_type in ("REMOVE_OFFLINE_PLAYERS", "REMOVE_PLAYER"):
+                if room.state != "LOBBY":
+                    return
+                async with room.lock:
+                    if msg_type == "REMOVE_OFFLINE_PLAYERS":
+                        removed = room.prune_expired_lobby_players(force=True)
+                    else:
+                        raw = message.get("nickname")
+                        nickname = (raw if isinstance(raw, str) else "").strip()
+                        removed = [nickname] if room.remove_offline_lobby_player(nickname) else []
+                if removed:
+                    await room.broadcast({
+                        "type": "PLAYERS_REMOVED",
+                        "nicknames": removed,
+                        "player_count": room.connected_player_count(),
+                        "players": room.lobby_roster(),
+                    })
 
         else:
             if msg_type == "JOIN":

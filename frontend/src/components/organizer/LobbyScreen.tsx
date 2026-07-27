@@ -16,6 +16,8 @@ interface LobbyScreenProps {
     locked: boolean;
     onStartGame: () => void;
     onToggleLock: () => void;
+    /** Clear every offline lobby seat now, instead of waiting out the reconnect grace. */
+    onRemoveOfflinePlayers?: () => void;
     onBackToGames?: () => void;
     onEditSetup?: () => void;
     editSetupLabel?: string;
@@ -38,6 +40,7 @@ export default function LobbyScreen({
     locked,
     onStartGame,
     onToggleLock,
+    onRemoveOfflinePlayers,
     onBackToGames,
     onEditSetup,
     editSetupLabel = 'Edit setup',
@@ -185,6 +188,22 @@ export default function LobbyScreen({
                         {offlineCount > 0 && (
                             <p className="lobby-offline-summary">
                                 {offlineCount} player{offlineCount === 1 ? '' : 's'} reconnecting
+                                {onRemoveOfflinePlayers && (
+                                    /* Offline seats are held for 10 minutes so a slept phone keeps its
+                                       place. Without this the host just watches ghosts they can't clear —
+                                       and some games gate their minimum-player check on the roster. */
+                                    <>
+                                        {' · '}
+                                        <button
+                                            type="button"
+                                            className="lobby-offline-clear"
+                                            onClick={onRemoveOfflinePlayers}
+                                            data-testid="lobby-clear-offline"
+                                        >
+                                            Remove {offlineCount === 1 ? 'them' : 'them all'}
+                                        </button>
+                                    </>
+                                )}
                             </p>
                         )}
                         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>

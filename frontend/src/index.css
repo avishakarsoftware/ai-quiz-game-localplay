@@ -2102,6 +2102,20 @@ body {
     font-size: 0.875rem;
 }
 
+.lobby-offline-clear {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--accent-mint, #6ee7c7);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.lobby-offline-clear:hover {
+    opacity: 0.85;
+}
+
 .lobby-player-pill {
     display: inline-flex;
     align-items: center;

@@ -121,3 +121,49 @@ describe('LobbyScreen min-player gating', () => {
         expect(onCancelGame).toHaveBeenCalledTimes(1);
     });
 });
+
+/**
+ * Host cleanup for offline lobby seats. Seats are held for the reconnect grace so a slept phone
+ * keeps its place; without a host control the lobby just accumulates ghosts nobody can clear.
+ */
+describe('LobbyScreen offline seat cleanup', () => {
+    const offlinePlayers = [
+        { nickname: 'Maya', avatar: '🦄', status: 'connected' as const },
+        { nickname: 'Leo', avatar: '🐙', status: 'offline' as const },
+        { nickname: 'Ada', avatar: '🌮', status: 'reconnecting' as const },
+    ];
+
+    const baseProps = {
+        roomCode: 'ABC123',
+        joinUrl: 'https://games.revelryapp.me/join/ABC123',
+        playerCount: 1,
+        locked: false,
+        onStartGame: () => {},
+        onToggleLock: () => {},
+    };
+
+    it('offers the host a way to clear offline seats', async () => {
+        const onRemoveOfflinePlayers = vi.fn();
+        render(<LobbyScreen {...baseProps} players={offlinePlayers} onRemoveOfflinePlayers={onRemoveOfflinePlayers} />);
+        expect(screen.getByText(/2 players reconnecting/)).toBeInTheDocument();
+        await userEvent.click(screen.getByTestId('lobby-clear-offline'));
+        expect(onRemoveOfflinePlayers).toHaveBeenCalledOnce();
+    });
+
+    it('hides the control when no seat is offline', () => {
+        render(
+            <LobbyScreen
+                {...baseProps}
+                players={[{ nickname: 'Maya', avatar: '🦄', status: 'connected' as const }]}
+                onRemoveOfflinePlayers={() => {}}
+            />,
+        );
+        expect(screen.queryByTestId('lobby-clear-offline')).not.toBeInTheDocument();
+    });
+
+    it('omits the control entirely when the host cannot act (no handler supplied)', () => {
+        render(<LobbyScreen {...baseProps} players={offlinePlayers} />);
+        expect(screen.getByText(/2 players reconnecting/)).toBeInTheDocument();
+        expect(screen.queryByTestId('lobby-clear-offline')).not.toBeInTheDocument();
+    });
+});
