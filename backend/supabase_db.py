@@ -690,6 +690,25 @@ def get_recent_games(wallet_id: str, limit: int = 10) -> list[dict]:
     return [{k: r.get(k) for k in keys} for r in rows]
 
 
+# --- Operator settings (SPEC-REMOTE-CONFIG §admin) ---
+
+def get_setting(key: str) -> str:
+    row = _first(_sb().select("app_settings", filters={"key": f"eq.{key}"}, limit=1))
+    return (row or {}).get("value") or ""
+
+
+def set_setting(key: str, value: str) -> None:
+    _sb().upsert("app_settings", {
+        "key": key,
+        "value": value,
+        "updated_at": int(time.time()),
+    }, on_conflict="key")
+
+
+def delete_setting(key: str) -> None:
+    _sb().delete("app_settings", filters={"key": f"eq.{key}"})
+
+
 def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:
     if amount <= 0:
         raise ValueError(f"credit_purchase amount must be positive, got {amount}")

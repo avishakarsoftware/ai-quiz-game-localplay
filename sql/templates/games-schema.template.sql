@@ -119,6 +119,15 @@ CREATE TABLE IF NOT EXISTS __PREFIX__game_results (
 CREATE INDEX IF NOT EXISTS idx___PREFIX__game_results_wallet
   ON __PREFIX__game_results(wallet_id, completed_at DESC);
 
+-- Operator settings (SPEC-REMOTE-CONFIG §admin). Small durable key/value store; currently holds
+-- the remote-config override layer. Persisted rather than in-memory on purpose: an override is a
+-- kill switch, and an in-memory one evaporates exactly when it's needed (during a bad rollout).
+CREATE TABLE IF NOT EXISTS __PREFIX__app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT '',
+  updated_at BIGINT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS __PREFIX__entitlements (
   id TEXT PRIMARY KEY,
   user_id TEXT,
@@ -387,6 +396,11 @@ ALTER TABLE __PREFIX__rejections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__achievements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__share_snapshots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__game_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE __PREFIX__app_settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS service_role_all___PREFIX__app_settings ON __PREFIX__app_settings;
+CREATE POLICY service_role_all___PREFIX__app_settings ON __PREFIX__app_settings
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS service_role_all___PREFIX__game_results ON __PREFIX__game_results;
 CREATE POLICY service_role_all___PREFIX__game_results ON __PREFIX__game_results

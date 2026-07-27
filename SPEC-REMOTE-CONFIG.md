@@ -80,3 +80,35 @@ endpoint** and **no game-catalog / spark-cost control** in the schema.
   or inline, `backend/main.py` (`GET /config/public`), `backend/tests/test_remote_config.py`.
 - `frontend/src/types/remoteConfig.ts` (+fields), `frontend/src/hooks/useRemoteConfig.ts` (merge + optional
   URL env), `GameSelectScreen` (catalog gating), tests.
+
+## Admin override layer (added 2026-07-27)
+
+The fetched config lives on IONOS (`config.json`), which the backend cannot write. So "edit
+config without SSH" is served by an **override layer** stored server-side and deep-merged on top
+of whatever was fetched.
+
+- Stored in the `app_settings` table under `remote_config_overrides` (migration
+  `sql/migrations/20260727T010000_app_settings{,_gamma}.sql`). **Persisted, not in-memory** —
+  an override is a kill switch, and an in-memory one evaporates during exactly the bad rollout
+  it exists for.
+- Merge is **deep**, so flipping one nested flag doesn't silently drop its siblings. A top-level
+  replace of `feature_flags` would delete every key the operator didn't restate.
+- `PUT /admin/config` **replaces** the layer wholesale rather than accumulating patches: an
+  override you can't fully see is one you can't safely remove. `{"overrides": {}}` or
+  `DELETE /admin/config` clears it.
+- `GET /admin/config` returns `fetched`, `overrides` and `effective` **separately** — when
+  something behaves oddly you need to know whether it came from IONOS or from an override set
+  weeks ago.
+- All three endpoints are gated by `_check_admin` (`ADMIN_API_KEY`, constant-time compare;
+  503 when unset).
+
+**Overrides also drive AI model selection.** `_get_ai_models()` applies them, so
+`{"ai_models": {"free_model": "…"}}` changes what actually generates — not just what
+`/config/public` reports. That directly serves the backlog's Oct 2026 model bump: the switch
+becomes an API call rather than a frontend deploy. A reader failure is swallowed and treated as
+"no overrides", because a broken settings row must never take down config reads (which would
+take AI model selection down with it).
+
+Tests: `backend/tests/test_config_overrides.py` (13) — merge depth, add-new-key, persistence,
+replace-not-accumulate, clear, AI model wiring, malformed/non-dict rows, and the admin gate.
+

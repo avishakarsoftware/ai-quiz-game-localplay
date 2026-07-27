@@ -88,7 +88,10 @@ Supabase RPC via `sql/templates/games-schema.template.sql` and the `REFERRALS_EN
   AdMob account + a device; not autonomously testable. `ads_enabled` flag already ships `false`.
 - **Share card: dynamic per-result OG image.** v1 uses a static branded image; a rendered SVG→PNG per-result
   card would unfurl richer. (Persisting share snapshots to DB — **done** 2026-07-21, see Done section.)
-- **Remote config: admin write endpoint.** v1 is file-edited on the server; an admin-gated `POST /config`
-  would allow live edits without SSH.
+- ~~**Remote config: admin write endpoint.**~~ **DONE 2026-07-27** — the fetched config lives on IONOS and
+  can't be written from the backend, so this shipped as a persisted **override layer** (`app_settings` table)
+  deep-merged over the fetched config, with `GET/PUT/DELETE /admin/config` behind `ADMIN_API_KEY`. Overrides
+  also drive `_get_ai_models()`, so the Oct 2026 model bump becomes an API call instead of a frontend deploy.
+  Tests: backend 13. **Migration `20260727T010000_app_settings{,_gamma}.sql` not yet applied.**
 - **Analytics: turn on.** Needs a PostHog project + `POSTHOG_API_KEY` (backend) / `VITE_POSTHOG_KEY` (build);
   code is wired and no-ops until set.

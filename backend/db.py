@@ -166,6 +166,15 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_game_results_wallet
             ON game_results(wallet_id, completed_at DESC);
 
+        -- Small durable key/value store for operator settings (SPEC-REMOTE-CONFIG §admin).
+        -- Holds the remote-config override layer, which must survive a redeploy: an in-memory
+        -- kill switch evaporates exactly when it's needed most (during a bad rollout).
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL
+        );
+
         -- Deleted-account denylist (SPEC-ACCOUNT-DELETION §2).
         -- Session tokens are stateless JWTs and cannot be revoked, so a live token held by a
         -- just-deleted user would otherwise sail through auth and hit get_or_create_wallet,
@@ -1548,6 +1557,31 @@ def get_recent_games(wallet_id: str, limit: int = 10) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+# --- Operator settings (SPEC-REMOTE-CONFIG §admin) ---
+
+def get_setting(key: str) -> str:
+    """Return a stored setting, or '' if unset."""
+    conn = _get_conn()
+    row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else ""
+
+
+def set_setting(key: str, value: str) -> None:
+    conn = _get_conn()
+    conn.execute(
+        "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        (key, value, int(time.time())),
+    )
+    conn.commit()
+
+
+def delete_setting(key: str) -> None:
+    conn = _get_conn()
+    conn.execute("DELETE FROM app_settings WHERE key = ?", (key,))
+    conn.commit()
+
+
 def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:
     """Credit purchased tokens and increment lifetime_purchased. Returns (success, new_balance).
     Idempotent: if reference_id was already credited, returns current balance without double-crediting.
@@ -2261,6 +2295,9 @@ if config.DB_BACKEND == "supabase":
         "list_achievements",
         "save_share_snapshot",
         "get_share_snapshot",
+        "get_setting",
+        "set_setting",
+        "delete_setting",
         "record_game_result",
         "get_wallet_stats",
         "get_recent_games",

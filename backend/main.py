@@ -6160,6 +6160,53 @@ def _check_admin(req: Request):
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
+class ConfigOverrideRequest(BaseModel):
+    overrides: dict
+
+
+@app.get("/admin/config")
+async def admin_get_config(req: Request):
+    """Show the fetched config, the operator override layer, and the effective merge.
+
+    Returning all three (not just the merge) is the point: when something is behaving oddly you
+    need to know whether it came from IONOS or from an override somebody set weeks ago.
+    """
+    _check_admin(req)
+    try:
+        effective = await remote_config.get_config()
+    except Exception:  # noqa: BLE001 — admin visibility must not 500
+        effective = {}
+    return {
+        "fetched": remote_config._cached_config,
+        "overrides": remote_config.get_overrides(),
+        "effective": effective,
+        "source_url": remote_config.REMOTE_CONFIG_URL,
+    }
+
+
+@app.put("/admin/config")
+async def admin_set_config(request: ConfigOverrideRequest, req: Request):
+    """Replace the override layer. Merged over the IONOS config on read (deep, so you can flip
+    one nested flag without restating its whole object).
+
+    Wholesale replace rather than patch-accumulate so the stored state is always exactly what
+    was last sent — an override you can't fully see is an override you can't safely remove.
+    Send `{"overrides": {}}` (or DELETE) to clear.
+    """
+    _check_admin(req)
+    stored = remote_config.set_overrides(request.overrides)
+    logger.info("Remote config overrides updated: keys=%s", sorted(stored.keys()))
+    return {"overrides": stored, "effective": await remote_config.get_config()}
+
+
+@app.delete("/admin/config")
+async def admin_clear_config(req: Request):
+    _check_admin(req)
+    remote_config.clear_overrides()
+    logger.info("Remote config overrides cleared")
+    return {"overrides": {}, "effective": await remote_config.get_config()}
+
+
 @app.get("/admin/lookup")
 async def admin_lookup(req: Request, device_id: str = "", wallet_id: str = "", user_id: str = "", email: str = ""):
     _check_admin(req)
