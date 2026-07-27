@@ -198,10 +198,14 @@ July 16, 2026 — We're now Revelry Games, with all 33 games in one place. Clear
 
 ## Screenshots
 
-Captured from **prod** (`games.revelryapp.me`) by `frontend/e2e/store-screenshots.spec.ts` — see
-`STORE_ASSETS.md` for the capture recipe and the exact run command. Every image is a viewport-sized
-opaque PNG at the store's required pixel size (asserted in the test, so a wrong-sized image fails
-rather than ships).
+Captured from **prod** (`games.revelryapp.me`) by two specs — see `STORE_ASSETS.md` for the
+capture recipe and exact run commands. Every image is a viewport-sized opaque PNG at the store's
+required pixel size (asserted in the test, so a wrong-sized image fails rather than ships).
+
+- `frontend/e2e/store-screenshots.spec.ts` — **01–07**, the quiz flow end-to-end.
+- `frontend/e2e/store-breadth.spec.ts` — **08–13**, one live shot per visually distinct game.
+  Added 2026-07-26: 01–07 sold the quiz well but showed one game, so a shopper reasonably
+  concluded the app *is* one game. These play real prod rooms and shoot the result.
 
 | # | Screen | Sells |
 |---|--------|-------|
@@ -212,9 +216,24 @@ rather than ships).
 | 05 | Podium | the payoff — a real winner |
 | 06 | Player join | "join from your own phone, no download" |
 | 07 | Get Sparks | IAP tiers, cost context, terms |
+| 08 | Drawing | draw-and-guess: palette, tools, live prompt |
+| 09 | Party Poker | a real hand, table cards, chip stacks |
+| 10 | Would You Rather | one-tap voting, live scores |
+| 11 | Acronym Game | text party game, submissions + scores |
+| 12 | Find Someone Who | a full 20-prompt card — the depth shot |
+| 13 | Emoji Story | emoji-chain prompt, free-text entry |
 
-Upload order for both stores: **01 → 05** carry the pitch (variety, AI, join, play, payoff); 06 and 07
-are supporting. Apple shows the first three most prominently.
+**Recommended App Store order (10 slots, breadth-first):**
+`01 → 03 → 04 → 09 → 12 → 10 → 11 → 13 → 05 → 07`
+
+Leads with the catalog, then how people join, then one quiz round, then four *different* games
+before the payoff and the paywall. Apple shows the first three most prominently, so slots 1–3
+must land "33 games / everyone joins from their phone / it's already playing". `02` and `06` are
+held back — good screens, but they repeat the quiz-setup and join stories already told.
+
+**Not in the tour — Housie.** The host calls numbers manually, so an unattended capture sits on
+"Waiting for first call · 0 numbers called" regardless of settle time (verified at 16s). It needs
+host-driven calls before it photographs well; adding it blindly ships a dead screenshot.
 
 **Known cosmetic gap (iPad/tablet):** the app targets iPhone *and* iPad
 (`TARGETED_DEVICE_FAMILY = "1,2"`), so Apple requires the 12.9" set — but the layout is
