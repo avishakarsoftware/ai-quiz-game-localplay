@@ -254,6 +254,40 @@ from housie_engine import (
 logger = logging.getLogger(__name__)
 
 
+# --- Game-type sets, derived rather than hand-listed -------------------------------------------
+#
+# Three places used to hand-list ~20 game types each: "which types may a room be reset to", "which
+# types do NOT use the quiz-style NEXT_QUESTION advance", and "which do NOT use the generic ANSWER
+# message". Nothing forced you to update all three when adding a game, and a miss is a silent
+# runtime gap you only find by playing that game.
+#
+# Two changes fix that. The full set is derived from the catalog, so a new launchable game is
+# included automatically. And the other two are expressed as the SMALL POSITIVE set of games that
+# do use the shared quiz-style messages — every other game, including every future one, correctly
+# falls through by default.
+
+def _catalog_game_types() -> frozenset[str]:
+    """Every game_type a room can legitimately be, from the catalog + the generic-prompt family.
+
+    Imported lazily: game_catalog imports game_rules, and importing it at socket_manager module
+    scope risks a cycle as the catalog grows.
+    """
+    from game_catalog import GAME_CATALOG
+    return frozenset(
+        {g["game_type"] for g in GAME_CATALOG if g.get("launchable")} | set(GENERIC_PROMPT_GAME_TYPES)
+    )
+
+
+# Games advanced by the shared quiz-style NEXT_QUESTION message. Everything else drives its own
+# round advance (HOUSIE_CALL_NEXT, TT_NEXT_AUTHOR, GENERIC_NEXT_ROUND, …).
+QUIZ_STYLE_ADVANCE_TYPES = frozenset({"quiz", "wmlt", "drawing", "bluff"})
+
+# Games whose players submit via the shared ANSWER message. Everything else has its own input
+# message, so ANSWER must be ignored for them.
+SHARED_ANSWER_TYPES = frozenset({"quiz", "bluff"})
+
+
+
 class Room:
     def __init__(self, room_code: str, game_data: dict, time_limit: int = 15,
                  organizer_token: str = "", content_id: str = "",
@@ -1637,7 +1671,9 @@ class SocketManager:
                         await room.broadcast({"type": "GAME_STARTING"})
 
             elif msg_type == "NEXT_QUESTION":
-                if room.game_type in ("housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker") or room.game_type in GENERIC_PROMPT_GAME_TYPES:
+                # Every game except the quiz-style ones drives its own round advance, so a new
+                # game correctly falls through here with no edit.
+                if room.game_type not in QUIZ_STYLE_ADVANCE_TYPES:
                     return
                 if room.game_type == "drawing" and room.drawing_auto_task:
                     room.drawing_auto_task.cancel()
@@ -1896,7 +1932,8 @@ class SocketManager:
                         return
                     new_content_id = message.get("content_id", "")
                     raw_game_type = message.get("game_type", room.game_type)
-                    new_game_type = raw_game_type if raw_game_type in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker") or raw_game_type in GENERIC_PROMPT_GAME_TYPES else room.game_type
+                    # Derived from the catalog: a newly launchable game is resettable automatically.
+                    new_game_type = raw_game_type if raw_game_type in _catalog_game_types() else room.game_type
                     raw_time_limit = message.get("time_limit", room.time_limit)
                     runtime_config = message.get("runtime_config")
                     if not isinstance(runtime_config, dict):
@@ -2669,7 +2706,7 @@ class SocketManager:
                 await self._poker_player_action(room, client_id, message)
 
             elif msg_type == "ANSWER":
-                if room.game_type in ("wmlt", "drawing", "housie", "bingo", "musical_chairs", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker") or room.game_type in GENERIC_PROMPT_GAME_TYPES:
+                if room.game_type not in SHARED_ANSWER_TYPES:
                     return  # Other games use their own input messages
                 if client_id not in room.players:
                     return

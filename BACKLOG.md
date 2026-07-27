@@ -62,7 +62,8 @@
   spec, plus organizer/player screens. Do it test-first — assert over the wire that a non-odd
   player's payload never contains the minority prompt, since per-viewer prompt scoping is what's most
   likely to break in translation.
-- **Derive socket_manager's game-type sets from the catalog.** Adding a game means editing ~12
+- ~~**Derive socket_manager's game-type sets from the catalog.**~~ **DONE 2026-07-27** — see below.
+- **[done] Derive socket_manager's game-type sets from the catalog.** Adding a game means editing ~12
   hardcoded game-type tuples in socket_manager with *different* semantics (podium/summary path, valid
   `new_game_type` on reset, "simple round" reconnect/sync shape, …). Nothing forces you to find them
   all, so a miss is a silent runtime gap discovered only by playing the game. The catalog already
