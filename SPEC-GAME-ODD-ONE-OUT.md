@@ -91,49 +91,51 @@ edit, not a code change.
 - Multiple odd ones per round.
 - Images/photos as answers (the media layer exists, but text keeps v1 honest and fast).
 
-## 9. Integration status — engine done, socket/frontend NOT wired
+## 9. Integration status — WIRED and playable (2026-07-27)
 
-**The engine and catalog entry are committed (`93feb599`) and fully tested (30 tests). The game is
-NOT playable yet** — `socket_manager` has no `odd_one_out` branch, so creating a room of this type
-will not start a round. It is `status: "gamma"` in the catalog but must not be offered to hosts
-until the wiring below lands.
+Engine, catalog entry, socket wiring and per-viewer prompt scoping are all live and verified over
+the wire. `launchable: True`, `status: "gamma"`. Live env status: DEPLOY.md's ledger.
+**Frontend organizer/player screens are NOT built yet** — see §10.
 
-### Why this was stopped rather than half-done
+### How it wired: it joined the "simple social" family
 
-`socket_manager.py` carries **~48 touchpoints** for a comparable game (measured against
-`would_you_rather`), including hardcoded game-type tuples repeated in ~12 places with *different*
-semantics — one gates the podium/summary path, one gates the valid `new_game_type` on reset, several
-gate the "simple round" reconnect/sync shape. They are not interchangeable, so they can't be
-collapsed into one constant without reading each. A partially-wired game is worse than an unwired
-one: it appears in the catalog and fails at start time.
+The first plan was ~48 bespoke touchpoints. That was the wrong read. Odd One Out fits the existing
+**simple-social family** (`would_you_rather`, `never_have_i_ever`, `word_association`, `acronym`),
+which already provides everything it needs:
 
-### Wiring checklist (verified line references as of `93feb599`)
+- **Per-viewer sync.** `_broadcast_simple_social_sync` already sends a *separate payload per
+  connection* via `_simple_social_public_state(room, nickname)`. That is exactly the per-viewer
+  prompt scoping this game requires — no new mechanism was needed.
+- Reconnect sync, standings, reveal/next-round host controls, podium and phase→room-state mapping.
 
-1. **Import** engine functions with an `ooo_` prefix, near the `would_you_rather_engine` import
-   (~L179).
-2. **`Room.__init__`** (~L375) and **`reset_for_new_game`** (~L503): `self.ooo_config` /
-   `self.ooo_state`.
-3. **`total_rounds()`** (~L563) → `config["total_rounds"]`.
-4. **Public game state** (~L614) → `ooo_public_state(...)`.
-5. **START_GAME** (~L1494): build initial state; refuse below `MIN_ODD_ONE_OUT_PLAYERS` with a
-   host-visible error rather than starting a degenerate round.
-6. **Message handlers**: player `OOO_ANSWER` / `OOO_VOTE` (~L2662 block); organizer
-   `OOO_START_VOTING` / `OOO_REVEAL` / `OOO_NEXT_ROUND` (~L1722 block).
-7. **Membership tuples** — add `odd_one_out` to each after reading its purpose: ~L1118, L1318,
-   L1623, L1640, L1855, L1899, L2161, L2280.
-8. **Reset** (~L1948): `validate_config({})` branch.
-9. **Podium** → `record_game_completion` already handles it once the podium path includes the type.
+Actual wiring: engine import, `ooo_config`/`ooo_state` on Room + reset, `total_rounds`, host public
+state, a `MIN_ODD_ONE_OUT_PLAYERS` guard in START_GAME, branches in six `_simple_social_*` helpers,
+`OOO_ANSWER`/`OOO_VOTE`/`OOO_START_VOTING`/`OOO_REVEAL`/`OOO_NEXT_ROUND`, and adding one member to
+`SIMPLE_SOCIAL_GAME_TYPES`.
 
-### Do this test-first
+It rides the shared **`SIMPLE_SOCIAL_SYNC`** envelope with an `odd_one_out` key rather than a
+bespoke message type — consistency with four existing games beat inventing one.
 
-Model on an existing socket test (`test_ws_flow.py` / `test_mafia_socket.py`) and write the flow
-test *before* the wiring, so "wired correctly" has a definition. The per-viewer prompt scoping is
-the thing most likely to break in translation: assert over the wire that a non-odd player's payload
-never contains the minority prompt.
+### The membership constant
 
-### Related debt this exposed
+That family tuple was hand-listed at **8 call sites**. It is now `SIMPLE_SOCIAL_GAME_TYPES`, so
+adding a fifth member was one edit instead of eight — the same class of fix as the catalog-derived
+sets in `test_game_type_sets.py`.
 
-Adding game #35 requires touching ~12 hardcoded tuples with no compiler or test forcing you to find
-them all — a missed one is a silent runtime gap. The catalog already knows each game's
-`runtime_type`; deriving these sets from it (per distinct purpose, not one merged set) would make new
-games cheap and correct by construction. Tracked in BACKLOG.
+### Verified over the wire (`tests/test_odd_one_out_socket.py`)
+
+- Exactly one player is the odd one; that player receives the **minority** prompt and every other
+  player receives the **majority** prompt, asserted from the actual socket payloads.
+- Answers hidden until voting; strict-majority catch scores 0 for the odd one and
+  `POINTS_CORRECT_VOTE` for each correct accuser; the reveal carries **both** prompts.
+- Starting below 3 players returns an ERROR and leaves the room in LOBBY.
+
+Two mistakes worth recording: the test first waited on an invented `ODD_ONE_OUT_SYNC` (the family
+uses `SIMPLE_SOCIAL_SYNC`), and `OOO_REVEAL` was initially unwired — the test hung at reveal having
+already proven the prompt scoping worked, which is exactly why it was written first.
+
+## 10. Not built yet
+
+- **Frontend organizer/player screens.** The backend is complete, so the game will start and sync,
+  but there is no UI yet. The four sibling simple-social games have screens to model on.
+- AI-generated prompt pairs, multiple odd ones per round, photo answers (see §8).

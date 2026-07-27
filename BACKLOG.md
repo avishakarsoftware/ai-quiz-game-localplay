@@ -56,7 +56,13 @@
   played: guests never authenticate, so the host's wallet is the only attributable identity. Tests:
   backend 15, frontend 7. **Not yet deployed / table not yet applied on Supabase.**
 
-- **Odd One Out: socket + frontend wiring (SPEC-GAME-ODD-ONE-OUT §9).** Engine done and tested (30
+- **Odd One Out: FRONTEND screens only (SPEC-GAME-ODD-ONE-OUT §10).** Backend wiring DONE 2026-07-27 —
+  it joined the existing **simple-social family**, whose `_broadcast_simple_social_sync` already sends a
+  separate payload per connection, which is exactly the per-viewer prompt scoping this game needs. So the
+  feared ~48 bespoke touchpoints were the wrong read. Verified over the wire (2 socket tests) including
+  that a non-odd player never receives the minority prompt. Now `launchable: True` — 37 games, all
+  launchable. Remaining: organizer/player UI, modelled on the four sibling simple-social games.
+- ~~[old] Odd One Out: socket wiring.~~ Engine done and tested (30
   tests, commit `93feb599`); catalog entry deliberately `launchable: False` / `status: planned` so a
   game that can't start is never offered. Remaining: the ~48 socket_manager touchpoints listed in the
   spec, plus organizer/player screens. Do it test-first — assert over the wire that a non-odd
@@ -76,6 +82,15 @@
   `OCCASION_BINGO` table, so the organizer branch didn't grow a copy per occasion (it was about to be a
   4th near-identical function). Catalog: 37 games, 36 launchable. Tests: frontend 3 (assert all four
   occasion decks stay on the shared bingo runtime, and that no game id is duplicated).
+
+- **Flaky e2e tests when run alongside other socket suites.** Running `test_e2e.py` together with
+  `test_ws_flow`/`test_websocket_integration`/`test_socket_unit`/`test_mafia_socket`/`test_generic_prompt_socket`
+  fails non-deterministically — three consecutive runs on a clean tree gave 1 failed, 2 failed, then 0
+  failed, with a *different* test failing each time (`TestExportImportE2E::test_generate_export_import_play`,
+  `TestGameResetE2E::test_reset_room_with_new_quiz`). Each passes alone and `test_e2e.py` alone is 20/20, so
+  it is cross-file shared state (module-level `socket_manager.rooms` / `game_history` / TestClient portals),
+  not a product bug. **Confirmed pre-existing** — reproduced with the working tree stashed at `0b86c619`.
+  Worth fixing because it makes any socket-suite run untrustworthy as a regression signal.
 
 ## Platform / Persistence
 
