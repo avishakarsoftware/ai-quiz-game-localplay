@@ -118,6 +118,27 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         description: 'A ready-made baby shower board with gifts, moments, and tiny socks',
     },
     {
+        id: 'wedding_bingo',
+        runtimeType: 'bingo',
+        icon: '💍',
+        title: 'Wedding Bingo',
+        description: 'A ready-made reception board: first dance, bouquet toss, someone crying',
+    },
+    {
+        id: 'holiday_bingo',
+        runtimeType: 'bingo',
+        icon: '🎄',
+        title: 'Holiday Bingo',
+        description: 'Ugly sweaters, tangled lights, and the annual leftovers debate',
+    },
+    {
+        id: 'road_trip_bingo',
+        runtimeType: 'bingo',
+        icon: '🚗',
+        title: 'Road Trip Bingo',
+        description: 'Wrong turns, playlist arguments, and cows in a field',
+    },
+    {
         id: 'musical_chairs',
         runtimeType: 'musical_chairs',
         icon: '🎵',

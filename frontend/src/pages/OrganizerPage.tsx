@@ -100,22 +100,58 @@ const BABY_BINGO_ITEMS = [
     'Stuffed toy', 'Storybook', 'Teether', 'Baby giggles', 'Nap time',
 ];
 
-function starterBingoDeck(): BingoDeckItem[] {
-    return STARTER_BINGO_ITEMS.map((display, index) => ({
-        id: `starter_${index + 1}`,
+const WEDDING_BINGO_ITEMS = [
+    'First dance', 'Someone cries', 'Bouquet toss', 'Speech goes long', 'Ring bearer',
+    'Cake cutting', 'Confetti', 'Photo booth', 'Kids on the dance floor', 'Toast with champagne',
+    'Something borrowed', 'Groomsmen photo', 'Flower crown', 'Slow song', 'Guest book',
+    'Late-night snack', 'Sparklers', 'Dress twirl', 'Awkward relative', 'Bridesmaid fixes a dress',
+    'Someone loses a shoe', 'Group selfie', 'Conga line', 'Last dance', 'Getaway car',
+];
+
+const HOLIDAY_BINGO_ITEMS = [
+    'Ugly sweater', 'Fairy lights', 'Mismatched wrapping', 'Someone regifts', 'Burnt cookies',
+    'Carols on repeat', 'Family photo', 'Leftovers debate', 'Board game argument', 'Nap on the couch',
+    'Hot chocolate', 'Tangled lights', 'Secret Santa reveal', 'Too much cheese', 'Tinsel everywhere',
+    'Snow talk', 'Old home video', 'Pet in a costume', 'Second helping', 'Cracker joke',
+    'Someone falls asleep', 'Mystery casserole', 'Group toast', 'Wrapping paper fight', 'Last-minute gift',
+];
+
+const ROAD_TRIP_BINGO_ITEMS = [
+    'Wrong turn', 'Petrol station snack', 'Someone sleeps', 'Playlist argument', 'Cows in a field',
+    'Toll booth', 'Bug on the windscreen', 'Are we there yet', 'Roadworks', 'Scenic viewpoint',
+    'Rest stop coffee', 'Licence plate game', 'Phone dies', 'Detour sign', 'Snack crumbs everywhere',
+    'Singing along', 'Truck horn', 'Map disagreement', 'Sunset drive', 'Motorway services',
+    'Someone needs a loo', 'Weird roadside statue', 'Windows down', 'Traffic jam', 'Arrival photo',
+];
+
+/**
+ * Build a bingo deck from a list of display strings.
+ *
+ * One builder rather than a near-identical mapper per deck — there are five occasion decks now,
+ * and the only thing that ever differed between copies was the id prefix.
+ */
+function bingoDeckFrom(prefix: string, items: readonly string[]): BingoDeckItem[] {
+    return items.map((display, index) => ({
+        id: `${prefix}_${index + 1}`,
         kind: 'text',
         value: display.toLowerCase(),
         display,
     }));
 }
 
+const OCCASION_BINGO = {
+    baby_bingo: { title: 'Baby Bingo', prefix: 'baby', items: BABY_BINGO_ITEMS, prompt: 'baby shower' },
+    wedding_bingo: { title: 'Wedding Bingo', prefix: 'wedding', items: WEDDING_BINGO_ITEMS, prompt: 'wedding reception' },
+    holiday_bingo: { title: 'Holiday Bingo', prefix: 'holiday', items: HOLIDAY_BINGO_ITEMS, prompt: 'holiday party' },
+    road_trip_bingo: { title: 'Road Trip Bingo', prefix: 'roadtrip', items: ROAD_TRIP_BINGO_ITEMS, prompt: 'road trip' },
+} as const;
+
+function starterBingoDeck(): BingoDeckItem[] {
+    return bingoDeckFrom('starter', STARTER_BINGO_ITEMS);
+}
+
 function babyBingoDeck(): BingoDeckItem[] {
-    return BABY_BINGO_ITEMS.map((display, index) => ({
-        id: `baby_${index + 1}`,
-        kind: 'text',
-        value: display.toLowerCase(),
-        display,
-    }));
+    return bingoDeckFrom('baby', BABY_BINGO_ITEMS);
 }
 
 export default function OrganizerPage() {
@@ -941,14 +977,15 @@ export default function OrganizerPage() {
             setDifficulty('medium');
             setState('BINGO_PROMPT');
         }
-        else if (type === 'baby_bingo') {
-            setBingoTitle('Baby Bingo');
-            setBingoDeck(babyBingoDeck());
+        else if (type === 'baby_bingo' || type === 'wedding_bingo' || type === 'holiday_bingo' || type === 'road_trip_bingo') {
+            const occasion = OCCASION_BINGO[type];
+            setBingoTitle(occasion.title);
+            setBingoDeck(bingoDeckFrom(occasion.prefix, occasion.items));
             setGeneratedBingoId('');
             setBingoFreeCenter(true);
             setBingoClaimRequiresLatest(false);
             setNumQuestions(25);
-            setPrompt('baby shower');
+            setPrompt(occasion.prompt);
             setDifficulty('easy');
             setState('BINGO_SETUP');
         }

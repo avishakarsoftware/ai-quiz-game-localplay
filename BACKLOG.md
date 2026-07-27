@@ -69,6 +69,13 @@
   records each game's `runtime_type`; deriving these sets from it — one per distinct purpose, not one
   merged set — would make new games correct by construction. Surfaced while adding game #34.
 
+- **Occasion Bingo decks: Wedding / Holiday / Road Trip.** DONE 2026-07-27. Content-only games that
+  reuse `runtimeType: 'bingo'`, so they needed **zero socket wiring** — catalog entry + rules + a 25-item
+  deck each. Also collapsed the per-deck mapper into one `bingoDeckFrom(prefix, items)` builder plus an
+  `OCCASION_BINGO` table, so the organizer branch didn't grow a copy per occasion (it was about to be a
+  4th near-identical function). Catalog: 37 games, 36 launchable. Tests: frontend 3 (assert all four
+  occasion decks stay on the shared bingo runtime, and that no game id is duplicated).
+
 ## Platform / Persistence
 
 - **LLM model bump: hold 2.5-flash-lite → move early Oct 2026.** Stay on `gemini-2.5-flash-lite` (the current default for free + premium, `GEMINI_MODEL` / `GEMINI_PREMIUM_MODEL` in `backend/config.py`, plus the checked-in `.env` and gamma/prod VM `.env`) **through September 2026**, then migrate to the newer flash-lite (e.g. `gemini-3.x-flash-lite`) at the **beginning of October 2026**. Scope when the time comes: bump the two config defaults + `GEMINI_IMAGE_MODEL` if the image model also moves, update `backend/.env`, `model_comparison.py`, and the `test_remote_config.py` fixtures; verify generation quality/latency/cost on gamma first; then set `GEMINI_MODEL` on the gamma/prod VM `.env` and recreate the containers. No code migration — it's env-driven.

@@ -72,7 +72,7 @@ export type SimpleSocialGameType = 'would_you_rather' | 'never_have_i_ever' | 'w
 
 export type GenericPromptGameType = 'hot_takes' | 'this_or_that' | 'caption_contest' | 'pitch_battle' | 'roast_toast' | 'desert_island' | 'memory_lane' | 'rapid_fire' | 'one_word_vibes' | 'emoji_story';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'survey_says' | 'photo_clue' | GenericPromptGameType | SimpleSocialGameType | QuizVariantGameType;
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'wedding_bingo' | 'holiday_bingo' | 'road_trip_bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'survey_says' | 'photo_clue' | GenericPromptGameType | SimpleSocialGameType | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
