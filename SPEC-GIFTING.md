@@ -1,7 +1,12 @@
 # SPEC-GIFTING — Spark gifting (wallet → wallet)
 
-Status: **Built on master 2026-07-21, gated OFF — NOT yet deployed / not activated on Supabase** (works on
-SQLite locally). Activation runbook in §5; live status tracked in DEPLOY.md's env-status ledger.
+Status: **Deployed 2026-07-26. Migrations applied to BOTH Supabase prefixes. Live + smoke-verified on
+gamma (`GIFTING_ENABLED=true`); prod schema is ready but the flag is still OFF.** Activation runbook in
+§5; live status tracked in DEPLOY.md's env-status ledger (authoritative — don't restate it here).
+
+Migration order is load-bearing: `…040000_gifting_idempotency_replay` **replaces** the `gift_sparks`
+body created by `…010000_gifting`. Out of order leaves the old replay semantics silently in place.
+Verify after applying: exactly one `gift_sparks/10` overload per prefix in `pg_proc`.
 Owner: Avi
 Related: `SPEC-REFERRAL.md` (shared friend-code/idempotency pattern), `SPEC.md` (spark economy), `SPEC-ANALYTICS.md`
 

@@ -1,6 +1,6 @@
 # SPEC-ADS — Ad-Supported Sparks (rewarded video → free Sparks)
 
-Status: **Not built** (rewarded-AdMob SSV design below is unimplemented — no ad SDK). **Farm hole closed 2026-07-21:** the legacy trust-the-client `/tokens/ad-reward` stub is now gated behind `ADS_ENABLED` (default false → 403), built on master but not yet deployed. See DEPLOY.md's env-status ledger.
+Status: **Not built** (rewarded-AdMob SSV design below is unimplemented — no ad SDK). **Farm hole closed and DEPLOYED 2026-07-26:** the legacy trust-the-client `/tokens/ad-reward` stub is gated behind `ADS_ENABLED` (default false → 403) and is live on gamma AND prod, verified. Note the gap: the gate was written 2026-07-21 but not deployed until 07-26, so prod served the farmable endpoint for those five days. See DEPLOY.md's env-status ledger.
 Owner: Avi
 Related: `SPEC-IAP.md` (paid Sparks / RevenueCat), `SPEC.md` (spark economy), `DEPLOY.md` (build contexts, env per environment), VibePix (no ads — this is net-new for the platform)
 

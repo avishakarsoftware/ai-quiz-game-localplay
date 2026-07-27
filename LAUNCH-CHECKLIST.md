@@ -17,6 +17,35 @@ Status snapshot (re-verified against the live endpoints 2026-07-16):
 
 ---
 
+## CURRENT STATE — 2026-07-26
+
+**iOS: v3.1.3 (9) archived + distributed to App Store Connect by Avi.** Remaining is metadata +
+submission only, in the ASC web UI:
+
+1. Upload the refreshed screenshots (13 per target in `marketing/app-store/…`; pick 10).
+   **Recommended order** (breadth-first, see `marketing/store-listing.md`):
+   `01 → 03 → 04 → 09 → 12 → 10 → 11 → 13 → 05 → 07`.
+2. Attach the 3 IAPs, confirm the privacy answers, Submit for Review.
+
+**No new build is needed for the screenshots.** They are metadata and attach to the already-
+distributed 3.1.3 (9); rebuilding only burns a build number.
+
+**Before uploading:** delete `marketing/app-store/iphone-6.9/`. It holds 2 of 10 native-simulator
+shots from an abandoned capture path; a half-populated size slot must not ship. (Apple's 6.9" slot
+accepts the 1290×2796 set in `iphone-6.7/`, and the 13" iPad slot accepts 2048×2732 from
+`ipad-12.9/` — so the existing folders already satisfy current requirements. The folder names are
+legacy, not a size problem.)
+
+**Claude cannot drive this step:** every Apple domain (`appstoreconnect.apple.com`,
+`apps.apple.com`) returns "Navigation to this domain is not allowed" under the browser policy, and
+there is no App Store Connect API key or fastlane in this repo. Play Console *is* reachable.
+
+**Android: v3.1.3 (9) in Play review since 2026-07-20**, managed publishing OFF → auto-publishes on
+approval. Deliberately not re-uploaded on 07-26 (gifting/achievements ship dormant, so re-uploading
+would restart the review clock for no user-visible gain).
+
+---
+
 ## Sequencing decision — ✅ RESOLVED 2026-07-17: option A (rebuild)
 
 **Chosen: A — rebuild.** The web fix is **deployed and verified live** on gamma, prod, and IONOS

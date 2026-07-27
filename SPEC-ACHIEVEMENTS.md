@@ -1,7 +1,13 @@
 # SPEC-ACHIEVEMENTS — Achievements / badges
 
-Status: **Built on master 2026-07-21 (v1: economy events), gated OFF — NOT yet deployed / not activated on
-Supabase** (works on SQLite locally). Activation runbook in §4; live status tracked in DEPLOY.md's ledger.
+Status: **Deployed 2026-07-26. Migration applied to BOTH Supabase prefixes. Live + smoke-verified on
+gamma (`ACHIEVEMENTS_ENABLED=true` — `welcome` + `first_gift` awarded through the real RPC); prod schema
+is ready but the flag is still OFF.** Activation runbook in §4; live status tracked in DEPLOY.md's ledger
+(authoritative — don't restate it here).
+
+UI note: the settings-drawer section renders as "**Badges**", not the literal word "Achievements" —
+grepping a built bundle for "Achievements" is a false negative. It is gated on
+`achievements_enabled === true` from `/config/public`, so it ships dormant in any build.
 Owner: Avi
 Related: `SPEC-REFERRAL.md`, `SPEC-GIFTING.md` (award trigger sites), `SPEC-ANALYTICS.md`
 

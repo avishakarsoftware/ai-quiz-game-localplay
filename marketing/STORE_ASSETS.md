@@ -88,6 +88,41 @@ Rooms are created with fresh device ids (each gets the signup spark bonus, enoug
 a capture run costs nothing real. Without `STORE_SHOTS=1` the spec skips, so normal e2e runs never
 overwrite `marketing/`.
 
+### Breadth tour — `store-breadth.spec.ts` (shots 08–13)
+
+`store-screenshots.spec.ts` sells the quiz flow and nothing else, so a shopper could reasonably
+conclude the app *is* one quiz game. `frontend/e2e/store-breadth.spec.ts` plays one live prod room
+per visually distinct game and shoots the result. Same env, same size assertions:
+
+```bash
+cd frontend
+PLAYWRIGHT_BASE_URL=https://games.revelryapp.me \
+LIVE_API_BASE_URL=https://gamesapi.revelryapp.me \
+STORE_SHOTS=1 npx playwright test e2e/store-breadth.spec.ts --project chromium-desktop --workers=1
+```
+
+Add `BREADTH_TARGETS=app-store/iphone-6.7` to iterate against one target (~1 min vs ~4.5 min).
+
+Three things that will bite whoever edits the tour:
+
+- **The photographed player must join at the store viewport.** The harness `joinPlayers` uses the
+  default viewport — right for filler players, wrong for the one you shoot. Shooting it yields an
+  off-size PNG; the size assertion catches it (4 of 5 games failed exactly this way on first run).
+  Use the spec's local `joinPlayerAtTarget` for the hero page.
+- **`settleMs` is per game.** There is no universal "game started" selector across 33 engines, so
+  the tour settles on a timer. 4s is fine for most; drawing needs ~9s or the round hasn't opened.
+- **Housie is deliberately excluded.** The host calls numbers manually, so an unattended run sits
+  on "Waiting for first call · 0 numbers called" no matter how long it settles (verified at 16s).
+  Adding it back requires driving host calls first, or it ships a dead screenshot.
+
+Each game is best-effort and isolated — one broken game logs `✗ <game>: <reason>` and the rest
+still capture, so a changed start flow degrades to a missing shot rather than an empty run. The
+run prints `captured N/M`; treat any N < M as a real regression, not noise.
+
+**Renumbering hazard:** shots are named by tour index, so removing a game shifts every later
+filename and leaves the old ones on disk as stale duplicates. After changing the tour, confirm each
+target holds exactly one identical set (13 files as of 2026-07-26) before uploading anything.
+
 Screens (7 per target): `01-catalog` (Most Popular), `02-quiz-setup`, `03-lobby` (QR + 3 joined
 players), `04-gameplay` (player view), `05-podium`, `06-player-join`, `07-get-sparks` (the IAP
 review screenshot). Listing copy + upload order: `store-listing.md`.
