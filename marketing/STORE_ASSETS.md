@@ -111,17 +111,22 @@ Three things that will bite whoever edits the tour:
   Use the spec's local `joinPlayerAtTarget` for the hero page.
 - **`settleMs` is per game.** There is no universal "game started" selector across 33 engines, so
   the tour settles on a timer. 4s is fine for most; drawing needs ~9s or the round hasn't opened.
-- **Housie is deliberately excluded.** The host calls numbers manually, so an unattended run sits
-  on "Waiting for first call · 0 numbers called" no matter how long it settles (verified at 16s).
-  Adding it back requires driving host calls first, or it ships a dead screenshot.
+- **Some games need a `prepare` step.** Quick-start defaults don't always photograph. Housie is the
+  worked example: `/room/create` with only a `game_type` gets `caller_mode: "manual"`
+  (`main.py` `_sanitize_housie_game`), where the host presses Call Next for every number — so an
+  unattended run sits on "Waiting for first call · 0 numbers called" forever. Its `prepare` hook
+  calls `/housie/create` with `caller_mode: "auto"` and a 3s interval first. **This was a capture
+  limitation, never a UX bug** — the app ships an auto-caller with a mid-game pause/switch.
 
 Each game is best-effort and isolated — one broken game logs `✗ <game>: <reason>` and the rest
 still capture, so a changed start flow degrades to a missing shot rather than an empty run. The
 run prints `captured N/M`; treat any N < M as a real regression, not noise.
 
-**Renumbering hazard:** shots are named by tour index, so removing a game shifts every later
-filename and leaves the old ones on disk as stale duplicates. After changing the tour, confirm each
-target holds exactly one identical set (13 files as of 2026-07-26) before uploading anything.
+**Renumbering is handled for you.** Shots are named by tour index, so adding or removing a game
+renames everything after it and orphans the old files — indistinguishable from real shots at upload
+time (this genuinely produced a 19-file directory that should have held 14). `pruneStaleBreadthShots`
+now deletes this tour's own numbered output (index ≥ 08, so the 01–07 quiz set is untouched) before
+each run, so a target directory can only ever hold one set. Current set: **14 files per target**.
 
 Screens (7 per target): `01-catalog` (Most Popular), `02-quiz-setup`, `03-lobby` (QR + 3 joined
 players), `04-gameplay` (player view), `05-podium`, `06-player-join`, `07-get-sparks` (the IAP

@@ -46,6 +46,16 @@
 - **Acronym Game standalone MVP.** Implemented catalog/room/socket/runtime UI for acronym expansion submission, anonymous voting, reveal, vote scoring, late join, reconnect, podium, rules metadata, and focused API/socket tests. LocalPlay now exposes it as a Revelry quick-start/settings catalog candidate. Follow-ups: AI/manual authoring UI, host-app policy/embedded QA, and broad Playwright matrix coverage.
 - **Party-scale lobby continuity base.** Implemented soft lobby disconnects so transient player WebSocket closes preserve seats as `offline` for a configurable grace window, lobby/start counts use connected players only, offline seats are visible to the host, same-token lobby reconnect reclaims the nickname, offline seats are pruned before a game starts, and player sessions are saved across session/local browser storage. Follow-ups: explicit host remove/cleanup action, gamma soak test simulating mobile sleep/lobby lull/reopen from Revelry, and reconnect telemetry dashboards.
 
+- **Game-history / stats screen + game-completion badges (SPEC-GAME-STATS).** `game_history` was an
+  in-memory ring, so lifetime stats were impossible and game-completion achievements stayed blocked.
+  Adds a durable `game_results` table (room_code PK ⇒ a replayed podium can't double-count), collapses
+  the 18 duplicated engine podium blocks into one `record_game_completion` choke-point, `GET /stats`
+  (never 500s — reports `available:false` pre-migration so the code ships safely ahead of the table),
+  Supabase parity via table-only + Python aggregation, `StatsSection` in the drawer (self-hiding, no
+  flag), and 4 new badges (`first_game`/`ten_games`/`big_party`/`explorer`). Copy says **hosted**, not
+  played: guests never authenticate, so the host's wallet is the only attributable identity. Tests:
+  backend 15, frontend 7. **Not yet deployed / table not yet applied on Supabase.**
+
 ## Platform / Persistence
 
 - **LLM model bump: hold 2.5-flash-lite → move early Oct 2026.** Stay on `gemini-2.5-flash-lite` (the current default for free + premium, `GEMINI_MODEL` / `GEMINI_PREMIUM_MODEL` in `backend/config.py`, plus the checked-in `.env` and gamma/prod VM `.env`) **through September 2026**, then migrate to the newer flash-lite (e.g. `gemini-3.x-flash-lite`) at the **beginning of October 2026**. Scope when the time comes: bump the two config defaults + `GEMINI_IMAGE_MODEL` if the image model also moves, update `backend/.env`, `model_comparison.py`, and the `test_remote_config.py` fixtures; verify generation quality/latency/cost on gamma first; then set `GEMINI_MODEL` on the gamma/prod VM `.env` and recreate the containers. No code migration — it's env-driven.
@@ -60,7 +70,8 @@ Candidate next features, all wallet/DB-centric so they're fully unit-testable ag
 patterns. Each should ship as: spec → backend + pytest → frontend + vitest → commit, plus a ready-to-apply
 Supabase RPC via `sql/templates/games-schema.template.sql` and the `REFERRALS_ENABLED`-style activation gate.
 
-- **Game-history / stats screen.** Per-wallet "games played / won / favorite mode / current streak"
+- ~~**Game-history / stats screen.**~~ DONE 2026-07-27 — see SPEC-GAME-STATS (shipped as *games hosted*;
+  streaks still open). Original note: Per-wallet "games played / won / favorite mode / current streak"
   summary. A `game_history` write on game completion + a `/stats` read endpoint + a simple stats UI.
   (Note: some history already exists server-side — audit `game_history`/`MAX_GAME_HISTORY` before building.)
 

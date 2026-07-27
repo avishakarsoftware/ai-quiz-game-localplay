@@ -217,23 +217,25 @@ required pixel size (asserted in the test, so a wrong-sized image fails rather t
 | 06 | Player join | "join from your own phone, no download" |
 | 07 | Get Sparks | IAP tiers, cost context, terms |
 | 08 | Drawing | draw-and-guess: palette, tools, live prompt |
-| 09 | Party Poker | a real hand, table cards, chip stacks |
-| 10 | Would You Rather | one-tap voting, live scores |
-| 11 | Acronym Game | text party game, submissions + scores |
-| 12 | Find Someone Who | a full 20-prompt card — the depth shot |
-| 13 | Emoji Story | emoji-chain prompt, free-text entry |
+| 09 | Housie | live number call, marked ticket, prize claims |
+| 10 | Party Poker | a real hand, table cards, chip stacks |
+| 11 | Would You Rather | one-tap voting, live scores |
+| 12 | Acronym Game | text party game, submissions + scores |
+| 13 | Find Someone Who | a full 20-prompt card — the depth shot |
+| 14 | Emoji Story | emoji-chain prompt, free-text entry |
 
 **Recommended App Store order (10 slots, breadth-first):**
-`01 → 03 → 04 → 09 → 12 → 10 → 11 → 13 → 05 → 07`
+`01 → 03 → 04 → 10 → 13 → 11 → 09 → 12 → 05 → 07`
 
 Leads with the catalog, then how people join, then one quiz round, then four *different* games
 before the payoff and the paywall. Apple shows the first three most prominently, so slots 1–3
-must land "33 games / everyone joins from their phone / it's already playing". `02` and `06` are
-held back — good screens, but they repeat the quiz-setup and join stories already told.
+must land "33 games / everyone joins from their phone / it's already playing". `02`, `06`, `08` and
+`14` are held back — good screens, but 02/06 repeat the quiz-setup and join stories already told,
+and Drawing photographs as a mostly-empty canvas because nobody has drawn yet.
 
-**Not in the tour — Housie.** The host calls numbers manually, so an unattended capture sits on
-"Waiting for first call · 0 numbers called" regardless of settle time (verified at 16s). It needs
-host-driven calls before it photographs well; adding it blindly ships a dead screenshot.
+Housie needed a capture fix, not an app fix: quick-start rooms default to `caller_mode: "manual"`,
+so an unattended run never calls a number. The tour now prepares it with the auto-caller (the app
+has shipped one all along), and the shot shows a live call with a marked ticket.
 
 **Known cosmetic gap (iPad/tablet):** the app targets iPhone *and* iPad
 (`TARGETED_DEVICE_FAMILY = "1,2"`), so Apple requires the 12.9" set — but the layout is

@@ -102,6 +102,23 @@ CREATE TABLE IF NOT EXISTS games_share_snapshots (
 CREATE INDEX IF NOT EXISTS idx_games_share_snapshots_created
   ON games_share_snapshots(created_at);
 
+-- Durable per-wallet game completions (SPEC-GAME-STATS). main.py's `game_history` is an
+-- in-memory ring that dies with the process, so lifetime stats were impossible. wallet_id is
+-- the HOST's wallet — guests join without wallets — so these are "games hosted".
+-- room_code is the PK so a re-broadcast podium cannot double-count one game.
+CREATE TABLE IF NOT EXISTS games_game_results (
+  room_code TEXT PRIMARY KEY,
+  wallet_id TEXT NOT NULL,
+  game_type TEXT NOT NULL DEFAULT '',
+  game_title TEXT NOT NULL DEFAULT '',
+  player_count INTEGER NOT NULL DEFAULT 0,
+  winner_nickname TEXT NOT NULL DEFAULT '',
+  top_score INTEGER NOT NULL DEFAULT 0,
+  completed_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_games_game_results_wallet
+  ON games_game_results(wallet_id, completed_at DESC);
+
 CREATE TABLE IF NOT EXISTS games_entitlements (
   id TEXT PRIMARY KEY,
   user_id TEXT,
@@ -369,7 +386,11 @@ ALTER TABLE games_game_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_rejections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_achievements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE games_share_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE games_game_results ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS service_role_all_games_game_results ON games_game_results;
+CREATE POLICY service_role_all_games_game_results ON games_game_results
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS service_role_all_games_achievements ON games_achievements;
 CREATE POLICY service_role_all_games_achievements ON games_achievements
   FOR ALL TO service_role USING (true) WITH CHECK (true);

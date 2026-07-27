@@ -148,6 +148,24 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_share_snapshots_created ON share_snapshots(created_at);
 
+        -- Durable per-wallet game completions (SPEC-GAME-STATS). `game_history` in main.py is an
+        -- in-memory ring that dies with the process, so "games played" could never be shown across
+        -- restarts or instances. wallet_id is the HOST's wallet (room.wallet_id) — guests join from
+        -- their phones without wallets — so these are "games hosted", which is also who pays sparks.
+        -- room_code is UNIQUE so a re-broadcast podium can't double-count a single game.
+        CREATE TABLE IF NOT EXISTS game_results (
+            room_code TEXT PRIMARY KEY,
+            wallet_id TEXT NOT NULL,
+            game_type TEXT NOT NULL DEFAULT '',
+            game_title TEXT NOT NULL DEFAULT '',
+            player_count INTEGER NOT NULL DEFAULT 0,
+            winner_nickname TEXT NOT NULL DEFAULT '',
+            top_score INTEGER NOT NULL DEFAULT 0,
+            completed_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_game_results_wallet
+            ON game_results(wallet_id, completed_at DESC);
+
         -- Deleted-account denylist (SPEC-ACCOUNT-DELETION §2).
         -- Session tokens are stateless JWTs and cannot be revoked, so a live token held by a
         -- just-deleted user would otherwise sail through auth and hit get_or_create_wallet,
@@ -1467,6 +1485,69 @@ def get_share_snapshot(token: str) -> dict | None:
     return snap
 
 
+# --- Game results / stats (SPEC-GAME-STATS) ---
+
+def record_game_result(room_code: str, wallet_id: str, game_type: str, game_title: str,
+                       player_count: int, winner_nickname: str, top_score: int,
+                       completed_at: int) -> bool:
+    """Persist one completed game for the host's wallet. Returns True if newly recorded.
+
+    INSERT OR IGNORE on the room_code PK makes this idempotent: several engines can reach a
+    podium more than once for the same room (re-broadcast, reconnect, host re-entering PODIUM),
+    and double-counting would inflate every stat on the screen.
+    """
+    if not wallet_id or not room_code:
+        return False
+    conn = _get_conn()
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO game_results "
+        "(room_code, wallet_id, game_type, game_title, player_count, winner_nickname, top_score, completed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (room_code, wallet_id, game_type or "", game_title or "", int(player_count or 0),
+         (winner_nickname or "")[:60], int(top_score or 0), int(completed_at)),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def get_wallet_stats(wallet_id: str) -> dict:
+    """Aggregate hosting stats for one wallet. Always returns a dict — a wallet with no games
+    yields zeros rather than None, so the UI never has to special-case a first-time host."""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT COUNT(*) AS games_hosted, "
+        "       COALESCE(SUM(player_count), 0) AS players_entertained, "
+        "       COALESCE(MAX(completed_at), 0) AS last_played_at "
+        "FROM game_results WHERE wallet_id = ?", (wallet_id,)
+    ).fetchone()
+    stats = dict(row) if row else {"games_hosted": 0, "players_entertained": 0, "last_played_at": 0}
+    fav = conn.execute(
+        "SELECT game_type, COUNT(*) AS n FROM game_results WHERE wallet_id = ? "
+        "GROUP BY game_type ORDER BY n DESC, game_type ASC LIMIT 1", (wallet_id,)
+    ).fetchone()
+    stats["favorite_game_type"] = fav["game_type"] if fav else ""
+    stats["favorite_game_count"] = fav["n"] if fav else 0
+    by_type = conn.execute(
+        "SELECT game_type, COUNT(*) AS n FROM game_results WHERE wallet_id = ? "
+        "GROUP BY game_type ORDER BY n DESC, game_type ASC", (wallet_id,)
+    ).fetchall()
+    stats["by_game_type"] = [{"game_type": r["game_type"], "count": r["n"]} for r in by_type]
+    stats["distinct_games_played"] = len(by_type)
+    return stats
+
+
+def get_recent_games(wallet_id: str, limit: int = 10) -> list[dict]:
+    """Most recent completed games for a wallet, newest first."""
+    limit = max(1, min(int(limit or 10), 50))
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT room_code, game_type, game_title, player_count, winner_nickname, top_score, completed_at "
+        "FROM game_results WHERE wallet_id = ? ORDER BY completed_at DESC LIMIT ?",
+        (wallet_id, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:
     """Credit purchased tokens and increment lifetime_purchased. Returns (success, new_balance).
     Idempotent: if reference_id was already credited, returns current balance without double-crediting.
@@ -2180,6 +2261,9 @@ if config.DB_BACKEND == "supabase":
         "list_achievements",
         "save_share_snapshot",
         "get_share_snapshot",
+        "record_game_result",
+        "get_wallet_stats",
+        "get_recent_games",
         "has_ever_purchased",
         "credit_purchase",
         "merge_wallet",

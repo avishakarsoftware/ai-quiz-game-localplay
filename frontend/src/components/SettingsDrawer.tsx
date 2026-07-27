@@ -8,6 +8,7 @@ import TokenBadge from './TokenBadge';
 import ReferralSection from './ReferralSection';
 import GiftSection from './GiftSection';
 import AchievementsSection from './AchievementsSection';
+import StatsSection from './StatsSection';
 import DeleteAccountDialog from './DeleteAccountDialog';
 
 declare global {
@@ -382,6 +383,11 @@ export default function SettingsDrawer() {
 
                 {/* Achievements / badges (SPEC-ACHIEVEMENTS) */}
                 {remoteConfig.feature_flags.achievements_enabled === true && <AchievementsSection />}
+
+                {/* Hosting stats (SPEC-GAME-STATS). No feature flag: /stats reports
+                    `available: false` when the table isn't applied, and the section hides
+                    itself until the host has actually finished a game. */}
+                <StatsSection />
 
                 {/* Home button */}
                 <div

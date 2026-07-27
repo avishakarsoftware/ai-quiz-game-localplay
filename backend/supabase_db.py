@@ -620,6 +620,76 @@ def get_share_snapshot(token: str) -> dict | None:
     return snap
 
 
+# --- Game results / stats (SPEC-GAME-STATS) ---
+
+# Aggregation happens in Python over the wallet's rows rather than in a GROUP BY RPC:
+# PostgREST has no clean grouping, and one host's lifetime games is a small set. The cap
+# keeps a pathological wallet from pulling an unbounded result — stats above it are
+# reported over the most recent STATS_ROW_CAP games, which is stated in the API response.
+STATS_ROW_CAP = 1000
+
+
+def record_game_result(room_code: str, wallet_id: str, game_type: str, game_title: str,
+                       player_count: int, winner_nickname: str, top_score: int,
+                       completed_at: int) -> bool:
+    if not wallet_id or not room_code:
+        return False
+    # ignore_duplicates mirrors SQLite's INSERT OR IGNORE on the room_code PK, so a
+    # re-broadcast podium for the same room can't double-count.
+    rows = _sb().insert("game_results", {
+        "room_code": room_code,
+        "wallet_id": wallet_id,
+        "game_type": game_type or "",
+        "game_title": game_title or "",
+        "player_count": int(player_count or 0),
+        "winner_nickname": (winner_nickname or "")[:60],
+        "top_score": int(top_score or 0),
+        "completed_at": int(completed_at),
+    }, ignore_duplicates=True)
+    return bool(rows)
+
+
+def _wallet_result_rows(wallet_id: str) -> list[dict]:
+    return _sb().select(
+        "game_results",
+        filters={"wallet_id": f"eq.{wallet_id}"},
+        order="completed_at.desc",
+        limit=STATS_ROW_CAP,
+    )
+
+
+def get_wallet_stats(wallet_id: str) -> dict:
+    rows = _wallet_result_rows(wallet_id)
+    counts: dict[str, int] = {}
+    for r in rows:
+        gt = r.get("game_type") or ""
+        counts[gt] = counts.get(gt, 0) + 1
+    # Ties broken by game_type ascending, matching the SQLite ORDER BY n DESC, game_type ASC.
+    by_type = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return {
+        "games_hosted": len(rows),
+        "players_entertained": sum(int(r.get("player_count") or 0) for r in rows),
+        "last_played_at": max((int(r.get("completed_at") or 0) for r in rows), default=0),
+        "favorite_game_type": by_type[0][0] if by_type else "",
+        "favorite_game_count": by_type[0][1] if by_type else 0,
+        "by_game_type": [{"game_type": gt, "count": n} for gt, n in by_type],
+        "distinct_games_played": len(by_type),
+    }
+
+
+def get_recent_games(wallet_id: str, limit: int = 10) -> list[dict]:
+    limit = max(1, min(int(limit or 10), 50))
+    rows = _sb().select(
+        "game_results",
+        filters={"wallet_id": f"eq.{wallet_id}"},
+        order="completed_at.desc",
+        limit=limit,
+    )
+    keys = ("room_code", "game_type", "game_title", "player_count",
+            "winner_nickname", "top_score", "completed_at")
+    return [{k: r.get(k) for k in keys} for r in rows]
+
+
 def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:
     if amount <= 0:
         raise ValueError(f"credit_purchase amount must be positive, got {amount}")

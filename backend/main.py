@@ -5252,6 +5252,73 @@ async def update_bingo(bingo_id: str, request: BingoCreateRequest, req: Request)
 game_history: List[dict] = []
 
 
+def _game_display_name(game_type: str) -> str:
+    """Catalog title for a game_type, falling back to the raw id.
+
+    Stats must never surface a bare id like "would_you_rather" to a player, but a game_type
+    that has since been removed from the catalog should still render as *something*.
+    """
+    if not game_type:
+        return ""
+    return next((g["title"] for g in GAME_CATALOG if g["game_type"] == game_type), game_type)
+
+
+def record_game_completion(summary: dict) -> None:
+    """Record one finished game: in-memory ring + durable per-wallet row (SPEC-GAME-STATS).
+
+    Every engine's podium path used to inline the same four lines (append, trim, done), which
+    meant 18 copies and no durable record — `game_history` dies with the process, so lifetime
+    stats were impossible. This is the single choke-point for both.
+
+    The DB write is best-effort on purpose: stats must never be able to break a podium. A
+    failure (pre-migration Supabase, transient outage) degrades to in-memory only, exactly how
+    share snapshots behave, so applying the migration is a transparent no-flag upgrade.
+    """
+    game_history.append(summary)
+    if len(game_history) > config.MAX_GAME_HISTORY:
+        del game_history[:len(game_history) - config.MAX_GAME_HISTORY]
+    wallet_id = summary.get("wallet_id") or ""
+    if not wallet_id:
+        return  # Revelry-hosted / walletless rooms have nobody to attribute the game to.
+    try:
+        leaderboard = summary.get("leaderboard") or []
+        top = leaderboard[0] if leaderboard else {}
+        player_count = int(summary.get("player_count") or 0)
+        newly_recorded = db.record_game_result(
+            room_code=summary.get("room_code") or "",
+            wallet_id=wallet_id,
+            game_type=summary.get("game_type") or "",
+            game_title=summary.get("game_title") or "",
+            player_count=player_count,
+            winner_nickname=str(top.get("nickname") or ""),
+            top_score=int(top.get("score") or 0),
+            completed_at=int(summary.get("completed_at") or time.time()),
+        )
+        # Only award on a genuinely new row — a replayed podium must not re-trigger badges.
+        if newly_recorded:
+            _award_game_badges(wallet_id, player_count)
+    except Exception:
+        logger.warning("Could not persist game result for room %s", summary.get("room_code"), exc_info=True)
+
+
+def _award_game_badges(wallet_id: str, player_count: int) -> None:
+    """Game-completion badges (SPEC-ACHIEVEMENTS v2). Best-effort — `_award_badge` already
+    swallows failures, and the stats read is wrapped so a badge check can't fail a podium."""
+    if not _ACHIEVEMENTS_SUPPORTED:
+        return
+    _award_badge(wallet_id, "first_game")
+    if player_count >= config.ACHIEVEMENT_BIG_PARTY_PLAYERS:
+        _award_badge(wallet_id, "big_party")
+    try:
+        stats = db.get_wallet_stats(wallet_id)
+    except Exception:
+        return
+    if stats.get("games_hosted", 0) >= config.ACHIEVEMENT_GAMES_HOSTED:
+        _award_badge(wallet_id, "ten_games")
+    if stats.get("distinct_games_played", 0) >= config.ACHIEVEMENT_DISTINCT_GAMES:
+        _award_badge(wallet_id, "explorer")
+
+
 @app.get("/history")
 async def get_game_history(req: Request):
     """Get history of completed games scoped to the requesting wallet."""
@@ -5260,6 +5327,43 @@ async def get_game_history(req: Request):
         raise HTTPException(status_code=401, detail="Authentication required")
     my_games = [g for g in game_history if g.get("wallet_id") == wallet_id]
     return {"games": my_games}
+
+
+@app.get("/stats")
+async def get_stats(req: Request):
+    """Lifetime hosting stats for the requesting wallet (SPEC-GAME-STATS).
+
+    Never 500s: if the `game_results` table isn't applied yet (or the DB blips), this returns
+    zeroed stats with `available: false` so the UI can hide the section instead of erroring.
+    That makes shipping the code ahead of the migration safe.
+    """
+    wallet_id = tokens.get_wallet_id(req)
+    if not wallet_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        stats = db.get_wallet_stats(wallet_id)
+        recent = db.get_recent_games(wallet_id, limit=10)
+    except Exception:
+        logger.warning("Stats unavailable for wallet %s", wallet_id[:8], exc_info=True)
+        return {
+            "available": False,
+            "games_hosted": 0,
+            "players_entertained": 0,
+            "distinct_games_played": 0,
+            "favorite_game_type": "",
+            "favorite_game_title": "",
+            "last_played_at": 0,
+            "by_game_type": [],
+            "recent": [],
+        }
+    # Resolve the catalog's display name so the UI never shows a raw id like "would_you_rather".
+    fav_type = stats.get("favorite_game_type") or ""
+    stats["favorite_game_title"] = _game_display_name(fav_type)
+    for row in stats.get("by_game_type", []):
+        row["game_title"] = _game_display_name(row.get("game_type") or "")
+    stats["available"] = True
+    stats["recent"] = recent
+    return stats
 
 
 @app.get("/history/{room_code}")

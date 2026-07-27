@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Browser, type Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -7,6 +7,7 @@ import {
   joinPlayers,
   liveDeviceId,
   openOrganizerFromRoom,
+  postJson,
   startLobbyGame,
 } from './liveGameHarness';
 
@@ -61,15 +62,41 @@ interface Tour {
   players: string[];
   shootPlayer: boolean;
   settleMs?: number;     // some games need time to reach a screen worth showing
+  /**
+   * Extra `/room/create` body for games whose quick-start defaults don't photograph.
+   * Runs before the room is created and may hit the API to build prepared content.
+   */
+  prepare?: (
+    request: APIRequestContext,
+    deviceId: string,
+  ) => Promise<Record<string, unknown>>;
 }
 
 const TOUR: Tour[] = [
   // Drawing: the HOST screen is just "Drawer: Leo / Clue: ____" over black. The player
   // screen is where the canvas and tools live, so shoot that and give the round time to open.
   { gameType: 'drawing', name: 'drawing', players: ['Maya', 'Leo', 'Ada'], shootPlayer: true, settleMs: 9000 },
-  // Housie is deliberately NOT in the tour: the host calls numbers manually, so an
-  // unattended run sits on "Waiting for first call / 0 numbers called" no matter how long
-  // it settles (verified at 16s). It needs host-driven calls before it photographs well.
+  // Housie quick-start defaults to caller_mode "manual" (main.py `_sanitize_housie_game`),
+  // where the host presses Call Next for every number — so an unattended run sits on
+  // "Waiting for first call · 0 numbers called" forever (seen at 16s). The app is fine; it
+  // ships an auto-caller. Prepare the game with caller_mode "auto" at the fastest interval
+  // so numbers are actually on the board by the time we shoot.
+  {
+    gameType: 'housie',
+    name: 'housie',
+    players: ['Maya', 'Leo', 'Ada'],
+    shootPlayer: true,
+    settleMs: 18000,
+    prepare: async (request, deviceId) => {
+      const { housie_id } = await postJson<{ housie_id: string }>(
+        request,
+        '/housie/create',
+        { game_title: 'Housie', caller_mode: 'auto', auto_interval_seconds: 3 },
+        deviceId,
+      );
+      return { housie_id };
+    },
+  },
   { gameType: 'poker', name: 'poker', players: ['Maya', 'Leo', 'Ada'], shootPlayer: true },
   { gameType: 'would_you_rather', name: 'would-you-rather', players: ['Maya', 'Leo'], shootPlayer: true },
   { gameType: 'acronym', name: 'acronym', players: ['Maya', 'Leo'], shootPlayer: true },
@@ -87,6 +114,27 @@ async function shoot(page: Page, target: Target, name: string): Promise<string> 
   const { width, height } = await page.viewportSize()!;
   expect({ width: width * target.dsf, height: height * target.dsf }).toEqual(target.expect);
   return file;
+}
+
+/**
+ * Delete any previously-written breadth shot for this target.
+ *
+ * Only touches indices this tour owns (08+), so the quiz-flow set written by
+ * `store-screenshots.spec.ts` (01–07) is never removed.
+ */
+async function pruneStaleBreadthShots(target: Target): Promise<void> {
+  const dir = path.join(MARKETING, target.dir);
+  let entries: string[];
+  try {
+    entries = await fs.readdir(dir);
+  } catch {
+    return; // first run for this target
+  }
+  await Promise.all(
+    entries
+      .filter((f) => /^\d{2}-.*\.png$/.test(f) && Number(f.slice(0, 2)) >= 8)
+      .map((f) => fs.rm(path.join(dir, f), { force: true })),
+  );
 }
 
 async function newPage(browser: Browser, target: Target): Promise<Page> {
@@ -127,6 +175,12 @@ test.describe('store breadth tour', () => {
       const captured: string[] = [];
       const skipped: string[] = [];
 
+      // Shots are named by tour INDEX, so adding or removing a game renames everything after
+      // it and orphans the old files. Those orphans are indistinguishable from real shots at
+      // upload time (it produced a 19-file directory that should have held 14). Prune this
+      // tour's own numbered output up front so the directory can only ever hold one set.
+      await pruneStaleBreadthShots(target);
+
       for (const [i, game] of TOUR.entries()) {
         const stem = `${String(i + 8).padStart(2, '0')}-${game.name}`;
         let host: Page | undefined;
@@ -134,7 +188,11 @@ test.describe('store breadth tour', () => {
         let players: Awaited<ReturnType<typeof joinPlayers>> = [];
         try {
           const deviceId = liveDeviceId(`breadth-${game.gameType}`);
-          const room = await createRoomViaApi(request, deviceId, { game_type: game.gameType });
+          const extra = game.prepare ? await game.prepare(request, deviceId) : {};
+          const room = await createRoomViaApi(request, deviceId, {
+            game_type: game.gameType,
+            ...extra,
+          });
 
           host = await newPage(browser, target);
           await openOrganizerFromRoom(host, room);

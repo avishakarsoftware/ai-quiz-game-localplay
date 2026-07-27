@@ -102,6 +102,23 @@ CREATE TABLE IF NOT EXISTS __PREFIX__share_snapshots (
 CREATE INDEX IF NOT EXISTS idx___PREFIX__share_snapshots_created
   ON __PREFIX__share_snapshots(created_at);
 
+-- Durable per-wallet game completions (SPEC-GAME-STATS). main.py's `game_history` is an
+-- in-memory ring that dies with the process, so lifetime stats were impossible. wallet_id is
+-- the HOST's wallet — guests join without wallets — so these are "games hosted".
+-- room_code is the PK so a re-broadcast podium cannot double-count one game.
+CREATE TABLE IF NOT EXISTS __PREFIX__game_results (
+  room_code TEXT PRIMARY KEY,
+  wallet_id TEXT NOT NULL,
+  game_type TEXT NOT NULL DEFAULT '',
+  game_title TEXT NOT NULL DEFAULT '',
+  player_count INTEGER NOT NULL DEFAULT 0,
+  winner_nickname TEXT NOT NULL DEFAULT '',
+  top_score INTEGER NOT NULL DEFAULT 0,
+  completed_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx___PREFIX__game_results_wallet
+  ON __PREFIX__game_results(wallet_id, completed_at DESC);
+
 CREATE TABLE IF NOT EXISTS __PREFIX__entitlements (
   id TEXT PRIMARY KEY,
   user_id TEXT,
@@ -369,7 +386,11 @@ ALTER TABLE __PREFIX__game_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__rejections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__achievements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE __PREFIX__share_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE __PREFIX__game_results ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS service_role_all___PREFIX__game_results ON __PREFIX__game_results;
+CREATE POLICY service_role_all___PREFIX__game_results ON __PREFIX__game_results
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS service_role_all___PREFIX__achievements ON __PREFIX__achievements;
 CREATE POLICY service_role_all___PREFIX__achievements ON __PREFIX__achievements
   FOR ALL TO service_role USING (true) WITH CHECK (true);

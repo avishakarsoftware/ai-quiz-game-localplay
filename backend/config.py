@@ -162,7 +162,9 @@ MAX_GIFT_TOKENS_PER_DAY = int(os.getenv("MAX_GIFT_TOKENS_PER_DAY", "200"))  # pe
 # applied first, then GIFTING_ENABLED=true.
 GIFTING_ENABLED = os.getenv("GIFTING_ENABLED", "false").lower() == "true"
 # Achievements / badges (SPEC-ACHIEVEMENTS): idempotent per-wallet badges awarded on milestones.
-# v1 covers economy events only (no game-completion hooks yet). Read-mostly, no economy risk.
+# v2 adds game-completion badges, which v1 could not do — they needed durable per-wallet game
+# records, and `game_history` was in-memory only. The `game_results` table (SPEC-GAME-STATS)
+# unblocked them. Read-mostly, no economy risk.
 # Same gate shape: SQLite always on; on Supabase needs the achievements table + RPC, then ACHIEVEMENTS_ENABLED=true.
 ACHIEVEMENTS_ENABLED = os.getenv("ACHIEVEMENTS_ENABLED", "false").lower() == "true"
 # The badge catalog is backend-authoritative: /achievements returns the whole catalog with earned flags,
@@ -171,7 +173,15 @@ ACHIEVEMENT_CATALOG = [
     {"id": "welcome", "emoji": "👋", "name": "Welcome to Revelry", "description": "Joined the party."},
     {"id": "first_referral", "emoji": "🔗", "name": "Connector", "description": "Completed a referral."},
     {"id": "first_gift", "emoji": "🎁", "name": "Generous", "description": "Sent your first spark gift."},
+    {"id": "first_game", "emoji": "🎉", "name": "Host", "description": "Hosted your first game."},
+    {"id": "ten_games", "emoji": "🎪", "name": "Ringmaster", "description": "Hosted 10 games."},
+    {"id": "big_party", "emoji": "🥳", "name": "Big Party", "description": "Hosted a game with 8+ players."},
+    {"id": "explorer", "emoji": "🧭", "name": "Explorer", "description": "Played 5 different games."},
 ]
+# Thresholds for the game-completion badges above, kept next to the catalog they drive.
+ACHIEVEMENT_GAMES_HOSTED = int(os.getenv("ACHIEVEMENT_GAMES_HOSTED", "10"))
+ACHIEVEMENT_BIG_PARTY_PLAYERS = int(os.getenv("ACHIEVEMENT_BIG_PARTY_PLAYERS", "8"))
+ACHIEVEMENT_DISTINCT_GAMES = int(os.getenv("ACHIEVEMENT_DISTINCT_GAMES", "5"))
 ACHIEVEMENT_IDS = frozenset(b["id"] for b in ACHIEVEMENT_CATALOG)
 # Shareable result cards (SPEC-SHARE-CARD): in-memory result snapshots for OG unfurl links.
 SHARE_TTL_SECONDS = int(os.getenv("SHARE_TTL_SECONDS", str(7 * 86400)))
