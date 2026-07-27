@@ -279,6 +279,27 @@ GAME_RULES: dict[str, dict[str, Any]] = {
         ["Each vote scores one point for the story author.", "Highest score wins."],
         players={"min": 2, "recommended": "4-20"},
     ),
+    "odd_one_out": _rules(
+        "Odd One Out Rules",
+        "Everyone answers the same question — except one player, who got a different one.",
+        [
+            "Spot the player whose question was different.",
+            "If you are the odd one out, blend in and survive the vote.",
+        ],
+        [
+            "Everyone gets a question on their phone. One player's is secretly different.",
+            "Everyone submits a short answer.",
+            "All answers are revealed, and everyone votes for who they think was the odd one.",
+            "The odd one and both questions are revealed, then the host advances.",
+        ],
+        [
+            "Guess the odd one correctly: 2 points.",
+            "Odd one survives without a majority naming them: 3 points.",
+            "Odd one also gets 1 bonus point for voting with the crowd against someone innocent.",
+            "Being the odd one rotates, so everyone gets a turn.",
+        ],
+        players={"min": 3, "recommended": "4-10"},
+    ),
     "would_you_rather": _rules(
         "Would You Rather Rules",
         "Pick between two options and reveal how the room splits.",

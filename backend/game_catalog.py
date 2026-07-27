@@ -738,6 +738,34 @@ GAME_CATALOG = [
             "decision_time_seconds": {"min": 10, "max": 90, "default": 25},
         },
     },
+    {
+        "id": "odd_one_out",
+        "game_type": "odd_one_out",
+        "runtime_type": "odd_one_out",
+        "title": "Odd One Out",
+        "description": "Everyone answers the same question — except one player, who got a different one. Spot the impostor.",
+        "status": "gamma",
+        "launchable": True,
+        "host_app_supported": True,
+        "supported_host_apps": ["revelry"],
+        "supports_custom_content": True,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "odd_one_out_pairs_v1",
+            "supported_media": [],
+        },
+        "config_schema": {
+            "players": {"min": config.MIN_ODD_ONE_OUT_PLAYERS, "max": config.MAX_PLAYERS_PER_ROOM},
+            "rounds": {"min": 1, "max": 10, "default": 5},
+        },
+    },
 ]
 
 attach_rules(GAME_CATALOG)
