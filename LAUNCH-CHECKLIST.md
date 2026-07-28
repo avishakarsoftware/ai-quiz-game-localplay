@@ -40,9 +40,14 @@ legacy, not a size problem.)
 `apps.apple.com`) returns "Navigation to this domain is not allowed" under the browser policy, and
 there is no App Store Connect API key or fastlane in this repo. Play Console *is* reachable.
 
-**Android: v3.1.3 (9) in Play review since 2026-07-20**, managed publishing OFF → auto-publishes on
-approval. Deliberately not re-uploaded on 07-26 (gifting/achievements ship dormant, so re-uploading
-would restart the review clock for no user-visible gain).
+**Android: v3.1.3 (9) is LIVE on Google Play** — verified in the console 2026-07-28: Production
+Active, 177 countries/regions, **0 installs**. It published the same day it was submitted
+(managed publishing off); it never sat in a multi-day review, and an earlier note here claiming
+otherwise was stale.
+
+Two consequences: there is **no review clock to protect**, so a v10 can go up whenever the backend
+is ready — and with 0 installs there is **no install base to break**, so update risk is minimal.
+The outstanding Android gate is the **license-tester purchase smoke**, still never run.
 
 ---
 
