@@ -6659,3 +6659,96 @@ body {
         height: 120px;
     }
 }
+
+/* ── Pass-and-play (SPEC-PASS-AND-PLAY) ───────────────────────────────────────
+   Two viewing contexts on one device: a PRIVATE screen held close by one person,
+   and a SHARED screen lying on a table with the whole group leaning over it.
+   They need different type scales — that's why the group frame is oversized. */
+
+.passplay-gate,
+.passplay-pass,
+.passplay-group,
+.passplay-roster {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    padding: 28px 20px;
+    text-align: center;
+}
+
+/* Shield: deliberately stark. It must read as "stop" at a glance, from an angle. */
+.passplay-gate--shielded {
+    min-height: 60vh;
+    justify-content: center;
+    background: var(--bg-deep, #17111f);
+    border-radius: 18px;
+}
+
+.passplay-gate__who {
+    font-size: clamp(1.6rem, 7vw, 2.4rem);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.passplay-gate__emoji { font-size: 1.3em; }
+
+.passplay-gate__warning {
+    color: var(--text-secondary, #b9aec8);
+    max-width: 24ch;
+    line-height: 1.4;
+}
+
+/* Growing while held gives the hold honest feedback — the user can see it working. */
+.passplay-gate__hold {
+    min-width: 200px;
+    transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.passplay-gate__hold.is-holding {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 4px rgba(var(--accent-primary-rgb, 236 72 153), 0.28);
+}
+
+.passplay-gate--revealed { min-height: 60vh; justify-content: center; }
+.passplay-gate__content { font-size: clamp(1.5rem, 8vw, 3rem); font-weight: 700; }
+.passplay-gate__done { margin-top: 12px; }
+
+/* Pass screen: one name, nothing else. */
+.passplay-pass { min-height: 60vh; justify-content: center; }
+.passplay-pass__context { color: var(--text-secondary, #b9aec8); letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.8rem; }
+.passplay-pass__label { color: var(--text-secondary, #b9aec8); }
+.passplay-pass__name { font-size: clamp(2rem, 10vw, 3.4rem); display: flex; align-items: center; gap: 12px; }
+.passplay-pass__emoji { font-size: 1.2em; }
+
+/* Group frame: sized to be read from across a table, not at reading distance. */
+.passplay-group__title { font-size: clamp(1.5rem, 6vw, 2.2rem); }
+.passplay-group__subtitle { color: var(--text-secondary, #b9aec8); }
+.passplay-group__body { width: 100%; }
+
+/* Roster */
+.passplay-roster__title { font-size: clamp(1.4rem, 5vw, 1.9rem); }
+.passplay-roster__hint { color: var(--text-secondary, #b9aec8); max-width: 32ch; }
+.passplay-roster__list { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.passplay-roster__row { display: flex; align-items: center; gap: 8px; }
+.passplay-roster__emoji { font-size: 1.4rem; width: 1.6em; }
+.passplay-roster__input {
+    flex: 1;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.05);
+    color: inherit;
+    font-size: 1rem;
+}
+.passplay-roster__remove {
+    background: none;
+    border: none;
+    color: var(--text-secondary, #b9aec8);
+    font-size: 1.1rem;
+    padding: 8px;
+    cursor: pointer;
+}
+.passplay-roster__actions { display: flex; gap: 10px; width: 100%; }
+.passplay-roster__actions .btn { flex: 1; }
+.passplay-roster__need { color: var(--text-secondary, #b9aec8); font-size: 0.9rem; }

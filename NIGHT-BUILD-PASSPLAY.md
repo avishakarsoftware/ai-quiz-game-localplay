@@ -53,11 +53,11 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
 - [x] Backend tests: engine unit tests + a socket/flow test. (66 green)
 
 ### Phase 2 — frontend primitives
-- [ ] `SeatRosterSetup` — host types names, add/remove, emoji pick, min/max enforcement.
-- [ ] `PassScreen` — full-screen "Pass to **Maya** 🥭", nothing sensitive rendered.
-- [ ] `PrivacyGate` — tap-and-hold to reveal → content → "Got it, hide & pass".
-- [ ] `GroupScreenFrame` — face-up phases (vote, reveal, timer) styled for table viewing.
-- [ ] Frontend tests for each primitive, esp. that `PrivacyGate` renders nothing before reveal.
+- [x] `SeatRosterSetup` — host types names, add/remove, emoji pick, min/max enforcement.
+- [x] `PassScreen` — full-screen "Pass to **Maya** 🥭", nothing sensitive rendered.
+- [x] `PrivacyGate` — tap-and-hold to reveal → content → "Got it, hide & pass".
+- [x] `GroupScreenFrame` — face-up phases (vote, reveal, timer) styled for table viewing.
+- [x] Frontend tests for each primitive (19 green), esp. that `PrivacyGate` renders nothing before reveal.
 
 ### Phase 3 — Impostor UI on the primitives
 - [ ] Organizer/host flow: setup → role reveal loop → clue rounds → vote → reveal → podium.
@@ -109,6 +109,16 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
   blocks forever on a missing broadcast and hangs the whole run instead of failing one test.
 
 ## Session log
+
+- **2026-07-28 ~01:05** — Phase 2 COMPLETE. Four primitives in
+  `frontend/src/components/passplay/` + 19 tests + Velvet CSS. tsc clean.
+  The security-relevant design: `PrivacyGate` does NOT render `children` at all while shielded
+  (not `display:none` — a hidden secret is still in the DOM, the a11y tree, and one devtools
+  glance away), reveal needs a press-and-HOLD because a *tap* is what a phone being handed over
+  receives by accident, and it re-shields both on done AND on seat change so a pass mid-reveal
+  can't leak the previous player's role. Tests assert absence from the document, not invisibility.
+  Note: fake-timer advances and pointerDown must be wrapped in `act()` or React warns.
+  Next: Phase 3 — Impostor UI on these primitives.
 
 - **2026-07-28 ~00:55** — Phase 1 COMPLETE (66 tests). Three real bugs the over-the-wire test
   caught: (1) `/room/create` rejected `impostor` via a hardcoded 23-type tuple → replaced with
