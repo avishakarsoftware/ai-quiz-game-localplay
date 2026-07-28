@@ -218,21 +218,21 @@ from acronym_engine import (
     submit_vote as acro_submit_vote,
     validate_config as validate_acronym_config,
 )
-from impostor_engine import (
-    MIN_PLAYERS as IMP_MIN_PLAYERS,
-    PHASE_ANSWERING as IMP_PHASE_ANSWERING,
-    PHASE_PODIUM as IMP_PHASE_PODIUM,
-    PHASE_REVEAL as IMP_PHASE_REVEAL,
-    can_start as imp_can_start,
-    create_initial_state as imp_create_initial_state,
-    next_round as imp_next_round,
-    public_state as imp_public_state,
-    reveal_round as imp_reveal_round,
-    standings as imp_standings,
-    start_voting as imp_start_voting,
-    submit_answer as imp_submit_answer,
-    submit_vote as imp_submit_vote,
-    validate_config as validate_impostor_config,
+from odd_question_engine import (
+    MIN_PLAYERS as ODDQ_MIN_PLAYERS,
+    PHASE_ANSWERING as ODDQ_PHASE_ANSWERING,
+    PHASE_PODIUM as ODDQ_PHASE_PODIUM,
+    PHASE_REVEAL as ODDQ_PHASE_REVEAL,
+    can_start as oddq_can_start,
+    create_initial_state as oddq_create_initial_state,
+    next_round as oddq_next_round,
+    public_state as oddq_public_state,
+    reveal_round as oddq_reveal_round,
+    standings as oddq_standings,
+    start_voting as oddq_start_voting,
+    submit_answer as oddq_submit_answer,
+    submit_vote as oddq_submit_vote,
+    validate_config as validate_odd_question_config,
 )
 from photo_clue_engine import (
     PHASE_PODIUM as PHOTO_PHASE_PODIUM,
@@ -306,7 +306,7 @@ SIMPLE_SOCIAL_GAME_TYPES = frozenset({
     "never_have_i_ever",
     "word_association",
     "acronym",
-    "impostor",
+    "odd_question",
 })
 
 # Games whose players submit via the shared ANSWER message. Everything else has its own input
@@ -434,8 +434,8 @@ class Room:
         self.generic_prompt_completed_sent = False
         # Lightweight social round games
         self.wyr_config = validate_would_you_rather_config(game_data) if game_type == "would_you_rather" else {}
-        self.impostor_config = validate_impostor_config(game_data) if game_type == "impostor" else {}
-        self.impostor_state: dict = {}
+        self.odd_question_config = validate_odd_question_config(game_data) if game_type == "odd_question" else {}
+        self.odd_question_state: dict = {}
         self.wyr_state: dict = {}
         self.nhie_config = validate_never_have_i_ever_config(game_data) if game_type == "never_have_i_ever" else {}
         self.nhie_state: dict = {}
@@ -564,8 +564,8 @@ class Room:
         self.generic_prompt_state = {}
         self.generic_prompt_completed_sent = False
         self.wyr_config = validate_would_you_rather_config(new_game_data) if self.game_type == "would_you_rather" else {}
-        self.impostor_config = validate_impostor_config(new_game_data) if self.game_type == "impostor" else {}
-        self.impostor_state = {}
+        self.odd_question_config = validate_odd_question_config(new_game_data) if self.game_type == "odd_question" else {}
+        self.odd_question_state = {}
         self.wyr_state = {}
         self.nhie_config = validate_never_have_i_ever_config(new_game_data) if self.game_type == "never_have_i_ever" else {}
         self.nhie_state = {}
@@ -633,8 +633,8 @@ class Room:
             return len(self.survey_says_state.get("config", {}).get("rounds", [])) or len(self.survey_says_config.get("rounds", [])) or 3
         if self.game_type in GENERIC_PROMPT_GAME_TYPES:
             return len(self.generic_prompt_state.get("rounds", [])) or len(self.generic_prompt_config.get("rounds", [])) or 3
-        if self.game_type == "impostor":
-            return int(self.impostor_config.get("total_rounds") or 5)
+        if self.game_type == "odd_question":
+            return int(self.odd_question_config.get("total_rounds") or 5)
         if self.game_type == "would_you_rather":
             return len(self.wyr_state.get("rounds", [])) or len(self.wyr_config.get("prompts", [])) or 3
         if self.game_type == "never_have_i_ever":
@@ -686,9 +686,9 @@ class Room:
             return survey_public_sync(self.survey_says_state, players=self.player_public_list()) if self.survey_says_state else None
         if self.game_type in GENERIC_PROMPT_GAME_TYPES:
             return generic_public_state(self.generic_prompt_state) if self.generic_prompt_state else None
-        if self.game_type == "impostor":
+        if self.game_type == "odd_question":
             # Host view: deliberately passes no viewer_id, so neither prompt is included.
-            return imp_public_state(self.impostor_state, host=True) if self.impostor_state else None
+            return oddq_public_state(self.odd_question_state, host=True) if self.odd_question_state else None
         if self.game_type == "would_you_rather":
             return wyr_public_state(self.wyr_state) if self.wyr_state else None
         if self.game_type == "never_have_i_ever":
@@ -1594,12 +1594,12 @@ class SocketManager:
                                 "message": f"Word Association needs at least {config.MIN_WORD_ASSOCIATION_PLAYERS} players to start",
                             })
                             return
-                    elif room.game_type == "impostor":
+                    elif room.game_type == "odd_question":
                         player_count = room.connected_player_count()
-                        if player_count < config.MIN_IMPOSTOR_PLAYERS:
+                        if player_count < config.MIN_ODD_QUESTION_PLAYERS:
                             await self._send_to_client(room, client_id, {
                                 "type": "ERROR",
-                                "message": f"Impostor needs at least {config.MIN_IMPOSTOR_PLAYERS} players to start",
+                                "message": f"Odd Question needs at least {config.MIN_ODD_QUESTION_PLAYERS} players to start",
                             })
                             return
                     elif room.game_type == "acronym":
@@ -1814,15 +1814,15 @@ class SocketManager:
             elif msg_type in ("WYR_NEXT_ROUND", "NHIE_NEXT_ROUND", "WORD_NEXT_ROUND") and room.game_type in ("would_you_rather", "never_have_i_ever", "word_association"):
                 await self._simple_social_next_round(room)
 
-            elif msg_type == "IMPOSTOR_START_VOTING" and room.game_type == "impostor":
-                await self._impostor_start_voting(room)
+            elif msg_type == "ODDQ_START_VOTING" and room.game_type == "odd_question":
+                await self._odd_question_start_voting(room)
             elif msg_type == "ACRO_START_VOTING" and room.game_type == "acronym":
                 await self._acronym_start_voting(room)
 
-            elif msg_type == "IMPOSTOR_REVEAL" and room.game_type == "impostor":
+            elif msg_type == "ODDQ_REVEAL" and room.game_type == "odd_question":
                 await self._simple_social_reveal(room)
 
-            elif msg_type == "IMPOSTOR_NEXT_ROUND" and room.game_type == "impostor":
+            elif msg_type == "ODDQ_NEXT_ROUND" and room.game_type == "odd_question":
                 await self._simple_social_next_round(room)
 
             elif msg_type == "ACRO_REVEAL" and room.game_type == "acronym":
@@ -2757,7 +2757,7 @@ class SocketManager:
             elif msg_type in ("GENERIC_CHOICE", "GENERIC_SUBMIT", "GENERIC_VOTE") and room.game_type in GENERIC_PROMPT_GAME_TYPES:
                 await self._generic_prompt_player_action(room, client_id, message)
 
-            elif msg_type in ("WYR_VOTE", "NHIE_ANSWER", "WORD_SUBMIT", "ACRO_SUBMIT", "ACRO_VOTE", "IMPOSTOR_ANSWER", "IMPOSTOR_VOTE") and room.game_type in SIMPLE_SOCIAL_GAME_TYPES:
+            elif msg_type in ("WYR_VOTE", "NHIE_ANSWER", "WORD_SUBMIT", "ACRO_SUBMIT", "ACRO_VOTE", "ODDQ_ANSWER", "ODDQ_VOTE") and room.game_type in SIMPLE_SOCIAL_GAME_TYPES:
                 await self._simple_social_player_action(room, client_id, message)
 
             elif msg_type in ("PHOTO_CLUE_UPLOAD_READY", "PHOTO_CLUE_GUESS") and room.game_type == "photo_clue":
@@ -3700,7 +3700,7 @@ class SocketManager:
             "never_have_i_ever": "nhie_state",
             "word_association": "word_state",
             "acronym": "acro_state",
-            "impostor": "impostor_state",
+            "odd_question": "odd_question_state",
         }[game_type]
 
     def _simple_social_sync_key(self, game_type: str) -> str:
@@ -3709,7 +3709,7 @@ class SocketManager:
             "never_have_i_ever": "never_have_i_ever",
             "word_association": "word_association",
             "acronym": "acronym",
-            "impostor": "impostor",
+            "odd_question": "odd_question",
         }[game_type]
 
     def _simple_social_public_state(self, room: Room, viewer_id: str | None = None) -> dict:
@@ -3721,9 +3721,9 @@ class SocketManager:
             return word_public_state(room.word_state, viewer_id)
         if room.game_type == "acronym":
             return acro_public_state(room.acro_state, viewer_id)
-        if room.game_type == "impostor":
+        if room.game_type == "odd_question":
             # viewer_id is the nickname; the engine resolves which prompt this viewer may see.
-            return imp_public_state(room.impostor_state, viewer_id)
+            return oddq_public_state(room.odd_question_state, viewer_id)
         return {}
 
     def _simple_social_standings(self, room: Room) -> list[dict]:
@@ -3731,8 +3731,8 @@ class SocketManager:
             return wyr_standings(room.wyr_state)
         if room.game_type == "never_have_i_ever" and room.nhie_state:
             return nhie_standings(room.nhie_state)
-        if room.game_type == "impostor" and room.impostor_state:
-            return imp_standings(room.impostor_state)
+        if room.game_type == "odd_question" and room.odd_question_state:
+            return oddq_standings(room.odd_question_state)
         if room.game_type == "word_association" and room.word_state:
             return word_standings(room.word_state)
         if room.game_type == "acronym" and room.acro_state:
@@ -3754,10 +3754,10 @@ class SocketManager:
             room.word_config = validate_word_association_config(room.quiz)
             room.word_state = word_create_initial_state(nicknames, room.word_config, now=time.time())
             room.state = room.word_state["phase"]
-        elif room.game_type == "impostor":
-            room.impostor_config = validate_impostor_config(room.quiz)
-            room.impostor_state = imp_create_initial_state(nicknames, room.impostor_config, now=time.time())
-            room.state = room.impostor_state["phase"]
+        elif room.game_type == "odd_question":
+            room.odd_question_config = validate_odd_question_config(room.quiz)
+            room.odd_question_state = oddq_create_initial_state(nicknames, room.odd_question_config, now=time.time())
+            room.state = room.odd_question_state["phase"]
         elif room.game_type == "acronym":
             room.acro_config = validate_acronym_config(room.quiz)
             room.acro_state = acro_create_initial_state(nicknames, room.acro_config, now=time.time())
@@ -3820,12 +3820,12 @@ class SocketManager:
                 elif room.game_type == "word_association":
                     room.word_state = word_submit_word(room.word_state, nickname, str(message.get("word") or message.get("text") or ""))
                     room.answer_log.append({"kind": "word", "nickname": nickname})
-                elif room.game_type == "impostor":
-                    if message.get("type") == "IMPOSTOR_VOTE":
-                        room.impostor_state = imp_submit_vote(room.impostor_state, nickname, str(message.get("accused") or ""))
+                elif room.game_type == "odd_question":
+                    if message.get("type") == "ODDQ_VOTE":
+                        room.odd_question_state = oddq_submit_vote(room.odd_question_state, nickname, str(message.get("accused") or ""))
                         room.answer_log.append({"kind": "accusation", "nickname": nickname})
                     else:
-                        room.impostor_state = imp_submit_answer(room.impostor_state, nickname, str(message.get("text") or ""))
+                        room.odd_question_state = oddq_submit_answer(room.odd_question_state, nickname, str(message.get("text") or ""))
                         room.answer_log.append({"kind": "answer", "nickname": nickname})
                 elif room.game_type == "acronym":
                     if message.get("type") == "ACRO_VOTE":
@@ -3851,8 +3851,8 @@ class SocketManager:
                     room.word_state = word_reveal_round(room.word_state, now=time.time())
                 elif room.game_type == "acronym":
                     room.acro_state = acro_reveal_round(room.acro_state, now=time.time())
-                elif room.game_type == "impostor":
-                    room.impostor_state = imp_reveal_round(room.impostor_state)
+                elif room.game_type == "odd_question":
+                    room.odd_question_state = oddq_reveal_round(room.odd_question_state)
                 self._sync_simple_social_scores_to_players(room)
                 self._sync_simple_social_phase_to_room(room)
         except ValueError:
@@ -3870,14 +3870,14 @@ class SocketManager:
                     room.word_state = word_next_round(room.word_state, now=time.time())
                 elif room.game_type == "acronym":
                     room.acro_state = acro_next_round(room.acro_state, now=time.time())
-                elif room.game_type == "impostor":
-                    room.impostor_state = imp_next_round(room.impostor_state)
+                elif room.game_type == "odd_question":
+                    room.odd_question_state = oddq_next_round(room.odd_question_state)
                 self._sync_simple_social_phase_to_room(room)
         except ValueError:
             return
         await self._broadcast_simple_social_sync(room)
         state = getattr(room, self._simple_social_state_attr(room.game_type), {})
-        if state.get("phase") in {WYR_PHASE_PODIUM, NHIE_PHASE_PODIUM, WORD_PHASE_PODIUM, ACRO_PHASE_PODIUM, IMP_PHASE_PODIUM}:
+        if state.get("phase") in {WYR_PHASE_PODIUM, NHIE_PHASE_PODIUM, WORD_PHASE_PODIUM, ACRO_PHASE_PODIUM, ODDQ_PHASE_PODIUM}:
             await self._simple_social_complete_game(room)
 
     async def _acronym_start_voting(self, room: Room):
@@ -3889,11 +3889,11 @@ class SocketManager:
             return
         await self._broadcast_simple_social_sync(room)
 
-    async def _impostor_start_voting(self, room: Room):
+    async def _odd_question_start_voting(self, room: Room):
         """Host closes answering and reveals all answers for accusation."""
         try:
             async with room.lock:
-                room.impostor_state = imp_start_voting(room.impostor_state)
+                room.odd_question_state = oddq_start_voting(room.odd_question_state)
                 self._sync_simple_social_phase_to_room(room)
         except ValueError:
             return

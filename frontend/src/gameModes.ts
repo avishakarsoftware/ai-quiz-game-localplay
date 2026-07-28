@@ -2,7 +2,7 @@ import { type GameType, type GenericPromptGameType, type QuizVariantGameType } f
 
 export interface GameModeConfig {
     id: GameType;
-    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'survey_says' | 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'photo_clue' | 'impostor' | GenericPromptGameType;
+    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'survey_says' | 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'photo_clue' | 'odd_question' | GenericPromptGameType;
     icon: string;
     title: string;
     description: string;
@@ -83,11 +83,11 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         mode: 'odd_one_out',
     },
     {
-        id: 'impostor',
-        runtimeType: 'impostor',
-        icon: '🕵️',
-        title: 'Impostor',
-        description: 'Everyone answers the same question — except one player. Spot the impostor',
+        id: 'odd_question',
+        runtimeType: 'odd_question',
+        icon: '❓',
+        title: 'Odd Question',
+        description: 'Everyone answers the same question — except one player. Find who got a different one',
     },
     {
         id: 'wmlt',
@@ -409,7 +409,7 @@ const MIN_PLAYERS_BY_RUNTIME: Partial<Record<GameModeConfig['runtimeType'], numb
     word_association: 2,
     acronym: 2,
     photo_clue: 2,
-    impostor: 3,
+    odd_question: 3,
 };
 
 // Generic-prompt party games (caption_contest, hot_takes, …) all require 2.

@@ -53,3 +53,13 @@ Games that use the phone camera as a gameplay input. Photos upload via the exist
 - Everyone submits a selfie
 - Vote on who nailed it best, or AI ranks them
 - Dead simple, very funny in groups
+
+## Pass-and-Play Games (2026-07-28)
+
+One shared phone circulates so guests WITHOUT phones (kids, grandparents, dead batteries,
+phones-away dinners) can play. Teens already play this way natively. Full interaction spec +
+slate: **SPEC-PASS-AND-PLAY.md**. Flagship is **Impostor** (the real secret-word game — the id
+was deliberately kept free when the odd-question game was renamed away from it). Slate: Impostor,
+Paranoia, Hot Seat, Truth or Dare, Forehead Guess, Wavelength-ish; plus cheap pass modes for
+chit_pull / never_have_i_ever / wmlt / two_truths.
+

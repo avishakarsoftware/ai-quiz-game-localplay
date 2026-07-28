@@ -9,11 +9,13 @@ import { LOCAL_GAME_RULES } from '../gameRules';
  * `odd_one_out`, which was ALREADY a quiz variant ("find the item that breaks the pattern",
  * live since v3.1.3). TypeScript unions dedupe silently, so tsc never complained — and once the
  * backend catalog loaded, the quiz variant's rules modal showed the standalone game's rules
- * (min 3 for a solo-able quiz mode). The standalone game was renamed to `impostor`; these tests
+ * (min 3 for a solo-able quiz mode). The standalone game was renamed to `impostor`, then again to `odd_question` when
+ * "Impostor" turned out to collide with the well-known teen pass-the-phone game of that name —
+ * an id worth keeping free for a faithful build of it (SPEC-PASS-AND-PLAY). These tests
  * make the mistake structurally impossible to repeat.
  */
 
-const SIMPLE_SOCIAL_IDS = ['would_you_rather', 'never_have_i_ever', 'word_association', 'acronym', 'impostor'] as const;
+const SIMPLE_SOCIAL_IDS = ['would_you_rather', 'never_have_i_ever', 'word_association', 'acronym', 'odd_question'] as const;
 
 describe('game id collision guards', () => {
     it('quiz-variant ids never collide with any other game family', () => {
@@ -34,7 +36,7 @@ describe('game id collision guards', () => {
     });
 
     it('every simple-social game has a picker tile with a matching runtime', () => {
-        // The impostor game was fully wired over the wire yet UNREACHABLE from the picker,
+        // The odd-question game was fully wired over the wire yet UNREACHABLE from the picker,
         // because nobody added a GAME_MODE_CONFIGS entry. A playable game must be pickable.
         for (const id of SIMPLE_SOCIAL_IDS) {
             const mode = GAME_MODE_CONFIGS.find((m) => m.id === id);
@@ -43,10 +45,10 @@ describe('game id collision guards', () => {
         }
     });
 
-    it('impostor advertises the enforced 3-player minimum, and the quiz variant stays solo-able', () => {
-        expect(getMinPlayers('impostor')).toBe(3);
+    it('odd_question advertises the enforced 3-player minimum, and the quiz variant stays solo-able', () => {
+        expect(getMinPlayers('odd_question')).toBe(3);
         expect(getMinPlayers('odd_one_out')).toBe(1);    // quiz variant → quiz runtime
-        expect(LOCAL_GAME_RULES.impostor?.player_count?.min).toBe(3);
+        expect(LOCAL_GAME_RULES.odd_question?.player_count?.min).toBe(3);
         expect(LOCAL_GAME_RULES.odd_one_out?.player_count?.min).toBe(1);
     });
 

@@ -56,7 +56,9 @@
   played: guests never authenticate, so the host's wallet is the only attributable identity. Tests:
   backend 15, frontend 7. **Not yet deployed / table not yet applied on Supabase.**
 
-- **Impostor (né Odd One Out — renamed 2026-07-28 to fix the quiz-variant id collision; see
+- **Odd Question (né Odd One Out, briefly Impostor — see SPEC-GAME-ODD-QUESTION's naming history;
+  `impostor` is deliberately kept FREE for the real teen pass-the-phone game): frontend screens DONE,
+  picker tile DONE.** Original note: (renamed 2026-07-28 to fix the quiz-variant id collision; see
   SPEC-GAME-IMPOSTOR header): frontend screens DONE, picker tile DONE.** Backend wiring DONE 2026-07-27 —
   it joined the existing **simple-social family**, whose `_broadcast_simple_social_sync` already sends a
   separate payload per connection, which is exactly the per-viewer prompt scoping this game needs. So the
@@ -137,6 +139,12 @@
   it is cross-file shared state (module-level `socket_manager.rooms` / `game_history` / TestClient portals),
   not a product bug. **Confirmed pre-existing** — reproduced with the working tree stashed at `0b86c619`.
   Worth fixing because it makes any socket-suite run untrustworthy as a regression signal.
+
+- **Pass-and-play platform + Impostor flagship (SPEC-PASS-AND-PLAY).** One shared phone circulates so
+  phoneless guests can play — a new interaction model, not a game: five shared UX primitives (seat
+  roster without devices, pass screen, privacy gate, turn engine, group-screen frame), then Impostor
+  (the real teen secret-word game) as the first title on top. Cheaper than it looks: no player
+  sockets, no reconnect, no per-viewer scoping — privacy is physical. Not started.
 
 ## Platform / Persistence
 

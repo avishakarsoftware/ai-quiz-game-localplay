@@ -3,7 +3,7 @@ import {
     type AcronymState,
     type GameType,
     type NeverHaveIEverState,
-    type ImpostorState,
+    type OddQuestionState,
     type PlayerInfo,
     type SimpleSocialState,
     type WordAssociationState,
@@ -12,7 +12,7 @@ import {
 import { getGameModeConfig } from '../gameModes';
 
 interface SimpleSocialGameProps {
-    gameType: Extract<GameType, 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'impostor'>;
+    gameType: Extract<GameType, 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'odd_question'>;
     state: SimpleSocialState | null;
     players?: PlayerInfo[];
     viewerName?: string;
@@ -42,7 +42,7 @@ function phaseCopy(gameType: SimpleSocialGameProps['gameType'], phase?: string) 
     if (gameType === 'would_you_rather') return 'Choose your side';
     if (gameType === 'never_have_i_ever') return 'Answer privately';
     if (gameType === 'word_association') return 'Submit your first thought';
-    if (gameType === 'impostor') return phase === 'IMPOSTOR_VOTING' ? 'Spot the odd one out' : 'Answer your question';
+    if (gameType === 'odd_question') return phase === 'ODDQ_VOTING' ? 'Spot the odd one out' : 'Answer your question';
     return 'Create your expansion';
 }
 
@@ -100,16 +100,16 @@ export default function SimpleSocialGame({
     const nhie = state as NeverHaveIEverState;
     const word = state as WordAssociationState;
     const acro = state as AcronymState;
-    const odd = state as ImpostorState;
+    const odd = state as OddQuestionState;
     const submitted =
         gameType === 'would_you_rather' ? Boolean(wyr.your_vote)
             : gameType === 'never_have_i_ever' ? Boolean(nhie.your_answer)
                 : gameType === 'word_association' ? Boolean(word.your_submission)
-                    : gameType === 'impostor' ? Boolean(odd.your_answer)
+                    : gameType === 'odd_question' ? Boolean(odd.your_answer)
                         : Boolean(acro.your_submission);
     const counts = state as { submitted_votes?: number; submitted_answers?: number; submitted_count?: number };
     const submittedCount = counts.submitted_votes ?? counts.submitted_answers ?? counts.submitted_count
-        ?? (gameType === 'impostor' ? (odd.phase === 'IMPOSTOR_VOTING' ? odd.vote_count : odd.answer_count) : 0)
+        ?? (gameType === 'odd_question' ? (odd.phase === 'ODDQ_VOTING' ? odd.vote_count : odd.answer_count) : 0)
         ?? 0;
 
     const submitText = () => {
@@ -117,7 +117,7 @@ export default function SimpleSocialGame({
         if (!clean) return;
         if (gameType === 'word_association') onWordSubmit?.(clean);
         if (gameType === 'acronym') onAcronymSubmit?.(clean);
-        if (gameType === 'impostor') onOddAnswer?.(clean);
+        if (gameType === 'odd_question') onOddAnswer?.(clean);
         setText('');
     };
 
@@ -196,7 +196,7 @@ export default function SimpleSocialGame({
                     </>
                 )}
 
-                {gameType === 'impostor' && (
+                {gameType === 'odd_question' && (
                     <>
                         {/* The prompt is per-viewer: the odd one out is shown a DIFFERENT question and
                             nobody else ever sees it. The host view intentionally has no prompt at all,
@@ -204,7 +204,7 @@ export default function SimpleSocialGame({
                         {odd.prompt ? (
                             <>
                                 {odd.you_are_odd && (
-                                    <p className="text-[--accent-magenta] text-sm font-bold uppercase tracking-wide" data-testid="impostor-you-are-odd">
+                                    <p className="text-[--accent-magenta] text-sm font-bold uppercase tracking-wide" data-testid="odd-question-you-are-odd">
                                         Your question is different — blend in
                                     </p>
                                 )}
@@ -218,7 +218,7 @@ export default function SimpleSocialGame({
                             )
                         )}
 
-                        {isPlayer && odd.phase === 'IMPOSTOR_ANSWERING' && (
+                        {isPlayer && odd.phase === 'ODDQ_ANSWERING' && (
                             <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto]">
                                 <input
                                     className="input-field"
@@ -233,7 +233,7 @@ export default function SimpleSocialGame({
                             </div>
                         )}
 
-                        {odd.phase === 'IMPOSTOR_VOTING' && (
+                        {odd.phase === 'ODDQ_VOTING' && (
                             <div className="common-ground-scoreboard mt-5">
                                 {(odd.answers || []).map((answer) => {
                                     const isMine = answer.player_id === viewerName;
@@ -246,7 +246,7 @@ export default function SimpleSocialGame({
                                             // You cannot accuse yourself — the backend rejects it too.
                                             disabled={!isPlayer || isMine}
                                             onClick={() => onOddVote?.(answer.player_id)}
-                                            data-testid={`impostor-vote-${answer.player_id}`}
+                                            data-testid={`odd-question-vote-${answer.player_id}`}
                                         >
                                             <strong>{answer.player_id}{isMine ? ' (you)' : ''}</strong>
                                             <small>{voteLabel(answer.text)}</small>
@@ -257,7 +257,7 @@ export default function SimpleSocialGame({
                         )}
 
                         {isReveal && odd.round_result && (
-                            <div className="common-ground-scoreboard mt-5" data-testid="impostor-reveal">
+                            <div className="common-ground-scoreboard mt-5" data-testid="odd-question-reveal">
                                 <div>
                                     <strong>
                                         {odd.round_result.odd_player_id} was the odd one out —{' '}
@@ -333,9 +333,9 @@ export default function SimpleSocialGame({
                 <div className="common-ground-actions mt-5">
                     {gameType === 'acronym' && acro.phase === 'ACRONYM_SUBMITTING' && <button type="button" className="btn btn-secondary" disabled={submittedCount === 0} onClick={onStartVoting}>Start Voting</button>}
                     {/* Odd One Out has the same two-step shape as Acronym: close answering, then reveal. */}
-                    {gameType === 'impostor' && odd.phase === 'IMPOSTOR_ANSWERING' && <button type="button" className="btn btn-secondary" disabled={submittedCount === 0} onClick={onStartVoting}>Start Voting</button>}
-                    {gameType === 'impostor' && odd.phase === 'IMPOSTOR_VOTING' && <button type="button" className="btn btn-secondary" onClick={onReveal}>Reveal</button>}
-                    {((!['acronym', 'impostor'].includes(gameType) && !isReveal) || acro.phase === 'ACRONYM_VOTING') && <button type="button" className="btn btn-secondary" disabled={!['acronym', 'impostor'].includes(gameType) && submittedCount === 0} onClick={onReveal}>Reveal</button>}
+                    {gameType === 'odd_question' && odd.phase === 'ODDQ_ANSWERING' && <button type="button" className="btn btn-secondary" disabled={submittedCount === 0} onClick={onStartVoting}>Start Voting</button>}
+                    {gameType === 'odd_question' && odd.phase === 'ODDQ_VOTING' && <button type="button" className="btn btn-secondary" onClick={onReveal}>Reveal</button>}
+                    {((!['acronym', 'odd_question'].includes(gameType) && !isReveal) || acro.phase === 'ACRONYM_VOTING') && <button type="button" className="btn btn-secondary" disabled={!['acronym', 'odd_question'].includes(gameType) && submittedCount === 0} onClick={onReveal}>Reveal</button>}
                     {isReveal && <button type="button" className="btn btn-primary btn-glow" onClick={onNextRound}>Next Round</button>}
                     <button type="button" className="btn btn-secondary" onClick={onEndGame} data-testid="organizer-end-game">End Game</button>
                 </div>
