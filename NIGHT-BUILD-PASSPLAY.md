@@ -61,8 +61,8 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
 
 ### Phase 3 — Impostor UI on the primitives
 - [ ] Organizer/host flow: setup → role reveal loop → clue rounds → vote → reveal → podium.
-- [ ] Picker tile + the "One phone" badge on pass-and-play games.
-- [ ] Frontend tests for the full flow.
+- [x] Picker tile + `passAndPlay` flag + local rules + collision guards.
+- [x] Frontend tests (356 total green).
 
 ### Phase 4 — ship + verify
 - [ ] Full suites green (backend + frontend + tsc).
@@ -109,6 +109,17 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
   blocks forever on a missing broadcast and hangs the whole run instead of failing one test.
 
 ## Session log
+
+- **2026-07-28 ~01:10** — Phase 3 mostly done: `ImpostorGame.tsx`, types, picker tile with a
+  `passAndPlay` flag, local rules, extended collision guards. Backend 1258 / frontend 356 / tsc
+  clean. **Design fix worth remembering:** two of my own rules contradicted each other — "privacy
+  is a UI gate not a payload filter" vs "withhold the secret until the round resolves" — which
+  made the role reveal unimplementable. Resolved by scoping disclosure **by phase**: `roles` ships
+  only during IMP_REVEAL_ROLES (the phase with a gate mounted), empty in every face-up phase.
+  Pinned by `TestPhaseScopedDisclosure`.
+  **STILL TO DO:** wire `ImpostorGame` into `OrganizerPage` (seat setup → game render → the
+  IMPOSTOR_* socket sends). Until that lands the game is unreachable from the UI even though both
+  ends work — exactly the "wired but unreachable" trap the odd_question rename hit.
 
 - **2026-07-28 ~01:05** — Phase 2 COMPLETE. Four primitives in
   `frontend/src/components/passplay/` + 19 tests + Velvet CSS. tsc clean.

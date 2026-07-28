@@ -2,10 +2,12 @@ import { type GameType, type GenericPromptGameType, type QuizVariantGameType } f
 
 export interface GameModeConfig {
     id: GameType;
-    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'survey_says' | 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'photo_clue' | 'odd_question' | GenericPromptGameType;
+    runtimeType: 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'survey_says' | 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'photo_clue' | 'odd_question' | 'impostor' | GenericPromptGameType;
     icon: string;
     title: string;
     description: string;
+    /** Pass-and-play (SPEC-PASS-AND-PLAY): ONE shared device, host types the seats. */
+    passAndPlay?: boolean;
     promptTitle?: string;
     promptSubtitle?: string;
     promptPlaceholder?: string;
@@ -81,6 +83,16 @@ export const GAME_MODE_CONFIGS: GameModeConfig[] = [
         promptPlaceholder: 'Animals, food, superheroes, world capitals...',
         generateLabel: 'Generate Patterns',
         mode: 'odd_one_out',
+    },
+    {
+        id: 'impostor',
+        runtimeType: 'impostor',
+        icon: '🎭',
+        title: 'Impostor',
+        // The pass-and-play badge is the selling point, not a footnote: it answers the single
+        // biggest objection to every party app ("my friends won't install anything").
+        description: 'One phone, passed around. Everyone knows the secret word except one',
+        passAndPlay: true,
     },
     {
         id: 'odd_question',
@@ -410,6 +422,7 @@ const MIN_PLAYERS_BY_RUNTIME: Partial<Record<GameModeConfig['runtimeType'], numb
     acronym: 2,
     photo_clue: 2,
     odd_question: 3,
+    impostor: 3,
 };
 
 // Generic-prompt party games (caption_contest, hot_takes, …) all require 2.

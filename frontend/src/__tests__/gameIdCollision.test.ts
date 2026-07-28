@@ -89,4 +89,35 @@ describe('bingo family is derived, not hand-listed', () => {
             expect(GAME_MODE_CONFIGS.find((m) => m.id === id)!.runtimeType).toBe('bingo');
         }
     });
+
+});
+
+describe('pass-and-play family guards', () => {
+    it('impostor is the PASS-AND-PLAY game and does not collide with odd_question', () => {
+        // These two are mechanically similar (hidden minority role, vote, strict-majority catch)
+        // and were briefly the same id. They are now distinct games with distinct interaction
+        // models: impostor = one shared phone, odd_question = one phone per player.
+        const impostor = GAME_MODE_CONFIGS.find((m) => m.id === 'impostor');
+        const oddQuestion = GAME_MODE_CONFIGS.find((m) => m.id === 'odd_question');
+        expect(impostor, 'impostor has no picker tile').toBeDefined();
+        expect(oddQuestion).toBeDefined();
+        expect(impostor!.runtimeType).toBe('impostor');
+        expect(oddQuestion!.runtimeType).toBe('odd_question');
+        expect(impostor!.passAndPlay).toBe(true);
+        expect(oddQuestion!.passAndPlay).toBeFalsy();
+    });
+
+    it('pass-and-play tiles advertise the one-phone angle, which is the whole selling point', () => {
+        for (const mode of GAME_MODE_CONFIGS.filter((m) => m.passAndPlay)) {
+            expect(
+                /one phone/i.test(mode.description),
+                `'${mode.id}' should say it needs only one phone`,
+            ).toBe(true);
+        }
+    });
+
+    it('impostor enforces its 3-seat minimum and has local rules for the modal', () => {
+        expect(getMinPlayers('impostor')).toBe(3);
+        expect(LOCAL_GAME_RULES.impostor?.player_count?.min).toBe(3);
+    });
 });
