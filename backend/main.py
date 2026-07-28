@@ -593,7 +593,7 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker") and v not in GENERIC_PROMPT_GAME_TYPES:
+        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker", "impostor") and v not in GENERIC_PROMPT_GAME_TYPES:
             raise ValueError('game_type must be a supported LocalPlay game type')
         return v
 
@@ -629,7 +629,7 @@ def _default_time_limit_for_game(game_type: str) -> int:
         return 30
     if game_type in GENERIC_PROMPT_GAME_TYPES:
         return 30
-    if game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue"):
+    if game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "impostor"):
         return 30
     return config.DEFAULT_TIME_LIMIT
 
@@ -814,7 +814,7 @@ def _resolve_runtime_content(game_type: str, content_id: str = "", title: str = 
         return _default_game_content(game_type, title)
     if game_type in GENERIC_PROMPT_GAME_TYPES:
         return _default_game_content(game_type, title)
-    if game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue"):
+    if game_type in ("would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "impostor"):
         return _default_game_content(game_type, title)
     if game_type == "bingo":
         if not config.BINGO_ENABLED:

@@ -1,0 +1,5 @@
+# Abandoned native-simulator capture path (2 of 10 shots). LAUNCH-CHECKLIST requires this
+# folder NOT exist at upload time — a half-populated store size slot must never ship. The 6.9"
+# slot is already satisfied by iphone-6.7/ (1290x2796). Ignored so a stray git add -A can't
+# resurrect it.
+iphone-6.9/

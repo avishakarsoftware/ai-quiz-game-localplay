@@ -826,10 +826,10 @@ GAME_CATALOG = [
         },
     },
     {
-        "id": "odd_one_out",
-        "game_type": "odd_one_out",
-        "runtime_type": "odd_one_out",
-        "title": "Odd One Out",
+        "id": "impostor",
+        "game_type": "impostor",
+        "runtime_type": "impostor",
+        "title": "Impostor",
         "description": "Everyone answers the same question — except one player, who got a different one. Spot the impostor.",
         # Wired into the "simple social" family 2026-07-27 and verified over the wire, including
         # that a non-odd player never receives the minority prompt.
@@ -847,11 +847,11 @@ GAME_CATALOG = [
         "default_content_available": True,
         "embedded_authoring_supported": False,
         "content_schema": {
-            "kind": "odd_one_out_pairs_v1",
+            "kind": "impostor_pairs_v1",
             "supported_media": [],
         },
         "config_schema": {
-            "players": {"min": config.MIN_ODD_ONE_OUT_PLAYERS, "max": config.MAX_PLAYERS_PER_ROOM},
+            "players": {"min": config.MIN_IMPOSTOR_PLAYERS, "max": config.MAX_PLAYERS_PER_ROOM},
             "rounds": {"min": 1, "max": 10, "default": 5},
         },
     },
@@ -880,7 +880,7 @@ _MIN_PLAYERS_BY_RUNTIME = {
     "acronym": config.MIN_ACRONYM_PLAYERS,
     "photo_clue": config.MIN_PHOTO_CLUE_PLAYERS,
     "poker": config.MIN_POKER_PLAYERS,
-    "odd_one_out": config.MIN_ODD_ONE_OUT_PLAYERS,
+    "impostor": config.MIN_IMPOSTOR_PLAYERS,
 }
 
 

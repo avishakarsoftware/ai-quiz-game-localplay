@@ -1,5 +1,10 @@
 # LocalPlay Quiz Variant Games Spec
 
+> **Naming note (2026-07-28):** the `odd_one_out` id here is the QUIZ VARIANT ("find the item that
+> breaks the pattern"). A standalone social-deduction game briefly shipped under the same id and has
+> been renamed to `impostor` (SPEC-GAME-IMPOSTOR). If you're searching for the "one player got a
+> different question" game, that's Impostor — not this variant.
+
 Status: **Implemented** — the quiz-variant modes reuse the proven quiz runtime (covered by
 `backend/tests/test_quiz_modes.py`). Reviewed 2026-07-21.
 

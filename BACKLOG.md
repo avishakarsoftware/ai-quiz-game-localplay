@@ -56,7 +56,8 @@
   played: guests never authenticate, so the host's wallet is the only attributable identity. Tests:
   backend 15, frontend 7. **Not yet deployed / table not yet applied on Supabase.**
 
-- **Odd One Out: FRONTEND screens only (SPEC-GAME-ODD-ONE-OUT §10).** Backend wiring DONE 2026-07-27 —
+- **Impostor (né Odd One Out — renamed 2026-07-28 to fix the quiz-variant id collision; see
+  SPEC-GAME-IMPOSTOR header): frontend screens DONE, picker tile DONE.** Backend wiring DONE 2026-07-27 —
   it joined the existing **simple-social family**, whose `_broadcast_simple_social_sync` already sends a
   separate payload per connection, which is exactly the per-viewer prompt scoping this game needs. So the
   feared ~48 bespoke touchpoints were the wrong read. Verified over the wire (2 socket tests) including
@@ -103,7 +104,7 @@
   | `test_ws_flow` | 3/3 |
   | `test_mafia_socket` | 2/3 |
   | `test_socket_unit` | 1/3 |
-  | `test_odd_one_out_socket` | 1/3 |
+  | `test_odd_one_out_socket` (since renamed `test_impostor_socket`) | 1/3 |
   | `test_websocket_integration` | 0/3 |
   | `test_generic_prompt_socket` | 0/3 |
 

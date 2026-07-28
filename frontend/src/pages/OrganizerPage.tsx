@@ -80,7 +80,7 @@ function defaultTimeLimitForGame(type: GameType): number {
     if (type === 'party_quests') return 30;
     if (type === 'survey_says') return 30;
     if (isGenericPromptGame(type)) return 30;
-    if (type === 'would_you_rather' || type === 'never_have_i_ever' || type === 'word_association' || type === 'acronym' || type === 'photo_clue') return 30;
+    if (type === 'would_you_rather' || type === 'never_have_i_ever' || type === 'word_association' || type === 'acronym' || type === 'photo_clue' || type === 'impostor') return 30;
     return type === 'drawing' ? 30 : 15;
 }
 
@@ -1048,7 +1048,7 @@ export default function OrganizerPage() {
             setGenericPromptState(null);
             void createRoom(undefined, type, defaultTimeLimitForGame(type));
         }
-        else if (type === 'would_you_rather' || type === 'never_have_i_ever' || type === 'word_association' || type === 'acronym') {
+        else if (type === 'would_you_rather' || type === 'never_have_i_ever' || type === 'word_association' || type === 'acronym' || type === 'impostor') {
             setSimpleSocialState(null);
             void createRoom(undefined, type, defaultTimeLimitForGame(type));
         }
@@ -1998,19 +1998,19 @@ export default function OrganizerPage() {
         else if (gameType === 'never_have_i_ever') wsRef.current?.send(JSON.stringify({ type: 'NHIE_REVEAL' }));
         else if (gameType === 'word_association') wsRef.current?.send(JSON.stringify({ type: 'WORD_REVEAL' }));
         else if (gameType === 'acronym') wsRef.current?.send(JSON.stringify({ type: 'ACRO_REVEAL' }));
-        else if (gameType === 'odd_one_out') wsRef.current?.send(JSON.stringify({ type: 'OOO_REVEAL' }));
+        else if (gameType === 'impostor') wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_REVEAL' }));
     };
     const nextSimpleSocialRound = () => {
         if (gameType === 'would_you_rather') wsRef.current?.send(JSON.stringify({ type: 'WYR_NEXT_ROUND' }));
-        else if (gameType === 'odd_one_out') wsRef.current?.send(JSON.stringify({ type: 'OOO_NEXT_ROUND' }));
+        else if (gameType === 'impostor') wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_NEXT_ROUND' }));
         else if (gameType === 'never_have_i_ever') wsRef.current?.send(JSON.stringify({ type: 'NHIE_NEXT_ROUND' }));
         else if (gameType === 'word_association') wsRef.current?.send(JSON.stringify({ type: 'WORD_NEXT_ROUND' }));
         else if (gameType === 'acronym') wsRef.current?.send(JSON.stringify({ type: 'ACRO_NEXT_ROUND' }));
     };
     const startAcronymVoting = () => wsRef.current?.send(JSON.stringify({ type: 'ACRO_START_VOTING' }));
-    // Acronym and Odd One Out are the two-step simple-social games (close input, then reveal).
+    // Acronym and Impostor are the two-step simple-social games (close input, then reveal).
     const startSimpleSocialVoting = () => {
-        if (gameType === 'odd_one_out') wsRef.current?.send(JSON.stringify({ type: 'OOO_START_VOTING' }));
+        if (gameType === 'impostor') wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_START_VOTING' }));
         else startAcronymVoting();
     };
     const revealPhotoClue = () => wsRef.current?.send(JSON.stringify({ type: 'PHOTO_CLUE_REVEAL' }));

@@ -1,4 +1,14 @@
-# SPEC-GAME-ODD-ONE-OUT — asymmetric-prompt social deduction
+# SPEC-GAME-IMPOSTOR — asymmetric-prompt social deduction
+
+> **Renamed from "Odd One Out" (2026-07-28).** The original id `impostor` collided with the
+> pre-existing quiz VARIANT `odd_one_out` ("find the item that breaks the pattern"), which
+> shipped to stores in v3.1.3. TypeScript unions dedupe silently, so the collision produced no
+> compile error — it surfaced as the quiz variant's rules modal showing THIS game's rules once the
+> backend catalog loaded, and as this game being unreachable from the picker (the only
+> `impostor` tile launched the quiz variant). The standalone game was one day old and deployed
+> nowhere, so it took the new name. Guards: `frontend/src/__tests__/gameIdCollision.test.ts`
+> asserts quiz-variant ids never collide with any other family and that every simple-social game
+> has its own picker tile.
 
 Status: **Spec + engine being built 2026-07-27.** Live status: DEPLOY.md's env-status ledger.
 
@@ -99,7 +109,7 @@ the wire. `launchable: True`, `status: "gamma"`. Live env status: DEPLOY.md's le
 
 ### How it wired: it joined the "simple social" family
 
-The first plan was ~48 bespoke touchpoints. That was the wrong read. Odd One Out fits the existing
+The first plan was ~48 bespoke touchpoints. That was the wrong read. Impostor fits the existing
 **simple-social family** (`would_you_rather`, `never_have_i_ever`, `word_association`, `acronym`),
 which already provides everything it needs:
 
@@ -113,7 +123,7 @@ state, a `MIN_ODD_ONE_OUT_PLAYERS` guard in START_GAME, branches in six `_simple
 `OOO_ANSWER`/`OOO_VOTE`/`OOO_START_VOTING`/`OOO_REVEAL`/`OOO_NEXT_ROUND`, and adding one member to
 `SIMPLE_SOCIAL_GAME_TYPES`.
 
-It rides the shared **`SIMPLE_SOCIAL_SYNC`** envelope with an `odd_one_out` key rather than a
+It rides the shared **`SIMPLE_SOCIAL_SYNC`** envelope with an `impostor` key rather than a
 bespoke message type — consistency with four existing games beat inventing one.
 
 ### The membership constant
@@ -122,7 +132,7 @@ That family tuple was hand-listed at **8 call sites**. It is now `SIMPLE_SOCIAL_
 adding a fifth member was one edit instead of eight — the same class of fix as the catalog-derived
 sets in `test_game_type_sets.py`.
 
-### Verified over the wire (`tests/test_odd_one_out_socket.py`)
+### Verified over the wire (`tests/test_impostor_socket.py`)
 
 - Exactly one player is the odd one; that player receives the **minority** prompt and every other
   player receives the **majority** prompt, asserted from the actual socket payloads.

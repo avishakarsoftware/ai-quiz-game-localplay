@@ -1,4 +1,9 @@
-"""Pure Odd One Out game mechanics (SPEC-GAME-ODD-ONE-OUT).
+"""Pure Impostor game mechanics (SPEC-GAME-IMPOSTOR).
+
+Renamed from "Odd One Out" 2026-07-28: that id collided with the pre-existing quiz VARIANT
+`odd_one_out` ("find the item that breaks the pattern"), which shipped in v3.1.3. Two different
+games sharing one id meant the variant's rules modal showed this game's rules once the backend
+catalog loaded. The standalone game was one day old and deployed nowhere, so it took the new name.
 
 Asymmetric-prompt social deduction: everyone answers what looks like the same question, one player
 secretly got a different one, and the group votes on who it was. Fills the gap between the catalog's
@@ -16,9 +21,9 @@ from engine_common import clamp_int as _clamp_int, make_clean_text
 
 _clean_text = make_clean_text(max_chars=120)
 
-PHASE_ANSWERING = "ODD_ANSWERING"
-PHASE_VOTING = "ODD_VOTING"
-PHASE_REVEAL = "ODD_REVEAL"
+PHASE_ANSWERING = "IMPOSTOR_ANSWERING"
+PHASE_VOTING = "IMPOSTOR_VOTING"
+PHASE_REVEAL = "IMPOSTOR_REVEAL"
 PHASE_PODIUM = "PODIUM"
 
 MIN_PLAYERS = 3
@@ -32,25 +37,25 @@ POINTS_ODD_MISDIRECT = 1
 # Prompt pairs must be CLOSE. "beach vs gym" is ambiguous enough that one answer doesn't give the
 # odd one away; "beach vs tax return" ends the round instantly. The deck is the tuning surface.
 DEFAULT_PROMPT_PAIRS: list[dict[str, str]] = [
-    {"id": "ooo_1", "majority": "Name something you'd take to the beach.",
+    {"id": "imp_1", "majority": "Name something you'd take to the beach.",
      "minority": "Name something you'd take to the gym."},
-    {"id": "ooo_2", "majority": "Name something you'd find in a kitchen.",
+    {"id": "imp_2", "majority": "Name something you'd find in a kitchen.",
      "minority": "Name something you'd find in a garage."},
-    {"id": "ooo_3", "majority": "Name a good first-date activity.",
+    {"id": "imp_3", "majority": "Name a good first-date activity.",
      "minority": "Name a good team-building activity."},
-    {"id": "ooo_4", "majority": "Name something you'd pack for a camping trip.",
+    {"id": "imp_4", "majority": "Name something you'd pack for a camping trip.",
      "minority": "Name something you'd pack for a music festival."},
-    {"id": "ooo_5", "majority": "Name something people do at a wedding.",
+    {"id": "imp_5", "majority": "Name something people do at a wedding.",
      "minority": "Name something people do at a birthday party."},
-    {"id": "ooo_6", "majority": "Name something that's better cold.",
+    {"id": "imp_6", "majority": "Name something that's better cold.",
      "minority": "Name something that's better fresh."},
-    {"id": "ooo_7", "majority": "Name a reason to leave a party early.",
+    {"id": "imp_7", "majority": "Name a reason to leave a party early.",
      "minority": "Name a reason to leave work early."},
-    {"id": "ooo_8", "majority": "Name something you'd bring to a picnic.",
+    {"id": "imp_8", "majority": "Name something you'd bring to a picnic.",
      "minority": "Name something you'd bring to a road trip."},
-    {"id": "ooo_9", "majority": "Name something a tourist does.",
+    {"id": "imp_9", "majority": "Name something a tourist does.",
      "minority": "Name something a new neighbour does."},
-    {"id": "ooo_10", "majority": "Name something you'd never lend out.",
+    {"id": "imp_10", "majority": "Name something you'd never lend out.",
      "minority": "Name something you'd never buy used."},
 ]
 
@@ -62,7 +67,7 @@ def _sanitize_pair(raw: Any, index: int) -> Optional[dict[str, str]]:
     minority = _clean_text(raw.get("minority"))
     if not majority or not minority:
         return None
-    pair_id = _clean_text(raw.get("id")) or f"ooo_custom_{index + 1}"
+    pair_id = _clean_text(raw.get("id")) or f"imp_custom_{index + 1}"
     return {"id": pair_id, "majority": majority, "minority": minority}
 
 
@@ -290,7 +295,7 @@ def public_state(state: dict, viewer_id: str | None = None, host: bool = False) 
         "round_count": state["config"]["total_rounds"],
         "round_index": state["round_index"],
         "total_rounds": state["config"]["total_rounds"],
-        "game_title": "Odd One Out",
+        "game_title": "Impostor",
         "answer_count": len(state["answers"]),
         "vote_count": len(state["votes"]),
         "player_count": len(state["scores"]),

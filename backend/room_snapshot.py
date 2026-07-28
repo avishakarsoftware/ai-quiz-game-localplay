@@ -155,7 +155,16 @@ def load_all(room_factory, ttl_seconds: int, lobby_ttl_seconds: Optional[int] = 
             continue
         last_activity = float(data.get("last_activity") or 0)
         state = str(data.get("state") or "")
-        effective_ttl = max(ttl_seconds, int(lobby_ttl_seconds or ttl_seconds)) if state == "LOBBY" else ttl_seconds
+        # Mirror Room.is_expired: the party-length lobby grace only applies when there are
+        # preserved SEATS to come back to. Connections are never serialized, so seats are the
+        # only occupancy signal a snapshot has — and a seatless lobby snapshot is exactly the
+        # abandoned room the shorter TTL exists for.
+        has_seats = bool(data.get("players") or data.get("disconnected_players"))
+        effective_ttl = (
+            max(ttl_seconds, int(lobby_ttl_seconds or ttl_seconds))
+            if state == "LOBBY" and has_seats
+            else ttl_seconds
+        )
         if now - last_activity > effective_ttl:
             try:
                 os.remove(path)

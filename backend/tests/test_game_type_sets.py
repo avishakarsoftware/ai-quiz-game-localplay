@@ -26,8 +26,10 @@ def test_catalog_game_types_includes_the_generic_prompt_family():
 
 
 def test_non_launchable_games_are_not_resettable_to():
-    """Odd One Out is in the catalog but deliberately not launchable until it's wired. Allowing a
-    reset into it would start a room that can never begin a round."""
+    """Any catalog entry marked launchable=False (e.g. a future game mid-build) must not be
+    resettable into — that would start a room that can never begin a round. Impostor used this
+    guard while it was being wired; the property stays even though the catalog is currently
+    all-launchable."""
     derived = sm._catalog_game_types()
     for entry in GAME_CATALOG:
         if not entry.get("launchable") and entry["game_type"] not in GENERIC_PROMPT_GAME_TYPES:

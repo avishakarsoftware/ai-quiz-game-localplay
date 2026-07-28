@@ -200,6 +200,10 @@ class TestRoomExpiry:
     def test_lobby_room_uses_lobby_reconnect_grace_before_expiring(self):
         room = make_room()
         room.state = "LOBBY"
+        # The grace only covers an OCCUPIED lobby (a seat or live connection) — an abandoned
+        # empty lobby expires at the base TTL so it can't squat against MAX_ROOMS for 90 min.
+        # The empty-lobby counterpart lives in test_lobby_seat_cleanup.TestLobbyTtlOccupancy.
+        room.players["c1"] = {"nickname": "Maya", "score": 0, "prev_rank": 0, "streak": 0, "avatar": ""}
         room.last_activity = time.time() - (config.ROOM_TTL_SECONDS + 200)
         assert not room.is_expired()
         room.last_activity = time.time() - (config.LOBBY_RECONNECT_GRACE_SECONDS + 1)

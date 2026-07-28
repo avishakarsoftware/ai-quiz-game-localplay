@@ -115,6 +115,17 @@ class TestLifecycle:
         room_snapshot.save_all({room.room_code: room})
         assert [r.room_code for r in _restore_one()] == ["SNAP01"]
 
+    def test_seatless_lobby_snapshot_gets_only_the_base_ttl(self, snapshot_dir):
+        """The party-length grace protects preserved seats. A lobby snapshot with no seats is an
+        abandoned room — restoring it would re-occupy a MAX_ROOMS slot for 90 minutes with nobody
+        coming back to it."""
+        room = _quiz_room(state="LOBBY")
+        room.players.clear()
+        room.disconnected_players.clear()
+        room.last_activity = time.time() - 2000  # past room TTL, inside lobby grace
+        room_snapshot.save_all({room.room_code: room})
+        assert _restore_one() == []
+
     def test_active_snapshot_still_uses_room_ttl(self, snapshot_dir):
         room = _quiz_room(state="QUESTION")
         room.last_activity = time.time() - 2000

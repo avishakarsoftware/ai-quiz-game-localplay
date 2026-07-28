@@ -1169,11 +1169,11 @@ export default function PlayerPage() {
     };
     const submitOddAnswer = (text: string) => {
         soundManager.hapticsSelect();
-        wsRef.current?.send(JSON.stringify({ type: 'OOO_ANSWER', text }));
+        wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_ANSWER', text }));
     };
     const submitOddVote = (accused: string) => {
         soundManager.hapticsSelect();
-        wsRef.current?.send(JSON.stringify({ type: 'OOO_VOTE', accused }));
+        wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_VOTE', accused }));
     };
     const submitPhotoClueReady = (assetId: string, imageUrl?: string) => {
         soundManager.hapticsSelect();

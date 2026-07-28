@@ -92,3 +92,40 @@ def test_removal_also_clears_the_seat_s_side_tables():
     assert "Maya" not in room.teams
     assert "Maya" not in room.power_ups
     assert "Maya" not in room.player_tokens
+
+
+class TestLobbyTtlOccupancy:
+    """The party-length lobby TTL (LOBBY_RECONNECT_GRACE_SECONDS, 90 min) must apply only to a
+    lobby somebody is still part of. An abandoned lobby squatting 90 min against the global
+    MAX_ROOMS cap triples room-exhaustion exposure while protecting nobody's seat."""
+
+    def _expired_lobby(self, monkeypatch, *, seconds_idle: float) -> Room:
+        room = Room("TTL001", {}, game_type="quiz")
+        room.state = "LOBBY"
+        monkeypatch.setattr(room, "last_activity", time.time() - seconds_idle)
+        return room
+
+    def test_occupied_lobby_survives_past_the_base_room_ttl(self, monkeypatch):
+        import config
+        room = self._expired_lobby(monkeypatch, seconds_idle=config.ROOM_TTL_SECONDS + 60)
+        room.players["c1"] = {"nickname": "Maya", "score": 0, "prev_rank": 0, "streak": 0, "avatar": ""}
+        assert room.is_expired() is False          # grace window still protecting a seat
+
+    def test_abandoned_lobby_expires_at_the_base_room_ttl(self, monkeypatch):
+        import config
+        room = self._expired_lobby(monkeypatch, seconds_idle=config.ROOM_TTL_SECONDS + 60)
+        assert not room.players and not room.connections
+        assert room.is_expired() is True           # nobody left; free the MAX_ROOMS slot
+
+    def test_occupied_lobby_still_expires_after_the_full_grace(self, monkeypatch):
+        import config
+        room = self._expired_lobby(monkeypatch, seconds_idle=config.LOBBY_RECONNECT_GRACE_SECONDS + 60)
+        room.players["c1"] = {"nickname": "Maya", "score": 0, "prev_rank": 0, "streak": 0, "avatar": ""}
+        assert room.is_expired() is True           # the grace is long, not infinite
+
+    def test_in_game_rooms_are_untouched_by_the_lobby_grace(self, monkeypatch):
+        import config
+        room = self._expired_lobby(monkeypatch, seconds_idle=config.ROOM_TTL_SECONDS + 60)
+        room.state = "QUESTION"
+        room.players["c1"] = {"nickname": "Maya", "score": 0, "prev_rank": 0, "streak": 0, "avatar": ""}
+        assert room.is_expired() is True           # mid-game TTL semantics unchanged

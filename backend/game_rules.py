@@ -306,8 +306,8 @@ GAME_RULES: dict[str, dict[str, Any]] = {
         ["Each vote scores one point for the story author.", "Highest score wins."],
         players={"min": 2, "recommended": "4-20"},
     ),
-    "odd_one_out": _rules(
-        "Odd One Out Rules",
+    "impostor": _rules(
+        "Impostor Rules",
         "Everyone answers the same question — except one player, who got a different one.",
         [
             "Spot the player whose question was different.",

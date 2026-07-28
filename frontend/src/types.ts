@@ -68,7 +68,7 @@ export interface GameHistoryEntry {
 
 export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
 
-export type SimpleSocialGameType = 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'odd_one_out';
+export type SimpleSocialGameType = 'would_you_rather' | 'never_have_i_ever' | 'word_association' | 'acronym' | 'impostor';
 
 export type GenericPromptGameType = 'hot_takes' | 'this_or_that' | 'caption_contest' | 'pitch_battle' | 'roast_toast' | 'desert_island' | 'memory_lane' | 'rapid_fire' | 'one_word_vibes' | 'emoji_story';
 
@@ -790,13 +790,13 @@ export interface AcronymState {
     completed_at?: number | null;
 }
 
-export interface OddOneOutAnswer {
+export interface ImpostorAnswer {
     player_id: string;
     text: string;
 }
 
-export interface OddOneOutState {
-    phase: 'ODD_ANSWERING' | 'ODD_VOTING' | 'ODD_REVEAL' | 'PODIUM' | string;
+export interface ImpostorState {
+    phase: 'IMPOSTOR_ANSWERING' | 'IMPOSTOR_VOTING' | 'IMPOSTOR_REVEAL' | 'PODIUM' | string;
     game_title?: string;
     current_round_index: number;
     round_count: number;
@@ -813,7 +813,7 @@ export interface OddOneOutState {
     vote_count: number;
     player_count: number;
     /** Present from the voting phase onward. */
-    answers?: OddOneOutAnswer[];
+    answers?: ImpostorAnswer[];
     standings?: SimpleSocialStanding[];
     round_result?: {
         odd_player_id: string;
@@ -829,7 +829,7 @@ export interface OddOneOutState {
     awaiting?: string[];
 }
 
-export type SimpleSocialState = WouldYouRatherState | NeverHaveIEverState | WordAssociationState | AcronymState | OddOneOutState;
+export type SimpleSocialState = WouldYouRatherState | NeverHaveIEverState | WordAssociationState | AcronymState | ImpostorState;
 
 export interface GenericPromptEntry {
     entry_id: string;

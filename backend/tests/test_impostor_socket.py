@@ -1,4 +1,4 @@
-"""Odd One Out over the wire (SPEC-GAME-ODD-ONE-OUT §9).
+"""Impostor over the wire (SPEC-GAME-IMPOSTOR §9).
 
 Written before the socket wiring, so "wired correctly" has a definition. The assertion that matters
 most is the prompt leak: per-viewer prompt scoping is what's most likely to break in translation
@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import odd_one_out_engine as ooo
+import impostor_engine as imp
 from main import app, game_history
 from socket_manager import socket_manager
 
@@ -55,31 +55,31 @@ def recv_until(ws, msg_type, max_messages=80):
     raise TimeoutError(f"Never received {msg_type}")
 
 
-def recv_ooo(ws, phase=None, max_messages=120):
-    """Odd One Out joins the "simple social" family, so it rides the shared SIMPLE_SOCIAL_SYNC
-    envelope with an `odd_one_out` key — same as would_you_rather/acronym — rather than inventing
+def recv_imp(ws, phase=None, max_messages=120):
+    """Impostor joins the "simple social" family, so it rides the shared SIMPLE_SOCIAL_SYNC
+    envelope with an `impostor` key — same as would_you_rather/acronym — rather than inventing
     its own message type."""
     for _ in range(max_messages):
         data = recv_until(ws, "SIMPLE_SOCIAL_SYNC", max_messages=max_messages)
-        state = data.get("odd_one_out", {})
+        state = data.get("impostor", {})
         if phase is None or state.get("phase") == phase:
             return data
-    raise TimeoutError(f"Never received odd_one_out phase {phase}")
+    raise TimeoutError(f"Never received impostor phase {phase}")
 
 
-def test_odd_one_out_full_round_over_the_wire(monkeypatch):
+def test_impostor_full_round_over_the_wire(monkeypatch):
     monkeypatch.setattr(socket_manager, "start_cleanup_loop", lambda: None)
     room = socket_manager.create_room(
-        "OOO001",
-        {"game_title": "Odd One Out", "total_rounds": 1},
+        "IMP001",
+        {"game_title": "Impostor", "total_rounds": 1},
         time_limit=30,
         organizer_token="secret",
-        game_type="odd_one_out",
+        game_type="impostor",
         billing_mode="host_app_managed",
     )
     room.wallet_id = "wallet-test"
 
-    with client.websocket_connect("/ws/OOO001/org-1?organizer=true") as org_ws:
+    with client.websocket_connect("/ws/IMP001/org-1?organizer=true") as org_ws:
         org_ws.send_json({"type": "AUTH", "token": "secret"})
         assert org_ws.receive_json()["type"] == "ROOM_CREATED"
 
@@ -87,7 +87,7 @@ def test_odd_one_out_full_round_over_the_wire(monkeypatch):
         try:
             sockets = {}
             for client_id, nickname in [("p1", "Avi"), ("p2", "Ruchi"), ("p3", "Maya")]:
-                ctx = client.websocket_connect(f"/ws/OOO001/{client_id}")
+                ctx = client.websocket_connect(f"/ws/IMP001/{client_id}")
                 ws = ctx.__enter__()
                 contexts.append(ctx)
                 sockets[nickname] = ws
@@ -96,13 +96,13 @@ def test_odd_one_out_full_round_over_the_wire(monkeypatch):
                 recv_until(org_ws, "PLAYER_JOINED")
 
             org_ws.send_json({"type": "START_GAME"})
-            assert recv_until(org_ws, "GAME_STARTING")["game_type"] == "odd_one_out"
+            assert recv_until(org_ws, "GAME_STARTING")["game_type"] == "impostor"
 
             # --- THE critical invariant, asserted over the wire ---
             prompts = {}
             odd_flags = {}
             for nickname, ws in sockets.items():
-                state = recv_ooo(ws, phase=ooo.PHASE_ANSWERING)["odd_one_out"]
+                state = recv_imp(ws, phase=imp.PHASE_ANSWERING)["impostor"]
                 prompts[nickname] = state["prompt"]
                 odd_flags[nickname] = state["you_are_odd"]
 
@@ -110,8 +110,8 @@ def test_odd_one_out_full_round_over_the_wire(monkeypatch):
             assert len(odd_players) == 1, f"exactly one odd one expected, got {odd_players}"
             odd = odd_players[0]
 
-            minority = ooo.current_pair(room.ooo_state)["minority"]
-            majority = ooo.current_pair(room.ooo_state)["majority"]
+            minority = imp.current_pair(room.impostor_state)["minority"]
+            majority = imp.current_pair(room.impostor_state)["majority"]
             assert prompts[odd] == minority
             for other in [n for n in sockets if n != odd]:
                 assert prompts[other] == majority
@@ -120,18 +120,18 @@ def test_odd_one_out_full_round_over_the_wire(monkeypatch):
 
             # --- answer, then vote ---
             for nickname, ws in sockets.items():
-                ws.send_json({"type": "OOO_ANSWER", "text": f"answer from {nickname}"})
+                ws.send_json({"type": "IMPOSTOR_ANSWER", "text": f"answer from {nickname}"})
 
-            org_ws.send_json({"type": "OOO_START_VOTING"})
-            voting = recv_ooo(sockets[odd], phase=ooo.PHASE_VOTING)["odd_one_out"]
+            org_ws.send_json({"type": "IMPOSTOR_START_VOTING"})
+            voting = recv_imp(sockets[odd], phase=imp.PHASE_VOTING)["impostor"]
             assert len(voting["answers"]) == 3
 
             # Both innocents correctly name the odd one — a strict majority of 3.
             for other in [n for n in sockets if n != odd]:
-                sockets[other].send_json({"type": "OOO_VOTE", "accused": odd})
+                sockets[other].send_json({"type": "IMPOSTOR_VOTE", "accused": odd})
 
-            org_ws.send_json({"type": "OOO_REVEAL"})
-            reveal = recv_ooo(org_ws, phase=ooo.PHASE_REVEAL)["odd_one_out"]
+            org_ws.send_json({"type": "IMPOSTOR_REVEAL"})
+            reveal = recv_imp(org_ws, phase=imp.PHASE_REVEAL)["impostor"]
             result = reveal["round_result"]
             assert result["caught"] is True
             assert result["odd_player_id"] == odd
@@ -142,35 +142,35 @@ def test_odd_one_out_full_round_over_the_wire(monkeypatch):
             scores = {row["player_id"]: row["score"] for row in reveal["standings"]}
             assert scores[odd] == 0
             for other in [n for n in sockets if n != odd]:
-                assert scores[other] == ooo.POINTS_CORRECT_VOTE
+                assert scores[other] == imp.POINTS_CORRECT_VOTE
 
             org_ws.send_json({"type": "END_QUIZ"})
             podium = recv_until(org_ws, "PODIUM")
-            assert podium["game_type"] == "odd_one_out"
+            assert podium["game_type"] == "impostor"
         finally:
             for ctx in reversed(contexts):
                 ctx.__exit__(None, None, None)
 
 
-def test_odd_one_out_refuses_to_start_below_the_minimum(monkeypatch):
+def test_impostor_refuses_to_start_below_the_minimum(monkeypatch):
     """At 2 players the vote is trivial, so starting must fail loudly rather than produce a
     degenerate round."""
     monkeypatch.setattr(socket_manager, "start_cleanup_loop", lambda: None)
     room = socket_manager.create_room(
-        "OOO002",
-        {"game_title": "Odd One Out"},
+        "IMP002",
+        {"game_title": "Impostor"},
         time_limit=30,
         organizer_token="secret",
-        game_type="odd_one_out",
+        game_type="impostor",
         billing_mode="host_app_managed",
     )
     room.wallet_id = "wallet-test"
 
-    with client.websocket_connect("/ws/OOO002/org-1?organizer=true") as org_ws:
+    with client.websocket_connect("/ws/IMP002/org-1?organizer=true") as org_ws:
         org_ws.send_json({"type": "AUTH", "token": "secret"})
         assert org_ws.receive_json()["type"] == "ROOM_CREATED"
 
-        ctx = client.websocket_connect("/ws/OOO002/p1")
+        ctx = client.websocket_connect("/ws/IMP002/p1")
         ws = ctx.__enter__()
         try:
             ws.send_json({"type": "JOIN", "nickname": "Solo", "avatar": "🙂"})
