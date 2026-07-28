@@ -38,12 +38,12 @@ GENEROUS_TOKENS = 500  # enough for many generates + room starts
 # Hang guard, not a performance assertion — its job is to fail with context instead of blocking
 # forever. Overridable via LOCALPLAY_WS_TEST_TIMEOUT when debugging.
 #
-# Do NOT reach for a bigger number to "fix" the known cross-suite flake (BACKLOG). Measured: when
-# this file runs alongside the other socket suites it intermittently fails with "waiting for
-# QUESTION after NO messages" — no messages arrive at all, so the socket is wedged rather than slow.
-# Raising 8s -> 45s changed nothing except how long a failing run takes (14s when passing, ~60s when
-# failing, i.e. the timeout itself accounts for the difference). The root cause is cross-file shared
-# state, and it needs fixing there.
+# Do NOT reach for a bigger number to "fix" the known cross-suite flake. Measured: raising 8s -> 45s
+# changed nothing except how long a failing run takes (14s passing, ~60s failing — the difference IS
+# the timeout). The failure is "waiting for QUESTION after NO messages", so the socket is wedged, not
+# slow. The decisive variable is pytest OUTPUT CAPTURE: this file plus test_ws_flow.py fails 3/3 with
+# capture on and passes 3/3 with -s. Full investigation, including three disproven theories, is in
+# BACKLOG.md — read it before touching this helper.
 DEFAULT_WS_RECEIVE_TIMEOUT = float(os.getenv("LOCALPLAY_WS_TEST_TIMEOUT", "15"))
 
 

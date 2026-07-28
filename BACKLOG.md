@@ -83,18 +83,52 @@
   4th near-identical function). Catalog: 37 games, 36 launchable. Tests: frontend 3 (assert all four
   occasion decks stay on the shared bingo runtime, and that no game id is duplicated).
 
-- **Flaky e2e tests when run alongside other socket suites.** *Investigated 2026-07-27 — NOT fixed,
-  but the diagnosis is now sharp.* The failure is always "waiting for QUESTION after **no messages**":
-  nothing arrives at all, so the socket is **wedged, not slow**. Raising the receive timeout 8s → 45s
-  changed nothing except how long a failing run takes — measured over 5 runs, passing runs are 14s and
-  failing runs are ~60s, and the difference is exactly the timeout. So a bigger timeout is not the fix
-  and the constant has been put back to a modest 15s with a comment saying so. Root cause is cross-file
-  shared state; prime suspects are the module-level `TestClient(app)` per test file (each creates its
-  own anyio portal, and 13 files also poke module-level `socket_manager.rooms`) and the cleanup-loop
-  task surviving between files. Next step: give the socket suites one shared TestClient fixture, or run
-  `test_e2e.py` in its own pytest process. **Confirmed pre-existing** — reproduced with the working tree
-  stashed at `0b86c619`.
-- ~~[old] Flaky e2e tests.~~ Running `test_e2e.py` together with
+- **Flaky e2e tests when run alongside other socket suites.** *Investigated at length 2026-07-27 —
+  still NOT fixed, but now well characterised. Read this before attempting it again.*
+
+  **The one reliable lever is pytest output capture**, not load or ordering:
+
+  | Command | Result |
+  |---|---|
+  | `pytest tests/test_ws_flow.py tests/test_e2e.py` | **1 failed × 3/3 runs** |
+  | same + `-s` (capture off) | **56 passed × 3/3 runs** |
+
+  Perfectly deterministic on that flag. Failure is always `TimeoutError: waiting for QUESTION after
+  **no messages**` — nothing arrives at all.
+
+  **Companion-file bisect** (3 runs each, capture on), i.e. which file paired with `test_e2e.py`:
+
+  | Companion | Failures |
+  |---|---|
+  | `test_ws_flow` | 3/3 |
+  | `test_mafia_socket` | 2/3 |
+  | `test_socket_unit` | 1/3 |
+  | `test_odd_one_out_socket` | 1/3 |
+  | `test_websocket_integration` | 0/3 |
+  | `test_generic_prompt_socket` | 0/3 |
+
+  Note `test_ws_flow` + a **single** e2e test passes — it needs the companion *and* the earlier e2e
+  tests, so something accumulates within the session.
+
+  **Three theories tested and DISPROVEN — do not redo these:**
+  1. *Load/timing.* Raising the receive timeout 8s → 45s changed nothing but how long a failing run
+     takes (passing 14s, failing ~60s — the difference IS the timeout). Constant is back at 15s.
+  2. *Global LLM budget leak.* `main._llm_call_timestamps` is never cleared by any fixture, so it
+     looked ideal. Measured: it reaches **3** against a cap of **500**. Not it.
+  3. *Orphaned reader thread eating the message.* `receive_json_with_timeout` spawns a thread per
+     receive and, on timeout, leaves it blocked in `ws.receive_json()` — a plausible message thief.
+     Replacing it with one long-lived reader per socket made things **much worse** (9 failed vs a
+     20-passed baseline), so the per-receive thread is not the cause. Reverted.
+
+  **Where to look next:** capture being decisive points at fd-level capture interacting with
+  TestClient's anyio portal — each test file has its own module-level `TestClient(app)`, so a session
+  holds several portals while `socket_manager` is a single module-level singleton. Most promising
+  concrete step: give the socket suites **one shared TestClient fixture** (removing the multiple
+  portals) or run `test_e2e.py` in its own pytest process (`-p xdist --dist loadfile`, or a separate
+  CI step). Try `--capture=tee-sys` too — if that also passes, it narrows it to fd-level capture.
+
+  **Confirmed pre-existing** — reproduced with the working tree stashed at `0b86c619`. Practical
+  impact: a socket-suite run is not a trustworthy regression signal, and CI may fail spuriously.
   `test_ws_flow`/`test_websocket_integration`/`test_socket_unit`/`test_mafia_socket`/`test_generic_prompt_socket`
   fails non-deterministically — three consecutive runs on a clean tree gave 1 failed, 2 failed, then 0
   failed, with a *different* test failing each time (`TestExportImportE2E::test_generate_export_import_play`,
