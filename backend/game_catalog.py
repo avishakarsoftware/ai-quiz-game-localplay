@@ -855,7 +855,51 @@ GAME_CATALOG = [
             "rounds": {"min": 1, "max": 10, "default": 5},
         },
     },
+    {
+        "id": "impostor",
+        "game_type": "impostor",
+        "runtime_type": "impostor",
+        "title": "Impostor",
+        "description": "Everyone knows the secret word except one. Say a clue aloud, then vote on who's faking.",
+        # The FIRST pass-and-play game (SPEC-PASS-AND-PLAY): one phone circulates instead of one
+        # phone per player, so guests without a device can play. `interaction` is what the picker
+        # badges and what code derives the pass-and-play family from — do NOT hand-list game ids.
+        "interaction": "pass_and_play",
+        "status": "gamma",
+        "launchable": True,
+        # Pass-and-play needs one physical device and a table. Embedding it in a host app that
+        # assumes per-player phones would misrepresent how it's played, so keep it standalone
+        # until the Revelry side understands the interaction model.
+        "host_app_supported": False,
+        "supported_host_apps": [],
+        "supports_custom_content": True,
+        "supports_images": False,
+        "can_create_content": False,
+        "can_edit_content": False,
+        "can_quick_start": True,
+        "supports_ai_generation": False,
+        "creation_modes": ["settings"],
+        "default_content_available": True,
+        "embedded_authoring_supported": False,
+        "content_schema": {
+            "kind": "impostor_word_pairs_v1",
+            "supported_media": [],
+        },
+        "config_schema": {
+            # `players` here is SEATS the host types in, not connected devices.
+            "players": {"min": config.MIN_IMPOSTOR_PLAYERS, "max": config.MAX_PASS_PLAY_SEATS},
+            "rounds": {"min": 1, "max": 10, "default": 3},
+            "clue_rounds": {"min": 1, "max": 4, "default": 2},
+        },
+    },
 ]
+
+# Derived, never hand-listed. The occasion bingos shipped broken because three separate lists
+# still said ['bingo','baby_bingo'] after new members were added; deriving from a property makes
+# that class of drift impossible.
+PASS_AND_PLAY_GAME_TYPES = frozenset(
+    g["game_type"] for g in GAME_CATALOG if g.get("interaction") == "pass_and_play"
+)
 
 _MIN_PLAYERS_BY_RUNTIME = {
     "quiz": 1,

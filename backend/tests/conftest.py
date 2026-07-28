@@ -3,6 +3,9 @@ import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# Also expose the tests dir itself so suites can share test-only helpers (ws_test_utils) without
+# shipping them inside the application package.
+sys.path.insert(0, os.path.dirname(__file__))
 
 import pytest
 import config

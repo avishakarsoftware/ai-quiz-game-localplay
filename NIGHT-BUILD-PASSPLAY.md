@@ -48,9 +48,9 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
 - [x] `backend/impostor_engine.py` — word-pair decks, role assignment (1 impostor, N knowers),
       spoken-clue round tracking, vote tally, strict-majority catch, impostor-guess comeback rule.
       Curated packs first; AI generation later.
-- [ ] Catalog entry for `impostor` with `interaction: "pass_and_play"`, `MIN_IMPOSTOR_PLAYERS = 3`.
-- [ ] Rules metadata (`game_rules.py`) so the rules modal works.
-- [ ] Backend tests: engine unit tests + a socket/flow test.
+- [x] Catalog entry for `impostor` with `interaction: "pass_and_play"`, `MIN_IMPOSTOR_PLAYERS = 3`.
+- [x] Rules metadata (`game_rules.py`) so the rules modal works.
+- [x] Backend tests: engine unit tests + a socket/flow test. (66 green)
 
 ### Phase 2 — frontend primitives
 - [ ] `SeatRosterSetup` — host types names, add/remove, emoji pick, min/max enforcement.
@@ -94,8 +94,32 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
   check content-type when verifying a new endpoint, never just the status code.
 - **Never write a waiter loop whose own command line contains its search pattern** —
   `pgrep -f "foo"` matches the waiter itself and it never exits. Bracket a char: `"fo[o]"`.
+- **`test_e2e.py::TestExportImportE2E::test_generate_export_import_play` IS FLAKY.** It fails
+  intermittently in a full-suite run with `Timed out ... waiting for QUESTION after no messages`.
+  It is **pre-existing** — it reproduced before any pass-and-play code existed. **Do not bisect a
+  flaky test with one run per step**: doing that produced a confident wrong conclusion tonight
+  (blamed the WS rate-limiter change, which for a quiz room computes a byte-identical limit). Any
+  suspected culprit must be re-run 3x before you believe it.
+- **`TestClient` websockets need `socket_manager.allowed_origins = []`** in a fixture, because
+  `backend/.env` sets ALLOWED_ORIGINS and TestClient sends no Origin header.
+- **The WS route is `/ws/{room_code}/{client_id}`** and the organizer connects with
+  `?organizer=true` then sends `{"type":"AUTH","token":...}`. Build rooms directly via
+  `socket_manager.create_room(...)` in socket tests, as the other suites do.
+- **`tests/ws_test_utils.py`** now holds a bounded `recv_until` — use it. A raw `receive_json()`
+  blocks forever on a missing broadcast and hangs the whole run instead of failing one test.
 
 ## Session log
+
+- **2026-07-28 ~00:55** — Phase 1 COMPLETE (66 tests). Three real bugs the over-the-wire test
+  caught: (1) `/room/create` rejected `impostor` via a hardcoded 23-type tuple → replaced with
+  `SUPPORTED_ROOM_GAME_TYPES` **derived from the catalog** (verified set-identical + impostor);
+  (2) the WS rate limit throttles pass-and-play, because the whole table's input arrives on the
+  host's ONE socket — a 3-seat round is ~14 messages against a 10/sec cap, so the vote came back
+  `ERROR: Too many messages` → added `PASS_PLAY_RATE_LIMIT_PER_SEC = 30` mirroring the DRAW_OP
+  precedent; (3) a start gate on `connected_player_count()` would make the game permanently
+  unstartable → gated on SEATS, pinned by `test_starts_with_zero_connected_players`.
+  Also extracted `tests/ws_test_utils.py` (bounded websocket receive) out of test_e2e.
+  Podium substitutes seat count for `player_count`, else stats record every party as 0 players.
 
 - **2026-07-28 ~23:45** — Phase 1 engines DONE: `pass_play_common.py` (seat roster, turn engine,
   strict-majority vote) + `impostor_engine.py` (word packs, roles, clues, vote, comeback rule).

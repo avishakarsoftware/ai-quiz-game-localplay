@@ -327,6 +327,28 @@ GAME_RULES: dict[str, dict[str, Any]] = {
         ],
         players={"min": 3, "recommended": "4-10"},
     ),
+    "impostor": _rules(
+        "Impostor Rules",
+        "Everyone knows the secret word except one player. One phone, passed around the table.",
+        [
+            "If you know the word: prove it with your clue, without handing it to the impostor.",
+            "If you ARE the impostor: blend in, survive the vote — or name the word if caught.",
+        ],
+        [
+            "The host types everyone's name — only ONE phone is needed, so guests don't install anything.",
+            "The phone is passed around. Each player privately sees the secret word; one sees they're the impostor.",
+            "Phone goes face-up on the table. In turn, each player says ONE word aloud related to the secret.",
+            "After the clue rounds, the table discusses and votes on the shared screen.",
+            "If the impostor is caught they get one guess at the secret word — guess right and they still win.",
+        ],
+        [
+            "Impostor caught: everyone else scores 2 points.",
+            "Impostor survives the vote (or the table splits): impostor scores 3 points.",
+            "Impostor caught but names the secret word: impostor scores 3 points anyway.",
+            "A conviction needs a strict majority — a tied table means the impostor gets away.",
+        ],
+        players={"min": 3, "recommended": "4-8"},
+    ),
     "would_you_rather": _rules(
         "Would You Rather Rules",
         "Pick between two options and reveal how the room splits.",

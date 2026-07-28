@@ -57,6 +57,11 @@ TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "false").lower() == "true
 # --- WebSocket Security ---
 WS_RATE_LIMIT_PER_SEC = 10  # max messages per second per client
 DRAW_OP_RATE_LIMIT_PER_SEC = 30  # drawing strokes need a separate higher cap
+# Pass-and-play funnels the WHOLE TABLE's input through ONE socket (the host's phone), so the
+# per-client cap that suits one-phone-per-player is wrong by roughly the player count. A host
+# tapping through role reveals and clue turns exceeds 10/sec trivially and gets "Too many
+# messages" mid-game. Same reasoning as the DRAW_OP cap above.
+PASS_PLAY_RATE_LIMIT_PER_SEC = 30
 MAX_DRAW_OP_MESSAGE_SIZE = 2048  # bytes
 MAX_DRAW_OPS_PER_SYNC = 500
 MAX_WS_MESSAGE_SIZE = 4096  # bytes
@@ -124,7 +129,11 @@ MIN_WORD_ASSOCIATION_PLAYERS = 2  # Word Association minimum players
 MIN_ACRONYM_PLAYERS = 2  # Acronym Game minimum players
 MIN_PHOTO_CLUE_PLAYERS = 2  # Photo Clue minimum players
 MIN_POKER_PLAYERS = 2  # Party Poker minimum players
-MIN_ODD_QUESTION_PLAYERS = 3  # Impostor: at 2 the vote is trivial (can't vote for yourself)
+MIN_ODD_QUESTION_PLAYERS = 3  # Odd Question: at 2 the vote is trivial (can't vote for yourself)
+# --- Pass-and-play (SPEC-PASS-AND-PLAY): one shared phone, seats typed by the host ---
+# These count SEATS, not connected devices — a pass-and-play room has exactly one client.
+MIN_IMPOSTOR_PLAYERS = 3  # Impostor: with 2 seats the impostor is a coin flip
+MAX_PASS_PLAY_SEATS = 12  # beyond this, passing one phone around stops being fun
 MC_MIN_MUSIC_SECONDS = 3
 MC_MAX_MUSIC_SECONDS = 60
 MC_MIN_GRAB_WINDOW = 2

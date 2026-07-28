@@ -218,6 +218,10 @@ from acronym_engine import (
     submit_vote as acro_submit_vote,
     validate_config as validate_acronym_config,
 )
+import impostor_engine as imp
+import pass_play_common as passplay
+from game_catalog import PASS_AND_PLAY_GAME_TYPES
+
 from odd_question_engine import (
     MIN_PLAYERS as ODDQ_MIN_PLAYERS,
     PHASE_ANSWERING as ODDQ_PHASE_ANSWERING,
@@ -436,6 +440,13 @@ class Room:
         self.wyr_config = validate_would_you_rather_config(game_data) if game_type == "would_you_rather" else {}
         self.odd_question_config = validate_odd_question_config(game_data) if game_type == "odd_question" else {}
         self.odd_question_state: dict = {}
+        # Pass-and-play (SPEC-PASS-AND-PLAY). `impostor_seats` are host-typed names, NOT
+        # connections — a pass-and-play room has exactly one client (the host's phone).
+        self.impostor_config = imp.validate_config(game_data) if game_type == "impostor" else {}
+        self.impostor_state: dict = {}
+        self.impostor_seats: list = passplay.build_seats(
+            (game_data or {}).get("seat_names"), (game_data or {}).get("seat_emojis")
+        ) if game_type == "impostor" else []
         self.wyr_state: dict = {}
         self.nhie_config = validate_never_have_i_ever_config(game_data) if game_type == "never_have_i_ever" else {}
         self.nhie_state: dict = {}
@@ -566,6 +577,15 @@ class Room:
         self.wyr_config = validate_would_you_rather_config(new_game_data) if self.game_type == "would_you_rather" else {}
         self.odd_question_config = validate_odd_question_config(new_game_data) if self.game_type == "odd_question" else {}
         self.odd_question_state = {}
+        self.impostor_config = imp.validate_config(new_game_data) if self.game_type == "impostor" else {}
+        self.impostor_state = {}
+        # Seats survive a reset when the host didn't supply new ones: the same people are still
+        # round the same table, and retyping six names between rounds would be hostile.
+        new_seats = passplay.build_seats(
+            (new_game_data or {}).get("seat_names"), (new_game_data or {}).get("seat_emojis")
+        ) if self.game_type == "impostor" else []
+        if new_seats or self.game_type != "impostor":
+            self.impostor_seats = new_seats
         self.wyr_state = {}
         self.nhie_config = validate_never_have_i_ever_config(new_game_data) if self.game_type == "never_have_i_ever" else {}
         self.nhie_state = {}
@@ -635,6 +655,8 @@ class Room:
             return len(self.generic_prompt_state.get("rounds", [])) or len(self.generic_prompt_config.get("rounds", [])) or 3
         if self.game_type == "odd_question":
             return int(self.odd_question_config.get("total_rounds") or 5)
+        if self.game_type == "impostor":
+            return int(self.impostor_config.get("total_rounds") or 3)
         if self.game_type == "would_you_rather":
             return len(self.wyr_state.get("rounds", [])) or len(self.wyr_config.get("prompts", [])) or 3
         if self.game_type == "never_have_i_ever":
@@ -689,6 +711,10 @@ class Room:
         if self.game_type == "odd_question":
             # Host view: deliberately passes no viewer_id, so neither prompt is included.
             return oddq_public_state(self.odd_question_state, host=True) if self.odd_question_state else None
+        if self.game_type == "impostor":
+            # One viewer, so there is no per-seat scoping here by design; the engine withholds
+            # the secret until the round resolves and the UI privacy gate handles the rest.
+            return imp.public_state(self.impostor_state) if self.impostor_state else None
         if self.game_type == "would_you_rather":
             return wyr_public_state(self.wyr_state) if self.wyr_state else None
         if self.game_type == "never_have_i_ever":
@@ -1284,10 +1310,17 @@ class SocketManager:
                         continue
                     timestamps.append(now)
                 else:
-                    # Per-client rate limiting for non-drawing messages
+                    # Per-client rate limiting for non-drawing messages.
+                    # Pass-and-play rooms carry every seat's action on the host's single socket,
+                    # so they get a higher cap — see PASS_PLAY_RATE_LIMIT_PER_SEC.
+                    per_sec = (
+                        config.PASS_PLAY_RATE_LIMIT_PER_SEC
+                        if room.game_type in PASS_AND_PLAY_GAME_TYPES
+                        else config.WS_RATE_LIMIT_PER_SEC
+                    )
                     timestamps = room.msg_timestamps.setdefault(client_id, [])
                     timestamps[:] = [t for t in timestamps if now - t < 1.0]
-                    if len(timestamps) >= config.WS_RATE_LIMIT_PER_SEC:
+                    if len(timestamps) >= per_sec:
                         await websocket.send_json({"type": "ERROR", "message": "Too many messages"})
                         continue
                     timestamps.append(now)
@@ -1402,6 +1435,11 @@ class SocketManager:
             sync["photo_clue"] = self._photo_clue_public_state(room)
         if room.game_type == "poker" and room.poker_state:
             sync["poker"] = self._poker_public_state(room)
+        if room.game_type in PASS_AND_PLAY_GAME_TYPES:
+            # Seats go in the sync even before the game starts, so a host who reconnects
+            # mid-setup doesn't lose the roster they just typed.
+            sync["impostor"] = imp.public_state(room.impostor_state) if room.impostor_state else None
+            sync["impostor_seats"] = room.impostor_seats
 
         if room.organizer:
             await room.organizer.send_json(sync)
@@ -1594,6 +1632,16 @@ class SocketManager:
                                 "message": f"Word Association needs at least {config.MIN_WORD_ASSOCIATION_PLAYERS} players to start",
                             })
                             return
+                    elif room.game_type in PASS_AND_PLAY_GAME_TYPES:
+                        # NOT connected_player_count(): a pass-and-play room has ONE client (the
+                        # host's phone) and zero connected players by design. Gating on
+                        # connections here would make the game permanently unstartable.
+                        if not passplay.can_start(room.impostor_seats, config.MIN_IMPOSTOR_PLAYERS):
+                            await self._send_to_client(room, client_id, {
+                                "type": "ERROR",
+                                "message": f"Add at least {config.MIN_IMPOSTOR_PLAYERS} players to start.",
+                            })
+                            return
                     elif room.game_type == "odd_question":
                         player_count = room.connected_player_count()
                         if player_count < config.MIN_ODD_QUESTION_PLAYERS:
@@ -1691,6 +1739,10 @@ class SocketManager:
                         self._start_chit_pull_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": "chit_pull"})
                         await self._broadcast_chit_pull_sync(room)
+                    elif room.game_type in PASS_AND_PLAY_GAME_TYPES:
+                        self._start_impostor_game(room)
+                        await room.broadcast({"type": "GAME_STARTING", "game_type": room.game_type})
+                        await self._broadcast_impostor_sync(room)
                     elif room.game_type == "mafia":
                         self._start_mafia_game(room)
                         await room.broadcast({"type": "GAME_STARTING", "game_type": "mafia"})
@@ -2130,6 +2182,9 @@ class SocketManager:
                         "player_count": len(room.players),
                         "players": [{"nickname": p["nickname"], "avatar": p.get("avatar", "")} for p in room.players.values()],
                     })
+
+            elif room.game_type in PASS_AND_PLAY_GAME_TYPES and await self._handle_impostor_message(room, client_id, message):
+                return
 
             elif msg_type == "TOGGLE_LOCK":
                 if room.state == "LOBBY":
@@ -4615,6 +4670,93 @@ class SocketManager:
             await self._mark_game_session_complete(room, summary)
         except Exception:
             logger.warning("Could not save Random Chit history for room %s", room.room_code)
+
+    # --- Pass-and-play: Impostor (SPEC-PASS-AND-PLAY) ------------------------------------------
+    #
+    # Every handler here runs on the ORGANIZER connection. There is one device, so there is no
+    # per-player routing, no reconnect grace, and no per-viewer payload scoping — see the spec.
+
+    def _start_impostor_game(self, room: Room):
+        room.impostor_config = imp.validate_config(room.quiz)
+        room.impostor_state = imp.create_initial_state(room.impostor_seats, room.impostor_config)
+        room.state = room.impostor_state["phase"]
+        room.answer_log = []
+
+    async def _broadcast_impostor_sync(self, room: Room):
+        await room.broadcast({
+            "type": "IMPOSTOR_SYNC",
+            "impostor": imp.public_state(room.impostor_state) if room.impostor_state else None,
+            "impostor_seats": room.impostor_seats,
+        })
+
+    async def _handle_impostor_message(self, room: Room, client_id: str, message: dict) -> bool:
+        """Organizer-only Impostor messages. Returns True if the message was handled."""
+        msg_type = message.get("type")
+        if msg_type == "IMPOSTOR_SET_SEATS":
+            # Setup only. Rebuilding the roster mid-game would invalidate the live round's roles
+            # and scores, so it is refused once the game is running.
+            if room.impostor_state:
+                return True
+            room.impostor_seats = passplay.build_seats(
+                message.get("seat_names"), message.get("seat_emojis")
+            )
+            await self._broadcast_impostor_sync(room)
+            return True
+
+        if not room.impostor_state:
+            return False
+
+        if msg_type == "IMPOSTOR_ROLE_SEEN":
+            imp.mark_revealed(room.impostor_state, str(message.get("seat_id") or ""))
+        elif msg_type == "IMPOSTOR_CLUE_SPOKEN":
+            imp.record_clue(
+                room.impostor_state,
+                str(message.get("seat_id") or ""),
+                str(message.get("word") or ""),
+            )
+        elif msg_type == "IMPOSTOR_VOTE":
+            imp.submit_vote(
+                room.impostor_state,
+                str(message.get("voter_id") or ""),
+                str(message.get("accused_id") or ""),
+            )
+        elif msg_type == "IMPOSTOR_CLOSE_VOTE":
+            imp.close_vote(room.impostor_state)
+        elif msg_type == "IMPOSTOR_ACCUSED_GUESS":
+            imp.submit_accused_guess(room.impostor_state, str(message.get("guess") or ""))
+        elif msg_type == "IMPOSTOR_NEXT_ROUND":
+            imp.next_round(room.impostor_state)
+            if room.impostor_state["phase"] == imp.PHASE_PODIUM:
+                await self._finish_impostor_game(room)
+                return True
+        else:
+            return False
+
+        room.state = room.impostor_state["phase"]
+        await self._broadcast_impostor_sync(room)
+        return True
+
+    async def _finish_impostor_game(self, room: Room):
+        """Podium. Scores are per SEAT, so build the leaderboard from standings rather than from
+        `room.players` (which is empty in a pass-and-play room)."""
+        room.state = "PODIUM"
+        rows = imp.standings(room.impostor_state)
+        await room.broadcast({
+            "type": "PODIUM",
+            "leaderboard": rows,
+            "team_leaderboard": [],
+            "impostor": imp.public_state(room.impostor_state),
+        })
+        try:
+            from main import record_game_completion
+            summary = self.get_game_summary(room)
+            # get_game_summary counts connected players; a pass-and-play room's real headcount is
+            # its seats, and stats would otherwise record every party as 0 players.
+            summary["player_count"] = len(room.impostor_seats)
+            summary["leaderboard"] = rows
+            record_game_completion(summary)
+        except Exception:
+            logger.warning("Could not save game history for room %s", room.room_code)
 
     def _start_mafia_game(self, room: Room):
         room.mafia_config = validate_mafia_config(room.quiz)

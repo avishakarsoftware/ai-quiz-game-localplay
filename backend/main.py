@@ -51,6 +51,7 @@ from word_association_engine import validate_config as validate_word_association
 from acronym_engine import validate_config as validate_acronym_config
 from photo_clue_engine import validate_config as validate_photo_clue_config
 from poker_engine import validate_config as validate_poker_config
+from impostor_engine import validate_config as validate_impostor_config
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -202,6 +203,16 @@ from game_catalog import (
     REVELRY_PARTY_GAME_START_TYPES,
     REVELRY_PARTY_GAME_START_TYPES_ERROR,
 )
+
+# Every game_type a room may be created with, DERIVED from the catalog rather than hand-listed.
+# This was a 23-item literal tuple, which is the same shape of bug that shipped the occasion
+# bingos broken: a new game landed in the catalog, three hardcoded lists elsewhere didn't know
+# about it, and the failure only showed up at runtime. Verified equivalent to the old tuple at the
+# time of the swap (identical set, plus `impostor`).
+SUPPORTED_ROOM_GAME_TYPES = frozenset(
+    {g["game_type"] for g in GAME_CATALOG} | set(GENERIC_PROMPT_GAME_TYPES)
+)
+
 
 
 def get_local_ip():
@@ -571,6 +582,8 @@ class RoomCreateRequest(BaseModel):
     acronym_config: dict = {}
     photo_clue_config: dict = {}
     poker_config: dict = {}
+    # Pass-and-play: carries seat_names/seat_emojis typed by the host (SPEC-PASS-AND-PLAY).
+    impostor_config: dict = {}
     game_type: str = "quiz"
     time_limit: Optional[int] = None
 
@@ -593,7 +606,7 @@ class RoomCreateRequest(BaseModel):
     @field_validator('game_type')
     @classmethod
     def validate_game_type(cls, v: str) -> str:
-        if v not in ("quiz", "wmlt", "drawing", "housie", "bingo", "musical_chairs", "bluff", "two_truths", "story_chain", "common_ground", "find_someone", "who_am_i", "chit_pull", "mafia", "party_quests", "survey_says", "would_you_rather", "never_have_i_ever", "word_association", "acronym", "photo_clue", "poker", "odd_question") and v not in GENERIC_PROMPT_GAME_TYPES:
+        if v not in SUPPORTED_ROOM_GAME_TYPES:
             raise ValueError('game_type must be a supported LocalPlay game type')
         return v
 
@@ -747,6 +760,8 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
         return str(uuid.uuid4()), validate_photo_clue_config({"game_title": title or "Photo Clue"})
     if game_type == "poker":
         return str(uuid.uuid4()), validate_poker_config({"game_title": title or "Party Poker"})
+    if game_type == "impostor":
+        return str(uuid.uuid4()), validate_impostor_config({"game_title": title or "Impostor"})
     if game_type == "bingo":
         return str(uuid.uuid4()), default_bingo_game(title or "Bingo")
     if game_type == "housie":
@@ -3890,6 +3905,15 @@ async def create_room(request: RoomCreateRequest, req: Request):
     elif request.game_type == "poker":
         content_id = str(uuid.uuid4())
         game_data = validate_poker_config(request.poker_config)
+    elif request.game_type == "impostor":
+        content_id = str(uuid.uuid4())
+        # validate_config keeps the game settings; seat names are passed through untouched so the
+        # Room constructor can build seats from them.
+        game_data = {
+            **validate_impostor_config(request.impostor_config),
+            "seat_names": (request.impostor_config or {}).get("seat_names") or [],
+            "seat_emojis": (request.impostor_config or {}).get("seat_emojis") or [],
+        }
     else:
         content_id, game_data = _resolve_runtime_content(request.game_type, content_id)
     if request.game_type == "drawing":
