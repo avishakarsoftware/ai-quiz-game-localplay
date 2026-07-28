@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { API_URL, WS_URL } from '../config';
-import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type GenericPromptGameType, type GenericPromptState, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type WhoAmIGameContent, type ChitPullCategory, type ChitPullGameContent, type ChitPullSafeLevel, type ChitPullState, type MafiaState, type PartyQuestsState, type SurveySaysState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState } from '../types';
+import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type GenericPromptGameType, type GenericPromptState, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type WhoAmIGameContent, type ChitPullCategory, type ChitPullGameContent, type ChitPullSafeLevel, type ChitPullState, type MafiaState, type PartyQuestsState, type SurveySaysState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState, type ImpostorState, type PassPlaySeat } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
 import { getCheckoutPending, clearCheckoutPending, saveOrganizerSession, getSavedOrganizerSession, clearOrganizerSession } from '../utils/storage';
@@ -40,6 +40,8 @@ import PartyQuestsGame from '../components/PartyQuestsGame';
 import SurveySaysGame from '../components/SurveySaysGame';
 import GenericPromptGame from '../components/GenericPromptGame';
 import SimpleSocialGame from '../components/SimpleSocialGame';
+import ImpostorGame from '../components/passplay/ImpostorGame';
+import SeatRosterSetup from '../components/passplay/SeatRosterSetup';
 import PhotoClueGame from '../components/PhotoClueGame';
 import GameRulesModal from '../components/GameRulesModal';
 import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
@@ -237,6 +239,10 @@ export default function OrganizerPage() {
     const [surveySaysState, setSurveySaysState] = useState<SurveySaysState | null>(null);
     const [genericPromptState, setGenericPromptState] = useState<GenericPromptState | null>(null);
     const [simpleSocialState, setSimpleSocialState] = useState<SimpleSocialState | null>(null);
+    // Pass-and-play (SPEC-PASS-AND-PLAY). `impostorSeats` mirrors the host-typed roster, which
+    // exists BEFORE the game starts — unlike players, seats have no sockets to enumerate.
+    const [impostorState, setImpostorState] = useState<ImpostorState | null>(null);
+    const [impostorSeats, setImpostorSeats] = useState<PassPlaySeat[]>([]);
     const [photoClueState, setPhotoClueState] = useState<PhotoClueState | null>(null);
     const [partyQuestsConfig, setPartyQuestsConfig] = useState<PartyQuestSetupConfig>(defaultPartyQuestsConfig());
     const [catalog, setCatalog] = useState<CatalogGameWithRules[]>([]);
@@ -673,6 +679,16 @@ export default function OrganizerPage() {
             setChitPullState(msg.chit_pull as ChitPullState);
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setState('CHIT_PULL');
+        }
+        else if (msg.type === 'IMPOSTOR_SYNC') {
+            finishedRoomCanResetRef.current = false;
+            setGameType('impostor');
+            // Seats arrive even pre-start, so a host who reconnects mid-setup keeps their roster.
+            if (Array.isArray(msg.impostor_seats)) setImpostorSeats(msg.impostor_seats as PassPlaySeat[]);
+            const imp = msg.impostor as ImpostorState | null;
+            setImpostorState(imp);
+            // Null state means the game hasn't started — stay on the seat-setup screen.
+            setState(imp ? 'IMPOSTOR' : 'LOBBY');
         }
         else if (msg.type === 'MAFIA_SYNC') {
             finishedRoomCanResetRef.current = false;
@@ -1946,6 +1962,23 @@ export default function OrganizerPage() {
     };
 
     const nextQuestion = () => wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
+
+    // --- Pass-and-play: Impostor (SPEC-PASS-AND-PLAY) ---
+    // Every one of these runs on the HOST socket: there is one device, so the host's taps carry
+    // the whole table's actions. That is also why the backend gives pass-and-play rooms a higher
+    // WS rate limit (PASS_PLAY_RATE_LIMIT_PER_SEC).
+    const sendImpostorSeats = (names: string[], emojis: string[]) =>
+        wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_SET_SEATS', seat_names: names, seat_emojis: emojis }));
+    const impostorRoleSeen = (seatId: string) =>
+        wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_ROLE_SEEN', seat_id: seatId }));
+    const impostorClueSpoken = (seatId: string) =>
+        wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_CLUE_SPOKEN', seat_id: seatId }));
+    const impostorVote = (voterId: string, accusedId: string) =>
+        wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_VOTE', voter_id: voterId, accused_id: accusedId }));
+    const impostorCloseVote = () => wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_CLOSE_VOTE' }));
+    const impostorAccusedGuess = (guess: string) =>
+        wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_ACCUSED_GUESS', guess }));
+    const impostorNextRound = () => wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_NEXT_ROUND' }));
     const callHousieNumber = () => wsRef.current?.send(JSON.stringify({ type: 'BINGO_CALL_NEXT' }));
     const undoHousieCall = () => wsRef.current?.send(JSON.stringify({ type: 'BINGO_UNDO_LAST_CALL' }));
     const setHousieCallerModeRuntime = (mode: 'manual' | 'auto') => {
@@ -2629,7 +2662,25 @@ export default function OrganizerPage() {
                     <ImageGenerationScreen quiz={quiz} imageProgress={imageProgress} />
                 )}
 
-                {state === 'ROOM' && (
+                {/* Pass-and-play replaces the lobby entirely: there is nothing to wait for.
+                    A QR code would be actively misleading — these players have no device, which
+                    is the whole point of the mode (SPEC-PASS-AND-PLAY §1). */}
+                {state === 'ROOM' && getGameModeConfig(gameType).passAndPlay && (
+                    <SeatRosterSetup
+                        initialNames={impostorSeats.map((seat) => seat.name)}
+                        minSeats={getMinPlayers(gameType)}
+                        maxSeats={12}
+                        onChange={sendImpostorSeats}
+                        onStart={(names, emojis) => {
+                            // Push the final roster, then start. The backend gates START_GAME on
+                            // seat count, so the seats must land first.
+                            sendImpostorSeats(names, emojis);
+                            startGame();
+                        }}
+                    />
+                )}
+
+                {state === 'ROOM' && !getGameModeConfig(gameType).passAndPlay && (
                     <LobbyScreen
                         roomCode={roomCode}
                         joinUrl={joinUrl}
@@ -2833,6 +2884,18 @@ export default function OrganizerPage() {
                         onStartVoting={startSimpleSocialVoting}
                         onNextRound={nextSimpleSocialRound}
                         onEndGame={endQuiz}
+                    />
+                )}
+
+                {state === 'IMPOSTOR' && impostorState && (
+                    <ImpostorGame
+                        state={impostorState}
+                        onRoleSeen={impostorRoleSeen}
+                        onClueSpoken={impostorClueSpoken}
+                        onVote={impostorVote}
+                        onCloseVote={impostorCloseVote}
+                        onAccusedGuess={impostorAccusedGuess}
+                        onNextRound={impostorNextRound}
                     />
                 )}
 

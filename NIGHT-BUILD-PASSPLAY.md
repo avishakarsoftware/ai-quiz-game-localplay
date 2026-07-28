@@ -60,7 +60,7 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
 - [x] Frontend tests for each primitive (19 green), esp. that `PrivacyGate` renders nothing before reveal.
 
 ### Phase 3 — Impostor UI on the primitives
-- [ ] Organizer/host flow: setup → role reveal loop → clue rounds → vote → reveal → podium.
+- [x] Organizer/host flow: setup → role reveal loop → clue rounds → vote → reveal → podium.
 - [x] Picker tile + `passAndPlay` flag + local rules + collision guards.
 - [x] Frontend tests (356 total green).
 
@@ -117,9 +117,9 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
   made the role reveal unimplementable. Resolved by scoping disclosure **by phase**: `roles` ships
   only during IMP_REVEAL_ROLES (the phase with a gate mounted), empty in every face-up phase.
   Pinned by `TestPhaseScopedDisclosure`.
-  **STILL TO DO:** wire `ImpostorGame` into `OrganizerPage` (seat setup → game render → the
-  IMPOSTOR_* socket sends). Until that lands the game is unreachable from the UI even though both
-  ends work — exactly the "wired but unreachable" trap the odd_question rename hit.
+  Then wired into `OrganizerPage`: IMPOSTOR_SYNC handler, seven senders, the game render, and
+  **seat setup REPLACING the lobby** for pass-and-play — a QR code would be actively misleading
+  when the players have no devices. Reachable end to end. Frontend build clean.
 
 - **2026-07-28 ~01:05** — Phase 2 COMPLETE. Four primitives in
   `frontend/src/components/passplay/` + 19 tests + Velvet CSS. tsc clean.
