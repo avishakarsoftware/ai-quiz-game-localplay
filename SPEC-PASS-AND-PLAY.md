@@ -1,9 +1,15 @@
 # SPEC-PASS-AND-PLAY — one shared phone, everyone plays
 
-Status: **Product spec, not yet built (2026-07-28).** No code exists. This documents the
-interaction model, the flagship game (Impostor — the id is deliberately kept free for it, see
-SPEC-GAME-ODD-QUESTION's naming history), and the slate of candidates.
-Owner: Avi. Live status: DEPLOY.md's ledger once anything ships.
+Status: **Backend + primitives + Impostor UI BUILT 2026-07-28; not yet deployed.**
+- Phase 1 (backend): `pass_play_common.py`, `impostor_engine.py`, catalog entry, rules, socket
+  wiring. 66 tests.
+- Phase 2 (primitives): `SeatRosterSetup`, `PassScreen`, `PrivacyGate`, `GroupScreenFrame` in
+  `frontend/src/components/passplay/`. 19 tests.
+- Phase 3 (game UI): `ImpostorGame.tsx`. **Remaining: wire into OrganizerPage + picker tile,
+  then deploy to gamma.**
+
+Live status: DEPLOY.md's ledger. Owner: Avi. Impostor's id was deliberately kept free for this —
+see SPEC-GAME-ODD-QUESTION's naming history.
 
 ## 1. Why this is a platform feature, not a game
 
@@ -21,6 +27,8 @@ per-game inventions:
 | **Seat list without devices** | Host types player names at setup; seats exist with no socket | Every pass game needs a roster; joining-by-QR is exactly what these players can't do |
 | **Pass screen** | Full-screen "Pass the phone to **Maya** 🥭" between turns; nothing sensitive rendered | The privacy boundary between two players' hands |
 | **Privacy gate** | "Tap and hold to reveal — make sure only you can see" → reveal → "Got it, hide & pass" | Secret roles/words die instantly without a deliberate reveal step |
+| **Turn order engine** | Rotation with skip/insert (someone leaves the table) | Same logic every pass game repeats |
+| **Group screen mode** | Some phases are face-up for the whole table (voting recap, timers, reveals) | The phone alternates between "secret hand" and "shared table centre" |
 
 **Refinement (2026-07-28, found while building Impostor):** "privacy is a UI gate, not a payload
 filter" is right about per-VIEWER scoping (meaningless with one device) but wrong if read as
@@ -29,8 +37,6 @@ genuinely should not have the secret while the phone is face-up on a table. So d
 scoped **by phase**, not by viewer: `public_state` ships a `roles` map only during the
 gated reveal phase, and empties it for every face-up phase. Secrets travel exactly when a gate is
 mounted to hold them. Pinned by `TestPhaseScopedDisclosure`.
-| **Turn order engine** | Rotation with skip/insert (someone leaves the table) | Same logic every pass game repeats |
-| **Group screen mode** | Some phases are face-up for the whole table (voting recap, timers, reveals) | The phone alternates between "secret hand" and "shared table centre" |
 
 Existing plumbing that carries over unchanged: room creation/sparks, the host screen/Chromecast as
 an optional shared display, game history/stats (`record_game_completion` — the host wallet
