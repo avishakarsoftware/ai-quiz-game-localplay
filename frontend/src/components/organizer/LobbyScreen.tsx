@@ -189,8 +189,8 @@ export default function LobbyScreen({
                             <p className="lobby-offline-summary">
                                 {offlineCount} player{offlineCount === 1 ? '' : 's'} reconnecting
                                 {onRemoveOfflinePlayers && (
-                                    /* Offline seats are held for 10 minutes so a slept phone keeps its
-                                       place. Without this the host just watches ghosts they can't clear —
+                                    /* Offline seats are held for a long party-length grace window so a slept phone keeps its
+                                       place. Without this the host just watches stale seats they can't clear —
                                        and some games gate their minimum-player check on the roster. */
                                     <>
                                         {' · '}

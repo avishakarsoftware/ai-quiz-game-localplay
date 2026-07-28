@@ -124,7 +124,7 @@ describe('LobbyScreen min-player gating', () => {
 
 /**
  * Host cleanup for offline lobby seats. Seats are held for the reconnect grace so a slept phone
- * keeps its place; without a host control the lobby just accumulates ghosts nobody can clear.
+ * keeps its place; without a host control the lobby just accumulates stale entries nobody can clear.
  */
 describe('LobbyScreen offline seat cleanup', () => {
     const offlinePlayers = [

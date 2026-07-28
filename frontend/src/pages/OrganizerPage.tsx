@@ -150,10 +150,6 @@ function starterBingoDeck(): BingoDeckItem[] {
     return bingoDeckFrom('starter', STARTER_BINGO_ITEMS);
 }
 
-function babyBingoDeck(): BingoDeckItem[] {
-    return bingoDeckFrom('baby', BABY_BINGO_ITEMS);
-}
-
 export default function OrganizerPage() {
     const { config: remoteConfig } = useRemoteConfigContext();
     const [state, setState] = useState<OrganizerState>('SELECT_GAME');

@@ -35,7 +35,7 @@ def _quiz_room(code="SNAP01", state="LOBBY"):
 def _restore_one(manager=None):
     factory = lambda code, gd, tl, tok, cid, gt, bm: Room(
         code, gd, tl, organizer_token=tok, content_id=cid, game_type=gt, billing_mode=bm)
-    return room_snapshot.load_all(factory, ttl_seconds=1800)
+    return room_snapshot.load_all(factory, ttl_seconds=1800, lobby_ttl_seconds=5400)
 
 
 class TestSnapshotRoundTrip:
@@ -108,6 +108,18 @@ class TestLifecycle:
         room_snapshot.save_all({room.room_code: room})
         assert _restore_one() == []
         assert not (snapshot_dir / "SNAP01.json").exists()
+
+    def test_lobby_snapshot_uses_lobby_ttl(self, snapshot_dir):
+        room = _quiz_room(state="LOBBY")
+        room.last_activity = time.time() - 2000  # expired by room TTL, still inside lobby grace
+        room_snapshot.save_all({room.room_code: room})
+        assert [r.room_code for r in _restore_one()] == ["SNAP01"]
+
+    def test_active_snapshot_still_uses_room_ttl(self, snapshot_dir):
+        room = _quiz_room(state="QUESTION")
+        room.last_activity = time.time() - 2000
+        room_snapshot.save_all({room.room_code: room})
+        assert _restore_one() == []
 
     def test_save_all_prunes_closed_rooms(self, snapshot_dir):
         a, b = _quiz_room("AAAA11"), _quiz_room("BBBB22")

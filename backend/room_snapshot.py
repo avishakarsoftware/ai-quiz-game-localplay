@@ -132,7 +132,7 @@ def delete(room_code: str) -> None:
         pass
 
 
-def load_all(room_factory, ttl_seconds: int) -> list:
+def load_all(room_factory, ttl_seconds: int, lobby_ttl_seconds: Optional[int] = None) -> list:
     """Rebuild Room objects from snapshots. Returns the restored rooms.
 
     room_factory(room_code, game_data, time_limit, organizer_token, content_id,
@@ -154,7 +154,9 @@ def load_all(room_factory, ttl_seconds: int) -> list:
             logger.error("room_snapshot: unreadable snapshot %s: %s", name, exc)
             continue
         last_activity = float(data.get("last_activity") or 0)
-        if now - last_activity > ttl_seconds:
+        state = str(data.get("state") or "")
+        effective_ttl = max(ttl_seconds, int(lobby_ttl_seconds or ttl_seconds)) if state == "LOBBY" else ttl_seconds
+        if now - last_activity > effective_ttl:
             try:
                 os.remove(path)
             except OSError:

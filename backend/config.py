@@ -87,10 +87,10 @@ MAX_NICKNAME_LENGTH = 20
 ROOM_TTL_SECONDS = int(os.getenv("ROOM_TTL_SECONDS", "1800"))
 ORGANIZER_RECONNECT_GRACE_SECONDS = int(os.getenv("ORGANIZER_RECONNECT_GRACE_SECONDS", "600"))
 # How long a disconnected lobby seat is preserved before the periodic cleanup
-# prunes it. 10 min covers real party pauses (phone sleep, in-app browser
-# suspend) while staying <= ROOM_TTL_SECONDS. The cleanup loop applies this
-# mid-lobby, not just at game start.
-LOBBY_RECONNECT_GRACE_SECONDS = int(os.getenv("LOBBY_RECONNECT_GRACE_SECONDS", "600"))
+# prunes it. Real parties often have a long pre-start lull while the host is
+# announcing or guests are mingling, so the default is party-length rather than
+# browser-sleep-length. Start gates still count only live sockets.
+LOBBY_RECONNECT_GRACE_SECONDS = int(os.getenv("LOBBY_RECONNECT_GRACE_SECONDS", "5400"))
 # Room snapshot/restore (room_snapshot.py): live games survive deploys/restarts.
 ROOM_SNAPSHOT_ENABLED = os.getenv("ROOM_SNAPSHOT_ENABLED", "true").lower() == "true"
 ROOM_SNAPSHOT_INTERVAL_SECONDS = int(os.getenv("ROOM_SNAPSHOT_INTERVAL_SECONDS", "10"))

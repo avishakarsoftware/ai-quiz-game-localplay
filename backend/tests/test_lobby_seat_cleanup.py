@@ -2,7 +2,7 @@
 
 Offline seats are preserved for LOBBY_RECONNECT_GRACE_SECONDS so a slept phone keeps its place.
 The gap these close: the host had no way to reclaim those seats early, so a lobby could sit full
-of greyed-out ghosts with the host unable to do anything about it.
+of greyed-out stale entries with the host unable to do anything about it.
 """
 import time
 

@@ -221,7 +221,7 @@ Promoted runtime commit `435ed15` to gamma and prod. No schema migration require
 - **Gamma:** `./scripts/deploy-gcp.sh --gamma --with-frontend` → `games-backend-gamma` (Supabase `games_gamma_`). DB backed up to `revelry-backups-gamma/revelry_20260629_002655.db`; health passed.
 - **Prod backend + fallback SPA:** `./scripts/deploy-gcp.sh --with-frontend` → `games-backend` (Supabase `games_`). DB backed up to `revelry-backups/revelry_20260629_003210.db`; health passed.
 - **Public frontend (IONOS `games.revelryapp.me`):** `VITE_BASE_PATH=/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_WEB_URL=https://games.revelryapp.me/ VITE_CAST_APP_ID=1BC9ACD8 npx vite build`, then additive `scp -r dist/*` + `rsync dist/.htaccess` (no `--delete`). Live index serves bundle `index-BHeZoS-L.js` (matches local build); deployed bundle confirmed to contain `Review questions`, `read-only preview`, `restarts the room`, `screen-back-button`.
-- Ships: (#1) shared top-left `ScreenBackButton` across every organizer setup/prompt/review/editor screen; (#2) quiz lobby read-only **Review questions** peek that keeps the room (Edit-from-peek restarts it); (#3) `LOBBY_RECONNECT_GRACE_SECONDS` lowered to 600s (10 min) plus a periodic lobby-prune in `_cleanup_expired_rooms`; (#4) `scripts/mint-gamma-revelry-url.sh` mints the seeded-party gamma token so the Revelry e2e matrix (incl. mirror-results-back) runs green.
+- Ships: (#1) shared top-left `ScreenBackButton` across every organizer setup/prompt/review/editor screen; (#2) quiz lobby read-only **Review questions** peek that keeps the room (Edit-from-peek restarts it); (#3) lobby reconnect pruning in `_cleanup_expired_rooms` (later extended to a 90-minute party-length default); (#4) `scripts/mint-gamma-revelry-url.sh` mints the seeded-party gamma token so the Revelry e2e matrix (incl. mirror-results-back) runs green.
 - **Verified on gamma:** smoke (desktop+mobile) 2/2; lobby-navigation 5/5 (16-game Back sweep, Back-to-games, read-only review peek, Edit-setup); Revelry gamma matrix 3/3 (Drawing save/start/re-enter, quiz mirror-results-back, custom-quiz image upload). Visual review of #1 back pill on prompt/editor/review screens, #2 lobby Review button + peek modal, and mobile no-overlap. Pre-deploy locally: backend 868 + 46 ws, frontend 258, typecheck clean.
 - **Verified on prod:** `gamesapi.revelryapp.me` health ok; `games.revelryapp.me` catalog 200 + AI Quiz prompt renders the `‹ Back` control (live Playwright + screenshot).
 
@@ -1242,6 +1242,8 @@ LOBBY_RECONNECT_GRACE_SECONDS=5400
 ```
 
 `LOBBY_RECONNECT_GRACE_SECONDS` preserves disconnected lobby seats for mobile party continuity. The default is 5400 seconds (90 minutes). Connected-player counts and start gates still count only live sockets; preserved offline seats are pruned before the game materializes.
+
+Runtime note: LOBBY room expiry and room snapshot restore use `max(ROOM_TTL_SECONDS, LOBBY_RECONNECT_GRACE_SECONDS)` so a quiet pre-start lobby can survive the same reconnect window. Active games continue to use the normal `ROOM_TTL_SECONDS`; organizer disconnect still uses `ORGANIZER_RECONNECT_GRACE_SECONDS`.
 
 ### Table prefix isolation
 

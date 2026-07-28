@@ -50,6 +50,17 @@ def test_static_launchable_games_have_rules_metadata():
     validate_catalog_rules(GAME_CATALOG)
 
 
+def test_catalog_rules_minimums_match_start_gates():
+    mismatches = []
+    for game in GAME_CATALOG:
+        players_schema = (game.get("config_schema") or {}).get("players") or {}
+        rules_players = (game.get("rules") or {}).get("player_count") or {}
+        if players_schema.get("min") is not None and rules_players.get("min") != players_schema["min"]:
+            mismatches.append((game["id"], players_schema["min"], rules_players.get("min")))
+
+    assert mismatches == []
+
+
 def test_rules_validator_reports_missing_required_fields():
     errors = validate_rules(
         {"version": 1, "title": "", "summary": "Missing useful bits", "sections": []},

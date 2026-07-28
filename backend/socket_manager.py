@@ -591,7 +591,10 @@ class Room:
         self.last_activity = time.time()
 
     def is_expired(self) -> bool:
-        return time.time() - self.last_activity > config.ROOM_TTL_SECONDS
+        ttl_seconds = config.ROOM_TTL_SECONDS
+        if self.state == "LOBBY":
+            ttl_seconds = max(ttl_seconds, config.LOBBY_RECONNECT_GRACE_SECONDS)
+        return time.time() - self.last_activity > ttl_seconds
 
     def total_rounds(self) -> int:
         """Total number of rounds (questions for quiz, statements for WMLT)."""
@@ -968,6 +971,7 @@ class SocketManager:
                 content_id=content_id, game_type=game_type, billing_mode=billing_mode,
             ),
             config.ROOM_TTL_SECONDS,
+            lobby_ttl_seconds=config.LOBBY_RECONNECT_GRACE_SECONDS,
         )
         for room in restored:
             if room.room_code in self.rooms:
@@ -2127,9 +2131,9 @@ class SocketManager:
                     room.locked = not room.locked
                     await room.broadcast({"type": "ROOM_LOCK_STATUS", "locked": room.locked})
 
-            # Host seat cleanup. Offline seats are held for LOBBY_RECONNECT_GRACE_SECONDS (10 min)
+            # Host seat cleanup. Offline seats are held for LOBBY_RECONNECT_GRACE_SECONDS
             # so a slept phone keeps its place, but that leaves the lobby cluttered with greyed-out
-            # ghosts the host can't clear — and some games gate their minimum-player check on the
+            # stale seats the host can't clear — and some games gate their minimum-player check on the
             # roster. These let the host reclaim the seats without waiting out the grace period.
             elif msg_type in ("REMOVE_OFFLINE_PLAYERS", "REMOVE_PLAYER"):
                 if room.state != "LOBBY":

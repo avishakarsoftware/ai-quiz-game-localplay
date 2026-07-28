@@ -193,11 +193,21 @@ class TestRoomExpiry:
 
     def test_expired_after_ttl(self):
         room = make_room()
+        room.state = "QUESTION"
         room.last_activity = time.time() - 2000  # > 1800s TTL
+        assert room.is_expired()
+
+    def test_lobby_room_uses_lobby_reconnect_grace_before_expiring(self):
+        room = make_room()
+        room.state = "LOBBY"
+        room.last_activity = time.time() - (config.ROOM_TTL_SECONDS + 200)
+        assert not room.is_expired()
+        room.last_activity = time.time() - (config.LOBBY_RECONNECT_GRACE_SECONDS + 1)
         assert room.is_expired()
 
     def test_touch_resets_expiry(self):
         room = make_room()
+        room.state = "QUESTION"
         room.last_activity = time.time() - 2000
         assert room.is_expired()
         room.touch()

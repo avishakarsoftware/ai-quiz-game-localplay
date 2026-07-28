@@ -166,6 +166,13 @@ Optional fields:
 - `late_join_policy`
 - `variants`
 
+`player_count.min` is not decorative copy. For catalog-backed games it must match
+`config_schema.players.min`, which itself is derived from the backend `MIN_*_PLAYERS`
+start gates. `validate_catalog_rules()` fails if a launchable game's rules min drifts
+from the catalog start contract. Frontend fallback rules should also normalize their
+minimum through `getMinPlayers()` so local/offline catalog mode cannot show a different
+minimum than the lobby start button.
+
 Section ids should use this standard set where applicable:
 
 - `objective`
@@ -180,7 +187,8 @@ Section ids should use this standard set where applicable:
 
 ## Backend Implementation
 
-Add rules metadata to the static catalog in `backend/main.py`.
+Add rules metadata to the static catalog in `backend/game_catalog.py` via
+`game_rules.attach_rules()`.
 
 Expose rules through existing catalog responses:
 

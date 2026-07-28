@@ -78,7 +78,7 @@ GAME_RULES: dict[str, dict[str, Any]] = {
         ["Complete prize patterns on your ticket before other players claim them."],
         ["The caller draws numbers.", "Players mark matching numbers.", "Claim a prize when your marked ticket satisfies that pattern."],
         ["Valid claims award the prize.", "Invalid claims are rejected with a reason.", "Full House or the configured final prize ends the game."],
-        players={"min": 1, "recommended": "4-50"},
+        players={"min": 2, "recommended": "4-50"},
         setup=["Each player receives a server-generated ticket."],
     ),
     "bingo": _rules(
@@ -87,7 +87,7 @@ GAME_RULES: dict[str, dict[str, Any]] = {
         ["Complete a line, corners, blackout, or other host-selected pattern."],
         ["The host calls items from the deck.", "Players mark matching board cells.", "Players claim when a pattern is complete."],
         ["Valid claims award prizes.", "The host can continue until the final configured prize."],
-        players={"min": 1, "recommended": "4-50"},
+        players={"min": 2, "recommended": "4-50"},
         setup=["Boards can use text, emoji, or image items depending on the setup."],
     ),
     "baby_bingo": _rules(
@@ -96,7 +96,7 @@ GAME_RULES: dict[str, dict[str, Any]] = {
         ["Mark baby-shower items and moments as they are called."],
         ["The host calls items.", "Players mark matching cells.", "Claim when your board completes a prize pattern."],
         ["Valid claims win prizes.", "The host can keep calling until the final prize."],
-        players={"min": 1, "recommended": "4-50"},
+        players={"min": 2, "recommended": "4-50"},
         setup=["Works best with a shared gift-opening or shower activity moment."],
     ),
     "wedding_bingo": _rules(
@@ -105,7 +105,7 @@ GAME_RULES: dict[str, dict[str, Any]] = {
         ["Mark wedding moments as they happen or as the host calls them."],
         ["The host calls items.", "Players mark matching cells.", "Claim when your board completes a prize pattern."],
         ["Valid claims win prizes.", "The host can keep calling until the final prize."],
-        players={"min": 1, "recommended": "6-60"},
+        players={"min": 2, "recommended": "6-60"},
         setup=["Great during the reception — guests play between courses without leaving their seats."],
     ),
     "holiday_bingo": _rules(
@@ -114,7 +114,7 @@ GAME_RULES: dict[str, dict[str, Any]] = {
         ["Mark holiday moments as they happen or as the host calls them."],
         ["The host calls items.", "Players mark matching cells.", "Claim when your board completes a prize pattern."],
         ["Valid claims win prizes.", "The host can keep calling until the final prize."],
-        players={"min": 1, "recommended": "4-30"},
+        players={"min": 2, "recommended": "4-30"},
         setup=["Works as an ambient game across a whole evening, not just one sitting."],
     ),
     "road_trip_bingo": _rules(
@@ -123,7 +123,7 @@ GAME_RULES: dict[str, dict[str, Any]] = {
         ["Mark road-trip sights and moments as they happen."],
         ["The host calls items, or players self-mark on the honour system.", "Players mark matching cells.", "Claim when your board completes a prize pattern."],
         ["Valid claims win prizes.", "The host can keep calling until the final prize."],
-        players={"min": 1, "recommended": "2-8"},
+        players={"min": 2, "recommended": "2-8"},
         setup=["Designed for passengers — the driver should not be playing."],
     ),
     "musical_chairs": _rules(
@@ -151,7 +151,7 @@ GAME_RULES: dict[str, dict[str, Any]] = {
         ["Fool the room with a believable lie and spot other players' lies."],
         ["Each player submits three statements.", "One player is revealed at a time.", "Everyone votes for the statement they think is the lie."],
         ["Guessers score for finding the lie.", "Authors score when players are fooled.", "Highest score wins."],
-        players={"min": 2, "recommended": "4-20"},
+        players={"min": 3, "recommended": "4-20"},
         privacy=["Do not reveal your lie before voting ends."],
     ),
     "story_chain": _rules(
@@ -160,7 +160,7 @@ GAME_RULES: dict[str, dict[str, Any]] = {
         ["Create the funniest or most surprising story together."],
         ["Players take turns adding a sentence.", "Depending on mode, writers may see the full story or only the latest sentence.", "The final story is revealed at the end."],
         ["This is usually scored by completion or host choice.", "The group wins when the final story lands."],
-        players={"min": 2, "recommended": "4-12"},
+        players={"min": 3, "recommended": "4-12"},
     ),
     "common_ground": _rules(
         "Common Ground Rules",
@@ -168,7 +168,7 @@ GAME_RULES: dict[str, dict[str, Any]] = {
         ["Discover shared facts that are specific, surprising, or funny."],
         ["Players are assigned to teams.", "Teams discuss and submit common-ground answers.", "The room reveals and may vote on favorites."],
         ["Teams score for valid submissions and votes.", "Highest team score wins."],
-        players={"min": 2, "recommended": "6-30"},
+        players={"min": 4, "recommended": "6-30"},
         late_join_policy="Late joiners can be assigned to a team while the game is active.",
     ),
     "find_someone": _rules(
@@ -186,7 +186,7 @@ GAME_RULES: dict[str, dict[str, Any]] = {
         ["Guess the person, place, object, or phrase using as few clues as possible."],
         ["A clue appears each step.", "Players submit guesses.", "More clues appear until someone solves it or the round ends."],
         ["Earlier correct guesses score more points.", "Highest score wins after all rounds."],
-        players={"min": 1, "recommended": "3-20"},
+        players={"min": 2, "recommended": "3-20"},
     ),
     "chit_pull": _rules(
         "Random Chit Rules",
@@ -427,6 +427,14 @@ def validate_catalog_rules(catalog: list[dict[str, Any]]) -> None:
             errors.append(f"{game_id or '<unknown>'}: launchable game is missing rules")
             continue
         errors.extend(validate_rules(rules, game_id))
+        configured_players = (game.get("config_schema") or {}).get("players") or {}
+        rules_players = rules.get("player_count") or {}
+        configured_min = configured_players.get("min")
+        rules_min = rules_players.get("min")
+        if configured_min is not None and rules_min != configured_min:
+            errors.append(
+                f"{game_id}: rules.player_count.min ({rules_min}) must match config_schema.players.min ({configured_min})"
+            )
     if errors:
         raise ValueError("Invalid game rules metadata: " + "; ".join(errors))
 

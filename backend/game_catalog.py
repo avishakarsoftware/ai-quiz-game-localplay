@@ -857,4 +857,45 @@ GAME_CATALOG = [
     },
 ]
 
+_MIN_PLAYERS_BY_RUNTIME = {
+    "quiz": 1,
+    "wmlt": config.MIN_WMLT_PLAYERS,
+    "drawing": config.MIN_DRAWING_PLAYERS,
+    "housie": config.MIN_HOUSIE_PLAYERS,
+    "bingo": config.MIN_BINGO_PLAYERS,
+    "musical_chairs": config.MIN_MUSICAL_CHAIRS_PLAYERS,
+    "bluff": config.MIN_BLUFF_PLAYERS,
+    "two_truths": config.MIN_TWO_TRUTHS_PLAYERS,
+    "story_chain": config.MIN_STORY_CHAIN_PLAYERS,
+    "common_ground": config.MIN_COMMON_GROUND_PLAYERS,
+    "find_someone": config.MIN_FIND_SOMEONE_PLAYERS,
+    "who_am_i": config.MIN_WHO_AM_I_PLAYERS,
+    "chit_pull": config.MIN_CHIT_PULL_PLAYERS,
+    "mafia": config.MIN_MAFIA_PLAYERS,
+    "party_quests": config.MIN_PARTY_QUESTS_PLAYERS,
+    "survey_says": config.MIN_SURVEY_SAYS_PLAYERS,
+    "would_you_rather": config.MIN_WOULD_YOU_RATHER_PLAYERS,
+    "never_have_i_ever": config.MIN_NEVER_HAVE_I_EVER_PLAYERS,
+    "word_association": config.MIN_WORD_ASSOCIATION_PLAYERS,
+    "acronym": config.MIN_ACRONYM_PLAYERS,
+    "photo_clue": config.MIN_PHOTO_CLUE_PLAYERS,
+    "poker": config.MIN_POKER_PLAYERS,
+    "odd_one_out": config.MIN_ODD_ONE_OUT_PLAYERS,
+}
+
+
+def _attach_player_minimums(catalog):
+    for game in catalog:
+        runtime_type = game.get("runtime_type") or game.get("game_type")
+        min_players = _MIN_PLAYERS_BY_RUNTIME.get(runtime_type)
+        if min_players is None:
+            continue
+        config_schema = game.setdefault("config_schema", {})
+        players_schema = config_schema.setdefault("players", {})
+        players_schema.setdefault("min", min_players)
+        players_schema.setdefault("max", config.MAX_PLAYERS_PER_ROOM)
+    return catalog
+
+
+_attach_player_minimums(GAME_CATALOG)
 attach_rules(GAME_CATALOG)
