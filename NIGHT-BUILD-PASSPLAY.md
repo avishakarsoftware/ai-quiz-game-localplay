@@ -43,9 +43,9 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
 ## Checklist
 
 ### Phase 1 — backend engine + catalog
-- [ ] `backend/pass_play_common.py` — seat roster validation/sanitisation, turn-order engine
+- [x] `backend/pass_play_common.py` — seat roster validation/sanitisation, turn-order engine
       (rotation, skip, insert), shared phase constants. Mirror `engine_common.py` conventions.
-- [ ] `backend/impostor_engine.py` — word-pair decks, role assignment (1 impostor, N knowers),
+- [x] `backend/impostor_engine.py` — word-pair decks, role assignment (1 impostor, N knowers),
       spoken-clue round tracking, vote tally, strict-majority catch, impostor-guess comeback rule.
       Curated packs first; AI generation later.
 - [ ] Catalog entry for `impostor` with `interaction: "pass_and_play"`, `MIN_IMPOSTOR_PLAYERS = 3`.
@@ -97,5 +97,11 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
 
 ## Session log
 
+- **2026-07-28 ~23:45** — Phase 1 engines DONE: `pass_play_common.py` (seat roster, turn engine,
+  strict-majority vote) + `impostor_engine.py` (word packs, roles, clues, vote, comeback rule).
+  53 tests green (20 + 33). Design notes worth keeping: turn order stores explicit seat ids, NOT
+  an index — with an index, removing the current seat silently skips a player. Conviction needs a
+  STRICT majority so a split table acquits. `public_state` withholds the secret until the round
+  resolves, because the clue phase is face-up on a table. Next: catalog + rules + socket wiring.
 - **2026-07-28 ~23:20** — Ledger created. Gamma is deployed and verified with everything through
   `d769b509` + the bingo-family fix (37 games, `odd_question`, stats, share images). Starting Phase 1.
