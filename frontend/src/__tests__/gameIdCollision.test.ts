@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GAME_MODE_CONFIGS, QUIZ_VARIANT_IDS, GENERIC_PROMPT_GAME_IDS, getMinPlayers } from '../gameModes';
+import { GAME_MODE_CONFIGS, QUIZ_VARIANT_IDS, GENERIC_PROMPT_GAME_IDS, getMinPlayers, BINGO_FAMILY_IDS } from '../gameModes';
 import { LOCAL_GAME_RULES } from '../gameRules';
 
 /**
@@ -55,6 +55,38 @@ describe('game id collision guards', () => {
     it('every occasion bingo has local rules so the modal works before the catalog loads', () => {
         for (const id of ['baby_bingo', 'wedding_bingo', 'holiday_bingo', 'road_trip_bingo'] as const) {
             expect(LOCAL_GAME_RULES[id], `'${id}' missing local rules`).toBeDefined();
+        }
+    });
+});
+
+// Real drift incident (2026-07-28, found by deploying to gamma): Wedding / Holiday / Road Trip
+// Bingo shipped in the catalog, but three separate hardcoded lists in GameSelectScreen still said
+// ['bingo', 'baby_bingo']. Consequences: the new decks fell out of the Bingo category filter, were
+// offered an AI-generation flow they can't use (curated decks only), and stayed visible even with
+// ENABLE_BINGO off. All three now derive from BINGO_FAMILY_IDS; these tests keep it that way.
+describe('bingo family is derived, not hand-listed', () => {
+    it('every tile on the bingo runtime is in BINGO_FAMILY_IDS', () => {
+        const fromRuntime = GAME_MODE_CONFIGS.filter((m) => m.runtimeType === 'bingo').map((m) => m.id);
+        expect([...BINGO_FAMILY_IDS].sort()).toEqual([...fromRuntime].sort());
+        // Guard the specific decks that drifted, so a regression names itself.
+        for (const id of ['bingo', 'baby_bingo', 'wedding_bingo', 'holiday_bingo', 'road_trip_bingo']) {
+            expect(BINGO_FAMILY_IDS, `'${id}' missing from the bingo family`).toContain(id);
+        }
+    });
+
+    it('no occasion bingo claims AI generation — they all use curated decks', () => {
+        for (const id of BINGO_FAMILY_IDS) {
+            const mode = GAME_MODE_CONFIGS.find((m) => m.id === id)!;
+            // A curated-deck game must not advertise a prompt-driven AI flow.
+            expect(mode.promptTitle, `'${id}' should not offer an AI prompt`).toBeUndefined();
+        }
+    });
+
+    it('occasion bingos share the base game runtime rather than inventing one', () => {
+        // If an occasion deck ever gets its own runtimeType, /room/create would reject it: the
+        // backend validator allows game_type 'bingo', and the catalog maps every deck to it.
+        for (const id of BINGO_FAMILY_IDS) {
+            expect(GAME_MODE_CONFIGS.find((m) => m.id === id)!.runtimeType).toBe('bingo');
         }
     });
 });

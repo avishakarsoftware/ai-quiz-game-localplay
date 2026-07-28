@@ -440,3 +440,17 @@ export function isQuizRuntimeGame(gameType: GameType): boolean {
 export function runtimeGameType(gameType: GameType): GameModeConfig['runtimeType'] {
     return getGameModeConfig(gameType).runtimeType;
 }
+
+/**
+ * Every tile that runs the shared Bingo runtime — the base game plus each occasion deck.
+ *
+ * DERIVED, never hand-listed. Three separate hardcoded lists (`GAME_CATEGORY_BY_ID`,
+ * `hasAiGeneration`, the `ENABLE_BINGO` gate) all said `['bingo', 'baby_bingo']` and none were
+ * updated when Wedding / Holiday / Road Trip Bingo shipped — so the new decks fell out of the
+ * Bingo category filter, were offered a nonexistent AI-generation flow (they use curated decks),
+ * and stayed visible even with bingo disabled. Adding a sixth occasion deck must not require
+ * remembering three more places.
+ */
+export const BINGO_FAMILY_IDS: GameType[] = GAME_MODE_CONFIGS
+    .filter((mode) => mode.runtimeType === 'bingo')
+    .map((mode) => mode.id);

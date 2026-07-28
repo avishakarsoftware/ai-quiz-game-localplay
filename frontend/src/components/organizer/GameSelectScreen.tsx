@@ -1,7 +1,7 @@
 import { Info, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { type GameType } from '../../types';
-import { filterGameModesForCatalog, GAME_MODE_CONFIGS, isMostPopularGameId, mostPopularGameRank, type GameModeConfig } from '../../gameModes';
+import { BINGO_FAMILY_IDS, filterGameModesForCatalog, GAME_MODE_CONFIGS, isMostPopularGameId, mostPopularGameRank, type GameModeConfig } from '../../gameModes';
 import { ENABLE_BINGO } from '../../config';
 import { useRemoteConfigContext } from '../../context/RemoteConfigContext';
 import GameRulesModal from '../GameRulesModal';
@@ -60,8 +60,8 @@ const GAME_CATEGORY_BY_ID: Partial<Record<GameType, GameCategory>> = {
     bluff: 'cards',
     poker: 'cards',
     housie: 'bingo_housie',
-    bingo: 'bingo_housie',
-    baby_bingo: 'bingo_housie',
+    // Every bingo-family tile (base + occasion decks) shares the Bingo/Housie category.
+    ...Object.fromEntries(BINGO_FAMILY_IDS.map((id) => [id, 'bingo_housie' as GameCategory])),
 };
 
 function getGameCategory(game: GameModeConfig): GameCategory {
@@ -69,7 +69,7 @@ function getGameCategory(game: GameModeConfig): GameCategory {
 }
 
 function hasAiGeneration(game: GameModeConfig): boolean {
-    return !['housie', 'bingo', 'baby_bingo', 'musical_chairs', 'bluff', 'poker', 'two_truths', 'story_chain', 'common_ground', 'find_someone', 'mafia', 'party_quests', 'survey_says', 'caption_contest', 'desert_island', 'emoji_story', 'hot_takes', 'memory_lane', 'one_word_vibes', 'pitch_battle', 'rapid_fire', 'roast_toast', 'this_or_that', 'would_you_rather', 'never_have_i_ever', 'word_association', 'acronym', 'photo_clue'].includes(game.id);
+    return ![...BINGO_FAMILY_IDS, 'housie', 'musical_chairs', 'bluff', 'poker', 'two_truths', 'story_chain', 'common_ground', 'find_someone', 'mafia', 'party_quests', 'survey_says', 'caption_contest', 'desert_island', 'emoji_story', 'hot_takes', 'memory_lane', 'one_word_vibes', 'pitch_battle', 'rapid_fire', 'roast_toast', 'this_or_that', 'would_you_rather', 'never_have_i_ever', 'word_association', 'acronym', 'photo_clue'].includes(game.id);
 }
 
 export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreenProps) {
@@ -84,7 +84,7 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
             ? new Set(remoteConfig.enabled_game_types)
             : null;
         const availableGames = (hasCatalog ? filterGameModesForCatalog(catalog) : GAME_MODE_CONFIGS)
-            .filter((game) => ENABLE_BINGO || !['bingo', 'baby_bingo'].includes(game.id))
+            .filter((game) => ENABLE_BINGO || !BINGO_FAMILY_IDS.includes(game.id))
             .filter((game) => !enabledIds || enabledIds.has(game.id));
         return [...availableGames].sort((a, b) => a.title.localeCompare(b.title));
     }, [catalog, hasCatalog, remoteConfig.enabled_game_types]);
