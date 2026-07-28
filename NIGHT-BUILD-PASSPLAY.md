@@ -65,10 +65,10 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
 - [x] Frontend tests (356 total green).
 
 ### Phase 4 — ship + verify
-- [ ] Full suites green (backend + frontend + tsc).
-- [ ] Deploy gamma (`./scripts/deploy-gcp.sh --gamma --with-frontend --build-on-vm`).
-- [ ] Live-verify on gamma: create an impostor room, walk a full round.
-- [ ] Update `SPEC-PASS-AND-PLAY.md` status, `DEPLOY.md` ledger, `BACKLOG.md`.
+- [x] Full suites green: backend 1258, frontend 356, tsc + build clean.
+- [x] Deployed to gamma 2026-07-28.
+- [x] Live-verified: full round over a real WebSocket, **22/22 checks** (script in scratchpad).
+- [x] Updated SPEC-PASS-AND-PLAY status + DEPLOY.md ledger + BACKLOG.
 
 ### Opportunistic (only if blocked or waiting)
 - [ ] First-run gaps noticed while in the picker/lobby surfaces — note them here, fix the cheap ones.
@@ -109,6 +109,16 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
   blocks forever on a missing broadcast and hangs the whole run instead of failing one test.
 
 ## Session log
+
+- **2026-07-28 ~01:20** — **ALL FOUR PHASES DONE. Impostor is live on gamma and verified.**
+  Walked a complete round over a real WebSocket against live gamma: 22/22 checks, including the
+  two invariants that only a live run can prove — a room starting with ZERO connected players, and
+  roles arriving during the gated reveal phase but NOT once the phone is face-up. Comeback rule
+  fired for real (word "Pillow", impostor caught). No migration, no feature flag: seats and game
+  state are in-memory per room.
+  **Remaining for a future session:** AI-generated word packs, the pass-mode retrofit for
+  chit_pull/nhie/wmlt/two_truths, and the rest of the slate (Paranoia, Hot Seat, Truth or Dare,
+  Forehead Guess, Wavelength-ish). None of it blocks anything.
 
 - **2026-07-28 ~01:10** — Phase 3 mostly done: `ImpostorGame.tsx`, types, picker tile with a
   `passAndPlay` flag, local rules, extended collision guards. Backend 1258 / frontend 356 / tsc

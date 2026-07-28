@@ -140,7 +140,10 @@
   not a product bug. **Confirmed pre-existing** — reproduced with the working tree stashed at `0b86c619`.
   Worth fixing because it makes any socket-suite run untrustworthy as a regression signal.
 
-- **Pass-and-play platform + Impostor flagship (SPEC-PASS-AND-PLAY).** One shared phone circulates so
+- **Pass-and-play platform + Impostor flagship (SPEC-PASS-AND-PLAY).** ✅ **BUILT + LIVE ON GAMMA
+  2026-07-28** (full round verified over a real WebSocket, 22/22). Five primitives + Impostor +
+  catalog/rules/socket wiring + OrganizerPage. Prod not deployed. Remaining: AI word packs, pass-mode
+  retrofits, and the rest of the slate. Original note: One shared phone circulates so
   phoneless guests can play — a new interaction model, not a game: five shared UX primitives (seat
   roster without devices, pass screen, privacy gate, turn engine, group-screen frame), then Impostor
   (the real teen secret-word game) as the first title on top. Cheaper than it looks: no player
