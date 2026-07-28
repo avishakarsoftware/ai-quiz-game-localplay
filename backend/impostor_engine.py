@@ -12,9 +12,10 @@ Two rules carry the whole game and are worth stating up front:
   to the last second and the reveal has a real twist.
 - **Conviction needs a strict majority, not a plurality** (see `pass_play_common.strict_majority`).
 
-This engine holds NO per-viewer secrets: there is one device, so it returns full state and the UI's
-privacy gate is what keeps the impostor's identity from being shoulder-surfed. That is a deliberate
-architectural choice, documented in the spec — do not "fix" it by scoping payloads.
+This engine does no per-VIEWER scoping — there is one device, so that would be meaningless. What it
+does do is scope by PHASE: roles are shipped only while the UI has a privacy gate mounted to hold
+them (PHASE_REVEAL_ROLES), and withheld once the phone is face-up on the table. See `public_state`.
+Do not "fix" this into per-seat payload filtering; do not widen it to always-send either.
 """
 from __future__ import annotations
 
@@ -323,12 +324,29 @@ def standings(state: dict) -> list[dict]:
 
 
 def public_state(state: dict) -> dict:
-    """Everything the single client needs. Includes the secret only once the round is resolved —
-    the privacy gate handles in-round secrecy, but there's no reason to ship the answer to a
-    face-up clue screen where it could be glimpsed in a network log or a screenshot."""
-    resolved = state.get("phase") in (PHASE_REVEAL, PHASE_PODIUM)
+    """Everything the single client needs, and nothing it doesn't — timed to the phase.
+
+    Two constraints that look contradictory and aren't:
+
+    * During PHASE_REVEAL_ROLES the client MUST have every seat's role, because it renders them
+      one at a time behind the UI privacy gate. There is a single viewer, so per-seat payload
+      scoping is meaningless here (spec §1) — the gate is the mechanism.
+    * During the CLUES and VOTING phases the phone is FACE-UP on a table. Shipping the secret to
+      those screens buys nothing and risks it surfacing in a screenshot, a network log, or a
+      re-render. So `roles` is emptied and the secret withheld until the round resolves.
+
+    In other words: secrets travel exactly when a gate is there to hold them.
+    """
+    phase = state.get("phase")
+    resolved = phase in (PHASE_REVEAL, PHASE_PODIUM)
+    roles = (
+        {sid: role_for(state, sid) for sid in seat_ids(state.get("seats", []))}
+        if phase == PHASE_REVEAL_ROLES
+        else {}
+    )
     return {
-        "phase": state.get("phase"),
+        "phase": phase,
+        "roles": roles,
         "round_number": state.get("round_number"),
         "total_rounds": state["config"]["total_rounds"],
         "clue_rounds": state["config"]["clue_rounds"],

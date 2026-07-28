@@ -72,7 +72,14 @@ export type SimpleSocialGameType = 'would_you_rather' | 'never_have_i_ever' | 'w
 
 export type GenericPromptGameType = 'hot_takes' | 'this_or_that' | 'caption_contest' | 'pitch_battle' | 'roast_toast' | 'desert_island' | 'memory_lane' | 'rapid_fire' | 'one_word_vibes' | 'emoji_story';
 
-export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'wedding_bingo' | 'holiday_bingo' | 'road_trip_bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'survey_says' | 'photo_clue' | GenericPromptGameType | SimpleSocialGameType | QuizVariantGameType;
+/**
+ * Pass-and-play games (SPEC-PASS-AND-PLAY): ONE shared device, seats typed by the host, no
+ * per-player sockets. Kept as its own alias so the picker can badge the family and so the next
+ * pass game is added in one place rather than appended to a long union.
+ */
+export type PassAndPlayGameType = 'impostor';
+
+export type GameType = 'quiz' | 'wmlt' | 'drawing' | 'housie' | 'bingo' | 'baby_bingo' | 'wedding_bingo' | 'holiday_bingo' | 'road_trip_bingo' | 'musical_chairs' | 'bluff' | 'poker' | 'two_truths' | 'story_chain' | 'common_ground' | 'find_someone' | 'who_am_i' | 'chit_pull' | 'mafia' | 'party_quests' | 'survey_says' | 'photo_clue' | PassAndPlayGameType | GenericPromptGameType | SimpleSocialGameType | QuizVariantGameType;
 
 export interface MLTStatement {
     id: number;
@@ -793,6 +800,59 @@ export interface AcronymState {
 export interface OddQuestionAnswer {
     player_id: string;
     text: string;
+}
+
+/** A pass-and-play seat: a person the host typed in, with NO device, socket or session. */
+export interface PassPlaySeat {
+    id: string;
+    name: string;
+    emoji: string;
+}
+
+export interface ImpostorTurn {
+    order: string[];
+    /** Seat id, NOT an index — removing a seat must not shift whose turn it is. */
+    current: string;
+    completed_rounds: number;
+}
+
+export interface ImpostorStanding {
+    seat_id: string;
+    nickname: string;
+    emoji: string;
+    score: number;
+}
+
+/**
+ * Impostor (SPEC-PASS-AND-PLAY §2). One device serves the whole table.
+ *
+ * `secret_word` and `impostor_id` arrive EMPTY until the round resolves — the clue phase sits
+ * face-up on a table, so the backend withholds them rather than trusting the UI to hide them.
+ * In-round secrecy is the PrivacyGate's job, not this payload's.
+ */
+export interface ImpostorState {
+    phase: 'IMP_REVEAL_ROLES' | 'IMP_CLUES' | 'IMP_VOTING' | 'IMP_ACCUSED_GUESS' | 'IMP_REVEAL' | 'PODIUM' | string;
+    round_number: number;
+    total_rounds: number;
+    clue_rounds: number;
+    seats: PassPlaySeat[];
+    turn: ImpostorTurn;
+    revealed_to: string[];
+    next_unrevealed: string;
+    /**
+     * Per-seat roles, populated ONLY during IMP_REVEAL_ROLES — the phase where the UI has a
+     * PrivacyGate mounted to hold them. Empty in every face-up phase, so a face-up screen can
+     * never render a secret even by accident.
+     */
+    roles: Record<string, { is_impostor: boolean; word: string; hint_mode: boolean }>;
+    clues: Array<{ seat_id: string; word: string; round: number }>;
+    votes: Record<string, string>;
+    accused_id: string;
+    outcome: '' | 'impostor_caught' | 'impostor_survived' | 'impostor_guessed' | string;
+    standings: ImpostorStanding[];
+    secret_word: string;
+    impostor_id: string;
+    accused_guess: string;
 }
 
 export interface OddQuestionState {

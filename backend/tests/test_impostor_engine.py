@@ -271,3 +271,42 @@ class TestRoundsAndScoring:
         imp.submit_accused_guess(s, "no")
         assert len(s["history"]) == 1
         assert s["history"][0]["outcome"] == "impostor_caught"
+
+
+class TestPhaseScopedDisclosure:
+    """Roles travel exactly when a UI privacy gate is mounted to hold them, and not otherwise.
+
+    This resolves what looked like two contradictory requirements: the client MUST have every
+    role during the reveal pass (it renders them one at a time behind the gate, and per-viewer
+    scoping is meaningless with one device), but the phone is FACE-UP during clues and voting,
+    where shipping a secret buys nothing and risks a screenshot or a network log exposing it.
+    """
+
+    def test_roles_are_sent_during_the_gated_reveal_phase(self):
+        s = _state(4)
+        pub = imp.public_state(s)
+        assert s["phase"] == imp.PHASE_REVEAL_ROLES
+        assert set(pub["roles"]) == set(pp.seat_ids(s["seats"]))
+        # Exactly one impostor among them.
+        assert sum(1 for r in pub["roles"].values() if r["is_impostor"]) == 1
+
+    def test_roles_are_withheld_once_the_phone_is_face_up(self):
+        s = _reveal_all(_state(3))
+        assert s["phase"] == imp.PHASE_CLUES
+        assert imp.public_state(s)["roles"] == {}
+
+    def test_roles_stay_withheld_through_voting(self):
+        s = _run_clues(_reveal_all(_state(3, clue_rounds=1)))
+        assert s["phase"] == imp.PHASE_VOTING
+        assert imp.public_state(s)["roles"] == {}
+
+    def test_the_secret_is_never_in_the_payload_before_the_round_resolves(self):
+        s = _state(3, clue_rounds=1)
+        for stage in ("reveal", "clues", "voting"):
+            pub = imp.public_state(s)
+            assert pub["secret_word"] == "", f"secret leaked during {stage}"
+            assert pub["impostor_id"] == "", f"impostor leaked during {stage}"
+            if stage == "reveal":
+                _reveal_all(s)
+            elif stage == "clues":
+                _run_clues(s)

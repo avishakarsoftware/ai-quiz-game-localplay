@@ -21,6 +21,14 @@ per-game inventions:
 | **Seat list without devices** | Host types player names at setup; seats exist with no socket | Every pass game needs a roster; joining-by-QR is exactly what these players can't do |
 | **Pass screen** | Full-screen "Pass the phone to **Maya** 🥭" between turns; nothing sensitive rendered | The privacy boundary between two players' hands |
 | **Privacy gate** | "Tap and hold to reveal — make sure only you can see" → reveal → "Got it, hide & pass" | Secret roles/words die instantly without a deliberate reveal step |
+
+**Refinement (2026-07-28, found while building Impostor):** "privacy is a UI gate, not a payload
+filter" is right about per-VIEWER scoping (meaningless with one device) but wrong if read as
+"always send everything". The client genuinely needs every role during the reveal pass, and
+genuinely should not have the secret while the phone is face-up on a table. So disclosure is
+scoped **by phase**, not by viewer: `public_state` ships a `roles` map only during the
+gated reveal phase, and empties it for every face-up phase. Secrets travel exactly when a gate is
+mounted to hold them. Pinned by `TestPhaseScopedDisclosure`.
 | **Turn order engine** | Rotation with skip/insert (someone leaves the table) | Same logic every pass game repeats |
 | **Group screen mode** | Some phases are face-up for the whole table (voting recap, timers, reveals) | The phone alternates between "secret hand" and "shared table centre" |
 
