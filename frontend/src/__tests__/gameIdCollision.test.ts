@@ -120,4 +120,15 @@ describe('pass-and-play family guards', () => {
         expect(getMinPlayers('impostor')).toBe(3);
         expect(LOCAL_GAME_RULES.impostor?.player_count?.min).toBe(3);
     });
+
+    it('every pass-and-play game is discoverable as such, not just flagged internally', () => {
+        // The flag existed for a while while rendering NOWHERE, so a host browsing 38 games had no
+        // way to see which one their phoneless guests could join. The badge is the fix; this test
+        // stops it silently regressing to an internal-only flag again.
+        const passGames = GAME_MODE_CONFIGS.filter((m) => m.passAndPlay);
+        expect(passGames.length).toBeGreaterThan(0);
+        for (const mode of passGames) {
+            expect(mode.description).toMatch(/one phone/i);
+        }
+    });
 });

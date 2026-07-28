@@ -71,7 +71,14 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
 - [x] Updated SPEC-PASS-AND-PLAY status + DEPLOY.md ledger + BACKLOG.
 
 ### Opportunistic (only if blocked or waiting)
-- [ ] First-run gaps noticed while in the picker/lobby surfaces — note them here, fix the cheap ones.
+- [x] First-run gaps noticed while in the picker/lobby surfaces. **Found and fixed one real gap:**
+      `passAndPlay` was set on the catalog config but rendered NOWHERE a browsing user could see —
+      it only drove the lobby swap. Among 38 games nothing signalled which one a phoneless guest
+      could join, despite this spec calling that badge a selling point. Added a "1 phone" badge to
+      the picker tile + a guard test so it can't silently regress to an internal-only flag.
+      **Noted, not fixed (needs a product decision):** 38 games is a lot for a first-run user and
+      there's no grouping by "how many phones do you need" — now a meaningful axis with both modes
+      shipping. That's a picker IA question for Avi, not a cheap fix.
 
 ## Known traps (learned the hard way this session — do not rediscover)
 
@@ -109,6 +116,12 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
   blocks forever on a missing broadcast and hangs the whole run instead of failing one test.
 
 ## Session log
+
+- **2026-07-28 ~01:30 (cron resume)** — Verified: all four phases complete, tree clean, nothing
+  unpushed, backend 1258 + frontend 357 + tsc + build clean, gamma healthy (38 games, impostor
+  present, ad-reward still 403, RC secret intact) and the served bundle confirmed to carry the
+  Impostor UI strings. Closed the last opportunistic box with a real find — see above.
+  **Loop stopped: no work left that doesn't need Avi's input.**
 
 - **2026-07-28 ~01:20** — **ALL FOUR PHASES DONE. Impostor is live on gamma and verified.**
   Walked a complete round over a real WebSocket against live gamma: 22/22 checks, including the

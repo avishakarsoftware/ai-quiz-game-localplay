@@ -153,6 +153,15 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
                                 <div className="game-select-info">
                                     <span className="game-select-title">
                                         {game.title}{(hasCatalog ? aiCapable.has(game.id) : hasAiGeneration(game)) ? ' ✨' : ''}
+                                        {/* Pass-and-play needs ONE device, which is the answer to the
+                                            commonest objection to any party app ("my friends won't
+                                            install anything"). Among 38 games that has to be visible
+                                            at a glance, not buried in the description. */}
+                                        {game.passAndPlay && (
+                                            <span className="game-select-badge" data-testid={`one-phone-badge-${game.id}`}>
+                                                1 phone
+                                            </span>
+                                        )}
                                     </span>
                                     <span className="game-select-desc">{game.description}</span>
                                 </div>

@@ -6752,3 +6752,19 @@ body {
 .passplay-roster__actions { display: flex; gap: 10px; width: 100%; }
 .passplay-roster__actions .btn { flex: 1; }
 .passplay-roster__need { color: var(--text-secondary, #b9aec8); font-size: 0.9rem; }
+
+/* "1 phone" badge on pass-and-play tiles (SPEC-PASS-AND-PLAY). Reads at a glance in a 38-game
+   list: it tells a host their phoneless guests can still play. */
+.game-select-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    vertical-align: middle;
+    color: var(--accent-ink, #17111f);
+    background: var(--accent-mint, #7ff0c4);
+}
