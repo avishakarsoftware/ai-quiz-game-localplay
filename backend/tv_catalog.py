@@ -19,6 +19,11 @@ TV_COMPANION_MODES = {
     COMPANION_PHONE_HOST,
 }
 
+BUCKET_TV_REMOTE = "tv_remote"
+BUCKET_SHARED_PHONE = "shared_phone"
+BUCKET_PER_PLAYER_PHONE = "per_player_phone"
+BUCKET_PHONE_HOST = "phone_host"
+
 # Games where a TV cannot reasonably be the primary host because the core host
 # action depends on a phone-native capability such as camera/media capture.
 PHONE_HOST_GAME_IDS = frozenset({"photo_clue"})
@@ -71,41 +76,53 @@ def derive_tv_capability(entry: dict) -> dict:
     if game_id in PHONE_HOST_GAME_IDS or runtime in PHONE_HOST_GAME_IDS:
         return {
             "hostable": False,
+            "bucket": BUCKET_PHONE_HOST,
             "companion_mode": COMPANION_PHONE_HOST,
             "min_companion_devices": 0,
             "private_screen": False,
             "text_input_for_customization": custom_text,
+            "requirement_label": "Start on phone",
             "reason_chip": "Start from a phone",
+            "tv_play_note": "The host needs a phone-native capability such as camera or media capture.",
         }
 
     if entry.get("interaction") == "pass_and_play":
         return {
             "hostable": True,
+            "bucket": BUCKET_SHARED_PHONE,
             "companion_mode": COMPANION_SHARED_PHONE,
             "min_companion_devices": 1,
             "private_screen": True,
             "text_input_for_customization": custom_text,
+            "requirement_label": "TV + 1 shared phone",
             "reason_chip": "Needs 1 shared phone",
+            "tv_play_note": "One phone is passed around for private screens while the TV anchors the room.",
         }
 
     if runtime in TV_REMOTE_ONLY_RUNTIMES:
         return {
             "hostable": True,
+            "bucket": BUCKET_TV_REMOTE,
             "companion_mode": COMPANION_NONE,
             "min_companion_devices": 0,
             "private_screen": False,
             "text_input_for_customization": custom_text,
+            "requirement_label": "TV only",
             "reason_chip": "TV ready",
+            "tv_play_note": "The TV can facilitate this with remote control and room-led scoring or discussion.",
         }
 
     reason = f"Needs {min_players} phones" if min_players > 1 else "Needs phones to join"
     return {
         "hostable": True,
+        "bucket": BUCKET_PER_PLAYER_PHONE,
         "companion_mode": COMPANION_PER_PLAYER_PHONE,
         "min_companion_devices": min_players,
         "private_screen": False,
         "text_input_for_customization": custom_text,
+        "requirement_label": "TV + player phones",
         "reason_chip": reason,
+        "tv_play_note": "Players need phones for private input, cards, votes, photos, guesses, or scoring.",
     }
 
 

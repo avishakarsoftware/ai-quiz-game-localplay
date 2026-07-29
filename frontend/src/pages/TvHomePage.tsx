@@ -12,11 +12,14 @@ type TvFilter = 'play_now' | 'all' | 'phones' | 'phone_host';
 
 interface TvCapability {
     hostable: boolean;
+    bucket?: 'tv_remote' | 'shared_phone' | 'per_player_phone' | 'phone_host';
     companion_mode: TvCompanionMode;
     min_companion_devices: number;
     private_screen: boolean;
     text_input_for_customization: boolean;
+    requirement_label?: string;
     reason_chip: string;
+    tv_play_note?: string;
 }
 
 interface TvCatalogGame extends CatalogGameWithRules {
@@ -45,6 +48,7 @@ function fallbackCapability(mode: GameModeConfig): TvCapability {
             min_companion_devices: 0,
             private_screen: false,
             text_input_for_customization: true,
+            requirement_label: 'Start on phone',
             reason_chip: 'Start from a phone',
         };
     }
@@ -55,6 +59,7 @@ function fallbackCapability(mode: GameModeConfig): TvCapability {
             min_companion_devices: 1,
             private_screen: true,
             text_input_for_customization: false,
+            requirement_label: 'TV + 1 shared phone',
             reason_chip: 'Needs 1 shared phone',
         };
     }
@@ -81,6 +86,7 @@ function fallbackCapability(mode: GameModeConfig): TvCapability {
             min_companion_devices: 0,
             private_screen: false,
             text_input_for_customization: false,
+            requirement_label: 'TV only',
             reason_chip: 'TV ready',
         };
     }
@@ -90,6 +96,7 @@ function fallbackCapability(mode: GameModeConfig): TvCapability {
         min_companion_devices: 2,
         private_screen: false,
         text_input_for_customization: false,
+        requirement_label: 'TV + player phones',
         reason_chip: 'Needs phones',
     };
 }
@@ -100,6 +107,7 @@ function availability(game: TvGameCard, connectedPhones: number): 'ready' | 'loc
 }
 
 function companionLabel(capability: TvCapability): string {
+    if (capability.requirement_label) return capability.requirement_label;
     if (capability.companion_mode === 'none') return 'TV only';
     if (capability.companion_mode === 'shared_phone') return '1 shared phone';
     if (capability.companion_mode === 'phone_host') return 'Phone host';

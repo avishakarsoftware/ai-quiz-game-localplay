@@ -21,21 +21,29 @@ def test_every_launchable_game_exposes_tv_capability_metadata():
         assert capability, f"{entry['id']} missing tv_capability"
         assert set(capability) == {
             "hostable",
+            "bucket",
             "companion_mode",
             "min_companion_devices",
             "private_screen",
             "text_input_for_customization",
+            "requirement_label",
             "reason_chip",
+            "tv_play_note",
         }
         assert isinstance(capability["hostable"], bool)
         assert isinstance(capability["min_companion_devices"], int)
+        assert capability["bucket"]
+        assert capability["requirement_label"]
         assert capability["reason_chip"]
+        assert capability["tv_play_note"]
 
 
 def test_tv_only_games_are_playable_without_companion_devices():
     for game_id in ["housie", "bingo", "baby_bingo", "musical_chairs", "story_chain"]:
         capability = game(game_id)["tv_capability"]
         assert capability["hostable"] is True
+        assert capability["bucket"] == "tv_remote"
+        assert capability["requirement_label"] == "TV only"
         assert capability["companion_mode"] == COMPANION_NONE
         assert capability["min_companion_devices"] == 0
         assert tv_availability(game(game_id), connected_devices=0)["playable"] is True
@@ -44,6 +52,8 @@ def test_tv_only_games_are_playable_without_companion_devices():
 def test_pass_and_play_games_need_one_shared_phone():
     capability = game("impostor")["tv_capability"]
     assert capability["hostable"] is True
+    assert capability["bucket"] == "shared_phone"
+    assert capability["requirement_label"] == "TV + 1 shared phone"
     assert capability["companion_mode"] == COMPANION_SHARED_PHONE
     assert capability["min_companion_devices"] == 1
     assert capability["private_screen"] is True
@@ -54,6 +64,8 @@ def test_pass_and_play_games_need_one_shared_phone():
 def test_phone_host_games_are_not_tv_hostable():
     capability = game("photo_clue")["tv_capability"]
     assert capability["hostable"] is False
+    assert capability["bucket"] == "phone_host"
+    assert capability["requirement_label"] == "Start on phone"
     assert capability["companion_mode"] == COMPANION_PHONE_HOST
     assert tv_availability(game("photo_clue"), connected_devices=10) == {
         "hostable": False,
@@ -66,6 +78,8 @@ def test_phone_host_games_are_not_tv_hostable():
 def test_per_player_games_use_catalog_player_minimums():
     capability = game("drawing")["tv_capability"]
     assert capability["hostable"] is True
+    assert capability["bucket"] == "per_player_phone"
+    assert capability["requirement_label"] == "TV + player phones"
     assert capability["companion_mode"] == COMPANION_PER_PLAYER_PHONE
     assert capability["min_companion_devices"] == game("drawing")["config_schema"]["players"]["min"]
     assert tv_availability(game("drawing"), connected_devices=capability["min_companion_devices"] - 1)["playable"] is False

@@ -22,10 +22,12 @@ function catalogFixture() {
                 launchable: true,
                 tv_capability: {
                     hostable: true,
+                    bucket: 'tv_remote',
                     companion_mode: 'none',
                     min_companion_devices: 0,
                     private_screen: false,
                     text_input_for_customization: false,
+                    requirement_label: 'TV only',
                     reason_chip: 'TV ready',
                 },
             },
@@ -37,10 +39,12 @@ function catalogFixture() {
                 launchable: true,
                 tv_capability: {
                     hostable: true,
+                    bucket: 'shared_phone',
                     companion_mode: 'shared_phone',
                     min_companion_devices: 1,
                     private_screen: true,
                     text_input_for_customization: false,
+                    requirement_label: 'TV + 1 shared phone',
                     reason_chip: 'Needs 1 shared phone',
                 },
             },
@@ -52,10 +56,12 @@ function catalogFixture() {
                 launchable: true,
                 tv_capability: {
                     hostable: false,
+                    bucket: 'phone_host',
                     companion_mode: 'phone_host',
                     min_companion_devices: 0,
                     private_screen: false,
                     text_input_for_customization: true,
+                    requirement_label: 'Start on phone',
                     reason_chip: 'Start from a phone',
                 },
             },
@@ -67,10 +73,12 @@ function catalogFixture() {
                 launchable: true,
                 tv_capability: {
                     hostable: true,
+                    bucket: 'per_player_phone',
                     companion_mode: 'per_player_phone',
                     min_companion_devices: 2,
                     private_screen: false,
                     text_input_for_customization: true,
+                    requirement_label: 'TV + player phones',
                     reason_chip: 'Needs 2 phones',
                 },
             },
@@ -103,6 +111,8 @@ describe('TvHomePage', () => {
 
         expect(screen.getByRole('button', { name: /Impostor/ })).toBeInTheDocument();
         expect(screen.getByText('Needs 1 shared phone')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /Impostor/ }));
+        expect(screen.getByText('TV + 1 shared phone')).toBeInTheDocument();
     });
 
     it('keeps phone-host games visible in their own filter with a handoff sheet', async () => {

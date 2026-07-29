@@ -72,11 +72,14 @@ The public catalog shape should be:
 ```python
 "tv_capability": {
     "hostable": True,                 # false only when TV lacks a host capability, e.g. camera
+    "bucket": "tv_remote",            # tv_remote | shared_phone | per_player_phone | phone_host
     "companion_mode": "none",         # none | shared_phone | per_player_phone | phone_host
     "min_companion_devices": 0,
     "private_screen": False,
     "text_input_for_customization": False,
+    "requirement_label": "TV only",   # concise cross-surface bucket label
     "reason_chip": "",               # computed user-facing chip when unavailable
+    "tv_play_note": "",              # one sentence explaining why this bucket applies
 }
 ```
 
@@ -103,6 +106,60 @@ Shipped implementation:
   duplicated catalog.
 - Pass-and-play is derived from `interaction == "pass_and_play"` and requires one shared phone.
 - Per-player games derive `min_companion_devices` from `config_schema.players.min`.
+
+## 3a. Current game classification matrix
+
+This matrix is generated from the backend catalog policy. It is the product truth for the TV shell:
+
+| Game | Bucket | Requirement | Chip |
+|---|---|---|---|
+| AI Quiz | `per_player_phone` | TV + player phones | Needs phones to join |
+| Acronym Game | `per_player_phone` | TV + player phones | Needs 2 phones |
+| Baby Bingo | `tv_remote` | TV only | TV ready |
+| Bingo | `tv_remote` | TV only | TV ready |
+| Bluff | `per_player_phone` | TV + player phones | Needs 3 phones |
+| Caption Contest | `per_player_phone` | TV + player phones | Needs 2 phones |
+| Common Ground | `per_player_phone` | TV + player phones | Needs 4 phones |
+| Desert Island | `per_player_phone` | TV + player phones | Needs 2 phones |
+| Drawing Game | `per_player_phone` | TV + player phones | Needs 2 phones |
+| Emoji Story | `per_player_phone` | TV + player phones | Needs 2 phones |
+| Find Someone Who | `per_player_phone` | TV + player phones | Needs phones to join |
+| Holiday Bingo | `tv_remote` | TV only | TV ready |
+| Hot Takes | `tv_remote` | TV only | TV ready |
+| Housie | `tv_remote` | TV only | TV ready |
+| Impostor | `shared_phone` | TV + 1 shared phone | Needs 1 shared phone |
+| Mafia | `per_player_phone` | TV + player phones | Needs 6 phones |
+| Memory Lane | `tv_remote` | TV only | TV ready |
+| Most Likely To | `per_player_phone` | TV + player phones | Needs 2 phones |
+| Musical Chairs | `tv_remote` | TV only | TV ready |
+| Never Have I Ever | `tv_remote` | TV only | TV ready |
+| Odd Question | `per_player_phone` | TV + player phones | Needs 3 phones |
+| One Word Vibes | `tv_remote` | TV only | TV ready |
+| Party Poker | `per_player_phone` | TV + player phones | Needs 2 phones |
+| Party Quests | `per_player_phone` | TV + player phones | Needs phones to join |
+| Photo Clue | `phone_host` | Start on phone | Start from a phone |
+| Pitch Battle | `per_player_phone` | TV + player phones | Needs 2 phones |
+| Random Chit | `per_player_phone` | TV + player phones | Needs 3 phones |
+| Rapid Fire | `tv_remote` | TV only | TV ready |
+| Road Trip Bingo | `tv_remote` | TV only | TV ready |
+| Roast & Toast | `per_player_phone` | TV + player phones | Needs 2 phones |
+| Story Chain | `tv_remote` | TV only | TV ready |
+| Survey Says | `tv_remote` | TV only | TV ready |
+| This or That | `tv_remote` | TV only | TV ready |
+| Two Truths and a Lie | `tv_remote` | TV only | TV ready |
+| Wedding Bingo | `tv_remote` | TV only | TV ready |
+| Who Am I? | `per_player_phone` | TV + player phones | Needs 2 phones |
+| Word Association | `tv_remote` | TV only | TV ready |
+| Would You Rather | `tv_remote` | TV only | TV ready |
+
+Notes:
+
+- `tv_remote` means the TV can facilitate a room-led or no-scoring adaptation. It does **not** claim
+  the existing phone-first runtime has already been converted to remote-only controls.
+- `find_someone` and `party_quests` stay `per_player_phone` for now. A printed-card or poster-first
+  adaptation is plausible later, but today's confirmation/private-board mechanics need phones.
+- `photo_clue` is the only current `phone_host` game because camera upload is a host-side capability,
+  not a companion-device count problem.
 
 Availability is then computed, not stored:
 
