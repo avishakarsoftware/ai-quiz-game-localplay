@@ -1,8 +1,12 @@
 # SPEC-TV-APP — the TV as the party's home, not its second screen
 
-Status: **Implementation-ready spec, not built (2026-07-28).** Avi's framing: install the app on the
-TV *instead of* a phone, because that suits local play better. This is a different product from the
-TV-as-spectator-display we already ship. Owner: Avi. Live status: DEPLOY.md's ledger once anything ships.
+Status: **MVP slice implemented locally (2026-07-28): derived `tv_capability` catalog metadata,
+`tv_availability()` helpers, `/catalog` exposure, and a D-pad-friendly `/tv` launcher shell.**
+Native Fire TV/Google TV packaging, TV-origin room creation/control, and real companion unlock
+sync are still the next implementation slice. Avi's framing: install the app on the TV *instead of*
+a phone, because that suits local play better. This is a different product from the
+TV-as-spectator-display we already ship; `/tv/:code` remains the legacy spectator shortcut.
+Owner: Avi. Live status: DEPLOY.md's ledger after deploy.
 
 ## 1. The reframe, and why it's the right one
 
@@ -24,14 +28,19 @@ as of 2026-07-28.
 
 ## 2. The capability tiers — the core of the design
 
-**A TV with no phones in the room is a real, servable product.** This is the most important finding
-in this spec, and it comes from two verified facts:
+**A TV with no phones in the room can be a real, servable product.** This is the most important
+finding in this spec, and it comes from two implementation facts:
 
-- **32 of 38 games ship playable default content** (`default_content_available && !supports_ai_generation`).
-  Only 6 need a typed AI topic.
+- Most games ship playable default content (`default_content_available`) or can fall back to a
+  curated pack. AI/custom text entry is a setup enhancement, not always a blocker.
 - **Housie/Bingo on a TV is excellent with zero phones** — the TV calls numbers, players use *paper
   tickets*. That is how housie has always been played. Same for Musical Chairs (TV plays and stops
-  the music) and Find Someone Who (printed cards).
+  the music) and several prompt/discussion games.
+
+Important implementation boundary: the **current web runtime** still treats many games as
+phone-controller rooms for scoring/input. The TV shell's `companion_mode: "none"` means "eligible
+for the TV-primary/no-companion adaptation", not that every existing room screen has already been
+rewired to remote-only control.
 
 So availability is a function of **how many player devices are currently connected**, computed live:
 
@@ -75,15 +84,25 @@ The public catalog shape should be:
 Availability remains computed live from connected devices; catalog metadata describes what the
 game needs, not whether it is playable in this particular room.
 
-Add this to every catalog entry via a backend derivation step. **Derived availability, never a
-hardcoded id list** — three separate hardcoded lists shipped the occasion bingos broken (see
-BACKLOG), so this is a hard rule.
+Add this to every catalog entry via a backend derivation step. **Derived availability wherever
+possible, narrow override lists only for true capability exceptions** — three separate hardcoded
+lists shipped the occasion bingos broken (see BACKLOG), so hidden per-screen allowlists are banned.
 
 ```python
 # backend/tv_catalog.py — derived per entry
 def derive_tv_capability(entry: dict) -> dict:
     ...
 ```
+
+Shipped implementation:
+
+- `backend/tv_catalog.py` derives the object above for every catalog entry.
+- `PHONE_HOST_GAME_IDS = {"photo_clue"}` is the narrow non-TV-hostable override.
+- `TV_REMOTE_ONLY_RUNTIMES` is an explicit product policy list for games with a viable
+  TV-primary/no-companion adaptation. This list is allowed because it is a policy tier, not a
+  duplicated catalog.
+- Pass-and-play is derived from `interaction == "pass_and_play"` and requires one shared phone.
+- Per-player games derive `min_companion_devices` from `config_schema.players.min`.
 
 Availability is then computed, not stored:
 
@@ -178,26 +197,27 @@ them makes the app feel broken. Each carries a **reason chip**, not just dimming
 
 ## 5. Screen inventory + flows
 
-**S1 · Home / game grid** (D-pad primary surface)
+**S1 · Home / game grid** (D-pad primary surface; shipped as `/tv`)
 - Row 1: **"Play now"** — only Tier-0-satisfied games, so a host with no phones has an obvious start.
 - Row 2+: categories, including greyed tiles with reason chips.
 - Persistent header: room code + a small QR once a room exists; connected-device count ("2 phones joined").
 - A **"What can I play now?"** toggle filters to currently-playable.
 
-**S2 · Unlock sheet** (§4a) and **S2b · Play-on-your-phone sheet** (§4b) — different CTAs.
+**S2 · Unlock sheet** (§4a) and **S2b · Play-on-your-phone sheet** (§4b) — shipped as modal sheets.
+The v1 phone-host sheet links to the mobile web join surface until final store URLs are configured.
 
-**S3 · Room / lobby**
+**S3 · Room / lobby** (next slice)
 - Giant QR + room code, readable across a room.
 - Live joined list. Each new phone re-evaluates the grid.
 - "Start" is enabled per the game's own minimum.
 
-**S4 · In-game** — `SpectatorPage`'s existing views, TV-safe (§7).
+**S4 · In-game** — `SpectatorPage`'s existing views, TV-safe (§7). `/tv/:code` still goes here.
 
 **S5 · Sign-in (optional, deferred)** — device-code pairing so sparks reach the TV (§6).
 
 ### Flow A — zero phones (must work)
 1. Open app → S1 → "Play now" row → Housie.
-2. TV creates the room itself, goes straight to calling numbers with the auto-caller.
+2. Next slice: TV creates the room itself, goes straight to calling numbers with the auto-caller.
 3. Guests use paper tickets; the remote pauses/advances.
 4. Podium on the TV. **No phone touched the party at any point.**
 
@@ -225,36 +245,39 @@ across factory resets; requiring sign-in to host is safer but adds first-run fri
 ## 7. Implementation plan
 
 **7a · Backend**
-1. Derived `tv_capability` on every launchable catalog entry + `tv_availability()` /
+1. **Done:** Derived `tv_capability` on every launchable catalog entry + `tv_availability()` /
    `tv_playable_now()` helpers.
-2. **TV creates rooms.** Today only the organizer calls `POST /room/create`. Add a TV-origin path
+2. **Next:** TV creates rooms. Today only the organizer calls `POST /room/create`. Add a TV-origin path
    returning `{room_code, tv_token}`.
-3. **Claim-host handshake.** First phone to join a TV-created room becomes controller; later joiners
+3. **Next:** Claim-host handshake. First phone to join a TV-created room becomes controller; later joiners
    are players. Needs a guard so a guest can't silently steal control mid-party.
-4. **Short TTL for unclaimed TV rooms** — a TV that creates rooms nobody claims will burn the
+4. **Next:** Short TTL for unclaimed TV rooms — a TV that creates rooms nobody claims will burn the
    `MAX_ROOMS` cap. Reuse the occupancy-qualified TTL work.
-5. Expose `connected_devices` in room sync so the TV can re-evaluate the grid live.
+5. **Next:** Expose `connected_devices` in room sync so the TV can re-evaluate the grid live.
 
 **7b · Frontend (TV shell)**
-6. `TvHomeScreen` — D-pad grid, focus model per §8, "Play now" row, reason chips.
-7. `TvUnlockSheet` — §4, web-join QR primary.
-8. `TvRoomScreen` — giant QR + live joined list.
-9. TV-safe pass on `SpectatorPage`: 5% overscan margins, larger type, no hover states, no scrollbars.
+6. **Done:** `TvHomePage` — D-pad grid, focus model per §8, "Play now" filter, reason chips,
+   search, and capability filters.
+7. **Done:** `TvUnlockSheet` equivalent inside `TvHomePage` — §4, web-join QR primary.
+8. **Next:** `TvRoomScreen` — giant QR + live joined list.
+9. **Next:** TV-safe pass on `SpectatorPage`: 5% overscan margins, larger type, no hover states,
+   no scrollbars.
 
 **7c · Packaging**
 10. Fire TV first (least friction): leanback manifest flags, TV banner, Amazon Appstore listing.
 11. Google TV second, same codebase.
 
 **7d · Tests**
-- Every launchable catalog entry receives a derived `tv_capability` (guard test).
-- `tv_availability` truth table across all four tiers.
-- A tile un-greys when `connected_devices` increases (the live-unlock behaviour).
-- Greyed tiles remain focusable.
-- An **Unlockable** game's sheet shows the **web join URL**, never a store URL.
-- A **`tv_capability.hostable: false`** game's sheet shows **app-store QRs** and mentions sparks
-  carrying over.
-- Every `supports_images` game has been explicitly audited for `tv_capability.hostable` (not
-  defaulted from the image flag).
+- **Done:** Every launchable catalog entry receives a derived `tv_capability` (guard test).
+- **Done:** `tv_availability` truth table across the no-phone/shared-phone/per-player/phone-host
+  tiers.
+- **Done:** A shared-phone tile appears when `connected_devices` increases in the TV shell.
+- **Done:** Greyed tiles remain focusable because they are rendered as buttons, not skipped.
+- **Done:** An **Unlockable** game's sheet shows the **web join URL**.
+- **Done:** A **`tv_capability.hostable: false`** game's sheet explains the phone-camera handoff.
+- **Next:** Replace the phone-host web QR with configured App Store / Google Play QR URLs and
+  mention sparks carrying over once production store URLs are final.
+- **Next:** Live WebSocket/device-count test once `TvRoomScreen` exists.
 
 ## 8. D-pad focus model (explicit, so it isn't invented per screen)
 
@@ -267,8 +290,8 @@ across factory resets; requiring sign-in to host is safer but adds first-run fri
 
 ## 9. Deliberately out of scope for v1
 
-Photo games on TV, voice input, Tizen/webOS/tvOS/Roku, TV-store billing, casting *from* the TV,
-per-player TV profiles.
+Photo games hosted directly on TV, voice input, Tizen/webOS/tvOS/Roku, TV-store billing, casting
+*from* the TV, per-player TV profiles.
 
 ## 10. Open questions for Avi
 
@@ -277,3 +300,5 @@ per-player TV profiles.
   "you need nothing but this TV" story, and it's a genuinely traditional way to play.
 - **Rank against other install-getting work.** This is a marketing bet, not a feature bet. The
   question is whether a Fire TV listing beats the same effort spent elsewhere — currently unknown.
+- **Store QR URLs:** confirm final App Store / Google Play URLs before replacing the v1 mobile-web
+  handoff in the `phone_host` sheet.

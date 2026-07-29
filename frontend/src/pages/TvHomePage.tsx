@@ -1,0 +1,313 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Camera, Info, Search, Smartphone, Tv, Users } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+import GameRulesModal from '../components/GameRulesModal';
+import { GAME_MODE_CONFIGS, type GameModeConfig } from '../gameModes';
+import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
+import { type GameType } from '../types';
+import { apiFetch } from '../utils/api';
+
+type TvCompanionMode = 'none' | 'shared_phone' | 'per_player_phone' | 'phone_host';
+type TvFilter = 'play_now' | 'all' | 'phones' | 'phone_host';
+
+interface TvCapability {
+    hostable: boolean;
+    companion_mode: TvCompanionMode;
+    min_companion_devices: number;
+    private_screen: boolean;
+    text_input_for_customization: boolean;
+    reason_chip: string;
+}
+
+interface TvCatalogGame extends CatalogGameWithRules {
+    runtime_type?: string;
+    game_type?: string;
+    tv_capability?: TvCapability;
+    default_content_available?: boolean;
+}
+
+interface TvGameCard {
+    id: GameType;
+    title: string;
+    description: string;
+    icon: string;
+    capability: TvCapability;
+    catalog?: TvCatalogGame;
+}
+
+const PHONE_COUNTS = [0, 1, 2, 4];
+
+function fallbackCapability(mode: GameModeConfig): TvCapability {
+    if (mode.id === 'photo_clue') {
+        return {
+            hostable: false,
+            companion_mode: 'phone_host',
+            min_companion_devices: 0,
+            private_screen: false,
+            text_input_for_customization: true,
+            reason_chip: 'Start from a phone',
+        };
+    }
+    if (mode.passAndPlay) {
+        return {
+            hostable: true,
+            companion_mode: 'shared_phone',
+            min_companion_devices: 1,
+            private_screen: true,
+            text_input_for_customization: false,
+            reason_chip: 'Needs 1 shared phone',
+        };
+    }
+    const tvReady = new Set([
+        'housie',
+        'bingo',
+        'musical_chairs',
+        'two_truths',
+        'story_chain',
+        'survey_says',
+        'would_you_rather',
+        'never_have_i_ever',
+        'word_association',
+        'hot_takes',
+        'this_or_that',
+        'rapid_fire',
+        'one_word_vibes',
+        'memory_lane',
+    ]);
+    if (tvReady.has(mode.runtimeType)) {
+        return {
+            hostable: true,
+            companion_mode: 'none',
+            min_companion_devices: 0,
+            private_screen: false,
+            text_input_for_customization: false,
+            reason_chip: 'TV ready',
+        };
+    }
+    return {
+        hostable: true,
+        companion_mode: 'per_player_phone',
+        min_companion_devices: 2,
+        private_screen: false,
+        text_input_for_customization: false,
+        reason_chip: 'Needs phones',
+    };
+}
+
+function availability(game: TvGameCard, connectedPhones: number): 'ready' | 'locked' | 'phone-host' {
+    if (!game.capability.hostable) return 'phone-host';
+    return connectedPhones >= game.capability.min_companion_devices ? 'ready' : 'locked';
+}
+
+function companionLabel(capability: TvCapability): string {
+    if (capability.companion_mode === 'none') return 'TV only';
+    if (capability.companion_mode === 'shared_phone') return '1 shared phone';
+    if (capability.companion_mode === 'phone_host') return 'Phone host';
+    return capability.min_companion_devices > 1 ? `${capability.min_companion_devices}+ phones` : 'Phones';
+}
+
+function TvGameSheet({
+    game,
+    connectedPhones,
+    onClose,
+    onRules,
+}: {
+    game: TvGameCard;
+    connectedPhones: number;
+    onClose: () => void;
+    onRules: () => void;
+}) {
+    const state = availability(game, connectedPhones);
+    const joinUrl = `${window.location.origin}/join`;
+    const setupUrl = `${window.location.origin}/?tv=1&game=${encodeURIComponent(game.id)}`;
+
+    return (
+        <div className="tv-sheet-backdrop" role="dialog" aria-modal="true" aria-labelledby="tv-sheet-title" onClick={onClose}>
+            <section className="tv-sheet" onClick={(event) => event.stopPropagation()}>
+                <button type="button" className="tv-sheet__close" onClick={onClose} aria-label="Close">x</button>
+                <div className="tv-sheet__icon" aria-hidden="true">{game.icon}</div>
+                <div>
+                    <p className="tv-sheet__eyebrow">{companionLabel(game.capability)}</p>
+                    <h2 id="tv-sheet-title">{game.title}</h2>
+                    <p>{game.description}</p>
+                </div>
+
+                {state === 'phone-host' ? (
+                    <div className="tv-sheet__handoff">
+                        <Camera size={34} aria-hidden="true" />
+                        <div>
+                            <h3>Use a phone for this one</h3>
+                            <p>Photo capture and upload are phone-first, then the TV can show the room view.</p>
+                        </div>
+                        <QRCodeSVG value={joinUrl} size={132} />
+                    </div>
+                ) : state === 'locked' ? (
+                    <div className="tv-sheet__handoff">
+                        <Smartphone size={34} aria-hidden="true" />
+                        <div>
+                            <h3>{game.capability.reason_chip}</h3>
+                            <p>Connect the companion devices first, then the TV can run the room.</p>
+                        </div>
+                        <QRCodeSVG value={joinUrl} size={132} />
+                    </div>
+                ) : (
+                    <div className="tv-sheet__ready">
+                        <Tv size={34} aria-hidden="true" />
+                        <div>
+                            <h3>Ready on TV</h3>
+                            <p>This game can be launched from the TV-primary flow.</p>
+                        </div>
+                    </div>
+                )}
+
+                <div className="tv-sheet__actions">
+                    <a className="btn btn-primary" href={setupUrl}>Open setup</a>
+                    <button type="button" className="btn btn-secondary" onClick={onRules}>Rules</button>
+                </div>
+            </section>
+        </div>
+    );
+}
+
+export default function TvHomePage() {
+    const [catalog, setCatalog] = useState<TvCatalogGame[] | null>(null);
+    const [query, setQuery] = useState('');
+    const [filter, setFilter] = useState<TvFilter>('play_now');
+    const [connectedPhones, setConnectedPhones] = useState(0);
+    const [selectedGame, setSelectedGame] = useState<TvGameCard | null>(null);
+    const [activeRules, setActiveRules] = useState<GameRules | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        apiFetch('/catalog')
+            .then((res) => res.ok ? res.json() : Promise.reject(new Error('catalog')))
+            .then((data) => {
+                if (!cancelled) setCatalog(Array.isArray(data.games) ? data.games : []);
+            })
+            .catch(() => {
+                if (!cancelled) setCatalog([]);
+            });
+        return () => { cancelled = true; };
+    }, []);
+
+    const games = useMemo<TvGameCard[]>(() => {
+        const byId = new Map((catalog || []).map((game) => [game.id, game]));
+        return GAME_MODE_CONFIGS
+            .map((mode) => {
+                const remote = byId.get(mode.id);
+                if (catalog && catalog.length > 0 && !remote) return null;
+                if (remote?.launchable === false) return null;
+                return {
+                    id: mode.id,
+                    title: remote?.title || mode.title,
+                    description: remote?.description || mode.description,
+                    icon: mode.icon,
+                    capability: remote?.tv_capability || fallbackCapability(mode),
+                    catalog: remote,
+                };
+            })
+            .filter(Boolean)
+            .sort((a, b) => a!.title.localeCompare(b!.title)) as TvGameCard[];
+    }, [catalog]);
+
+    const visibleGames = games.filter((game) => {
+        const text = `${game.title} ${game.description}`.toLowerCase();
+        if (query.trim() && !text.includes(query.trim().toLowerCase())) return false;
+        const state = availability(game, connectedPhones);
+        if (filter === 'play_now') return state === 'ready';
+        if (filter === 'phones') return game.capability.companion_mode === 'per_player_phone' || game.capability.companion_mode === 'shared_phone';
+        if (filter === 'phone_host') return state === 'phone-host';
+        return true;
+    });
+
+    const playNowCount = games.filter((game) => availability(game, connectedPhones) === 'ready').length;
+
+    return (
+        <main className="tv-home" data-testid="tv-home">
+            <section className="tv-home__header">
+                <div className="tv-home__brand">
+                    <div className="tv-home__logo" aria-hidden="true">R</div>
+                    <div>
+                        <p>Revelry Games</p>
+                        <h1>Games on TV</h1>
+                    </div>
+                </div>
+                <div className="tv-home__phone-meter" aria-label={`${connectedPhones} connected phones`}>
+                    <Smartphone size={26} aria-hidden="true" />
+                    <span>{connectedPhones}</span>
+                </div>
+            </section>
+
+            <section className="tv-home__controls">
+                <label className="tv-home__search">
+                    <Search size={26} aria-hidden="true" />
+                    <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search games" />
+                </label>
+                <div className="tv-home__chips" role="tablist" aria-label="Game filters">
+                    {[
+                        ['play_now', `Play now (${playNowCount})`],
+                        ['all', 'All games'],
+                        ['phones', 'Needs phones'],
+                        ['phone_host', 'Phone host'],
+                    ].map(([id, label]) => (
+                        <button
+                            key={id}
+                            type="button"
+                            className={filter === id ? 'active' : ''}
+                            onClick={() => setFilter(id as TvFilter)}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+                <div className="tv-home__phones" aria-label="Connected phone preview">
+                    <Users size={24} aria-hidden="true" />
+                    {PHONE_COUNTS.map((count) => (
+                        <button
+                            key={count}
+                            type="button"
+                            className={connectedPhones === count ? 'active' : ''}
+                            onClick={() => setConnectedPhones(count)}
+                        >
+                            {count}
+                        </button>
+                    ))}
+                </div>
+            </section>
+
+            <section className="tv-home__grid" aria-label="TV game catalog">
+                {visibleGames.map((game) => {
+                    const state = availability(game, connectedPhones);
+                    return (
+                        <button
+                            key={game.id}
+                            type="button"
+                            className={`tv-game-card tv-game-card--${state}`}
+                            onClick={() => setSelectedGame(game)}
+                        >
+                            <span className="tv-game-card__icon" aria-hidden="true">{game.icon}</span>
+                            <span className="tv-game-card__body">
+                                <span className="tv-game-card__title">{game.title}</span>
+                                <span className="tv-game-card__desc">{game.description}</span>
+                            </span>
+                            <span className="tv-game-card__meta">
+                                <span>{game.capability.reason_chip}</span>
+                                {game.capability.private_screen && <Info size={18} aria-label="Private screen needed" />}
+                            </span>
+                        </button>
+                    );
+                })}
+            </section>
+
+            {selectedGame && (
+                <TvGameSheet
+                    game={selectedGame}
+                    connectedPhones={connectedPhones}
+                    onClose={() => setSelectedGame(null)}
+                    onRules={() => setActiveRules(rulesForGame(selectedGame.id, catalog || undefined))}
+                />
+            )}
+            <GameRulesModal rules={activeRules} onClose={() => setActiveRules(null)} />
+        </main>
+    );
+}

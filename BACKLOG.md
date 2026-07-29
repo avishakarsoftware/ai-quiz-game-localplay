@@ -149,22 +149,17 @@
   (the real teen secret-word game) as the first title on top. Cheaper than it looks: no player
   sockets, no reconnect, no per-viewer scoping — privacy is physical. Not started.
 
-- **TV app as a DISTRIBUTION channel, TV-primary (SPEC-TV-APP).** Install on the TV *instead of* a
-  phone: one install per household, room code on a 55" screen, and TV stores are far less crowded than
-  mobile — which matters because installs, not features, are the bottleneck. Not a rewrite: `SpectatorPage`
-  is already the TV display and `OrganizerPage` is already the phone controller, so the work is (a) let the
-  TV create a room, (b) a claim-host handshake for the first phone to scan, (c) a D-pad game grid + TV-safe
-  layout, (d) Fire TV/Android TV packaging. **TV-store billing is dodged entirely** because
-  `tokens.get_wallet_id` already resolves to `user_id` when signed in — the host buys on their phone and the
-  TV spends the same wallet. Scope: Fire TV + Google TV only; Tizen/webOS/tvOS/Roku are separate businesses.
-  **Now implementation-ready.** Core finding: a TV with ZERO phones is a real product — 32 of 38 games
-  ship default content, and Housie/Bingo on a TV with *paper tickets* is how housie has always been
-  played. So availability is computed from connected-device count across four tiers (TV-only → +1 phone →
-  +phone each → +camera), with unplayable tiles greyed but STILL FOCUSABLE and carrying a reason chip
-  ("Needs 1 phone to pass around"). Tiles un-grey live as phones join, which teaches the model with no
-  copy. The unlock sheet's primary QR is the **web join URL, not an app store** — `/join/{code}` works in
-  any mobile browser (verified), so leading with a download would add friction to a solved problem.
-  Not started. **Rank this against other install-getting work, not against other features.**
+- **TV app as a DISTRIBUTION channel, TV-primary (SPEC-TV-APP).** **MVP slice built locally
+  2026-07-28:** backend derives `tv_capability` for every catalog game, `/catalog` exposes it, helper tests
+  pin `tv_availability`, and `/tv` is now a D-pad-friendly TV launcher while `/tv/:code` remains the legacy
+  spectator receiver. Install on the TV *instead of* a phone: one install per household, room code on a 55"
+  screen, and TV stores are far less crowded than mobile — which matters because installs, not features, are
+  the bottleneck. Still open: (a) TV-origin room creation with `{room_code, tv_token}`, (b) claim-host
+  handshake for the first phone to scan, (c) live connected-device sync to un-grey tiles for real rooms,
+  (d) TV-safe in-game polish/overscan pass, (e) Fire TV/Android TV packaging. **TV-store billing is dodged
+  entirely** because `tokens.get_wallet_id` already resolves to `user_id` when signed in — the host buys on
+  their phone and the TV spends the same wallet. Scope: Fire TV + Google TV only; Tizen/webOS/tvOS/Roku are
+  separate businesses. **Rank this against other install-getting work, not against other features.**
 
 ## Platform / Persistence
 

@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import './index.css';
 import { initIAP } from './utils/iap';
 import OrganizerPage from './pages/OrganizerPage';
 import PlayerPage from './pages/PlayerPage';
 import SpectatorPage from './pages/SpectatorPage';
+import TvHomePage from './pages/TvHomePage';
 import PartyHubPage from './pages/PartyHubPage';
 import RevelryAuthoringPage from './pages/RevelryAuthoringPage';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -17,7 +18,10 @@ import PwaPrompts from './components/PwaPrompts';
 import { isHostAppSurfaceLocation } from './utils/hostAppMode';
 
 function AppShell() {
-  const isHostAppSurface = isHostAppSurfaceLocation(window.location.pathname, window.location.search);
+  const location = useLocation();
+  const isHostAppSurface = isHostAppSurfaceLocation(location.pathname, location.search);
+  const isTvHomeSurface = location.pathname.replace(/\/+$/, '') === '/tv';
+  const hideAppChrome = isHostAppSurface || isTvHomeSurface;
 
   // Configure native IAP once at startup (no-op on web / when unconfigured).
   useEffect(() => { initIAP(); }, []);
@@ -25,9 +29,9 @@ function AppShell() {
   return (
     <>
       <MaintenanceOverlay />
-      {!isHostAppSurface && <AnnouncementBanner />}
-      {!isHostAppSurface && <SettingsDrawer />}
-      <PwaPrompts isHostAppSurface={isHostAppSurface} />
+      {!hideAppChrome && <AnnouncementBanner />}
+      {!hideAppChrome && <SettingsDrawer />}
+      <PwaPrompts isHostAppSurface={hideAppChrome} />
       <Routes>
         <Route path="/" element={<OrganizerPage />} />
         <Route path="/organizer" element={<OrganizerPage />} />
@@ -36,7 +40,7 @@ function AppShell() {
         <Route path="/spectator" element={<SpectatorPage />} />
         <Route path="/spectate" element={<SpectatorPage />} />
         <Route path="/spectate/:code" element={<SpectatorPage />} />
-        <Route path="/tv" element={<SpectatorPage />} />
+        <Route path="/tv" element={<TvHomePage />} />
         <Route path="/tv/:code" element={<SpectatorPage />} />
         <Route path="/revelry/games" element={<PartyHubPage />} />
         <Route path="/revelry/author" element={<RevelryAuthoringPage />} />

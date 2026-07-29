@@ -10,6 +10,7 @@ from bingo_engine import DEFAULT_BINGO_PATTERNS
 from game_rules import attach_rules
 from generic_prompt_engine import catalog_entries as generic_prompt_catalog_entries
 from housie_engine import DEFAULT_HOUSIE_PATTERNS
+from tv_catalog import attach_tv_capabilities
 
 REVELRY_PARTY_GAME_TYPES = ("quiz", "wmlt", "drawing", "housie", "chit_pull", "party_quests")
 REVELRY_PARTY_GAME_TYPES_ERROR = 'game_type must be "quiz", "wmlt", "drawing", "housie", "chit_pull", or "party_quests"'
@@ -925,6 +926,7 @@ _MIN_PLAYERS_BY_RUNTIME = {
     "photo_clue": config.MIN_PHOTO_CLUE_PLAYERS,
     "poker": config.MIN_POKER_PLAYERS,
     "odd_question": config.MIN_ODD_QUESTION_PLAYERS,
+    "impostor": config.MIN_IMPOSTOR_PLAYERS,
 }
 
 
@@ -942,4 +944,5 @@ def _attach_player_minimums(catalog):
 
 
 _attach_player_minimums(GAME_CATALOG)
+attach_tv_capabilities(GAME_CATALOG)
 attach_rules(GAME_CATALOG)
