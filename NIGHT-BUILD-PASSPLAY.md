@@ -100,6 +100,11 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
 - **conftest pins `tokens.get_wallet_id`** to `TEST_DEVICE_ID` for every request; endpoint tests
   must seed that wallet, and an `X-Device-Id` header is ignored.
 - **Device ids must be UUIDs** (`tokens.get_device_id` rejects anything else → resolves to no wallet).
+- **Occasion bingos are CONTENT VARIANTS, not game types.** `wedding_bingo`/`holiday_bingo`/
+  `road_trip_bingo`/`baby_bingo` all have `game_type: "bingo"`. `POST /room/create` with
+  `game_type:"wedding_bingo"` is CORRECTLY rejected — create with `game_type:"bingo"` and a deck.
+  I made this exact malformed-probe mistake TWICE in one session and briefly reported it as a prod
+  bug both times. Check `game_type` in `/catalog` before believing a 422 is a defect.
 - **The backend serves the SPA as a catch-all**, so a missing route returns `200 text/html`. Always
   check content-type when verifying a new endpoint, never just the status code.
 - **Never write a waiter loop whose own command line contains its search pattern** —
