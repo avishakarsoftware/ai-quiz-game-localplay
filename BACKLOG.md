@@ -149,6 +149,16 @@
   (the real teen secret-word game) as the first title on top. Cheaper than it looks: no player
   sockets, no reconnect, no per-viewer scoping — privacy is physical. Not started.
 
+- **TV app as a DISTRIBUTION channel, TV-primary (SPEC-TV-APP).** Install on the TV *instead of* a
+  phone: one install per household, room code on a 55" screen, and TV stores are far less crowded than
+  mobile — which matters because installs, not features, are the bottleneck. Not a rewrite: `SpectatorPage`
+  is already the TV display and `OrganizerPage` is already the phone controller, so the work is (a) let the
+  TV create a room, (b) a claim-host handshake for the first phone to scan, (c) a D-pad game grid + TV-safe
+  layout, (d) Fire TV/Android TV packaging. **TV-store billing is dodged entirely** because
+  `tokens.get_wallet_id` already resolves to `user_id` when signed in — the host buys on their phone and the
+  TV spends the same wallet. Scope: Fire TV + Google TV only; Tizen/webOS/tvOS/Roku are separate businesses.
+  Not started. **Rank this against other install-getting work, not against other features.**
+
 ## Platform / Persistence
 
 - **LLM model bump: hold 2.5-flash-lite → move early Oct 2026.** Stay on `gemini-2.5-flash-lite` (the current default for free + premium, `GEMINI_MODEL` / `GEMINI_PREMIUM_MODEL` in `backend/config.py`, plus the checked-in `.env` and gamma/prod VM `.env`) **through September 2026**, then migrate to the newer flash-lite (e.g. `gemini-3.x-flash-lite`) at the **beginning of October 2026**. Scope when the time comes: bump the two config defaults + `GEMINI_IMAGE_MODEL` if the image model also moves, update `backend/.env`, `model_comparison.py`, and the `test_remote_config.py` fixtures; verify generation quality/latency/cost on gamma first; then set `GEMINI_MODEL` on the gamma/prod VM `.env` and recreate the containers. No code migration — it's env-driven.
