@@ -41,8 +41,9 @@ So availability is a function of **how many player devices are currently connect
 | **1** | + one phone | Pass-and-play (private role reveals), typed AI topics, a comfortable host controller | Impostor, Odd Question, AI Quiz with a custom topic |
 | **2** | + a phone each | Individually-scored games, per-player input | Quiz proper, Drawing, Poker, Acronym, Survey Says |
 
-Photo games are **not** a fourth tier — no number of phones makes the TV able to host them, because
-the *host* needs the camera. They are `tv_hostable: false` and get the phone hand-off in §4b.
+Photo games are **not** a fourth tier — no number of companion phones makes the TV able to host
+them, because the *host* needs the camera. They are `tv_capability.hostable: false` /
+`companion_mode: "phone_host"` and get the phone hand-off in §4b.
 
 **Tiles must un-grey live as phones join.** A guest scanning the QR should visibly unlock games on
 the TV. That teaches the whole model without a word of explanation, and it is the single most
@@ -50,20 +51,38 @@ valuable piece of feedback in the product.
 
 ## 3. Declaring capability (data model)
 
-Add to each catalog entry. **Derived availability, never a hardcoded id list** — three separate
-hardcoded lists shipped the occasion bingos broken (see BACKLOG), so this is a hard rule.
+**Implementation refinement (2026-07-28): derive first, override narrowly.** The first draft used
+per-entry `tv_requires` fields. That is too easy to let drift across 38+ games, and we have already
+been burned by catalog drift. The implementation should derive a `tv_capability` object from
+existing catalog metadata (`interaction`, `runtime_type`, `supports_images`,
+`supports_ai_generation`, `default_content_available`, and `config_schema.players.min`) with a tiny
+explicit override list for exceptions like `photo_clue`.
+
+The public catalog shape should be:
 
 ```python
-# backend/game_catalog.py — per entry
-# Can the TV host this game AT ALL? False = the host needs a phone capability the TV lacks
-# (a camera, a capture surface). Narrow: only photo_clue is a known member. Games that merely
-# DISPLAY images (quiz, the bingo family) are fine — a TV is the ideal display for those.
-"tv_hostable": True,
-"tv_requires": {
-    "player_devices": 0,        # phones needed to PLAY at all (0 = TV+remote is enough)
-    "private_screen": False,    # secret roles → needs at least one passed phone
-    "text_input": False,        # AI topic / free text → needs a phone keyboard
-},
+"tv_capability": {
+    "hostable": True,                 # false only when TV lacks a host capability, e.g. camera
+    "companion_mode": "none",         # none | shared_phone | per_player_phone | phone_host
+    "min_companion_devices": 0,
+    "private_screen": False,
+    "text_input_for_customization": False,
+    "reason_chip": "",               # computed user-facing chip when unavailable
+}
+```
+
+`tv_requires` from the earlier draft folds into `companion_mode` + `min_companion_devices`.
+Availability remains computed live from connected devices; catalog metadata describes what the
+game needs, not whether it is playable in this particular room.
+
+Add this to every catalog entry via a backend derivation step. **Derived availability, never a
+hardcoded id list** — three separate hardcoded lists shipped the occasion bingos broken (see
+BACKLOG), so this is a hard rule.
+
+```python
+# backend/tv_catalog.py — derived per entry
+def derive_tv_capability(entry: dict) -> dict:
+    ...
 ```
 
 Availability is then computed, not stored:
@@ -74,13 +93,13 @@ def tv_availability(entry: dict, connected_devices: int) -> dict:
 
     `hostable: False` short-circuits — no device count fixes it, so the caller shows the
     phone hand-off sheet (§4b) rather than a join QR. Otherwise `reasons` lists the unmet
-    tv_requires keys, which map to user-facing copy.
+    companion needs, which map to user-facing copy.
     """
 ```
 
-A companion `tv_playable_now(catalog, connected_devices)` powers the grid. Guard tests must assert every catalog entry declares **both** `tv_hostable` and `tv_requires`, so a
-new game cannot silently default to "playable on TV" — the failure mode would be a host selecting a
-game that then cannot start.
+A companion `tv_playable_now(catalog, connected_devices)` powers the grid. Guard tests must assert
+every launchable catalog entry has a derived `tv_capability`, and that every `supports_images` game
+has been audited for hostability rather than treating image display as camera capture.
 
 ## 4. Two different kinds of "you can't play this", and two different answers
 
@@ -90,16 +109,16 @@ both cases. A game can be unavailable for two structurally different reasons:
 | | **Unlockable** | **Not TV-hostable** |
 |---|---|---|
 | Meaning | TV *can* run it; the room just needs more devices | The TV can **never** run it — hosting it needs a phone capability the TV lacks |
-| Declared by | `tv_requires` unmet (§3) | `tv_hostable: false` (§3) |
+| Declared by | `tv_capability` companion need unmet (§3) | `tv_capability.hostable: false` (§3) |
 | Fix | Somebody scans and joins | Host plays it on their phone instead |
 | Primary CTA | **Web join QR** — `/join/{code}`, no install | **App-store QR** — get the app on your phone |
 | Why | Guests have never needed an install; a download would add friction to a solved problem | The TV is only a signpost here. The host is going to *leave* the TV to play, and the app is the thing worth having |
 
-`tv_hostable: false` is the narrow case: the **host** needs a camera or a capture surface, not just
-a bigger screen. `photo_clue` is the clear member (host-side photo capture; a TV has no camera).
-Games that merely *display* images (`quiz`, the bingo family) are fine — the TV is the ideal display
-for those. **Audit every `supports_images` game against this before shipping**; the flag is not a
-proxy for it.
+`tv_capability.hostable: false` is the narrow case: the **host** needs a camera or a capture
+surface, not just a bigger screen. `photo_clue` is the clear member (host-side photo capture; a TV
+has no camera). Games that merely *display* images (`quiz`, the bingo family) are fine — the TV is
+the ideal display for those. **Audit every `supports_images` game against this before shipping**;
+the flag is not a proxy for it.
 
 ### 4a · The unlock sheet (Unlockable)
 
@@ -152,10 +171,10 @@ them makes the app feel broken. Each carries a **reason chip**, not just dimming
 
 | Reason | Chip |
 |---|---|
-| `player_devices` unmet | "Needs 1 phone" / "Needs a phone each" |
-| `private_screen` | "Needs 1 phone to pass around" |
-| `text_input` | "Needs a phone to type" |
-| `tv_hostable: false` | "Play on your phone" |
+| `companion_mode: "shared_phone"` | "Needs 1 phone to pass around" |
+| `companion_mode: "per_player_phone"` | "Needs phones to join" / "Needs a phone each" |
+| `text_input_for_customization` | "Needs a phone to type" |
+| `hostable: false` / `companion_mode: "phone_host"` | "Play on your phone" |
 
 ## 5. Screen inventory + flows
 
@@ -206,7 +225,8 @@ across factory resets; requiring sign-in to host is safer but adds first-run fri
 ## 7. Implementation plan
 
 **7a · Backend**
-1. `tv_requires` on every catalog entry + `tv_availability()` / `tv_playable_now()` helpers, derived.
+1. Derived `tv_capability` on every launchable catalog entry + `tv_availability()` /
+   `tv_playable_now()` helpers.
 2. **TV creates rooms.** Today only the organizer calls `POST /room/create`. Add a TV-origin path
    returning `{room_code, tv_token}`.
 3. **Claim-host handshake.** First phone to join a TV-created room becomes controller; later joiners
@@ -226,13 +246,15 @@ across factory resets; requiring sign-in to host is safer but adds first-run fri
 11. Google TV second, same codebase.
 
 **7d · Tests**
-- Every catalog entry declares `tv_requires` (guard test).
+- Every launchable catalog entry receives a derived `tv_capability` (guard test).
 - `tv_availability` truth table across all four tiers.
 - A tile un-greys when `connected_devices` increases (the live-unlock behaviour).
 - Greyed tiles remain focusable.
 - An **Unlockable** game's sheet shows the **web join URL**, never a store URL.
-- A **`tv_hostable: false`** game's sheet shows **app-store QRs** and mentions sparks carrying over.
-- Every `supports_images` game has been explicitly audited for `tv_hostable` (not defaulted).
+- A **`tv_capability.hostable: false`** game's sheet shows **app-store QRs** and mentions sparks
+  carrying over.
+- Every `supports_images` game has been explicitly audited for `tv_capability.hostable` (not
+  defaulted from the image flag).
 
 ## 8. D-pad focus model (explicit, so it isn't invented per screen)
 

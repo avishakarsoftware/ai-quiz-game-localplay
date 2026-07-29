@@ -60,4 +60,16 @@ describe('GameSelectScreen — One phone filter', () => {
             expect(screen.getByTestId(`one-phone-badge-${game.id}`)).toBeInTheDocument();
         }
     });
+
+    it('does not show the AI sparkle on one-phone games in local fallback mode', () => {
+        render(<GameSelectScreen onSelect={() => {}} />);
+
+        const impostorTitle = screen.getByText((_text, el) => el?.className === 'game-select-title'
+            && (el.textContent || '').includes('Impostor'));
+        expect(impostorTitle.textContent).not.toContain('✨');
+
+        const aiQuizTitle = screen.getByText((_text, el) => el?.className === 'game-select-title'
+            && (el.textContent || '').includes('AI Quiz'));
+        expect(aiQuizTitle.textContent).toContain('✨');
+    });
 });

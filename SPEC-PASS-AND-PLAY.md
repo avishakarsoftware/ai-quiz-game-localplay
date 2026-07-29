@@ -1,12 +1,15 @@
 # SPEC-PASS-AND-PLAY — one shared phone, everyone plays
 
-Status: **Backend + primitives + Impostor UI BUILT 2026-07-28; not yet deployed.**
+Status: **Backend + primitives + Impostor UI BUILT and deployed 2026-07-28.**
 - Phase 1 (backend): `pass_play_common.py`, `impostor_engine.py`, catalog entry, rules, socket
   wiring. 66 tests.
 - Phase 2 (primitives): `SeatRosterSetup`, `PassScreen`, `PrivacyGate`, `GroupScreenFrame` in
   `frontend/src/components/passplay/`. 19 tests.
-- Phase 3 (game UI): `ImpostorGame.tsx`. **Remaining: wire into OrganizerPage + picker tile,
-  then deploy to gamma.**
+- Phase 3 (game UI): `ImpostorGame.tsx`, OrganizerPage wiring, picker tile, and "1 phone" badge
+  are live.
+- Revelry stance: standalone-only until Revelry adds a pass-and-play interaction contract. The
+  existing host-app hub assumes one phone per player, so `impostor` must stay out of the Revelry
+  catalog/start allowlist for now.
 
 Live status: DEPLOY.md's ledger. Owner: Avi. Impostor's id was deliberately kept free for this —
 see SPEC-GAME-ODD-QUESTION's naming history.
@@ -43,7 +46,8 @@ an optional shared display, game history/stats (`record_game_completion` — the
 attribution model is *exactly* right here, since only the host has a device), share cards.
 
 What does NOT carry over: WebSocket-per-player sync, reconnect/seat grace (there are no player
-sockets), per-viewer payload scoping (privacy is physical, enforced by the privacy gate instead).
+sockets), per-viewer payload scoping. Secrets are still phase-scoped: present only during the
+private reveal pass, then withheld during face-up table phases.
 That's why this is cheaper than it looks — a pass game is nearly a single-client state machine.
 
 ## 2. Flagship: Impostor (the real one)

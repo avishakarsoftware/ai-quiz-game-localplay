@@ -1,7 +1,7 @@
 import { Info, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { type GameType } from '../../types';
-import { BINGO_FAMILY_IDS, filterGameModesForCatalog, GAME_MODE_CONFIGS, isMostPopularGameId, mostPopularGameRank, type GameModeConfig } from '../../gameModes';
+import { BINGO_FAMILY_IDS, filterGameModesForCatalog, GAME_MODE_CONFIGS, isMostPopularGameId, mostPopularGameRank, supportsLocalAiGeneration, type GameModeConfig } from '../../gameModes';
 import { ENABLE_BINGO } from '../../config';
 import { useRemoteConfigContext } from '../../context/RemoteConfigContext';
 import GameRulesModal from '../GameRulesModal';
@@ -67,10 +67,6 @@ const GAME_CATEGORY_BY_ID: Partial<Record<GameType, GameCategory>> = {
 
 function getGameCategory(game: GameModeConfig): GameCategory {
     return GAME_CATEGORY_BY_ID[game.id] || 'all';
-}
-
-function hasAiGeneration(game: GameModeConfig): boolean {
-    return ![...BINGO_FAMILY_IDS, 'housie', 'musical_chairs', 'bluff', 'poker', 'two_truths', 'story_chain', 'common_ground', 'find_someone', 'mafia', 'party_quests', 'survey_says', 'caption_contest', 'desert_island', 'emoji_story', 'hot_takes', 'memory_lane', 'one_word_vibes', 'pitch_battle', 'rapid_fire', 'roast_toast', 'this_or_that', 'would_you_rather', 'never_have_i_ever', 'word_association', 'acronym', 'photo_clue'].includes(game.id);
 }
 
 export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreenProps) {
@@ -160,7 +156,7 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
                                 <span className="game-select-icon">{game.icon}</span>
                                 <div className="game-select-info">
                                     <span className="game-select-title">
-                                        {game.title}{(hasCatalog ? aiCapable.has(game.id) : hasAiGeneration(game)) ? ' ✨' : ''}
+                                        {game.title}{(hasCatalog ? aiCapable.has(game.id) : supportsLocalAiGeneration(game.id)) ? ' ✨' : ''}
                                         {/* Pass-and-play needs ONE device, which is the answer to the
                                             commonest objection to any party app ("my friends won't
                                             install anything"). Among 38 games that has to be visible

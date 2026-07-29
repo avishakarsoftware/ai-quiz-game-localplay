@@ -369,6 +369,16 @@ export const GENERIC_PROMPT_GAME_IDS: GenericPromptGameType[] = [
     'this_or_that',
 ];
 
+const LOCAL_AI_GENERATION_GAME_IDS: ReadonlySet<GameType> = new Set([
+    'quiz',
+    ...QUIZ_VARIANT_IDS,
+    'wmlt',
+    'drawing',
+    'who_am_i',
+    'chit_pull',
+    'party_quests',
+]);
+
 export const MOST_POPULAR_GAME_IDS: GameType[] = [
     'quiz',
     'wmlt',
@@ -438,6 +448,10 @@ export function mostPopularGameRank(gameType?: string): number {
     return gameType && MOST_POPULAR_GAME_RANK.has(gameType)
         ? MOST_POPULAR_GAME_RANK.get(gameType)!
         : Number.MAX_SAFE_INTEGER;
+}
+
+export function supportsLocalAiGeneration(gameType: GameType): boolean {
+    return LOCAL_AI_GENERATION_GAME_IDS.has(gameType);
 }
 
 export function filterGameModesForCatalog(catalog: Array<{ id: string; launchable?: boolean }> | undefined): GameModeConfig[] {

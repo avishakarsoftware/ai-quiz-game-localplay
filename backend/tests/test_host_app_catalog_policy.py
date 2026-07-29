@@ -180,6 +180,14 @@ def test_more_standalone_games_are_host_app_quick_startable_in_gamma():
     assert games["find_someone"]["auto_start_on_first_checkin_default"] is True
 
 
+def test_pass_and_play_games_stay_out_of_revelry_until_revelry_supports_that_interaction():
+    env = f"test-pass-play-revelry-{uuid.uuid4().hex}"
+    games = {game["id"]: game for game in effective_catalog(GAME_CATALOG, host_app="revelry", environment=env)}
+
+    assert "impostor" not in games
+    assert "impostor" not in REVELRY_PARTY_GAME_START_TYPES
+
+
 def test_production_missing_policy_fails_closed():
     games = effective_catalog(
         GAME_CATALOG,

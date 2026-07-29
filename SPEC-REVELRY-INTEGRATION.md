@@ -606,6 +606,12 @@ Photo Clue and Party Poker are now bridge-ready quick-start games, not embedded-
 
 They should not appear in the Revelry host-app catalog until host-app policy intentionally enables them and gamma embedded hub QA covers start, join, spectator, reconnect, completion, and result polling.
 
+Pass-and-play games are a separate interaction model, not a normal quick-start expansion. `impostor`
+is intentionally standalone-only as of 2026-07-28: one shared phone, host-typed seats, no per-player
+WebSockets, and privacy handled by phase-scoped pass screens. LocalPlay must keep it out of
+`GET /catalog?host_app=revelry` and out of `REVELRY_PARTY_GAME_START_TYPES` until Revelry has an
+explicit pass-and-play contract and UI copy for "one phone passed around."
+
 ## June 18, 2026 — Party Quests LocalPlay support (historical quick-start contract)
 
 This section records the first bridge slice. The July 9 staging/check-in/cancellation contract above supersedes it for new implementation work and rollout decisions.
@@ -1289,6 +1295,7 @@ Rules:
 - The Revelry-launched LocalPlay UI must only expose games returned as `launchable = true` for `GET /catalog?host_app=revelry`.
 - The party hub's "Create a game" section must be driven by this catalog, not by hardcoded quiz-only UI. Quiz opens the full quiz authoring flow. WMLT/Drawing open a lightweight setup form that lets the host edit ready-made or AI-generated prompts/settings, save the setup, and optionally start immediately. Housie opens a lightweight setup that saves default prize/caller settings without AI generation. Future games should use the same setup/save/start contract unless they have a richer dedicated authoring surface.
 - If a quiz variant such as Rebus, Timeline, or Odd One Out should appear in Revelry, it must first be represented in the bridge contract with catalog metadata, accepted `game_type` or mode validation, content/session creation semantics, launch-token handling, status, and result summary support.
+- Pass-and-play games such as `impostor` must not be treated as ordinary quick-start games. They require a new host-app interaction contract because they use one shared phone and host-entered seats instead of one phone per player.
 - Games not represented in the bridge contract must be hidden in Revelry-launched host-app mode even if they are available in standalone LocalPlay.
 - Backlog games such as Bingo and Baby Bingo may appear as `planned` if Revelry wants to show coming-soon cards. Housie, Musical Chairs, Party Quests, Bluff, Find Someone Who, Random Chit, and Mafia are implemented on the LocalPlay side and may be `gamma`/launchable in Revelry gamma when policy allows them; production remains disabled until explicitly promoted.
 - `find_someone` is implemented in standalone LocalPlay as a check-in-friendly social bingo runtime and advertises `checkin_friendly`, `can_start_with_first_player`, and `supports_late_join` in the LocalPlay host-app catalog. It may appear as a quick-start game when policy allows it. Revelry still owns the host-owned setting to make it the party's default check-in game and the optional auto-start-on-first-check-in trigger. That Revelry setting should default auto-start to on; LocalPlay owns the resulting session runtime, late-join card assignment, and duplicate nickname/session-token reconciliation.

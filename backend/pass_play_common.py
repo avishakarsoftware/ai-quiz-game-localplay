@@ -7,9 +7,10 @@ everything in this module exists because of them:
 1. **A seat is not a connection.** Players are typed in by the host at setup and have no device,
    no socket, no session token. Do NOT try to reuse the per-device `players` dict keyed by
    client_id — that is the one-phone-per-player model and it will fight you at every turn.
-2. **Privacy is physical, not a payload filter.** There is a single viewer, so the engine may hand
-   the client everything; the UI's reveal gate is what stops shoulder-surfing. Do NOT build
-   per-seat payload scoping here.
+2. **Privacy is phase-scoped and physical.** There is a single viewer, so per-seat payload scoping
+   is meaningless, but secrets still only travel during the private reveal phase. The UI's reveal
+   gate stops shoulder-surfing while that phase is active; face-up table phases should not carry
+   secrets at all.
 
 The turn engine is deliberately index-free in its public surface: callers pass the seat list and
 get seat ids back, so a seat leaving mid-game can't silently shift whose turn it is.
