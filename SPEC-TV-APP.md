@@ -40,7 +40,9 @@ So availability is a function of **how many player devices are currently connect
 | **0** | TV + remote only | Prompt/caller/discussion games. TV is the quizmaster; humans self-organise. No per-player scoring. | Housie, Bingo (+ occasion decks), Musical Chairs, Would You Rather, Never Have I Ever, This or That, Hot Takes, Story Chain, Two Truths |
 | **1** | + one phone | Pass-and-play (private role reveals), typed AI topics, a comfortable host controller | Impostor, Odd Question, AI Quiz with a custom topic |
 | **2** | + a phone each | Individually-scored games, per-player input | Quiz proper, Drawing, Poker, Acronym, Survey Says |
-| **2+cam** | + camera | Photo games | Photo Clue |
+
+Photo games are **not** a fourth tier — no number of phones makes the TV able to host them, because
+the *host* needs the camera. They are `tv_hostable: false` and get the phone hand-off in §4b.
 
 **Tiles must un-grey live as phones join.** A guest scanning the QR should visibly unlock games on
 the TV. That teaches the whole model without a word of explanation, and it is the single most
@@ -53,64 +55,107 @@ hardcoded lists shipped the occasion bingos broken (see BACKLOG), so this is a h
 
 ```python
 # backend/game_catalog.py — per entry
+# Can the TV host this game AT ALL? False = the host needs a phone capability the TV lacks
+# (a camera, a capture surface). Narrow: only photo_clue is a known member. Games that merely
+# DISPLAY images (quiz, the bingo family) are fine — a TV is the ideal display for those.
+"tv_hostable": True,
 "tv_requires": {
     "player_devices": 0,        # phones needed to PLAY at all (0 = TV+remote is enough)
     "private_screen": False,    # secret roles → needs at least one passed phone
     "text_input": False,        # AI topic / free text → needs a phone keyboard
-    "camera": False,            # photo capture
 },
 ```
 
 Availability is then computed, not stored:
 
 ```python
-def tv_availability(entry: dict, connected_devices: int, has_camera: bool) -> dict:
-    """Returns {playable: bool, reasons: [str]}. Reasons are user-facing copy keys."""
+def tv_availability(entry: dict, connected_devices: int) -> dict:
+    """Returns {playable, hostable, reasons[]}.
+
+    `hostable: False` short-circuits — no device count fixes it, so the caller shows the
+    phone hand-off sheet (§4b) rather than a join QR. Otherwise `reasons` lists the unmet
+    tv_requires keys, which map to user-facing copy.
+    """
 ```
 
-A companion `tv_playable_now(catalog, connected_devices)` powers the grid. A guard test must assert
-every catalog entry declares `tv_requires`, so a new game cannot silently default to "playable".
+A companion `tv_playable_now(catalog, connected_devices)` powers the grid. Guard tests must assert every catalog entry declares **both** `tv_hostable` and `tv_requires`, so a
+new game cannot silently default to "playable on TV" — the failure mode would be a host selecting a
+game that then cannot start.
 
-## 4. The greyed-tile experience
+## 4. Two different kinds of "you can't play this", and two different answers
 
-**Greyed tiles stay focusable.** Do not skip them with the D-pad — a host needs to be able to land
-on a game and learn *why* it's unavailable. Skipping them makes the app feel broken.
+This distinction is the heart of the TV UX, and conflating the two produces the wrong prompt in
+both cases. A game can be unavailable for two structurally different reasons:
 
-Each unavailable tile shows a **reason chip**, not just dimming:
+| | **Unlockable** | **Not TV-hostable** |
+|---|---|---|
+| Meaning | TV *can* run it; the room just needs more devices | The TV can **never** run it — hosting it needs a phone capability the TV lacks |
+| Declared by | `tv_requires` unmet (§3) | `tv_hostable: false` (§3) |
+| Fix | Somebody scans and joins | Host plays it on their phone instead |
+| Primary CTA | **Web join QR** — `/join/{code}`, no install | **App-store QR** — get the app on your phone |
+| Why | Guests have never needed an install; a download would add friction to a solved problem | The TV is only a signpost here. The host is going to *leave* the TV to play, and the app is the thing worth having |
+
+`tv_hostable: false` is the narrow case: the **host** needs a camera or a capture surface, not just
+a bigger screen. `photo_clue` is the clear member (host-side photo capture; a TV has no camera).
+Games that merely *display* images (`quiz`, the bingo family) are fine — the TV is the ideal display
+for those. **Audit every `supports_images` game against this before shipping**; the flag is not a
+proxy for it.
+
+### 4a · The unlock sheet (Unlockable)
+
+```
+┌──────────────────────────────────────────────┐
+│  Impostor                                    │
+│  Needs one phone to pass around              │
+│      ▄▄▄▄▄▄▄   Scan with any phone           │
+│      █ QR  █   games.revelryapp.me/join/HY2  │
+│      ▀▀▀▀▀▀▀                                 │
+│  No app needed — it opens in the browser.    │
+│  ‹ Back to games                             │
+└──────────────────────────────────────────────┘
+```
+
+### 4b · The "play on your phone" sheet (Not TV-hostable)
+
+```
+┌──────────────────────────────────────────────┐
+│  Photo Clue                                  │
+│  This one needs a phone camera —             │
+│  play it on the Revelry Games app.           │
+│                                              │
+│   ▄▄▄▄▄▄▄            ▄▄▄▄▄▄▄                 │
+│   █ QR  █            █ QR  █                 │
+│   ▀▀▀▀▀▀▀            ▀▀▀▀▀▀▀                 │
+│   App Store          Google Play             │
+│                                              │
+│  Your sparks work on both — sign in with     │
+│  the same account.                           │
+│                                              │
+│  ‹ Back to games                             │
+└──────────────────────────────────────────────┘
+```
+
+Two deliberate copy choices. It names the *reason* ("needs a phone camera") rather than saying
+unsupported. And it reassures about **sparks carrying over**, because a host who has bought sparks on
+the TV account will otherwise assume a phone install means paying twice — `tokens.get_wallet_id`
+resolves to `user_id` when signed in, so it is genuinely the same wallet (§6).
+
+**Strategic note — this is a funnel, not a dead end.** A host who found you on Fire TV (an uncrowded
+store) gets pushed to install the *mobile* app for the games the TV can't run. TV distribution
+feeding mobile installs is exactly the direction that's currently stalled at 0 installs, so this
+sheet is worth building well rather than treating as an error state.
+
+### 4c · Greyed tiles stay focusable
+
+Do not skip unavailable tiles with the D-pad — a host needs to land on one and learn why. Skipping
+them makes the app feel broken. Each carries a **reason chip**, not just dimming:
 
 | Reason | Chip |
 |---|---|
 | `player_devices` unmet | "Needs 1 phone" / "Needs a phone each" |
 | `private_screen` | "Needs 1 phone to pass around" |
 | `text_input` | "Needs a phone to type" |
-| `camera` | "Needs a phone camera" |
-
-Selecting a greyed tile opens the **Unlock sheet**:
-
-```
-┌──────────────────────────────────────────────┐
-│  Impostor                                    │
-│  Needs one phone to pass around              │
-│                                              │
-│      ▄▄▄▄▄▄▄   Scan with any phone           │
-│      █ QR  █   games.revelryapp.me/join/HY2  │
-│      ▀▀▀▀▀▀▀                                 │
-│                                              │
-│  No app needed — it opens in the browser.    │
-│                                              │
-│  ── Want the app? ──                         │
-│  [small App Store QR]  [small Play QR]       │
-│                                              │
-│  ‹ Back to games                             │
-└──────────────────────────────────────────────┘
-```
-
-**The primary QR is the WEB JOIN URL, not an app store.** Verified: `/join/{code}` returns 200 and
-works in any mobile browser — guests have never needed an install. Leading with an app-store QR
-would add a download, an account, and a store round-trip to a problem solved by opening a link. The
-store QRs stay as a small secondary affordance for people who *want* the app.
-
-Copy rule: say what it needs and how to get there. Never "unsupported".
+| `tv_hostable: false` | "Play on your phone" |
 
 ## 5. Screen inventory + flows
 
@@ -120,7 +165,7 @@ Copy rule: say what it needs and how to get there. Never "unsupported".
 - Persistent header: room code + a small QR once a room exists; connected-device count ("2 phones joined").
 - A **"What can I play now?"** toggle filters to currently-playable.
 
-**S2 · Unlock sheet** — §4.
+**S2 · Unlock sheet** (§4a) and **S2b · Play-on-your-phone sheet** (§4b) — different CTAs.
 
 **S3 · Room / lobby**
 - Giant QR + room code, readable across a room.
@@ -185,7 +230,9 @@ across factory resets; requiring sign-in to host is safer but adds first-run fri
 - `tv_availability` truth table across all four tiers.
 - A tile un-greys when `connected_devices` increases (the live-unlock behaviour).
 - Greyed tiles remain focusable.
-- The unlock sheet's primary QR is the **web join URL**, not a store URL.
+- An **Unlockable** game's sheet shows the **web join URL**, never a store URL.
+- A **`tv_hostable: false`** game's sheet shows **app-store QRs** and mentions sparks carrying over.
+- Every `supports_images` game has been explicitly audited for `tv_hostable` (not defaulted).
 
 ## 8. D-pad focus model (explicit, so it isn't invented per screen)
 
