@@ -76,9 +76,12 @@ per-viewer payload scoping. Privacy is physical, enforced by a deliberate reveal
       it only drove the lobby swap. Among 38 games nothing signalled which one a phoneless guest
       could join, despite this spec calling that badge a selling point. Added a "1 phone" badge to
       the picker tile + a guard test so it can't silently regress to an internal-only flag.
-      **Noted, not fixed (needs a product decision):** 38 games is a lot for a first-run user and
-      there's no grouping by "how many phones do you need" — now a meaningful axis with both modes
-      shipping. That's a picker IA question for Avi, not a cheap fix.
+      **Then fixed properly on Avi's prompt:** added a **"📱 One phone" filter chip** so a host
+      whose guests have no devices can NARROW the 38 games, not just spot them. Implemented as a
+      DERIVED filter on `game.passAndPlay`, deliberately NOT added to `GAME_CATEGORY_BY_ID` — that
+      map allows one category per game, and "needs one phone" is orthogonal to genre (Impostor is
+      social deduction AND one-phone). Adding it there would have silently dropped the game from
+      whichever list the host looked in. A test pins that orthogonality.
 
 ## Known traps (learned the hard way this session — do not rediscover)
 

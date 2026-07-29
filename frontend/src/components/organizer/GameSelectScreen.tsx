@@ -12,11 +12,12 @@ interface GameSelectScreenProps {
     catalog?: CatalogGameWithRules[];
 }
 
-type GameCategory = 'all' | 'popular' | 'quiz' | 'creative' | 'bingo_housie' | 'cards';
+type GameCategory = 'all' | 'popular' | 'one_phone' | 'quiz' | 'creative' | 'bingo_housie' | 'cards';
 
 const CATEGORY_OPTIONS: Array<{ id: GameCategory; label: string }> = [
     { id: 'all', label: 'All' },
     { id: 'popular', label: 'Most Popular' },
+    { id: 'one_phone', label: '📱 One phone' },
     { id: 'quiz', label: 'Quiz/Trivia' },
     { id: 'creative', label: 'Creative' },
     { id: 'bingo_housie', label: 'Bingo/Housie' },
@@ -93,7 +94,13 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
     const filteredGameModes = useMemo(() => {
         const filtered = gameModes.filter((game) => {
             const matchesCategory = activeCategory === 'all'
-                || (activeCategory === 'popular' ? isMostPopularGameId(game.id) : getGameCategory(game) === activeCategory);
+                || (activeCategory === 'popular' ? isMostPopularGameId(game.id)
+                // Derived from the catalog flag, deliberately NOT from GAME_CATEGORY_BY_ID: that
+                // map allows one category per game, but "needs only one phone" is orthogonal to
+                // genre. Impostor is social deduction AND one-phone; forcing a choice would drop
+                // it from whichever list the host looked in.
+                : activeCategory === 'one_phone' ? Boolean(game.passAndPlay)
+                : getGameCategory(game) === activeCategory);
             if (!matchesCategory) return false;
             if (!query) return true;
             return `${game.title} ${game.description} ${game.runtimeType}`.toLowerCase().includes(query);
@@ -133,6 +140,7 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
                                 className={`game-category-tab ${activeCategory === category.id ? 'active' : ''}`}
                                 onClick={() => setActiveCategory(category.id)}
                                 aria-pressed={activeCategory === category.id}
+                                data-testid={`category-chip-${category.id}`}
                             >
                                 {category.label}
                             </button>
