@@ -277,3 +277,47 @@ Commit the PNGs **in the same commit as the change that caused them**, and say i
 surfaces moved and why. A baseline update with no explanation is indistinguishable from a regression
 someone rubber-stamped. Baselines are per-platform (`…-darwin.png`): regenerate on the same kind of
 machine, and if a new OS/arch joins, add its baselines rather than loosening the tolerances.
+
+## 8. Standing hazards the suites revealed (2026-08-04)
+
+Ranked by what they'd cost if left alone.
+
+### 8a. Tailwind utility classes are inert — needs a product decision, not a quick fix
+
+`tailwindcss@^4` is a devDependency and `src/index.css` starts with `@import "tailwindcss"`, but
+Tailwind v4 needs **either** `@tailwindcss/vite` **or** `@tailwindcss/postcss` and **neither is
+installed**. Verified against the shipped bundle: `.flex-col`, `.justify-between`, `.min-h-dvh`,
+`.items-center` appear **zero** times in `dist/assets/*.css`.
+
+Measured blast radius: **~1,452 utility occurrences across ~49 files, 77 distinct utilities**
+(`flex` ×193, `text-center` ×76, `mb-4` ×66 …). The app's real styling is the hand-written CSS in
+`index.css`, tuned to look right *without* them.
+
+**So "just enable Tailwind" is the DANGEROUS option**, not the safe one: it would apply ~1,450
+dormant declarations at once across nearly every screen. Two deliberate paths — (A) enable and
+repair the fallout screen by screen with a human reviewing screenshots, or (B) remove the import and
+dependency and strip the dead classes. Guarded meanwhile by
+`src/__tests__/tailwindNotCompiled.test.ts`, which fails if the dead-class count grows and tells you
+what to do if someone enables the plugin.
+
+### 8b. `frontend/e2e/` is not typechecked
+
+`tsconfig.app.json` has `include: ["src"]`, so nothing under `e2e/` is ever type-checked — and a
+type error there is invisible to `npm run build`. One is currently live in `liveGameHarness.ts`
+(`options.reloadOnly` against a type that no longer has it). Harmless at runtime, but the whole
+Playwright layer has no type safety. Compounds the fact that bare `npx tsc --noEmit` checks nothing.
+
+### 8c. The shared dev SQLite file makes local suites interfere
+
+`backend/data/revelry.db` is shared by pytest, the local e2e suite, and `make dev`. Two agents
+running suites concurrently produced *four* "insufficient balance" failures that looked exactly like
+an economy bug and were pure cross-contamination, plus a genuine flake in
+`test_e2e.py::TestTokenEconomyE2E::test_history_scoped_to_wallet`, which asserts an **absolute row
+count** and so breaks whenever anything else writes. Give each suite its own `DB_DIR`; the visual
+runner already does.
+
+### 8d. `test_e2e.py` is flakier than documented
+
+Three consecutive runs on unmodified master: 20 pass (10.9s) → 1 fail (29.4s) → 3 fail (57.4s),
+runtime roughly doubling each time. 8c is one confirmed contributor. Do **not** bisect it one run
+per step — that has already produced a confidently wrong conclusion once.
