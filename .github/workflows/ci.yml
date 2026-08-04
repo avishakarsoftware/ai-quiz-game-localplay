@@ -90,10 +90,17 @@ jobs:
           cd frontend
           npm ci
 
+      # `npx tsc --noEmit` is a NO-OP in this repo and must not be used: the root
+      # tsconfig.json is `{"files": [], "references": [...]}`, so bare tsc resolves
+      # zero input files, prints nothing, and exits 0 no matter how broken the code
+      # is. It silently passed for a whole session while two real type errors sat in
+      # the tree. `tsc -b` (what `npm run build` uses) is what actually walks the
+      # project references. Kept as an explicit step so a type error is attributed to
+      # typechecking rather than surfacing later as a confusing build failure.
       - name: Type check
         run: |
           cd frontend
-          npx tsc --noEmit
+          npx tsc -b --force
 
       - name: Unit tests
         run: |
