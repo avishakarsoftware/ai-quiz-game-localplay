@@ -105,6 +105,14 @@ Shipped implementation:
   TV-primary/no-companion adaptation. This list is allowed because it is a policy tier, not a
   duplicated catalog.
 - Pass-and-play is derived from `interaction == "pass_and_play"` and requires one shared phone.
+- **`GENERIC_PROMPT_TV_SAFE_MODES` gates the generic-prompt family on its own engine mode.**
+  `generic_prompt_party` covers `choice_vote`, `text_vote` and `text_group`. Only `choice_vote`
+  works with no phones (show of hands); the text modes require every player to *type*. Eligibility
+  is computed from `generic_prompt_engine.GAME_LIBRARY`, so `TV_REMOTE_ONLY_RUNTIMES` **cannot**
+  override the engine and mark a typing game as TV-ready.
+  *Found in review 2026-07-28:* `memory_lane`, `rapid_fire` and `one_word_vibes` were listed as
+  "TV only / TV ready" despite being `text_vote`/`text_group`. A phoneless host would have picked
+  one and hit a dead end. Pinned by `TestTvOnlyClassificationCannotDrift`.
 - Per-player games derive `min_companion_devices` from `config_schema.players.min`.
 
 ## 3a. Current game classification matrix
@@ -129,18 +137,18 @@ This matrix is generated from the backend catalog policy. It is the product trut
 | Housie | `tv_remote` | TV only | TV ready |
 | Impostor | `shared_phone` | TV + 1 shared phone | Needs 1 shared phone |
 | Mafia | `per_player_phone` | TV + player phones | Needs 6 phones |
-| Memory Lane | `tv_remote` | TV only | TV ready |
+| Memory Lane | `per_player_phone` | TV + player phones | Needs 2 phones |
 | Most Likely To | `per_player_phone` | TV + player phones | Needs 2 phones |
 | Musical Chairs | `tv_remote` | TV only | TV ready |
 | Never Have I Ever | `tv_remote` | TV only | TV ready |
 | Odd Question | `per_player_phone` | TV + player phones | Needs 3 phones |
-| One Word Vibes | `tv_remote` | TV only | TV ready |
+| One Word Vibes | `per_player_phone` | TV + player phones | Needs 2 phones |
 | Party Poker | `per_player_phone` | TV + player phones | Needs 2 phones |
 | Party Quests | `per_player_phone` | TV + player phones | Needs phones to join |
 | Photo Clue | `phone_host` | Start on phone | Start from a phone |
 | Pitch Battle | `per_player_phone` | TV + player phones | Needs 2 phones |
 | Random Chit | `per_player_phone` | TV + player phones | Needs 3 phones |
-| Rapid Fire | `tv_remote` | TV only | TV ready |
+| Rapid Fire | `per_player_phone` | TV + player phones | Needs 2 phones |
 | Road Trip Bingo | `tv_remote` | TV only | TV ready |
 | Roast & Toast | `per_player_phone` | TV + player phones | Needs 2 phones |
 | Story Chain | `tv_remote` | TV only | TV ready |

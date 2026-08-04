@@ -32,22 +32,59 @@ PHONE_HOST_GAME_IDS = frozenset({"photo_clue"})
 # screens in their TV adaptation.  Existing web rooms may still use phones for
 # scoring; this marks the native-TV launcher as allowed to offer a TV-primary
 # no-companion or room-led mode.
+#
+# The test for membership is: can the whole game run with the TV as prompter and
+# people answering ALOUD or by show of hands?  If every player has to *type*
+# something, it cannot -- there is no keyboard, and a host with no phones would
+# pick the tile and hit a dead end.
+#
+# 2026-07-28: memory_lane, rapid_fire and one_word_vibes were originally listed
+# here and are NOT eligible.  They are generic_prompt games whose modes are
+# `text_vote` / `text_group`, i.e. every player submits typed text.  Only the
+# `choice_vote` members of that family (hot_takes, this_or_that) work as a show
+# of hands.  See GENERIC_PROMPT_TV_SAFE_MODES below, which now enforces this
+# from the engine rather than trusting this list to stay correct.
 TV_REMOTE_ONLY_RUNTIMES = frozenset({
     "housie",
     "bingo",
     "musical_chairs",
-    "two_truths",
-    "story_chain",
-    "survey_says",
-    "would_you_rather",
-    "never_have_i_ever",
-    "word_association",
-    "hot_takes",
-    "this_or_that",
-    "rapid_fire",
-    "one_word_vibes",
-    "memory_lane",
+    "two_truths",       # statements are spoken aloud; the TV tracks turns
+    "story_chain",      # spoken
+    "survey_says",      # TV shows the board, teams shout, host adjudicates
+    "would_you_rather", # show of hands
+    "never_have_i_ever",# show of hands
+    "word_association", # spoken chain
+    "hot_takes",        # choice_vote -> show of hands
+    "this_or_that",     # choice_vote -> show of hands
 })
+
+# generic_prompt_party covers several input modes. Only these need no typing, so
+# a generic-prompt game is TV-remote-eligible ONLY if its mode is in here. This
+# is derived from the engine's own GAME_LIBRARY, so adding a text-mode game can
+# never silently become "TV ready".
+GENERIC_PROMPT_TV_SAFE_MODES = frozenset({"choice_vote"})
+
+
+def _generic_prompt_mode(runtime: str) -> str:
+    """The generic_prompt input mode for a runtime, or '' if it isn't one."""
+    try:
+        from generic_prompt_engine import GAME_LIBRARY
+    except Exception:  # pragma: no cover - engine always present in app runtime
+        return ""
+    spec = GAME_LIBRARY.get(runtime)
+    if not isinstance(spec, dict):
+        return ""
+    return str(spec.get("mode") or "")
+
+
+def _is_tv_remote_eligible(runtime: str) -> bool:
+    """TV-only eligibility, with generic-prompt games gated on their input mode."""
+    mode = _generic_prompt_mode(runtime)
+    if mode:
+        # A generic-prompt game is only TV-safe if it needs no typing, regardless
+        # of whether somebody added it to TV_REMOTE_ONLY_RUNTIMES.
+        return mode in GENERIC_PROMPT_TV_SAFE_MODES and runtime in TV_REMOTE_ONLY_RUNTIMES
+    return runtime in TV_REMOTE_ONLY_RUNTIMES
 
 
 def _entry_id(entry: dict) -> str:
@@ -99,7 +136,7 @@ def derive_tv_capability(entry: dict) -> dict:
             "tv_play_note": "One phone is passed around for private screens while the TV anchors the room.",
         }
 
-    if runtime in TV_REMOTE_ONLY_RUNTIMES:
+    if _is_tv_remote_eligible(runtime):
         return {
             "hostable": True,
             "bucket": BUCKET_TV_REMOTE,
