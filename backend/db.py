@@ -413,49 +413,6 @@ def create_entitlement(
         return False
 
 
-def get_active_entitlement(device_id: str) -> Optional[dict]:
-    """Find an active entitlement for this device (guest/device-scoped only).
-    For signed-in users, use get_active_entitlement_for_user() instead."""
-    conn = _get_conn()
-    now = int(time.time())
-
-    # Expire entitlements that have passed their time
-    conn.execute(
-        "UPDATE entitlements SET status = 'expired_time' "
-        "WHERE status = 'active' AND expires_at <= ?",
-        (now,),
-    )
-    conn.commit()
-
-    row = conn.execute(
-        "SELECT * FROM entitlements WHERE device_id = ? AND status = 'active' "
-        "AND user_id IS NULL "
-        "ORDER BY games_remaining DESC, expires_at DESC LIMIT 1",
-        (device_id,),
-    ).fetchone()
-    return dict(row) if row else None
-
-
-def decrement_entitlement(entitlement_id: str) -> bool:
-    """Atomically decrement games_remaining. Returns False if already exhausted/expired."""
-    conn = _get_conn()
-    now = int(time.time())
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        cursor = conn.execute(
-            "UPDATE entitlements SET "
-            "  games_remaining = games_remaining - 1, "
-            "  status = CASE WHEN games_remaining - 1 = 0 THEN 'exhausted_games' ELSE status END "
-            "WHERE id = ? AND status = 'active' AND games_remaining > 0 AND expires_at > ?",
-            (entitlement_id, now),
-        )
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    return cursor.rowcount > 0
-
-
 def revoke_entitlement_by_stripe(stripe_session_id: str) -> bool:
     """Revoke an entitlement by Stripe session ID (for refunds)."""
     conn = _get_conn()
@@ -499,85 +456,6 @@ def get_entitlement_by_stripe_session(stripe_session_id: str) -> Optional[dict]:
 
 
 # --- Device Usage (Free Tier) ---
-
-def check_and_increment_free_usage(device_id: str) -> tuple[bool, int]:
-    """Atomically check free limit and increment. Returns (allowed, count_after)."""
-    conn = _get_conn()
-    now = int(time.time())
-    window_cutoff = now - (24 * 3600)
-
-    row = conn.execute(
-        "SELECT games_used_free, window_start FROM device_usage WHERE device_id = ?",
-        (device_id,),
-    ).fetchone()
-
-    if row is None:
-        # First usage ever
-        conn.execute(
-            "INSERT INTO device_usage (device_id, games_used_free, window_start) VALUES (?, 1, ?)",
-            (device_id, now),
-        )
-        conn.commit()
-        return True, 1
-
-    if row["window_start"] <= window_cutoff:
-        # Window expired, reset
-        conn.execute(
-            "UPDATE device_usage SET games_used_free = 1, window_start = ? WHERE device_id = ?",
-            (now, device_id),
-        )
-        conn.commit()
-        return True, 1
-
-    if row["games_used_free"] >= config.FREE_TIER_LIMIT:
-        return False, row["games_used_free"]
-
-    # Atomic increment
-    cursor = conn.execute(
-        "UPDATE device_usage SET games_used_free = games_used_free + 1 "
-        "WHERE device_id = ? AND games_used_free < ?",
-        (device_id, config.FREE_TIER_LIMIT),
-    )
-    conn.commit()
-    if cursor.rowcount == 0:
-        return False, row["games_used_free"]
-    return True, row["games_used_free"] + 1
-
-
-def get_free_usage_count(device_id: str) -> int:
-    """Get current free usage count for a device."""
-    conn = _get_conn()
-    window_cutoff = int(time.time()) - (24 * 3600)
-    row = conn.execute(
-        "SELECT games_used_free, window_start FROM device_usage WHERE device_id = ?",
-        (device_id,),
-    ).fetchone()
-    if row is None or row["window_start"] <= window_cutoff:
-        return 0
-    return row["games_used_free"]
-
-
-def peek_free_usage(device_id: str) -> tuple[bool, int]:
-    """Check free usage without incrementing. Returns (can_play, used_count)."""
-    conn = _get_conn()
-    now = int(time.time())
-    window_cutoff = now - (24 * 3600)
-
-    row = conn.execute(
-        "SELECT games_used_free, window_start FROM device_usage WHERE device_id = ?",
-        (device_id,),
-    ).fetchone()
-
-    if row is None or row["window_start"] <= window_cutoff:
-        return True, 0
-
-    used = row["games_used_free"]
-    if used >= config.FREE_TIER_LIMIT:
-        return False, used
-    return True, used
-
-
-# --- Request Idempotency ---
 
 def check_idempotency(key: str, device_id: str = "") -> Optional[str]:
     """Check if this request was already processed. Returns result_id or None.
@@ -783,99 +661,6 @@ def merge_device_to_user(user_id: str, device_id: str):
     )
     conn.commit()
 
-
-def get_active_entitlement_for_user(user_id: str) -> Optional[dict]:
-    """Find an active entitlement for this user (any device)."""
-    conn = _get_conn()
-    now = int(time.time())
-    # Expire stale entitlements first
-    conn.execute(
-        "UPDATE entitlements SET status = 'expired_time' "
-        "WHERE status = 'active' AND expires_at <= ?",
-        (now,),
-    )
-    conn.commit()
-    row = conn.execute(
-        "SELECT * FROM entitlements WHERE user_id = ? AND status = 'active' "
-        "ORDER BY games_remaining DESC, expires_at DESC LIMIT 1",
-        (user_id,),
-    ).fetchone()
-    return dict(row) if row else None
-
-
-def get_user_free_usage_count(user_id: str) -> int:
-    """Get total free usage across all devices for a signed-in user."""
-    conn = _get_conn()
-    window_cutoff = int(time.time()) - (24 * 3600)
-    row = conn.execute(
-        "SELECT COALESCE(SUM(games_used_free), 0) as total FROM device_usage "
-        "WHERE user_id = ? AND window_start >= ?",
-        (user_id, window_cutoff),
-    ).fetchone()
-    return row["total"] if row else 0
-
-
-def check_and_increment_user_free_usage(user_id: str, device_id: str) -> tuple[bool, int]:
-    """Atomically check and increment free usage for a signed-in user (across all devices).
-    Uses BEGIN IMMEDIATE to serialize concurrent writers and prevent TOCTOU races.
-    Returns (allowed, total_count_after)."""
-    conn = _get_conn()
-    now = int(time.time())
-    window_cutoff = now - (24 * 3600)
-
-    # BEGIN IMMEDIATE acquires a write lock before reading, preventing
-    # concurrent transactions from interleaving between our SUM check and UPDATE.
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        # Get current total across all devices for this user
-        row = conn.execute(
-            "SELECT COALESCE(SUM(games_used_free), 0) as total FROM device_usage "
-            "WHERE user_id = ? AND window_start >= ?",
-            (user_id, window_cutoff),
-        ).fetchone()
-        total = row["total"] if row else 0
-
-        if total >= config.FREE_TIER_LIMIT:
-            conn.execute("ROLLBACK")
-            return False, total
-
-        # Increment on the current device's row
-        device_row = conn.execute(
-            "SELECT * FROM device_usage WHERE device_id = ?", (device_id,),
-        ).fetchone()
-
-        if device_row is None:
-            conn.execute(
-                "INSERT INTO device_usage (device_id, user_id, games_used_free, window_start) "
-                "VALUES (?, ?, 1, ?)",
-                (device_id, user_id, now),
-            )
-        elif device_row["window_start"] <= window_cutoff:
-            conn.execute(
-                "UPDATE device_usage SET games_used_free = 1, window_start = ?, user_id = ? "
-                "WHERE device_id = ?",
-                (now, user_id, device_id),
-            )
-        else:
-            conn.execute(
-                "UPDATE device_usage SET games_used_free = games_used_free + 1 "
-                "WHERE device_id = ?",
-                (device_id,),
-            )
-        conn.execute("COMMIT")
-        return True, total + 1
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
-
-
-def peek_user_free_usage(user_id: str) -> tuple[bool, int]:
-    """Check user free usage without incrementing. Returns (can_play, used_count)."""
-    count = get_user_free_usage_count(user_id)
-    return count < config.FREE_TIER_LIMIT, count
-
-
-# --- Admin / Support ---
 
 def lookup_by_device(device_id: str) -> dict:
     """Admin: look up all data for a device."""
@@ -2273,14 +2058,9 @@ if config.DB_BACKEND == "supabase":
     _SUPABASE_EXPORTS = [
         "init_db",
         "create_entitlement",
-        "get_active_entitlement",
-        "decrement_entitlement",
         "revoke_entitlement_by_stripe",
         "activate_pending_entitlement",
         "get_entitlement_by_stripe_session",
-        "check_and_increment_free_usage",
-        "get_free_usage_count",
-        "peek_free_usage",
         "check_idempotency",
         "record_idempotency",
         "store_pending_token",
@@ -2288,10 +2068,6 @@ if config.DB_BACKEND == "supabase":
         "find_or_create_user",
         "get_user",
         "merge_device_to_user",
-        "get_active_entitlement_for_user",
-        "get_user_free_usage_count",
-        "check_and_increment_user_free_usage",
-        "peek_user_free_usage",
         "lookup_by_device",
         "lookup_entitlement",
         "admin_revoke",

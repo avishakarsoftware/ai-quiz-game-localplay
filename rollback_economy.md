@@ -1,6 +1,25 @@
 # Token Economy Rollback Plan
 
-> Rollback from token-based economy (economy branch) to entitlement-based economy (master).
+> **HISTORICAL — this plan is no longer executable as written. Kept for the reasoning, not the steps.**
+>
+> It was written in March 2026, when the spark economy was an undeployed branch and the entitlement
+> system was still live on master. Both premises are now false:
+>
+> - The spark economy shipped on 2026-03-22 and has been the only economy in production for months,
+>   taking **real money** through Stripe and native IAP. Reverting to entitlements would orphan every
+>   spark balance and every purchase recorded in `token_transactions`, so "roll back the code" is no
+>   longer a safe operation — it is a data migration nobody has written.
+> - The code this plan restores was **deleted from master on 2026-08-04** as dead weight:
+>   `backend/premium.py`, the 9 entitlement/free-usage functions in `db.py` + `supabase_db.py`, and the
+>   frontend `useEntitlement` hook + `QuotaBadge`. Nothing had imported them since March.
+>
+> Everything is recoverable — the pre-economy tree is tagged `pre-token-economy` (`0b1a8ec`), and the
+> deletion commit has the full diff. If you ever genuinely need this, start from the tag, and budget
+> for the balance-migration problem above rather than following Step 1 below.
+>
+> Still true and still worth reading: the failure modes under "When to Rollback", and the
+> `/entitlements/current` compat note — that endpoint deliberately survives for pre-March-2026 app
+> builds still installed on devices.
 
 ---
 

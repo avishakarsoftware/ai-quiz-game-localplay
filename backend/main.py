@@ -5916,7 +5916,15 @@ async def token_balance(req: Request):
 # Keep old endpoint as alias for backward compatibility during rollout
 @app.get("/entitlements/current")
 async def entitlement_status_compat(req: Request):
-    """Legacy endpoint — redirects to token balance."""
+    """Legacy endpoint — returns the token balance.
+
+    KEEP THIS. Nothing in the current frontend calls it (the `useEntitlement` hook and `QuotaBadge`
+    that did were deleted 2026-08-04 along with the rest of the pre-spark entitlement layer), and it
+    is absent from the shipped bundle. But app builds from before the March 2026 spark migration are
+    still installed on devices, and this is the endpoint they poll for quota. Three lines is cheap
+    insurance against 404-ing them; note the response is the *token balance* shape, not the old
+    entitlement shape, so those old clients read `undefined` for `games_remaining` and fall back to
+    their defaults rather than erroring."""
     return await token_balance(req)
 
 

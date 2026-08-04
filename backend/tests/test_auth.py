@@ -372,23 +372,10 @@ class TestPendingTokenTTL:
         assert token is None
 
 
-class TestWindowExpiry:
-    """Test off-by-one fix: window at exactly 24h should be expired."""
-
-    def test_exactly_24h_window_is_expired(self, monkeypatch):
-        now = int(time.time())
-        # Manually insert a device_usage row with window_start exactly 24h ago
-        conn = db._get_conn()
-        conn.execute(
-            "INSERT INTO device_usage (device_id, games_used_free, window_start) VALUES (?, 3, ?)",
-            (_DEVICE_ID, now - 24 * 3600),
-        )
-        conn.commit()
-
-        # With <= fix, this should be treated as expired (window reset)
-        can_play, used = db.peek_free_usage(_DEVICE_ID)
-        assert can_play is True
-        assert used == 0
+# removed 2026-08-04: TestWindowExpiry guarded an off-by-one in the pre-spark rolling 24h
+# free-usage window (db.peek_free_usage). That whole mechanism is gone — daily limits are now
+# calendar-day based via _utc_date_str(), which has its own coverage in test_streak_bonus.py and
+# test_tokens.py. The device_usage table survives only for account merge/deletion and admin lookup.
 
 
 class TestTokenBalanceEndpoint:

@@ -176,35 +176,6 @@ def _expire_entitlements() -> None:
     )
 
 
-def get_active_entitlement(device_id: str) -> Optional[dict]:
-    _expire_entitlements()
-    return _first(_sb().select(
-        "entitlements",
-        filters={"device_id": f"eq.{device_id}", "status": "eq.active", "user_id": "is.null"},
-        order="games_remaining.desc,expires_at.desc",
-        limit=1,
-    ))
-
-
-def decrement_entitlement(entitlement_id: str) -> bool:
-    # NOTE: This has a TOCTOU window (read then update). The SQLite version uses
-    # BEGIN IMMEDIATE for atomicity. This is acceptable because entitlements are
-    # legacy — active code uses debit_tokens (RPC) instead. If entitlements are
-    # ever reactivated, this should move to an RPC with FOR UPDATE.
-    now = _now()
-    row = _first(_sb().select("entitlements", filters={"id": f"eq.{entitlement_id}"}, limit=1))
-    if not row or row["status"] != "active" or row["games_remaining"] <= 0 or row["expires_at"] <= now:
-        return False
-    remaining = row["games_remaining"] - 1
-    status = "exhausted_games" if remaining == 0 else "active"
-    updated = _sb().update(
-        "entitlements",
-        {"games_remaining": remaining, "status": status, "updated_at": now},
-        filters={"id": f"eq.{entitlement_id}", "status": "eq.active"},
-    )
-    return bool(updated)
-
-
 def revoke_entitlement_by_stripe(stripe_session_id: str) -> bool:
     rows = _sb().update(
         "entitlements",
@@ -226,27 +197,6 @@ def activate_pending_entitlement(stripe_session_id: str) -> Optional[dict]:
 
 def get_entitlement_by_stripe_session(stripe_session_id: str) -> Optional[dict]:
     return _first(_sb().select("entitlements", filters={"stripe_session_id": f"eq.{stripe_session_id}"}, limit=1))
-
-
-def check_and_increment_free_usage(device_id: str) -> tuple[bool, int]:
-    result = _sb().rpc("claim_device_usage", {
-        "p_device_id": device_id,
-        "p_free_tier_limit": config.FREE_TIER_LIMIT,
-    })
-    return bool(result["allowed"]), int(result["count_after"])
-
-
-def get_free_usage_count(device_id: str) -> int:
-    cutoff = _now() - 86400
-    row = _first(_sb().select("device_usage", filters={"device_id": f"eq.{device_id}"}, limit=1))
-    if not row or row["window_start"] <= cutoff:
-        return 0
-    return int(row["games_used_free"])
-
-
-def peek_free_usage(device_id: str) -> tuple[bool, int]:
-    used = get_free_usage_count(device_id)
-    return used < config.FREE_TIER_LIMIT, used
 
 
 def check_idempotency(key: str, device_id: str = "") -> Optional[str]:
@@ -331,36 +281,6 @@ def merge_device_to_user(user_id: str, device_id: str):
     now = _now()
     _sb().update("entitlements", {"user_id": user_id, "updated_at": now}, filters={"device_id": f"eq.{device_id}", "user_id": "is.null"})
     _sb().update("device_usage", {"user_id": user_id}, filters={"device_id": f"eq.{device_id}", "user_id": "is.null"})
-
-
-def get_active_entitlement_for_user(user_id: str) -> Optional[dict]:
-    _expire_entitlements()
-    return _first(_sb().select(
-        "entitlements",
-        filters={"user_id": f"eq.{user_id}", "status": "eq.active"},
-        order="games_remaining.desc,expires_at.desc",
-        limit=1,
-    ))
-
-
-def get_user_free_usage_count(user_id: str) -> int:
-    cutoff = _now() - 86400
-    rows = _sb().select("device_usage", filters={"user_id": f"eq.{user_id}", "window_start": f"gte.{cutoff}"})
-    return sum(int(row["games_used_free"]) for row in rows)
-
-
-def check_and_increment_user_free_usage(user_id: str, device_id: str) -> tuple[bool, int]:
-    result = _sb().rpc("claim_user_usage", {
-        "p_user_id": user_id,
-        "p_device_id": device_id,
-        "p_free_tier_limit": config.FREE_TIER_LIMIT,
-    })
-    return bool(result["allowed"]), int(result["count_after"])
-
-
-def peek_user_free_usage(user_id: str) -> tuple[bool, int]:
-    used = get_user_free_usage_count(user_id)
-    return used < config.FREE_TIER_LIMIT, used
 
 
 def lookup_by_device(device_id: str) -> dict:

@@ -29,23 +29,6 @@ class TestGetLocalIP:
             assert ip == "127.0.0.1"
 
 
-class TestSignOutClearsAll:
-    """Verify signOut clears premium token and checkout pending (backend perspective)."""
-
-    def test_premium_token_none_without_jwt_secret(self):
-        """Premium token creation returns None when JWT_SECRET is empty."""
-        import premium
-        import config
-
-        original = config.JWT_SECRET
-        config.JWT_SECRET = ""
-        try:
-            token = premium.create_premium_token("device-123")
-            assert token is None
-        finally:
-            config.JWT_SECRET = original
-
-
 class TestImageEngineSafety:
     """Image engine health check handles malformed responses."""
 
