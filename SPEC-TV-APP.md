@@ -1,11 +1,12 @@
 # SPEC-TV-APP — the TV as the party's home, not its second screen
 
-Status: **MVP slice implemented locally (2026-07-28): derived `tv_capability` catalog metadata,
-`tv_availability()` helpers, `/catalog` exposure, and a D-pad-friendly `/tv` launcher shell.**
-Native Fire TV/Google TV packaging, TV-origin room creation/control, and real companion unlock
-sync are still the next implementation slice. Avi's framing: install the app on the TV *instead of*
-a phone, because that suits local play better. This is a different product from the
-TV-as-spectator-display we already ship; `/tv/:code` remains the legacy spectator shortcut.
+Status: **MVP slice implemented locally (2026-08-04): derived `tv_capability` catalog metadata,
+`tv_availability()` helpers, `/catalog` exposure, a D-pad-friendly `/tv` launcher shell, and
+TV-origin room creation through the normal organizer room path.** Native Fire TV/Google TV packaging
+and the full remote-only in-game adaptations are still the next implementation slices. Avi's
+framing: install the app on the TV *instead of* a phone, because that suits local play better. This
+is a different product from the TV-as-spectator-display we already ship; `/tv/:code` remains the
+legacy spectator shortcut.
 Owner: Avi. Live status: DEPLOY.md's ledger after deploy.
 
 ## 1. The reframe, and why it's the right one
@@ -271,10 +272,14 @@ them makes the app feel broken. Each carries a **reason chip**, not just dimming
 **S2 · Unlock sheet** (§4a) and **S2b · Play-on-your-phone sheet** (§4b) — shipped as modal sheets.
 The v1 phone-host sheet links to the mobile web join surface until final store URLs are configured.
 
-**S3 · Room / lobby** (next slice)
+**S3 · Room / lobby** (partial slice shipped)
 - Giant QR + room code, readable across a room.
 - Live joined list. Each new phone re-evaluates the grid.
 - "Start" is enabled per the game's own minimum.
+- TV-created rooms are ordinary LocalPlay rooms owned by the TV organizer token. If the TV opens a
+  different room, the old organizer socket is closed before the replacement room connects.
+- A transient organizer-socket drop keeps the QR/code visible and reconnects with bounded backoff
+  instead of silently freezing the connected-phone count.
 
 **S4 · In-game** — `SpectatorPage`'s existing views, TV-safe (§7). `/tv/:code` still goes here.
 
@@ -312,13 +317,14 @@ across factory resets; requiring sign-in to host is safer but adds first-run fri
 **7a · Backend**
 1. **Done:** Derived `tv_capability` on every launchable catalog entry + `tv_availability()` /
    `tv_playable_now()` helpers.
-2. **Next:** TV creates rooms. Today only the organizer calls `POST /room/create`. Add a TV-origin path
-   returning `{room_code, tv_token}`.
+2. **Done:** TV creates rooms by calling the existing organizer `POST /room/create` path and keeping
+   the returned `organizer_token`; no TV-only room endpoint is required for the MVP.
 3. **Next:** Claim-host handshake. First phone to join a TV-created room becomes controller; later joiners
    are players. Needs a guard so a guest can't silently steal control mid-party.
 4. **Next:** Short TTL for unclaimed TV rooms — a TV that creates rooms nobody claims will burn the
    `MAX_ROOMS` cap. Reuse the occupancy-qualified TTL work.
-5. **Next:** Expose `connected_devices` in room sync so the TV can re-evaluate the grid live.
+5. **Done:** Use organizer socket roster/player-count messages so the TV can re-evaluate the grid
+   live as phones join, leave, or reconnect.
 
 **7b · Frontend (TV shell)**
 6. **Done:** `TvHomePage` — D-pad grid, focus model per §8, "Play now" filter, reason chips,
@@ -340,9 +346,11 @@ across factory resets; requiring sign-in to host is safer but adds first-run fri
 - **Done:** Greyed tiles remain focusable because they are rendered as buttons, not skipped.
 - **Done:** An **Unlockable** game's sheet shows the **web join URL**.
 - **Done:** A **`tv_capability.hostable: false`** game's sheet explains the phone-camera handoff.
+- **Done:** TV organizer socket lifecycle tests cover auth, roster updates, malformed frames,
+  transient reconnect, deliberate leave, and replacing an existing TV room.
 - **Next:** Replace the phone-host web QR with configured App Store / Google Play QR URLs and
   mention sparks carrying over once production store URLs are final.
-- **Next:** Live WebSocket/device-count test once `TvRoomScreen` exists.
+- **Next:** Full live browser WebSocket/device-count test once `TvRoomScreen` exists.
 
 ## 8. D-pad focus model (explicit, so it isn't invented per screen)
 

@@ -34,12 +34,19 @@ function mockCreateRoom(body: unknown, ok = true, status = 200) {
     }) as unknown as typeof fetch;
 }
 
+function roomResponse(body: unknown, ok = true, status = 200) {
+    return Promise.resolve({ ok, status, json: () => Promise.resolve(body) } as Response);
+}
+
 beforeEach(() => {
     FakeSocket.last = null;
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeSocket;
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+});
 
 describe('useTvRoom', () => {
     it('creates a room and exposes a join URL containing the real code', async () => {
@@ -120,6 +127,7 @@ describe('useTvRoom', () => {
     });
 
     it('keeps the room code visible if the socket drops mid-party', async () => {
+        vi.useFakeTimers();
         mockCreateRoom({ room_code: 'KEEPME', organizer_token: 'tok' });
         const { result } = renderHook(() => useTvRoom());
         await act(async () => { await result.current.host('housie'); });
@@ -129,6 +137,66 @@ describe('useTvRoom', () => {
         // guests may still be mid-join.
         expect(result.current.roomCode).toBe('KEEPME');
         expect(result.current.error).toMatch(/reconnect/i);
+    });
+
+    it('reconnects the organizer socket after a transient drop', async () => {
+        vi.useFakeTimers();
+        mockCreateRoom({ room_code: 'TVROOM', organizer_token: 'tv-token' });
+        const { result } = renderHook(() => useTvRoom());
+        await act(async () => { await result.current.host('housie'); });
+        const firstSocket = FakeSocket.last!;
+
+        act(() => { firstSocket.onclose?.(); });
+        expect(result.current.error).toMatch(/reconnect/i);
+
+        await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+        const secondSocket = FakeSocket.last!;
+        expect(secondSocket).not.toBe(firstSocket);
+        expect(secondSocket.url).toContain('/ws/TVROOM/');
+
+        await act(async () => { secondSocket.onopen?.(); });
+        expect(JSON.parse(secondSocket.sent[0])).toEqual({ type: 'AUTH', token: 'tv-token' });
+        expect(result.current.error).toBe('');
+    });
+
+    it('does not reconnect after the host deliberately leaves the TV room', async () => {
+        vi.useFakeTimers();
+        mockCreateRoom({ room_code: 'QUITME', organizer_token: 'tok' });
+        const { result } = renderHook(() => useTvRoom());
+        await act(async () => { await result.current.host('quiz'); });
+        const sock = FakeSocket.last!;
+
+        act(() => { result.current.leave(); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+
+        expect(sock.closed).toBe(true);
+        expect(FakeSocket.last).toBe(sock);
+        expect(result.current.status).toBe('idle');
+    });
+
+    it('closes the previous organizer socket when opening a replacement room', async () => {
+        let createRoomCalls = 0;
+        globalThis.fetch = vi.fn((url: string) => {
+            if (!String(url).includes('/room/create')) {
+                return Promise.reject(new Error(`unexpected fetch: ${url}`));
+            }
+            createRoomCalls += 1;
+            return createRoomCalls === 1
+                ? roomResponse({ room_code: 'FIRST1', organizer_token: 'tok-1' })
+                : roomResponse({ room_code: 'SECOND2', organizer_token: 'tok-2' });
+        }) as unknown as typeof fetch;
+        const { result } = renderHook(() => useTvRoom());
+
+        await act(async () => { await result.current.host('housie'); });
+        const firstSocket = FakeSocket.last!;
+
+        await act(async () => { await result.current.host('bingo'); });
+        const secondSocket = FakeSocket.last!;
+
+        expect(firstSocket.closed).toBe(true);
+        expect(secondSocket).not.toBe(firstSocket);
+        expect(secondSocket.url).toContain('/ws/SECOND2/');
+        expect(result.current.roomCode).toBe('SECOND2');
     });
 
     it('leave clears the room and closes the socket', async () => {
