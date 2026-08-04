@@ -70,7 +70,16 @@ export async function createRoomViaApi(
   };
 }
 
-export async function openOrganizerFromRoom(page: Page, room: LiveRoom) {
+export interface OpenOrganizerOptions {
+  /**
+   * Pass-and-play rooms (SPEC-PASS-AND-PLAY) never render a lobby — the whole point is that the
+   * other players have no device, so a room code and QR would be misleading. `ROOM` state shows
+   * the seat roster instead, and waiting for `.room-code` would hang for the full timeout.
+   */
+  readyLocator?: string;
+}
+
+export async function openOrganizerFromRoom(page: Page, room: LiveRoom, options: OpenOrganizerOptions = {}) {
   await page.addInitScript((session) => {
     window.localStorage.setItem('localplay_organizer_session', JSON.stringify(session));
   }, {
@@ -80,7 +89,15 @@ export async function openOrganizerFromRoom(page: Page, room: LiveRoom) {
     contentId: room.contentId,
     savedAt: Date.now(),
   });
-  await page.goto('/');
+  if (options.reloadOnly) {
+    await page.reload();
+  } else {
+    await page.goto('/');
+  }
+  if (options.readyLocator) {
+    await expect(page.locator(options.readyLocator)).toBeVisible({ timeout: 20_000 });
+    return;
+  }
   await expect(page.locator('.room-code')).toHaveText(room.roomCode, { timeout: 20_000 });
 }
 

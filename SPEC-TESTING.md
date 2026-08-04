@@ -125,6 +125,28 @@ rather than hand-listing games, so a new game is covered the moment it ships. Pe
 3. Its minimum-player gate behaves.
 4. Rules metadata resolves.
 
+**BUILT (2026-08-04): `frontend/e2e/all-games.spec.ts`.** Two tests per catalog game —
+`catalog · <id>` (rules payload well-formed, picker tile present, Rules modal renders the catalog's
+own title) and `play · <id>` (room created, min-player gate refuses Start below the minimum, first
+playable screen renders). The game list comes from `GET /catalog` via top-level await, so there is
+no hardcoded catalog anywhere in the spec — the guard in §5 fails if one appears.
+
+    npm run test:e2e:all-games         # L3, backend :9100 + vite :9200
+    npm run test:e2e:all-games:gamma   # L4
+
+Per-game exceptions (prepared content, settle timings, waivers) live in `frontend/e2e/game-coverage.json`,
+which is an exception list, never a catalog. **Do not point this suite at prod** — it creates a room
+per game; §2/§3 own the prod path.
+
+Two things this suite had to learn the hard way, both worth knowing before touching it:
+- **Rooms must be handed back.** `MAX_ROOMS` is 50 and `ROOM_TTL_SECONDS` is 1800, so a 38-game run
+  leaves 38 rooms squatting and the next run reports 429 for two thirds of the catalog. There is no
+  REST endpoint for it, so teardown speaks the organizer socket: `AUTH` then `CANCEL_GAME`.
+- **Local runs need their own `DB_DIR`.** With a shared `backend/data/`, a concurrent `pytest` run
+  reset wallets mid-suite and four games failed with "insufficient balance" on wallets that had been
+  created seconds earlier with the full signup bonus. Same symptom as a real economy bug, entirely
+  an artefact of the shared file.
+
 **L5 (prod)** — §2 and §3.
 
 **L6 (visual)** — Playwright screenshots at the four store viewports. Mask volatile regions (room
@@ -136,6 +158,28 @@ A test that fails when a catalog game has **no** e2e coverage. This is what make
 self-maintaining: adding a game without a test breaks the build rather than quietly shipping
 untested. Allow an explicit, commented waiver list for genuinely untestable cases (e.g. anything
 needing a real camera) — a waiver is a decision, an omission is an accident.
+
+**BUILT (2026-08-04): `backend/tests/test_e2e_game_coverage.py`.** pytest, not vitest, because the
+catalog is backend-authoritative: `game_catalog.py` is the source and `frontend/src/gameModes.ts` is
+a mirror, so a vitest guard reading the mirror would be blind to exactly the drift that shipped the
+occasion bingos broken. pytest imports `GAME_CATALOG` in-process and runs in the same commit that
+adds a game.
+
+Since the Playwright suite covers every game automatically, "no coverage" cannot mean "no test was
+written" — it means **not drivable**. So the guard checks drivability preconditions per game and
+requires a waiver for anything that fails one:
+
+| Check | Catches |
+|---|---|
+| `game_type ∈ SUPPORTED_ROOM_GAME_TYPES` | variant ids that no room can be created for |
+| rules payload has title/summary/sections/min-players | the `catalog · <id>` leg silently having nothing to assert |
+| a `GameModeConfig` exists in `gameModes.ts` | the occasion-bingo failure: in the catalog, absent from the picker |
+| `players.min ≤ max_players` (8) | a game the suite cannot field enough players for |
+| `interaction ∈ {default, pass_and_play}` | a NEW interaction model the suite has never been taught |
+| no catalog id appears as a literal in the spec | someone "fixing" a new game by hardcoding it |
+| waivers are non-stale, reasoned, and carry `revisit_when` | permanent-by-accident waivers |
+
+One waiver today: `photo_clue` play-through (real camera). Its catalog leg and room creation still run.
 
 ## 6. Known constraints, honestly
 

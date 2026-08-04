@@ -1,0 +1,130 @@
+{
+  "_about": [
+    "Coverage registry for e2e/all-games.spec.ts and backend/tests/test_e2e_game_coverage.py.",
+    "",
+    "This file is the ONLY hand-maintained list in the 'every game is playable' suite, and it is",
+    "deliberately an EXCEPTION list, never a catalog. all-games.spec.ts enumerates GET /catalog at",
+    "load time, so a new game is played automatically the moment it ships; nothing here has to be",
+    "touched for that to happen. Entries exist only where a game cannot be driven by the generic",
+    "path, and each one is a decision with a reason attached.",
+    "",
+    "JSON rather than TypeScript because two languages read it: the Playwright suite (which drives",
+    "the browser) and the pytest guard (which owns the backend catalog and therefore has to be the",
+    "thing that fails when a game is added without coverage). A .ts module would leave the guard",
+    "regex-parsing TypeScript from Python."
+  ],
+
+  "_waiver_schema": {
+    "reason": "Required, >= 30 chars. WHY the suite structurally cannot drive this game.",
+    "revisit_when": "Required. The condition under which this waiver should be deleted.",
+    "still_asserted": "Optional. What the suite DOES still check for this game, so the waiver is not read as 'zero coverage'."
+  },
+
+  "waivers": {
+    "photo_clue": {
+      "reason": "The player leg needs a real camera: the submit step is a getUserMedia capture, and Chromium's fake video device produces a frame the image pipeline rejects, so no automated player can complete a round. SPEC-TESTING §6 records this as a permanent waiver rather than a gap.",
+      "revisit_when": "The photo submit path accepts an uploaded file (not only a live capture) in test builds, or a deterministic fake-camera fixture lands.",
+      "still_asserted": "play-through is waived; the catalog leg (picker tile + rules modal) and room creation still run, so a broken photo_clue catalog entry is still caught."
+    }
+  },
+
+  "_plan_schema": {
+    "_keyed_by": "Catalog game id (NOT game_type) so the four occasion bingos can each carry their own deck while sharing the bingo runtime.",
+    "content": "Declarative prepared-content step run before /room/create. {endpoint, body, id_field, room_field}. `body.deck_prefix` expands to a 24-item deterministic deck.",
+    "room_body": "Extra fields merged into the /room/create body.",
+    "settle_ms": "Extra wait after the game starts, before the first-screen assertion. Per-game because there is no universal 'game started' selector across 38 engines.",
+    "expect_button": "Accessible name of a button that only the running game renders. Stronger than the generic not-lobby/not-blank check where one exists.",
+    "expect_testid": "data-testid that only the running game renders."
+  },
+
+  "plans": {
+    "housie": {
+      "_why": "Quick-start defaults to caller_mode 'manual' (main.py _sanitize_housie_game). Manual is a real product mode and the caller screen renders fine, but 'auto' also proves the auto-caller loop survived deploy, which is the part that silently breaks.",
+      "content": {
+        "endpoint": "/housie/create",
+        "body": { "game_title": "QA Housie", "caller_mode": "auto", "auto_interval_seconds": 3 },
+        "id_field": "housie_id",
+        "room_field": "housie_id"
+      },
+      "settle_ms": 6000,
+      "expect_button": "Call Next"
+    },
+    "bingo": {
+      "_why": "Custom Bingo has no default deck worth asserting on; a deterministic 24-item deck makes the board reproducible.",
+      "content": {
+        "endpoint": "/bingo/create",
+        "body": { "game_title": "QA Bingo", "deck_prefix": "starter", "caller_mode": "manual" },
+        "id_field": "bingo_id",
+        "room_field": "bingo_id"
+      },
+      "expect_button": "Call Next"
+    },
+    "baby_bingo": {
+      "_why": "Occasion bingos are catalog VARIANTS: game_type is 'bingo' and /room/create rejects game_type 'baby_bingo' (correct behaviour). The variant identity lives in its deck, so each one gets its own deck here. These four are exactly the games that shipped with zero e2e coverage.",
+      "content": {
+        "endpoint": "/bingo/create",
+        "body": { "game_title": "QA Baby Bingo", "deck_prefix": "baby", "caller_mode": "manual" },
+        "id_field": "bingo_id",
+        "room_field": "bingo_id"
+      },
+      "expect_button": "Call Next"
+    },
+    "wedding_bingo": {
+      "content": {
+        "endpoint": "/bingo/create",
+        "body": { "game_title": "QA Wedding Bingo", "deck_prefix": "wedding", "caller_mode": "manual" },
+        "id_field": "bingo_id",
+        "room_field": "bingo_id"
+      },
+      "expect_button": "Call Next"
+    },
+    "holiday_bingo": {
+      "content": {
+        "endpoint": "/bingo/create",
+        "body": { "game_title": "QA Holiday Bingo", "deck_prefix": "holiday", "caller_mode": "manual" },
+        "id_field": "bingo_id",
+        "room_field": "bingo_id"
+      },
+      "expect_button": "Call Next"
+    },
+    "road_trip_bingo": {
+      "content": {
+        "endpoint": "/bingo/create",
+        "body": { "game_title": "QA Road Trip Bingo", "deck_prefix": "roadtrip", "caller_mode": "manual" },
+        "id_field": "bingo_id",
+        "room_field": "bingo_id"
+      },
+      "expect_button": "Call Next"
+    },
+    "impostor": {
+      "_why": "Pass-and-play (SPEC-PASS-AND-PLAY §2): ZERO connected players by design, seats are typed by the host. Any gate based on connected players never fires. The suite generates seat_names from config_schema.players.min, so this stays catalog-driven.",
+      "_why_pass_screen": "The FIRST playable screen is the pass screen ('Pass the phone to Maya' + 'I'm ready'), not the privacy gate — the gate mounts only after the first player accepts the phone. Asserting privacy-gate-shield failed against a perfectly healthy game.",
+      "expect_testid": "pass-screen",
+      "settle_ms": 1000
+    },
+    "drawing": {
+      "_why": "The host screen is 'Drawer: X / Clue: ___' and the round takes a few seconds to open (see store-breadth.spec.ts).",
+      "settle_ms": 8000
+    },
+    "find_someone": {
+      "_why": "Check-in style game; the first board takes a moment to populate (store-breadth uses 6s).",
+      "settle_ms": 6000
+    },
+    "musical_chairs": {
+      "_why": "Loads audio loops before the first round screen settles.",
+      "settle_ms": 6000
+    }
+  },
+
+  "defaults": {
+    "settle_ms": 3500,
+    "max_players": 8
+  },
+
+  "_max_players_note": [
+    "max_players is the ceiling on how many real browser contexts the suite will spin up for one",
+    "game. Mafia's minimum is 6, so 8 leaves headroom. A future game with a higher minimum than",
+    "this is genuinely un-runnable by the suite: the pytest guard fails on it and forces either a",
+    "raise here or an explicit waiver."
+  ]
+}
