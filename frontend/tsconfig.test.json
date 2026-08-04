@@ -1,0 +1,52 @@
+{
+  /*
+   * Typechecking for test code: vitest unit tests AND the Playwright suites under e2e/.
+   *
+   * Why this is a separate project rather than folded into tsconfig.app.json:
+   *
+   *   1. e2e/ was previously checked by NOTHING. tsconfig.app.json is `include: ["src"]`, so all 30
+   *      files under e2e/ were invisible to `npm run build`. That hid 7 real type errors, including a
+   *      dead `options.reloadOnly` branch in liveGameHarness.ts that could never have run.
+   *   2. Test code legitimately needs Node types (readFileSync, Buffer, process). App code must NOT
+   *      have them — with "node" in the app project's `types`, `process.env.FOO` in a component would
+   *      typecheck happily and then be undefined in the browser. Keeping the two apart makes that
+   *      mistake a compile error where it belongs.
+   *
+   * tsconfig.app.json therefore excludes test files, and this project picks them up.
+   */
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    /* node: fs/Buffer in tests. vite/client: import.meta.env in imported app modules.
+       vitest/globals + jest-dom: describe/it/expect and toBeInTheDocument. */
+    "types": ["node", "vite/client", "vitest/globals", "@testing-library/jest-dom"],
+    "skipLibCheck": true,
+
+    /* Bundler mode — mirrors tsconfig.app.json */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting — kept as strict as the app project. noUnusedLocals/Parameters earn their keep:
+       enabling this project immediately found two unused bindings in the e2e specs. */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": [
+    "e2e",
+    "src/__tests__",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/setupTests.ts"
+  ]
+}

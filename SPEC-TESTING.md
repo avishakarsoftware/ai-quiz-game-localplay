@@ -320,12 +320,56 @@ mutation-tested to prove it actually fails:
   site — this exact bug passed the first version of the test);
 - no shim rule exists for a class nobody uses.
 
-### 8b. `frontend/e2e/` is not typechecked
+### 8b. `frontend/e2e/` is not typechecked — FIXED 2026-08-04
 
-`tsconfig.app.json` has `include: ["src"]`, so nothing under `e2e/` is ever type-checked — and a
-type error there is invisible to `npm run build`. One is currently live in `liveGameHarness.ts`
-(`options.reloadOnly` against a type that no longer has it). Harmless at runtime, but the whole
-Playwright layer has no type safety. Compounds the fact that bare `npx tsc --noEmit` checks nothing.
+`tsconfig.app.json` was `include: ["src"]`, so none of the 30 files under `e2e/` was ever
+type-checked, and a type error there was invisible to `npm run build`.
+
+**Two separate problems, both now fixed.**
+
+**(1) `npx tsc --noEmit` checks NOTHING in this repo.** `tsconfig.json` has `files: []` and only
+project references, so a bare invocation has no inputs and exits 0 on any tree. Verified by dropping
+`const x: number = "str"` into `src/` — `tsc --noEmit` reported nothing; `tsc -b` caught it. Any
+"typecheck passes" claim from a bare `tsc` is worthless. **The gate is `tsc -b`**, which is what
+`npm run build` runs.
+
+**(2) Nothing covered `e2e/`.** Now there is a third project, `tsconfig.test.json`, covering `e2e/` +
+`src/__tests__` + `*.test.ts(x)`, referenced from the solution file. `tsconfig.app.json` gained a
+matching `exclude`, which is deliberate and load-bearing: test code needs Node types (`readFileSync`,
+`Buffer`), and app code must NOT have them, or `process.env.FOO` in a component would typecheck and
+then be `undefined` in the browser. Both directions are verified — an error injected into
+`e2e/liveGameHarness.ts` now fails the build, and `process` in `src/config.ts` still fails to compile.
+
+Turning it on found **7 real errors**, all fixed:
+- `liveGameHarness.ts` branched on `options.reloadOnly`, a property its own options interface never
+  declared. No caller ever passed it, so `page.reload()` was unreachable — dead code that could not
+  run, and could not be seen. Branch removed.
+- `bingo-authoring.spec.ts` ×4: bodies captured inside `page.route` handlers. `JSON.parse` returns
+  `any`, which narrows the captured `let` to its *declared* (nullable) type, and at the assertion site
+  TS still thinks it is `null`, so `body?.deck` resolves to `never`. Now read via a `capturedDeck()`
+  helper that also turns "route never fired" into a clear message instead of a bare
+  "cannot read properties of undefined".
+- two unused bindings (`testInfo`, `liveApiHeaders`) — `noUnusedLocals` earning its keep immediately.
+
+Guarded by `src/__tests__/typecheckCoverage.test.ts` (3 tests, each mutation-tested): every `.ts(x)`
+file under `src/` and `e2e/` is claimed by some project; all three projects are referenced; and no
+npm script runs a bare `tsc`/`tsc --noEmit`.
+
+### 8b-2. Screenshot baselines that nothing ran — FIXED 2026-08-04
+
+Found while verifying 8b. `scripts/visual-regression.sh` ran **only** `visual-regression.spec.ts`,
+but two other specs also call `toHaveScreenshot`: `bingo-authoring` (2 baselines) and `drawing-game`
+(2 baselines). Those 4 were never exercised by `npm run test:e2e:visual`, and **both specs were
+failing on master** against baselines last refreshed 2026-05-31 — the Bingo one off by 62px of
+height. Invisible for 2+ months, because the command people actually run genuinely passed.
+
+Confirmed the failures pre-dated the Tailwind colour work by re-running with the old `index.css`:
+still failing. Reviewed both renderings (correct), refreshed the baselines, and added the two specs
+to a `VISUAL_SPECS` array in the runner — the visual suite is now **16 tests, not 10**.
+`src/__tests__/visualSuiteCoverage.test.ts` fails if a screenshot-bearing spec is missing from that
+array, or if a `-snapshots` directory exists for a spec the runner does not execute.
+
+A baseline nobody runs is worse than no baseline: it reads as coverage and provides none.
 
 ### 8c. The shared dev SQLite file makes local suites interfere
 

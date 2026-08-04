@@ -24,5 +24,13 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src"]
+  /* App code only — deliberately NOT the test files. They need Node types (fs, Buffer), and letting
+     those into this project would make `process.env.FOO` in a component compile fine and then be
+     undefined in the browser. Tests and e2e/ are checked by tsconfig.test.json instead. */
+  "include": ["src"],
+  "exclude": [
+    "src/__tests__",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
+  ]
 }

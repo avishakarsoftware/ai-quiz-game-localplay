@@ -6,7 +6,7 @@ const PNG_1X1 = Buffer.from(
 );
 
 test.describe('Bingo gamma live flow', () => {
-  test('creates a custom Bingo room with text and an uploaded image on gamma', async ({ page, request }, testInfo) => {
+  test('creates a custom Bingo room with text and an uploaded image on gamma', async ({ page, request }) => {
     test.skip(!String(process.env.PLAYWRIGHT_BASE_URL || '').includes('gamma'), 'live gamma test only');
 
     const mediaStatus = await request.get('/media/status');

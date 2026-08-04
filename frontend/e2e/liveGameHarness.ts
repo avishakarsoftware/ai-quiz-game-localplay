@@ -89,11 +89,7 @@ export async function openOrganizerFromRoom(page: Page, room: LiveRoom, options:
     contentId: room.contentId,
     savedAt: Date.now(),
   });
-  if (options.reloadOnly) {
-    await page.reload();
-  } else {
-    await page.goto('/');
-  }
+  await page.goto('/');
   if (options.readyLocator) {
     await expect(page.locator(options.readyLocator)).toBeVisible({ timeout: 20_000 });
     return;

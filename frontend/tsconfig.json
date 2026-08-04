@@ -1,7 +1,14 @@
 {
+  /*
+   * Solution file. NOTE: because `files` is empty, a bare `tsc --noEmit` checks NOTHING AT ALL — it
+   * silently exits 0 on a tree full of type errors (verified: a `const x: number = "str"` in src/ is
+   * not reported). Always use `tsc -b`, which is what `npm run build` runs, and what
+   * src/__tests__/typecheckCoverage.test.ts asserts covers every source directory.
+   */
   "files": [],
   "references": [
     { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.test.json" }
   ]
 }

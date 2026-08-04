@@ -6,6 +6,29 @@ const PNG_1X1 = Buffer.from(
   'base64',
 );
 
+/**
+ * Read a request body captured by a `page.route` handler.
+ *
+ * The handler assigns to a `let` declared as `T | null`, and TS's control-flow analysis cannot see
+ * that the route fired, so at the assertion site the variable is still narrowed to `null` — making
+ * `captured?.deck` resolve to `never`. Going through this helper both satisfies the checker and
+ * upgrades the failure: without it, `(body?.deck as Array<X>)[0]` on an uncaptured body throws a
+ * bare "cannot read properties of undefined" instead of saying the request never happened.
+ */
+function capturedBody(
+  body: Record<string, unknown> | null,
+  label: string,
+): Record<string, unknown> {
+  if (!body) throw new Error(`${label} was never captured — the route handler did not fire`);
+  return body;
+}
+
+function capturedDeck(body: Record<string, unknown> | null, label: string) {
+  const deck = capturedBody(body, label).deck;
+  if (!Array.isArray(deck)) throw new Error(`${label}.deck is not an array: ${JSON.stringify(deck)}`);
+  return deck as Array<Record<string, unknown>>;
+}
+
 async function box(locator: Locator) {
   const value = await locator.boundingBox();
   expect(value).not.toBeNull();
@@ -60,13 +83,17 @@ test.describe('Bingo authoring', () => {
     let roomCreateBody: Record<string, unknown> | null = null;
 
     await page.route('**/bingo/create', async (route) => {
-      bingoCreateBody = JSON.parse(route.request().postData() || '{}');
+      // Read the parsed body through a local const, not the captured `let`. TS assigns `any` from
+      // JSON.parse, which narrows the captured variable to its *declared* type (still nullable), so
+      // `bingoCreateBody.deck` is a type error even directly after the assignment.
+      const parsed = JSON.parse(route.request().postData() || '{}') as Record<string, unknown>;
+      bingoCreateBody = parsed;
       await route.fulfill({
         json: {
           bingo_id: 'bingo-e2e',
           game: {
             game_title: 'Baby Shower Bingo',
-            deck: bingoCreateBody.deck,
+            deck: parsed.deck,
             patterns: [],
           },
         },
@@ -142,7 +169,7 @@ test.describe('Bingo authoring', () => {
       free_center: true,
       claim_requires_latest_call: false,
     });
-    expect((bingoCreateBody?.deck as Array<Record<string, unknown>>)[0]).toMatchObject({
+    expect(capturedDeck(bingoCreateBody, 'bingoCreateBody')[0]).toMatchObject({
       kind: 'image',
       image_asset_id: 'asset_bingo_1',
       image_url: '/media/asset_bingo_1',
@@ -189,11 +216,12 @@ test.describe('Bingo authoring', () => {
     });
 
     await page.route('**/bingo/generated-bingo-e2e', async (route) => {
-      updateBody = JSON.parse(route.request().postData() || '{}');
+      const parsed = JSON.parse(route.request().postData() || '{}') as Record<string, unknown>;
+      updateBody = parsed;
       await route.fulfill({
         json: {
           bingo_id: 'generated-bingo-e2e',
-          game: { ...updateBody, deck: updateBody.deck },
+          game: { ...parsed, deck: parsed.deck },
         },
       });
     });
@@ -224,7 +252,7 @@ test.describe('Bingo authoring', () => {
       difficulty: 'medium',
       num_items: 30,
     });
-    expect((updateBody?.deck as Array<Record<string, unknown>>)[0]).toMatchObject({ display: 'Tiny shoes' });
+    expect(capturedDeck(updateBody, 'updateBody')[0]).toMatchObject({ display: 'Tiny shoes' });
     await expect.poll(() => roomCreateBody).toMatchObject({
       game_type: 'bingo',
       bingo_id: 'generated-bingo-e2e',

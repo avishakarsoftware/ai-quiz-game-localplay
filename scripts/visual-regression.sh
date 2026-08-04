@@ -106,12 +106,25 @@ echo -e "  Frontend: ${GREEN}ready${NC}"
 echo ""
 
 cd "$ROOT/frontend" || exit 1
+
+# EVERY spec that calls toHaveScreenshot must run here, or its baselines rot unnoticed.
+# Learned the hard way on 2026-08-04: this script ran only visual-regression.spec.ts, so the 4
+# baselines in bingo-authoring.spec.ts and drawing-game.spec.ts went 2+ months without being
+# exercised and both were failing on master — a stale baseline from 2026-05-31 against a UI that had
+# moved on. Nobody noticed because "the visual suite passes" was true and misleading.
+# src/__tests__/visualSuiteCoverage.test.ts fails if a screenshot spec is missing from this list.
+VISUAL_SPECS=(
+    e2e/visual-regression.spec.ts
+    e2e/bingo-authoring.spec.ts
+    e2e/drawing-game.spec.ts
+)
+
 # Dedicated output dir: Playwright wipes its outputDir on start, so sharing test-results/ with
 # another suite running concurrently destroys the expected/actual/diff images you need to review.
 VISUAL_SNAPSHOTS=1 \
 PLAYWRIGHT_BASE_URL="$BASE_URL" \
 LIVE_API_BASE_URL="$API_URL" \
-npx playwright test e2e/visual-regression.spec.ts --workers=1 --output=test-results-visual "$@"
+npx playwright test "${VISUAL_SPECS[@]}" --workers=1 --output=test-results-visual "$@"
 STATUS=$?
 
 echo ""

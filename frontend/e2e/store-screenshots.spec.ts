@@ -6,7 +6,6 @@ import {
   createRoomViaApi,
   deterministicQuiz,
   joinPlayers,
-  liveApiHeaders,
   liveDeviceId,
   openOrganizerFromRoom,
   postJson,

@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, type Dirent } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -39,7 +39,7 @@ const BASELINE_OCCURRENCES = 1452;
 const TOLERANCE = 40;   // small headroom so unrelated refactors aren't blocked
 
 function walk(dir: string): string[] {
-    return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((e: Dirent) => {
         const p = join(dir, e.name);
         if (e.isDirectory()) return e.name === '__tests__' ? [] : walk(p);
         return p.endsWith('.tsx') ? [p] : [];
