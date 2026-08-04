@@ -202,12 +202,13 @@ One waiver today: `photo_clue` play-through (real camera). Its catalog leg and r
 - **Playwright's default screenshot `threshold` (0.2) is too loose to notice a theme change.**
   With it, moving the Velvet accent from `#FF2E7A` to `#FF3E6A` diffed *nothing* across 18
   baselines. The visual suite pins `threshold: 0.02`.
-- **Tailwind utility classes are not compiled** (no `@tailwindcss/vite`/postcss plugin), in dev *and*
-  in the shipped build: `flex`, `flex-col`, `min-h-dvh` etc. resolve to nothing, so layout comes
-  from the hand-written CSS in `src/index.css`. Screenshots therefore look "wrong" in places (e.g.
-  the question countdown sits under the Q-counter instead of beside it) — that is the app as it
-  actually ships, and the baselines record it deliberately. Fixing Tailwind will diff every
-  baseline.
+- **Tailwind *layout* utility classes are not compiled** (no `@tailwindcss/vite`/postcss plugin), in
+  dev *and* in the shipped build: `flex`, `flex-col`, `min-h-dvh` etc. resolve to nothing, so layout
+  comes from the hand-written CSS in `src/index.css`. Screenshots therefore look "wrong" in places
+  (e.g. the question countdown sits under the Q-counter instead of beside it) — that is the app as it
+  actually ships, and the baselines record it deliberately. Enabling the plugin diffs 8 of 10 tests;
+  it was tried and reverted. The *colour* classes (`text-[--text-tertiary]` &c.) **are** live as of
+  2026-08-04 via hand-written shims — see §8a.
 
 ## 7. L6 visual regression — running it, and reviewing a diff
 
@@ -282,7 +283,7 @@ machine, and if a new OS/arch joins, add its baselines rather than loosening the
 
 Ranked by what they'd cost if left alone.
 
-### 8a. Tailwind utility classes are inert — needs a product decision, not a quick fix
+### 8a. Tailwind utility classes are inert — colours repaired, layout utilities still dead
 
 `tailwindcss@^4` is a devDependency and `src/index.css` starts with `@import "tailwindcss"`, but
 Tailwind v4 needs **either** `@tailwindcss/vite` **or** `@tailwindcss/postcss` and **neither is
@@ -293,12 +294,31 @@ Measured blast radius: **~1,452 utility occurrences across ~49 files, 77 distinc
 (`flex` ×193, `text-center` ×76, `mb-4` ×66 …). The app's real styling is the hand-written CSS in
 `index.css`, tuned to look right *without* them.
 
-**So "just enable Tailwind" is the DANGEROUS option**, not the safe one: it would apply ~1,450
-dormant declarations at once across nearly every screen. Two deliberate paths — (A) enable and
-repair the fallout screen by screen with a human reviewing screenshots, or (B) remove the import and
-dependency and strip the dead classes. Guarded meanwhile by
-`src/__tests__/tailwindNotCompiled.test.ts`, which fails if the dead-class count grows and tells you
-what to do if someone enables the plugin.
+**"Just enable Tailwind" is the DANGEROUS option**, and this is measured, not theoretical: it was
+tried on 2026-08-04 and reverted. Installing `@tailwindcss/vite` applied ~1,450 dormant declarations
+at once and diffed **8 of 10 visual baselines**, including type sizes on nearly every screen. That is
+a layout regression, not an improvement.
+
+**Resolved instead (option C, 2026-08-04):** only the **colour** classes were revived, via 14
+hand-written escaped rules at the end of `index.css`. Those **204 occurrences** across 15 classes
+were the subset whose deadness was a genuine visual bug — every `text-[--text-tertiary]` (×115) and
+`text-[--text-secondary]` (×51) painted full-strength body colour, so captions, hints and helper text
+had **no hierarchy at all**. Reviving them changed **0.03% of pixels and zero layout**; 6 baselines
+updated after review. Three of the classes turned out to reference variables that never existed
+(`--accent-magenta`, `--panel-border`, `--warning`) — those call sites were **fixed**, not shimmed,
+since shimming a typo just hides it.
+
+The remaining ~1,450 layout/spacing utilities are still inert and still dead code, so **the rule for
+new code is unchanged: do not add Tailwind utility classes.** Style with the hand-written CSS.
+
+`src/__tests__/tailwindNotCompiled.test.ts` guards all of it (4 tests) and each assertion has been
+mutation-tested to prove it actually fails:
+- the plugin is still absent, and the dead-class count is not growing;
+- every `[--var]` colour class used in `.tsx` has a matching shim rule;
+- every shim rule's **body** resolves a **declared** variable (a shim named `--text-tertiary` whose
+  body says `var(--text-tertiarry)` renders as the inherited colour while looking correct at the call
+  site — this exact bug passed the first version of the test);
+- no shim rule exists for a class nobody uses.
 
 ### 8b. `frontend/e2e/` is not typechecked
 

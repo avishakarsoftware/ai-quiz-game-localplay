@@ -7124,3 +7124,35 @@ body {
 .tv-sheet__reassure { font-size: 0.9rem; opacity: 0.8; }
 .tv-sheet__code { font-size: 1.1rem; letter-spacing: 0.08em; }
 .tv-sheet__error { color: var(--accent-danger, #ff6b6b); font-size: 0.95rem; }
+
+/* ── Arbitrary-value colour utilities (Tailwind syntax, hand-implemented) ─────────────────────
+   Tailwind is NOT compiled in this app (see src/__tests__/tailwindNotCompiled.test.ts). The
+   codebase nonetheless uses Tailwind's arbitrary-value syntax for colour ~204 times, and those
+   were silently doing nothing — `text-[--text-tertiary]` alone appears 115 times, so text meant to
+   sit back from its heading was rendering at full strength. That is lost design intent, not just
+   dead code.
+
+   Rather than enable Tailwind (which also applies ~1250 SIZING declarations and visibly shrinks
+   type across every screen — measured: 8 of 18 visual baselines change), these implement only the
+   COLOUR intent by hand. Escaped square brackets make the Tailwind class name a valid selector.
+
+   Only variables the theme actually defines are shimmed. Three usages referenced vars that never
+   existed (--accent-magenta, --panel-border, --warning) and were repointed at real ones in source.
+   If you add a new text-[--foo], add it here too or it will silently do nothing. */
+
+.text-\[--text-secondary\]  { color: var(--text-secondary); }
+.text-\[--text-tertiary\]   { color: var(--text-tertiary); }
+.text-\[--text-quaternary\] { color: var(--text-quaternary); }
+.text-\[--accent-primary\]  { color: var(--accent-primary); }
+.text-\[--accent-success\]  { color: var(--accent-success); }
+.text-\[--accent-warning\]  { color: var(--accent-warning); }
+.text-\[--accent-danger\]   { color: var(--accent-danger); }
+
+.bg-\[--accent-primary\]    { background-color: var(--accent-primary); }
+.bg-\[--accent-success\]    { background-color: var(--accent-success); }
+.bg-\[--bg-tertiary\]       { background-color: var(--bg-tertiary); }
+.bg-\[--text-tertiary\]     { background-color: var(--text-tertiary); }
+
+.border-\[--accent\]         { border-color: var(--accent); }
+.border-\[--accent-warning\] { border-color: var(--accent-warning); }
+.border-\[--border-primary\] { border-color: var(--border-primary); }

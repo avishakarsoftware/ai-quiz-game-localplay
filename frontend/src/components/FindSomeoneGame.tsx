@@ -126,10 +126,10 @@ export default function FindSomeoneGame({
                                     cell.marked || cell.free
                                         ? 'border-[--accent] bg-[rgba(247,43,126,0.22)]'
                                         : cell.confirmation_status === 'pending'
-                                            ? 'border-[--warning] bg-[rgba(255,196,87,0.12)]'
+                                            ? 'border-[--accent-warning] bg-[rgba(255,196,87,0.12)]'
                                             : cell.confirmation_status === 'denied'
                                                 ? 'border-[rgba(255,90,90,0.5)] bg-[rgba(255,90,90,0.12)]'
-                                                : 'border-[--panel-border] bg-[rgba(255,255,255,0.04)]'
+                                                : 'border-[--border-primary] bg-[rgba(255,255,255,0.04)]'
                                 }`}
                                 onClick={() => !cell.free && !cell.marked && setSelectedCell(cell)}
                                 disabled={cell.free || cell.marked || state.phase === 'PODIUM'}

@@ -204,7 +204,7 @@ export default function SimpleSocialGame({
                         {odd.prompt ? (
                             <>
                                 {odd.you_are_odd && (
-                                    <p className="text-[--accent-magenta] text-sm font-bold uppercase tracking-wide" data-testid="odd-question-you-are-odd">
+                                    <p className="text-[--accent-primary] text-sm font-bold uppercase tracking-wide" data-testid="odd-question-you-are-odd">
                                         Your question is different — blend in
                                     </p>
                                 )}
