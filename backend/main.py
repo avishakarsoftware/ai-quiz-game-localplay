@@ -252,11 +252,21 @@ def _get_client_ip(req: Request) -> str:
 
     Only trusts X-Forwarded-For / X-Real-IP when TRUST_PROXY_HEADERS is enabled,
     preventing attackers from spoofing their IP to bypass rate limits.
+
+    When trusting the headers, use the LAST X-Forwarded-For element, never the first.
+    nginx appends the address it actually saw via $proxy_add_x_forwarded_for, so with
+    a client-sent "X-Forwarded-For: fake1, fake2" the proxy forwards
+    "fake1, fake2, <real-ip>": the last element is the only one our own proxy wrote.
+    Taking [0] (the old behavior, REVIEW-2026-08 S1) let any client rotate identities
+    past every per-IP limiter — including the LLM and checkout limiters — by sending a
+    random leading entry per request. X-Real-IP is kept as a fallback because the
+    documented nginx config (SPEC-PLATFORM.md, DEPLOY.md) sets it authoritatively with
+    $remote_addr; it is only consulted when X-Forwarded-For is absent.
     """
     if config.TRUST_PROXY_HEADERS:
         forwarded = req.headers.get("x-forwarded-for", "")
         if forwarded:
-            return forwarded.split(",")[0].strip()
+            return forwarded.split(",")[-1].strip()
         real_ip = req.headers.get("x-real-ip")
         if real_ip:
             return real_ip.strip()

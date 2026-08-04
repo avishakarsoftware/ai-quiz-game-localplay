@@ -632,8 +632,13 @@ class TestDailyLimitRaceCondition:
 class TestClientIpDetection:
     """Fix 3: Rate limiter reads X-Forwarded-For behind proxy."""
 
-    def test_get_client_ip_from_x_forwarded_for(self):
-        """Should read X-Forwarded-For header when proxy headers are trusted."""
+    def test_get_client_ip_takes_the_proxy_appended_element(self):
+        """Take the LAST X-Forwarded-For element — the one nginx appended via
+        $proxy_add_x_forwarded_for. Everything left of it arrived from the client.
+
+        This test previously asserted [0] ("203.0.113.50" from "203.0.113.50, 10.0.0.1"),
+        i.e. it PINNED the spoofable behavior (REVIEW-2026-08 S1): any client could send
+        "X-Forwarded-For: <random>" and rotate identities past every per-IP limiter."""
         from main import _get_client_ip
         import config
 
@@ -644,7 +649,33 @@ class TestClientIpDetection:
         original = config.TRUST_PROXY_HEADERS
         config.TRUST_PROXY_HEADERS = True
         try:
-            assert _get_client_ip(FakeRequest()) == "203.0.113.50"
+            assert _get_client_ip(FakeRequest()) == "10.0.0.1"
+        finally:
+            config.TRUST_PROXY_HEADERS = original
+
+    def test_get_client_ip_spoofed_leading_entries_do_not_rotate_identity(self):
+        """A client sending fake X-Forwarded-For entries must resolve to the SAME ip every
+        time (the proxy-appended one), otherwise per-IP rate limits are one header away
+        from useless."""
+        from main import _get_client_ip
+        import config
+
+        def req_with(xff):
+            class FakeRequest:
+                headers = {"x-forwarded-for": xff}
+                client = type('obj', (object,), {'host': '127.0.0.1'})()
+            return FakeRequest()
+
+        original = config.TRUST_PROXY_HEADERS
+        config.TRUST_PROXY_HEADERS = True
+        try:
+            # nginx appends the real address (198.51.100.7) after whatever the client sent
+            seen = {
+                _get_client_ip(req_with("1.1.1.1, 198.51.100.7")),
+                _get_client_ip(req_with("2.2.2.2, 198.51.100.7")),
+                _get_client_ip(req_with("3.3.3.3, 9.9.9.9, 198.51.100.7")),
+            }
+            assert seen == {"198.51.100.7"}, f"identity rotated: {seen}"
         finally:
             config.TRUST_PROXY_HEADERS = original
 
