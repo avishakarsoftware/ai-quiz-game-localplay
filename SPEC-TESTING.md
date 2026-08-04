@@ -149,8 +149,9 @@ Two things this suite had to learn the hard way, both worth knowing before touch
 
 **L5 (prod)** — §2 and §3.
 
-**L6 (visual)** — Playwright screenshots at the four store viewports. Mask volatile regions (room
-codes, timers, spark balances) or every run diffs. Snapshots live beside the spec.
+**L6 (visual)** — Playwright screenshot diffing. Mask volatile regions (room codes, timers, spark
+balances) or every run diffs. Snapshots live beside the spec. **Built — see §7 for the suite, what
+it masks, and how to review and accept a diff.**
 
 ## 5. Guard: coverage cannot silently regress
 
@@ -194,3 +195,85 @@ One waiver today: `photo_clue` play-through (real camera). Its catalog leg and r
 - **Gamma has no Stripe keys**, so `/webhook/stripe` is 503 there and 400 on prod. An L4/L5 shared
   assertion must account for that difference.
 - **Photo games can't be fully automated** (real camera). Waiver, documented.
+- **`test.use({ reducedMotion: 'reduce' })` does not reach the `page` fixture** on Playwright 1.60
+  (verified: `matchMedia` still reports no-preference). `page.emulateMedia()` and
+  `browser.newContext({ reducedMotion })` both work. This silently left the podium fireworks canvas
+  running under the visual suite, sprinkling ~1,500 random pixels into a "stable" baseline.
+- **Playwright's default screenshot `threshold` (0.2) is too loose to notice a theme change.**
+  With it, moving the Velvet accent from `#FF2E7A` to `#FF3E6A` diffed *nothing* across 18
+  baselines. The visual suite pins `threshold: 0.02`.
+- **Tailwind utility classes are not compiled** (no `@tailwindcss/vite`/postcss plugin), in dev *and*
+  in the shipped build: `flex`, `flex-col`, `min-h-dvh` etc. resolve to nothing, so layout comes
+  from the hand-written CSS in `src/index.css`. Screenshots therefore look "wrong" in places (e.g.
+  the question countdown sits under the Q-counter instead of beside it) — that is the app as it
+  actually ships, and the baselines record it deliberately. Fixing Tailwind will diff every
+  baseline.
+
+## 7. L6 visual regression — running it, and reviewing a diff
+
+**Suite**: `frontend/e2e/visual-regression.spec.ts` · baselines in
+`frontend/e2e/visual-regression.spec.ts-snapshots/` · capture-time CSS in
+`frontend/e2e/visual-stabilize.css` · runner `scripts/visual-regression.sh`.
+
+```bash
+cd frontend
+npm run test:e2e:visual            # compare against committed baselines
+npm run test:e2e:visual:update     # accept new baselines (only after reviewing the diff)
+npm run test:e2e:visual -- --project chromium-desktop   # extra args pass through to playwright
+```
+
+The runner owns its own stack — a throwaway backend on **:9310** with a temp SQLite dir, and a vite
+dev server on **:5199** — so it can neither touch your dev database nor collide with `make dev`
+(9100/9200). **Never point this at gamma or prod**: they generate quiz text with an LLM, so no
+question screen there can be a stable baseline.
+
+9 surfaces × 2 viewports (`chromium-desktop` 1440×1000, `chromium-mobile` Pixel 5) = 18 baselines:
+catalog, TV launcher (play-now + all-games), Get Sparks paywall, settings drawer, lobby with QR,
+organizer question, player question, podium.
+
+**What is masked, and why it is deliberately small.** A mask is a hole in coverage, so volatile
+content is *pinned* wherever it can be and masked only when it genuinely cannot: room code, the
+join URL that contains it, the join QR, countdown timers, the spark balance, podium scores (speed-
+weighted), and Google's remotely-drawn sign-in button (its script is blocked, so a run needs no
+third-party network). Everything else is made deterministic instead — sequential joins for a stable
+roster, seeded `Math.random` for avatars, an answer plan whose *ranking* cannot depend on speed, and
+`reducedMotion` so canvas effects never run. Masked boxes whose text width varies get their width
+pinned by `visual-stabilize.css`, otherwise the diff just moves to the edge of the pink rectangle.
+
+**Measured noise floor: 0 pixels.** Two consecutive runs are byte-identical on every surface, so the
+suite runs with `maxDiffPixels: 250` and `threshold: 0.02`.
+
+### Reviewing a failure
+
+1. Read *which* surface failed. The test name tells you the screen and the project tells you the
+   viewport.
+2. Open the report and look at the three images side by side:
+   ```bash
+   cd frontend && npx playwright show-report
+   ```
+   Artifacts also land in `frontend/test-results-visual/<test>/` as
+   `<name>-expected.png`, `-actual.png`, `-diff.png`.
+3. Classify it — this is the only decision that matters:
+   - **Intended change** (you edited the theme, a layout, or copy): accept it, see below.
+   - **Regression**: fix the code. Do not update the baseline.
+   - **Noise** (the same surface diffs on a re-run with no code change): the masking is wrong —
+     find the volatile region and pin or mask it. Raising `maxDiffPixels` / `threshold` is how a
+     visual suite becomes the thing everyone ignores; the env overrides
+     (`VISUAL_MAX_DIFF_PIXELS=0`, `VISUAL_PIXEL_THRESHOLD=…`) exist to *measure* noise, not to hide
+     it.
+4. Confirm it is not flake before accepting anything: `npm run test:e2e:visual` twice in a row.
+   A suite that passes once is not passing.
+
+### Accepting a new baseline
+
+```bash
+cd frontend
+npm run test:e2e:visual:update
+npm run test:e2e:visual            # must now be green with no --update
+git add e2e/visual-regression.spec.ts-snapshots
+```
+
+Commit the PNGs **in the same commit as the change that caused them**, and say in the message which
+surfaces moved and why. A baseline update with no explanation is indistinguishable from a regression
+someone rubber-stamped. Baselines are per-platform (`…-darwin.png`): regenerate on the same kind of
+machine, and if a new OS/arch joins, add its baselines rather than loosening the tolerances.

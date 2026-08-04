@@ -1,0 +1,56 @@
+/*
+ * Screenshot-time stylesheet for the L6 visual regression suite.
+ *
+ * Passed to Playwright as `toHaveScreenshot({ stylePath })`, so it is applied ONLY while a
+ * screenshot is being taken — the running app is never modified, and nothing here can leak
+ * into the assertions the functional e2e specs make.
+ *
+ * Its one job is WIDTH PINNING for the regions the suite masks.
+ *
+ * Why that matters: a Playwright `mask` paints a solid box over the *element's own box*. If the
+ * element is shrink-to-fit and its text is volatile ("9s" vs "60s", "8 sparks" vs "110 sparks",
+ * "978" vs "1204"), the box itself changes size between runs and the mask stops being a mask —
+ * the diff just moves to the edge of the pink rectangle. Pinning those boxes to a fixed width
+ * makes the masked region byte-identical run to run, which is the difference between a suite
+ * people trust and noise people learn to ignore.
+ *
+ * Motion is handled elsewhere and deliberately not here:
+ *   - CSS animations/transitions  -> `animations: 'disabled'` on the assertion
+ *   - text caret                  -> `caret: 'hide'` on the assertion
+ *   - canvas/rAF effects (podium fireworks, celebration bursts) -> `reducedMotion: 'reduce'` on
+ *     the browser context; the app checks that media query itself and skips those effects.
+ */
+
+/* Spark balance badge (fixed, right-anchored, so it grows leftwards). Balance changes with the
+   daily bonus, room spend, and config, and its width changes with the digit count. */
+.settings-spark-badge,
+.settings-spark-badge .quota-badge {
+    min-width: 118px !important;
+    justify-content: flex-end !important;
+}
+
+/* Countdown numbers on the organizer + player question screens ("60s" -> "9s"). */
+span.tabular-nums {
+    display: inline-block !important;
+    min-width: 3.6ch !important;
+    text-align: right !important;
+}
+
+/* Podium scores are speed-weighted, so the digit count is genuinely unpredictable.
+   6ch is wider than any realistic score and narrower than .podium-bar (80px), so pinning it
+   cannot shift the podium layout itself. */
+.podium-score {
+    display: inline-block !important;
+    width: 6ch !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+}
+
+/* Leaderboard rows (4th place and below) carry the same volatile scores. */
+.leaderboard-item > .font-bold {
+    display: inline-block !important;
+    width: 6ch !important;
+    text-align: right !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+}

@@ -478,7 +478,10 @@ export default function SettingsDrawer() {
                         ) : (
                             /* Web: Google GSI button + Apple button */
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', alignItems: 'center' }}>
-                                {GOOGLE_CLIENT_ID && <div ref={googleBtnRef} style={{ minHeight: 44 }} />}
+                                {/* Google renders its own button into this slot from its remote script, so its
+                                    pixels are outside our control — the visual regression suite masks it by
+                                    this test id rather than diffing Google's artwork. */}
+                                {GOOGLE_CLIENT_ID && <div ref={googleBtnRef} data-testid="google-signin-slot" style={{ minHeight: 44 }} />}
                                 {APPLE_CLIENT_ID && (
                                     <button
                                         onClick={handleAppleSignIn}
