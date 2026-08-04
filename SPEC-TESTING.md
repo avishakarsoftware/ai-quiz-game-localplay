@@ -371,17 +371,53 @@ array, or if a `-snapshots` directory exists for a spec the runner does not exec
 
 A baseline nobody runs is worse than no baseline: it reads as coverage and provides none.
 
-### 8c. The shared dev SQLite file makes local suites interfere
+### 8c. The shared dev SQLite file makes local suites interfere — FIXED 2026-08-04
 
-`backend/data/revelry.db` is shared by pytest, the local e2e suite, and `make dev`. Two agents
-running suites concurrently produced *four* "insufficient balance" failures that looked exactly like
-an economy bug and were pure cross-contamination, plus a genuine flake in
-`test_e2e.py::TestTokenEconomyE2E::test_history_scoped_to_wallet`, which asserts an **absolute row
-count** and so breaks whenever anything else writes. Give each suite its own `DB_DIR`; the visual
-runner already does.
+`backend/data/revelry.db` was shared by pytest, the local e2e suite, and `make dev`, because `DB_DIR`
+defaulted to `backend/data`. Two agents running suites concurrently produced *four* "insufficient
+balance" failures that looked exactly like an economy bug and were pure cross-contamination, plus a
+flake in `test_e2e.py::TestTokenEconomyE2E::test_history_scoped_to_wallet`, which asserts an
+**absolute row count** and so breaks whenever anything else writes. Running the tests also mutated
+the developer's own dev data.
 
-### 8d. `test_e2e.py` is flakier than documented
+Fixed with an autouse `isolate_test_database` fixture in `backend/tests/conftest.py`: every test gets
+its own `tmp_path` SQLite file. Five files already did this by hand (`test_auth`, `test_admin`,
+`test_money_rails`, `test_round1_fixes`, `test_wallet_identity`); **the other 76 did not**.
 
-Three consecutive runs on unmodified master: 20 pass (10.9s) → 1 fail (29.4s) → 3 fail (57.4s),
-runtime roughly doubling each time. 8c is one confirmed contributor. Do **not** bisect it one run
-per step — that has already produced a confidently wrong conclusion once.
+Two details are load-bearing:
+- **Replace `db._local` wholesale** with a fresh `threading.local()`. Connections are cached
+  thread-locally and `_get_conn()` reads `DB_PATH` only when it opens one, so patching the path alone
+  leaves an already-open handle to the old file.
+- **`db.init_db()` belongs in that fixture, not in `fund_test_wallet`.** `test_e2e.py` deliberately
+  overrides `fund_test_wallet` with a no-op (it wants the real token functions), so schema creation
+  living there never ran for that suite. This was invisible while the shared dev database was already
+  initialised; the moment each test got an empty file, all 20 e2e tests failed with
+  `no such table: wallets`.
+
+Verified: 1399 pass, and `backend/data/revelry.db` is byte-identical (same md5) before and after a
+full run. Cost is ~50s → ~60s.
+
+### 8d. `test_e2e.py` is flaky — much reduced 2026-08-04, NOT eliminated
+
+Was: three consecutive runs gave 20 pass (10.9s) → 1 fail (29.4s) → 3 fail (57.4s), runtime roughly
+doubling. 8c was one confirmed contributor; fixing it plus a missing `mafia_timer_task` cancellation
+in `_teardown_rooms` (Room creates **three** cancellable tasks, the teardown cancelled two) took the
+rate from **~1 in 6 to 1 in 25**, with runtime now pinned at 4.86–4.97s instead of doubling.
+
+**It is not fixed.** What is known about the residual:
+- always the same test, `TestExportImportE2E::test_generate_export_import_play`;
+- always a 15s stall in `recv_until` waiting for `QUESTION` with **no messages at all** arriving;
+- **0/10 failures when run in isolation** (and 0.05s there vs ~5s in-file);
+- ordering is deterministic — `pytest-randomly` is not installed — so this is *time-dependent
+  cross-test interference*, not an ordering dependency;
+- not the game's own question timer: `create_room` passes `time_limit=30`, longer than the 15s
+  receive timeout.
+
+Because it cannot be reproduced on demand, the timeout message now dumps live thread names and room
+codes, and states that the blocked `receive_json` thread survives and will race any later recv on the
+same socket. The next occurrence is the evidence; don't discard it.
+
+**Do not bisect this one run per step.** A ~4% failure rate means a single green run proves nothing —
+that mistake has already produced a confidently wrong conclusion once here. Note also that 10
+consecutive passes looked like a fix during this very session, and run 20 then failed; 25 runs was
+what it took to see it.

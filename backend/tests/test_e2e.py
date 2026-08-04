@@ -60,6 +60,12 @@ def _teardown_rooms():
         if room._organizer_cleanup_task:
             room._organizer_cleanup_task.cancel()
             room._organizer_cleanup_task = None
+        # mafia_timer_task was missing here — Room creates three cancellable tasks, not two, so a
+        # Mafia phase timer could outlive the test that started it and keep firing on the shared
+        # event loop while a later test was mid-handshake.
+        if room.mafia_timer_task:
+            room.mafia_timer_task.cancel()
+            room.mafia_timer_task = None
         room.connections.clear()
         room.players.clear()
     socket_manager.rooms.clear()
@@ -128,7 +134,19 @@ def receive_json_with_timeout(ws, *, timeout=DEFAULT_WS_RECEIVE_TIMEOUT, context
     try:
         status, value = result_queue.get(timeout=timeout)
     except queue.Empty:
-        raise TimeoutError(f"Timed out after {timeout:.1f}s waiting for {context}")
+        # A stall here is the known residual flake (SPEC-TESTING §8d): ~1 run in 25 of the full file,
+        # always TestExportImportE2E, never reproducible in isolation (0/10). Order is deterministic
+        # (no pytest-randomly), so it is time-dependent cross-test interference, not ordering.
+        # Dump the state a debugger would want, because the next occurrence is the only evidence
+        # anyone will get — reproducing it on demand has not been possible.
+        raise TimeoutError(
+            f"Timed out after {timeout:.1f}s waiting for {context}. "
+            f"live threads={threading.active_count()} "
+            f"({', '.join(sorted(t.name for t in threading.enumerate()))}); "
+            f"rooms={list(socket_manager.rooms)}; "
+            f"NOTE this thread stays blocked on receive_json, so any later recv on the same socket "
+            f"races it — expect cascading failures after this one."
+        )
     if status == "error":
         raise TimeoutError(f"Connection closed while waiting for {context}: {value}")
     return value
