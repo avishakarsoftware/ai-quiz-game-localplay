@@ -7116,3 +7116,11 @@ body {
     color: var(--accent-ink, #17111f);
     background: var(--accent-mint, #7ff0c4);
 }
+
+/* TV hand-off sheet: app-store QRs for games the TV can never host (SPEC-TV-APP §4b) */
+.tv-sheet__stores { display: flex; gap: 24px; justify-content: center; }
+.tv-sheet__stores figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.tv-sheet__stores figcaption { font-size: 0.85rem; opacity: 0.75; }
+.tv-sheet__reassure { font-size: 0.9rem; opacity: 0.8; }
+.tv-sheet__code { font-size: 1.1rem; letter-spacing: 0.08em; }
+.tv-sheet__error { color: var(--accent-danger, #ff6b6b); font-size: 0.95rem; }

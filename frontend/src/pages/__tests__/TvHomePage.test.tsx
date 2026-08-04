@@ -86,6 +86,22 @@ function catalogFixture() {
     };
 }
 
+const tvRoomState = {
+    roomCode: '', joinUrl: '', players: [] as Array<{ nickname: string }>,
+    connectedPhones: 0, status: 'idle' as const, error: '',
+    host: vi.fn(), leave: vi.fn(),
+};
+
+vi.mock('../useTvRoom', () => ({ useTvRoom: () => tvRoomState }));
+
+function mockTvRoom(patch: Partial<typeof tvRoomState>) {
+    Object.assign(tvRoomState, patch);
+}
+
+beforeEach(() => {
+    mockTvRoom({ roomCode: '', joinUrl: '', players: [], connectedPhones: 0, status: 'idle', error: '' });
+});
+
 describe('TvHomePage', () => {
     beforeEach(() => {
         mockApiFetch.mockResolvedValue(Response.json(catalogFixture()));
@@ -104,13 +120,13 @@ describe('TvHomePage', () => {
     });
 
     it('shows shared-phone games once a phone is connected', async () => {
+        // The phone count comes from the TV's own organizer socket via useTvRoom. There is no
+        // manual stepper any more: a fake counter would un-grey a game that then cannot start.
+        mockTvRoom({ connectedPhones: 1 });
         render(<TvHomePage />);
         await screen.findByRole('button', { name: /Housie/ });
 
-        fireEvent.click(screen.getByRole('button', { name: '1' }));
-
         expect(screen.getByRole('button', { name: /Impostor/ })).toBeInTheDocument();
-        expect(screen.getByText('Needs 1 shared phone')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: /Impostor/ }));
         expect(screen.getByText('TV + 1 shared phone')).toBeInTheDocument();
     });
@@ -122,9 +138,18 @@ describe('TvHomePage', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Phone host' }));
         fireEvent.click(screen.getByRole('button', { name: /Photo Clue/ }));
 
-        expect(screen.getByRole('heading', { name: 'Use a phone for this one' })).toBeInTheDocument();
-        expect(screen.getByText(/Photo capture and upload/)).toBeInTheDocument();
-        expect(screen.getByTestId('qr-code')).toHaveTextContent('/join');
+        expect(screen.getByRole('heading', { name: 'Play this one on your phone' })).toBeInTheDocument();
+        // The reason comes from the catalog's own tv_play_note, so it stays correct if the
+        // classification changes rather than being duplicated copy.
+        expect(screen.getAllByText(/camera|capture/i).length).toBeGreaterThan(0);
+        // THE point of this sheet (SPEC-TV-APP §4b): a game the TV can never host sends the host
+        // to the APP, not to a join link. A join QR here would be a dead end — there is no room
+        // on the TV to join.
+        const qr = screen.getByTestId('qr-code');
+        expect(qr).toHaveTextContent(/play\.google\.com|apps\.apple\.com/);
+        expect(qr).not.toHaveTextContent('/join');
+        // And it must promise sparks carry over, or a host assumes installing means paying twice.
+        expect(screen.getByText(/sparks come with you/i)).toBeInTheDocument();
     });
 
     it('opens game rules from the selected sheet', async () => {

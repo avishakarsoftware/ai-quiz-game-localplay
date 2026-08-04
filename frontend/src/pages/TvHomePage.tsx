@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Camera, Info, Search, Smartphone, Tv, Users } from 'lucide-react';
+import { Camera, Info, Search, Smartphone, Tv } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import GameRulesModal from '../components/GameRulesModal';
 import { GAME_MODE_CONFIGS, type GameModeConfig } from '../gameModes';
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
 import { type GameType } from '../types';
 import { apiFetch } from '../utils/api';
+import { useTvRoom } from './useTvRoom';
+import { ANDROID_APP_URL, IOS_APP_URL, hasAndroidApp, hasAnyAppStoreLink, hasIosApp } from '../storeLinks';
 
 type TvCompanionMode = 'none' | 'shared_phone' | 'per_player_phone' | 'phone_host';
 type TvFilter = 'play_now' | 'all' | 'phones' | 'phone_host';
@@ -38,7 +40,6 @@ interface TvGameCard {
     catalog?: TvCatalogGame;
 }
 
-const PHONE_COUNTS = [0, 1, 2, 4];
 
 function fallbackCapability(mode: GameModeConfig): TvCapability {
     if (mode.id === 'photo_clue') {
@@ -117,16 +118,28 @@ function companionLabel(capability: TvCapability): string {
 function TvGameSheet({
     game,
     connectedPhones,
+    roomCode,
+    joinUrl: liveJoinUrl,
+    hosting,
+    hostError,
+    onHost,
     onClose,
     onRules,
 }: {
     game: TvGameCard;
     connectedPhones: number;
+    roomCode: string;
+    joinUrl: string;
+    hosting: boolean;
+    hostError: string;
+    onHost: () => void;
     onClose: () => void;
     onRules: () => void;
 }) {
     const state = availability(game, connectedPhones);
-    const joinUrl = `${window.location.origin}/join`;
+    // Only ever render a join QR once a room EXISTS. A bare `/join` sends the guest to a code
+    // prompt with no code to type — a dead end that looks like a broken app.
+    const joinUrl = liveJoinUrl;
     const setupUrl = `${window.location.origin}/?tv=1&game=${encodeURIComponent(game.id)}`;
 
     return (
@@ -141,22 +154,57 @@ function TvGameSheet({
                 </div>
 
                 {state === 'phone-host' ? (
+                    /* SPEC-TV-APP §4b: the TV can NEVER host this, so the host is leaving the TV
+                       to play. That makes the app the right destination — a join link would be
+                       wrong, because there is nothing on the TV to join. */
                     <div className="tv-sheet__handoff">
                         <Camera size={34} aria-hidden="true" />
                         <div>
-                            <h3>Use a phone for this one</h3>
-                            <p>Photo capture and upload are phone-first, then the TV can show the room view.</p>
+                            <h3>Play this one on your phone</h3>
+                            <p>{game.capability.tv_play_note || 'This game needs a phone camera.'}</p>
+                            {/* Without this line a host who bought sparks on the TV account assumes
+                                installing on a phone means paying twice. get_wallet_id resolves to
+                                the same user_id wallet, so it genuinely does not. */}
+                            <p className="tv-sheet__reassure">
+                                Your sparks come with you — sign in with the same account.
+                            </p>
                         </div>
-                        <QRCodeSVG value={joinUrl} size={132} />
+                        {hasAnyAppStoreLink() ? (
+                            <div className="tv-sheet__stores">
+                                {hasAndroidApp() && (
+                                    <figure>
+                                        <QRCodeSVG value={ANDROID_APP_URL} size={112} />
+                                        <figcaption>Google Play</figcaption>
+                                    </figure>
+                                )}
+                                {hasIosApp() && (
+                                    <figure>
+                                        <QRCodeSVG value={IOS_APP_URL} size={112} />
+                                        <figcaption>App Store</figcaption>
+                                    </figure>
+                                )}
+                            </div>
+                        ) : (
+                            <p className="tv-sheet__reassure">
+                                Open <strong>games.revelryapp.me</strong> on your phone to play it there.
+                            </p>
+                        )}
                     </div>
                 ) : state === 'locked' ? (
                     <div className="tv-sheet__handoff">
                         <Smartphone size={34} aria-hidden="true" />
                         <div>
                             <h3>{game.capability.reason_chip}</h3>
-                            <p>Connect the companion devices first, then the TV can run the room.</p>
+                            {roomCode ? (
+                                <>
+                                    <p>Scan to join — no app needed, it opens in the browser.</p>
+                                    <p className="tv-sheet__code">Room <strong>{roomCode}</strong></p>
+                                </>
+                            ) : (
+                                <p>Open the room first, then guests can scan to join and this unlocks.</p>
+                            )}
                         </div>
-                        <QRCodeSVG value={joinUrl} size={132} />
+                        {roomCode ? <QRCodeSVG value={joinUrl} size={132} /> : null}
                     </div>
                 ) : (
                     <div className="tv-sheet__ready">
@@ -168,8 +216,21 @@ function TvGameSheet({
                     </div>
                 )}
 
+                {hostError && <p className="tv-sheet__error" role="alert">{hostError}</p>}
+
                 <div className="tv-sheet__actions">
-                    <a className="btn btn-primary" href={setupUrl}>Open setup</a>
+                    {state !== 'phone-host' && !roomCode && (
+                        <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={onHost}
+                            disabled={hosting}
+                            data-testid="tv-open-room"
+                        >
+                            {hosting ? 'Opening room…' : 'Open room on this TV'}
+                        </button>
+                    )}
+                    <a className="btn btn-secondary" href={setupUrl}>Open setup on phone</a>
                     <button type="button" className="btn btn-secondary" onClick={onRules}>Rules</button>
                 </div>
             </section>
@@ -181,7 +242,11 @@ export default function TvHomePage() {
     const [catalog, setCatalog] = useState<TvCatalogGame[] | null>(null);
     const [query, setQuery] = useState('');
     const [filter, setFilter] = useState<TvFilter>('play_now');
-    const [connectedPhones, setConnectedPhones] = useState(0);
+    // Live from the TV's own organizer socket, so locked tiles un-grey as guests arrive.
+    // Was previously useState(0) and never updated, which made every phone-requiring game
+    // permanently unavailable.
+    const room = useTvRoom();
+    const connectedPhones = room.connectedPhones;
     const [selectedGame, setSelectedGame] = useState<TvGameCard | null>(null);
     const [activeRules, setActiveRules] = useState<GameRules | null>(null);
 
@@ -268,19 +333,6 @@ export default function TvHomePage() {
                         </button>
                     ))}
                 </div>
-                <div className="tv-home__phones" aria-label="Connected phone preview">
-                    <Users size={24} aria-hidden="true" />
-                    {PHONE_COUNTS.map((count) => (
-                        <button
-                            key={count}
-                            type="button"
-                            className={connectedPhones === count ? 'active' : ''}
-                            onClick={() => setConnectedPhones(count)}
-                        >
-                            {count}
-                        </button>
-                    ))}
-                </div>
             </section>
 
             <section className="tv-home__grid" aria-label="TV game catalog">
@@ -311,6 +363,11 @@ export default function TvHomePage() {
                 <TvGameSheet
                     game={selectedGame}
                     connectedPhones={connectedPhones}
+                    roomCode={room.roomCode}
+                    joinUrl={room.joinUrl}
+                    hosting={room.status === 'creating'}
+                    hostError={room.status === 'error' ? room.error : ''}
+                    onHost={() => { void room.host(selectedGame.id); }}
                     onClose={() => setSelectedGame(null)}
                     onRules={() => setActiveRules(rulesForGame(selectedGame.id, catalog || undefined))}
                 />
