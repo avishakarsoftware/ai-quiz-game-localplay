@@ -1,4 +1,5 @@
-.PHONY: dev dev-backend dev-frontend install test test-e2e test-frontend-e2e test-remote-prod test-remote-gamma build lint clean
+.PHONY: dev dev-backend dev-frontend install test test-e2e test-frontend-e2e test-remote-prod test-remote-gamma \
+	test-prod test-gamma test-prod-deep test-gamma-deep build lint clean
 
 # Hot-reload development
 dev:
@@ -31,11 +32,26 @@ test-all:
 	cd frontend && npm test -- --run
 	cd frontend && npm run test:e2e
 
+# Narrow post-deploy smoke (one quiz + idempotency). Kept for DEPLOY.md's deploy steps.
 test-remote-prod:
 	.venv/bin/python scripts/smoke-remote.py --base-url https://gamesapi.revelryapp.me
 
 test-remote-gamma:
 	.venv/bin/python scripts/smoke-remote.py --base-url https://gamesapi-gamma.revelryapp.me
+
+# L5 regression (SPEC-TESTING): grouped status report, safe against prod any time.
+# The -deep variants also sweep every catalog game's room/lobby and play one game.
+test-prod:
+	.venv/bin/python scripts/regression.py --target prod
+
+test-gamma:
+	.venv/bin/python scripts/regression.py --target gamma
+
+test-prod-deep:
+	.venv/bin/python scripts/regression.py --target prod --deep
+
+test-gamma-deep:
+	.venv/bin/python scripts/regression.py --target gamma --deep
 
 # Build
 build:

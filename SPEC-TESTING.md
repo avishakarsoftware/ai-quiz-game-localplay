@@ -92,6 +92,28 @@ is the single assertion that would have caught the occasion-bingo breakage, the 
 collision, and the Impostor room-create rejection — all three shipped tonight and all three were
 invisible to unit tests.
 
+### Built: `scripts/regression.py` (2026-08-04)
+
+```bash
+make test-prod            # or: cd frontend && npm run test:prod
+make test-prod-deep       # adds the catalog sweep + one real playthrough
+.venv/bin/python scripts/regression.py --target gamma --deep --verbose
+.venv/bin/python scripts/regression.py --target prod --deep --games impostor,quiz --no-play
+```
+
+Two deliberate deviations from the sketch above, both about not lying in the report:
+
+- **`GAMES (deep)` sweeps all 38 entries but starts only one game.** `/room/create` is free — the
+  `COST_ROOM` debit lands on `START_GAME` — so per game it asserts *room create → organizer lobby
+  reachable → minimum-player gate refuses to start (before charging) → `CANCEL_GAME` and the room
+  is verified gone*. Starting all 38 would burn ~380 sparks across ~14 minted wallets and hold 38
+  rooms against the shared `MAX_ROOMS=50` cap; the gate already proves the engine was constructed
+  and the room is live. `--play <id>` starts one game for real (default `quiz`: two `QA-*` players
+  join, first `QUESTION` broadcast asserted, spark debit asserted) on its own fresh wallet.
+- **WARN is a distinct verdict from FAIL.** Cert renewal windows, an expired promo still advertised
+  in `/config/public`, and drift in files nothing currently links to are reported but do not fail
+  the run, so "is prod healthy right now" stays a yes/no question.
+
 ## 4. Layer-by-layer requirements
 
 **L1/L2 (backend + vitest)** — keep as is; fill gaps found by the coverage guard in §5.
