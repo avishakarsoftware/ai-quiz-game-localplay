@@ -298,6 +298,14 @@ REVELRY_SESSION_IDLE_TTL_SECONDS = int(os.getenv("REVELRY_SESSION_IDLE_TTL_SECON
 REVELRY_CALLBACK_URL = os.getenv("REVELRY_CALLBACK_URL", "").strip()
 REVELRY_CALLBACK_SECRET = os.getenv("REVELRY_CALLBACK_SECRET", "").strip()
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+# Where USERS go, as opposed to where the API lives. These are genuinely different hosts:
+# PUBLIC_BASE_URL is the backend (gamesapi.revelryapp.me) and must stay that way, because the
+# dynamic share-card OG image is a BACKEND route (/share/game/{token}/image.png) — repointing it
+# at the static site would break every link preview. But a link a human taps and shares should be
+# the canonical site (games.revelryapp.me); a referral or share URL on the API host looks
+# untrustworthy in a WhatsApp preview and isn't the branded host.
+# Defaults to PUBLIC_BASE_URL so nothing changes until an environment sets it.
+PUBLIC_SITE_URL = os.getenv("PUBLIC_SITE_URL", "").strip().rstrip("/") or PUBLIC_BASE_URL
 
 if REVELRY_INTEGRATION_SECRET and REVELRY_CALLBACK_SECRET and REVELRY_INTEGRATION_SECRET != REVELRY_CALLBACK_SECRET:
     logging.getLogger(__name__).warning(

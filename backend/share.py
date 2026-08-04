@@ -93,7 +93,8 @@ def get_snapshot(token: str) -> dict | None:
 
 def render_html(snap: dict | None) -> str:
     """Render a self-contained OG-unfurl page. Unknown/expired token → generic branded page."""
-    app_url = config.PUBLIC_BASE_URL or "/"
+    # Where the reader is sent when they tap through — the site, not the API.
+    app_url = config.PUBLIC_SITE_URL or "/"
     # Per-result card when we know the result; the static brand image otherwise. The image is most
     # of the tappable area in WhatsApp/iMessage, so a generic logo reads as an ad while a card
     # naming the winner reads as something that happened.
