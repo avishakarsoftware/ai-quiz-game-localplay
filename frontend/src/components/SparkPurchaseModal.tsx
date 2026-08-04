@@ -33,17 +33,36 @@ export default function SparkPurchaseModal({ onSuccess, onClose }: SparkPurchase
     const [busySku, setBusySku] = useState<string | null>(null);
     const [status, setStatus] = useState('');
     const [error, setError] = useState('');
+    // Balance + cap fetched on open so packs that wouldn't fit can be greyed out BEFORE the user
+    // pays (REVIEW-2026-08 M1). The backend clamps credits at max_balance, and /checkout/create
+    // now 409s on overflow — this is the friendly layer in front of that hard stop. Native IAP has
+    // no server-side pre-purchase gate at all (Apple/Google complete the sale client-side), so for
+    // native this greying IS the guard.
+    const [walletFit, setWalletFit] = useState<{ balance: number; max: number } | null>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const mountedRef = useRef(true);
 
     useEffect(() => {
         mountedRef.current = true;
         if (nativeReady) getNativePrices().then((p) => { if (mountedRef.current) setPrices(p); });
+        (async () => {
+            try {
+                const res = await fetch(apiUrl('/tokens/balance'), { headers: apiHeaders() });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (mountedRef.current && typeof data.balance === 'number' && typeof data.max_balance === 'number') {
+                    setWalletFit({ balance: data.balance, max: data.max_balance });
+                }
+            } catch { /* fail open: no fit info -> no greying, backend 409 still guards web */ }
+        })();
         return () => {
             mountedRef.current = false;
             if (pollRef.current) clearInterval(pollRef.current);
         };
     }, [nativeReady]);
+
+    const packOverflows = (sparks: number): boolean =>
+        walletFit !== null && walletFit.balance + sparks > walletFit.max;
 
     const stopPoll = () => {
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -209,13 +228,16 @@ export default function SparkPurchaseModal({ onSuccess, onClose }: SparkPurchase
                         {SPARK_PACKS.map((pack) => {
                             const price = prices[pack.sku] || pack.priceLabel;
                             const isBusy = busySku === pack.sku;
-                            const disabled = !!busySku;
+                            const overflows = packOverflows(pack.sparks);
+                            const disabled = !!busySku || overflows;
                             return (
                                 <button
                                     key={pack.sku}
                                     className="btn"
+                                    data-testid={`spark-pack-${pack.sku}`}
                                     onClick={() => buy(pack.sku)}
                                     disabled={disabled}
+                                    title={overflows ? 'Your spark balance is nearly full — this pack wouldn’t fit.' : undefined}
                                     style={{
                                         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                                         gap: 10, padding: '14px 16px', borderRadius: 10,
@@ -240,11 +262,16 @@ export default function SparkPurchaseModal({ onSuccess, onClose }: SparkPurchase
                                         )}
                                     </span>
                                     <span style={{ fontWeight: 700, color: 'var(--accent)' }}>
-                                        {isBusy ? '…' : price}
+                                        {isBusy ? '…' : overflows ? 'Balance full' : price}
                                     </span>
                                 </button>
                             );
                         })}
+                        {walletFit !== null && SPARK_PACKS.some((p) => packOverflows(p.sparks)) && (
+                            <p data-testid="spark-pack-overflow-hint" style={{ color: 'var(--ink-mute)', fontSize: '0.76rem', textAlign: 'center', margin: '0.35rem 0 0' }}>
+                                You have {walletFit.balance} ⚡ of a {walletFit.max} max — spend some sparks to make room.
+                            </p>
+                        )}
                     </div>
                 )}
 

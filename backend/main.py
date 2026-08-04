@@ -5626,6 +5626,21 @@ async def create_checkout(request: CheckoutRequest, req: Request):
         token_amount = spark_amount
         promo_id = ""  # Clear invalid promo
 
+    # Refuse a purchase that would be clamped by the balance cap. credit_purchase clamps at
+    # MAX_TOKEN_BALANCE, so without this gate a near-full wallet PAYS full price and receives a
+    # partial (or zero) credit (REVIEW-2026-08 M1) — money taken, sparks silently discarded.
+    # Blocking BEFORE Stripe ever sees the card is the only version the customer can't dispute.
+    balance = db.get_wallet_balance(wallet_id)
+    if balance + token_amount > config.MAX_TOKEN_BALANCE:
+        headroom = max(0, config.MAX_TOKEN_BALANCE - balance)
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Your spark balance is nearly full ({balance}/{config.MAX_TOKEN_BALANCE}) — "
+                f"this pack wouldn't fit. Room for {headroom} more sparks."
+            ),
+        )
+
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
@@ -5913,9 +5928,13 @@ async def token_balance(req: Request):
                     "daily_bonus_granted": False, "bonus_amount": 0,
                     "bonus_streak": 0, "streak_next_reward": config.STREAK_BASE,
                     "cost_generate": config.COST_GENERATE, "cost_room": config.COST_ROOM,
-                    "ads_remaining_today": config.MAX_ADS_PER_DAY}
+                    "ads_remaining_today": config.MAX_ADS_PER_DAY,
+                    "max_balance": config.MAX_TOKEN_BALANCE}
         wallet_id = device_id
     status = tokens.get_token_status(wallet_id)
+    # The purchase modal greys out packs that wouldn't fit under the cap (REVIEW-2026-08 M1),
+    # so the cap must travel with the balance rather than being hardcoded client-side.
+    status["max_balance"] = config.MAX_TOKEN_BALANCE
     if status.get("daily_bonus_granted"):
         analytics.capture_bg(wallet_id, "spark_earned",
                              {"source": "daily_bonus", "amount": status.get("bonus_amount", 0),

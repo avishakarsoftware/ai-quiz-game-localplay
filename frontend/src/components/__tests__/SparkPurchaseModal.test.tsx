@@ -117,6 +117,59 @@ describe('SparkPurchaseModal', () => {
         });
     });
 
+    describe('balance-cap greying (REVIEW-2026-08 M1)', () => {
+        // credit_purchase clamps at max_balance, so a pack that doesn't fit means paying for
+        // sparks that get discarded. Web has a backend 409 behind this; native IAP has NO
+        // server-side pre-purchase gate, so this greying is the only guard there.
+        function balanceFetch(balance: number, max: number) {
+            return vi.fn(async (url: string) => {
+                const u = String(url);
+                if (u.endsWith('/tokens/balance')) {
+                    return { ok: true, status: 200, json: async () => ({ balance, max_balance: max }) } as Response;
+                }
+                return { ok: false, status: 404, json: async () => ({}) } as Response;
+            });
+        }
+
+        it('disables packs that would overflow and explains why', async () => {
+            // 980/1000: the 50-pack (and larger) cannot fit
+            vi.stubGlobal('fetch', balanceFetch(980, 1000));
+            render(<SparkPurchaseModal onSuccess={() => {}} onClose={() => {}} />);
+            await act(async () => { await Promise.resolve(); });
+
+            const smallPack = screen.getByTestId('spark-pack-spark_pack_50');
+            expect(smallPack).toBeDisabled();
+            expect(smallPack).toHaveTextContent('Balance full');
+            expect(screen.getByTestId('spark-pack-overflow-hint')).toHaveTextContent('980');
+        });
+
+        it('keeps packs that fit enabled', async () => {
+            // 900/1000: the 50-pack fits, the 200-pack does not
+            vi.stubGlobal('fetch', balanceFetch(900, 1000));
+            render(<SparkPurchaseModal onSuccess={() => {}} onClose={() => {}} />);
+            await act(async () => { await Promise.resolve(); });
+
+            expect(screen.getByTestId('spark-pack-spark_pack_50')).toBeEnabled();
+            expect(screen.getByTestId('spark-pack-spark_pack_200')).toBeDisabled();
+        });
+
+        it('fails open when the balance payload has no cap (old backend)', async () => {
+            const legacyFetch = vi.fn(async (url: string) => {
+                if (String(url).endsWith('/tokens/balance')) {
+                    return { ok: true, status: 200, json: async () => ({ balance: 999 }) } as Response;
+                }
+                return { ok: false, status: 404, json: async () => ({}) } as Response;
+            });
+            vi.stubGlobal('fetch', legacyFetch);
+            render(<SparkPurchaseModal onSuccess={() => {}} onClose={() => {}} />);
+            await act(async () => { await Promise.resolve(); });
+
+            // No fit info -> no greying; the backend 409 still guards the web path.
+            expect(screen.getByTestId('spark-pack-spark_pack_50')).toBeEnabled();
+            expect(screen.queryByTestId('spark-pack-overflow-hint')).toBeNull();
+        });
+    });
+
     describe('native build with IAP not configured', () => {
         it('hides purchasing and says so rather than showing dead buttons', () => {
             mockPlatform = 'ios';

@@ -300,3 +300,51 @@ def test_stripe_webhook_caps_tampered_amount(monkeypatch):
     assert res.status_code == 200
     # Capped to the largest catalog pack (500), not the tampered 999999.
     assert db.get_wallet_balance(wallet) == config.MAX_SPARK_PACK
+
+
+# --- Cap-overflow purchase gate (REVIEW-2026-08 M1) ----------------------------
+#
+# credit_purchase clamps at MAX_TOKEN_BALANCE, so before this gate a near-full wallet PAID full
+# price and received a partial/zero credit. The 409 must fire BEFORE any Stripe session exists.
+
+def _fund_checkout_wallet(balance: int) -> str:
+    """Put the wallet the checkout endpoint will resolve (conftest pins get_wallet_id to
+    TEST_DEVICE_ID) at exactly `balance` sparks."""
+    from conftest import TEST_DEVICE_ID
+    db.get_or_create_wallet(TEST_DEVICE_ID, signup_bonus=False)
+    current = db.get_wallet_balance(TEST_DEVICE_ID)
+    if current:
+        db.debit_tokens(TEST_DEVICE_ID, current, "test_reset")
+    if balance:
+        db.credit_tokens(TEST_DEVICE_ID, balance, "test_fund")
+    assert db.get_wallet_balance(TEST_DEVICE_ID) == balance
+    return TEST_DEVICE_ID
+
+
+def test_checkout_rejects_pack_that_would_overflow_the_cap(stripe_configured):
+    _fund_checkout_wallet(config.MAX_TOKEN_BALANCE - 10)  # room for 10, smallest pack is 50
+    res = client.post("/checkout/create",
+                      json={"device_id": CHECKOUT_DEVICE, "sku": "spark_pack_50"},
+                      headers={"X-Device-ID": CHECKOUT_DEVICE, "X-Platform": "web"})
+    assert res.status_code == 409
+    assert "nearly full" in res.json()["detail"]
+    # The refusal happened before Stripe was ever called — nothing to refund, nothing to dispute.
+    assert stripe_configured == {}
+
+
+def test_checkout_allows_pack_landing_exactly_at_the_cap(stripe_configured):
+    _fund_checkout_wallet(config.MAX_TOKEN_BALANCE - 50)
+    res = client.post("/checkout/create",
+                      json={"device_id": CHECKOUT_DEVICE, "sku": "spark_pack_50"},
+                      headers={"X-Device-ID": CHECKOUT_DEVICE, "X-Platform": "web"})
+    assert res.status_code == 200, res.text
+    assert stripe_configured["metadata"]["sku"] == "spark_pack_50"
+
+
+def test_balance_endpoint_reports_the_cap():
+    """The purchase modal greys out packs that won't fit; it needs the cap from the server,
+    not a hardcoded copy that drifts."""
+    from conftest import TEST_DEVICE_ID
+    res = client.get("/tokens/balance", headers={"X-Device-ID": TEST_DEVICE_ID})
+    assert res.status_code == 200
+    assert res.json()["max_balance"] == config.MAX_TOKEN_BALANCE
