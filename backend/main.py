@@ -5965,7 +5965,8 @@ async def referral_code(req: Request):
         raise HTTPException(status_code=400, detail="X-Device-Id header is required")
     tokens.ensure_wallet(wallet_id)
     code = db.get_or_create_referral_code(wallet_id)
-    share_url = f"{config.PUBLIC_BASE_URL}/?ref={code}" if config.PUBLIC_BASE_URL else f"/?ref={code}"
+    # A link a human shares must be the canonical site, not the API host (see PUBLIC_SITE_URL).
+    share_url = f"{config.PUBLIC_SITE_URL}/?ref={code}" if config.PUBLIC_SITE_URL else f"/?ref={code}"
     return {"code": code, "share_url": share_url, "reward": config.REFERRAL_REWARD}
 
 
@@ -6101,7 +6102,8 @@ async def create_share_card(body: ShareGameRequest, req: Request):
     if not _check_rate_limit(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait.")
     token = share.create_snapshot(body.game_type, body.winner, body.top_score, body.player_count)
-    base = config.PUBLIC_BASE_URL or ""
+    # The share LINK goes to the site; the OG image inside it stays on the backend (share.py).
+    base = config.PUBLIC_SITE_URL or ""
     share_url = f"{base}/share/game/{token}" if base else f"/share/game/{token}"
     return {"token": token, "share_url": share_url}
 
@@ -6195,6 +6197,22 @@ async def restore_purchases(req: Request):
     # Credit remaining games as tokens (if not already migrated)
     wallet_id = user_id or device_id
     tokens_to_credit = ent["games_remaining"] * config.COST_ROOM
+
+    # Restore is a user-tappable button, so it WILL be pressed repeatedly. credit_tokens has no
+    # reference de-duplication (unlike credit_purchase), so without this gate each press mints
+    # another `games_remaining * COST_ROOM` sparks up to MAX_TOKEN_BALANCE — free games from a
+    # single past purchase. Key the gate on the entitlement, so a user with two genuine past
+    # purchases still gets both.
+    try:
+        already_credited = db.get_credit_total_for_reference(ent["id"], "restore")
+    except Exception as e:  # noqa: BLE001 — never fail the button on a lookup hiccup...
+        logger.warning("Purchase restore idempotency check failed: %s", e)
+        # ...but do not credit blind either: a failed check must not become a free grant.
+        raise HTTPException(status_code=503, detail="Could not restore purchases right now. Please try again.")
+    if already_credited > 0:
+        return {"restored": True, "tokens_added": 0, "already_restored": True,
+                "new_balance": db.get_wallet_balance(wallet_id)}
+
     if tokens_to_credit > 0:
         try:
             db.credit_tokens(wallet_id, tokens_to_credit, "restore", reference_id=ent["id"])

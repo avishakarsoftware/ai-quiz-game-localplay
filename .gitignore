@@ -4,6 +4,9 @@ __pycache__/
 *.pyo
 backend/venv/
 .pytest_cache/
+.coverage
+coverage.json
+htmlcov/
 
 # Node
 node_modules/

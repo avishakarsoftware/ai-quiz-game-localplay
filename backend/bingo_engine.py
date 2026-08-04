@@ -17,6 +17,7 @@ import random
 from typing import Iterable, Literal, Optional
 
 import config
+import engine_common
 from quiz_engine import AIQuotaExceeded, DailyLimitExceeded, _extract_gemini_text
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,7 @@ def _sanitize_display(value: object, max_length: int = BINGO_MAX_DISPLAY_LENGTH)
 
 
 def _wrap_user_theme(prompt: str) -> str:
-    return f"--- BEGIN USER THEME ---\n{prompt}\n--- END USER THEME ---"
+    return engine_common.wrap_user_topic(prompt, "THEME")
 
 
 def _sanitize_generated_bingo(raw: dict, *, free_center: bool = True) -> dict:

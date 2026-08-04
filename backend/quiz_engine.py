@@ -8,6 +8,7 @@ from datetime import date
 from typing import Optional
 
 import config
+import engine_common
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +148,7 @@ QUIZ_MODE_INSTRUCTIONS = {
 
 def _wrap_user_topic(prompt: str) -> str:
     """Wrap user topic in boundary markers to reduce prompt injection risk."""
-    return f"--- BEGIN USER TOPIC ---\n{prompt}\n--- END USER TOPIC ---"
+    return engine_common.wrap_user_topic(prompt, "TOPIC")
 
 
 def _normalize_quiz_mode(mode: str) -> str:

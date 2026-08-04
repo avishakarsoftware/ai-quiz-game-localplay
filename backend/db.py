@@ -1796,6 +1796,24 @@ def get_refund_debits_for_session(reference_id: str) -> int:
     return row["total"] if row else 0
 
 
+def get_credit_total_for_reference(reference_id: str, reason: str) -> int:
+    """Total sparks already CREDITED against (reference_id, reason).
+
+    The idempotency gate for credit paths that do not go through `credit_purchase` — notably
+    `/purchases/restore`, which pays out a legacy entitlement once. `credit_tokens` has no
+    reference de-duplication of its own, so without this a repeatable request mints sparks.
+    """
+    if not reference_id:
+        return 0
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT COALESCE(SUM(amount), 0) as total FROM token_transactions "
+        "WHERE reference_id = ? AND reason = ? AND amount > 0",
+        (reference_id, reason),
+    ).fetchone()
+    return row["total"] if row else 0
+
+
 def mark_webhook_event_processed(event_id: str):
     """Mark a webhook event as processed. Call AFTER business logic succeeds."""
     conn = _get_conn()
@@ -2311,6 +2329,7 @@ if config.DB_BACKEND == "supabase":
         "admin_lookup_wallet",
         "is_webhook_event_processed",
         "get_refund_debits_for_session",
+        "get_credit_total_for_reference",
         "mark_webhook_event_processed",
         "get_admin_stats",
         "save_quiz_pack",

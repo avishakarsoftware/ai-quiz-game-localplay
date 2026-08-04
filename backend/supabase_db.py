@@ -784,6 +784,17 @@ def get_refund_debits_for_session(reference_id: str) -> int:
     return sum(abs(int(row["amount"])) for row in rows)
 
 
+def get_credit_total_for_reference(reference_id: str, reason: str) -> int:
+    if not reference_id:
+        return 0
+    rows = _sb().select(
+        "token_transactions",
+        filters={"reference_id": f"eq.{reference_id}", "reason": f"eq.{reason}"},
+        select="amount",
+    )
+    return sum(int(row["amount"]) for row in rows if int(row["amount"]) > 0)
+
+
 def mark_webhook_event_processed(event_id: str):
     _sb().rpc("mark_webhook_processed", {"p_event_id": event_id})
 

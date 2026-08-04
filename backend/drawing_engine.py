@@ -9,6 +9,7 @@ from typing import Optional
 import httpx
 
 import config
+import engine_common
 from quiz_engine import AIQuotaExceeded, DailyLimitExceeded, _extract_gemini_text
 
 logger = logging.getLogger(__name__)
@@ -56,7 +57,7 @@ MAX_ALIASES = 4
 
 
 def _wrap_user_topic(prompt: str) -> str:
-    return f"--- BEGIN USER THEME ---\n{prompt}\n--- END USER THEME ---"
+    return engine_common.wrap_user_topic(prompt, "THEME")
 
 
 def _build_system_prompt(difficulty: str, num_prompts: int) -> str:

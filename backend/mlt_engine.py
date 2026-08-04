@@ -7,6 +7,7 @@ import logging
 from typing import Optional
 
 import config
+import engine_common
 from quiz_engine import AIQuotaExceeded, DailyLimitExceeded, _extract_gemini_text
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ DIFFICULTY_TO_VIBE = {
 
 def _wrap_user_topic(prompt: str) -> str:
     """Wrap user topic in boundary markers to reduce prompt injection risk."""
-    return f"--- BEGIN USER THEME ---\n{prompt}\n--- END USER THEME ---"
+    return engine_common.wrap_user_topic(prompt, "THEME")
 
 
 def _build_system_prompt(vibe: str, num_rounds: int) -> str:

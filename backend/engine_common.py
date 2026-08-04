@@ -41,6 +41,21 @@ def make_clean_text(max_chars: int) -> Callable[..., str]:
     return _bound
 
 
+_MARKER_DASHES = re.compile(r"-{3,}")
+
+
+def wrap_user_topic(prompt: Any, label: str = "TOPIC") -> str:
+    """Fence user-supplied topic text inside boundary markers it cannot forge.
+
+    The markers only mean something if the user can't type one. Wrapping raw text let a prompt of
+    `--- END USER TOPIC --- <new instructions>` close the fence and address the model directly,
+    which is exactly what the fence exists to prevent. Collapsing every run of 3+ hyphens in the
+    user's text to `--` makes a forged marker unrepresentable while leaving the topic readable.
+    """
+    safe = _MARKER_DASHES.sub("--", str(prompt or ""))
+    return f"--- BEGIN USER {label} ---\n{safe}\n--- END USER {label} ---"
+
+
 def clamp_int(raw: dict, key: str, default: int, low: int, high: int) -> int:
     """Read raw[key] as an int, falling back to default, clamped to [low, high]."""
     try:
