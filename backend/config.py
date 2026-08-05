@@ -35,6 +35,10 @@ FRONTEND_DIST_DIR = os.getenv("FRONTEND_DIST_DIR", "/app/static")
 DB_BACKEND = os.getenv("DB_BACKEND", "sqlite").strip().lower()
 TABLE_PREFIX = os.getenv("TABLE_PREFIX", "games_").strip()
 ENVIRONMENT = os.getenv("LOCALPLAY_ENV", os.getenv("APP_ENV", "")).strip().lower()
+
+# Error tracking (REVIEW-2026-08 O2). Inert unless a DSN is set — the sentry_sdk import lives
+# behind the same guard, so local dev and CI need neither the package configured nor an account.
+SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
 if not ENVIRONMENT:
     if DB_BACKEND == "supabase" and TABLE_PREFIX == "games_gamma_":
         ENVIRONMENT = "gamma"

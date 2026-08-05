@@ -195,6 +195,30 @@ async def lifespan(app: FastAPI):
     socket_manager.stop_snapshot_loop()  # takes a final snapshot for the incoming process
 
 
+def _init_sentry() -> None:
+    """Activate error tracking when SENTRY_DSN is set (REVIEW-2026-08 O2).
+
+    Until this, the backend had NO error surface at all: an exception in a webhook or a
+    background task was visible only in docker logs nobody watches. With a DSN configured,
+    unhandled exceptions AND every logger.error(...) — including spawn()'s background-task
+    crash reports — become alertable events. Failure to initialize must never block startup:
+    observability is a feature, not a dependency."""
+    if not config.SENTRY_DSN:
+        return
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=config.SENTRY_DSN,
+            environment=config.ENVIRONMENT or "unknown",
+            # No performance tracing — this is purely an error surface; keep the quota tiny.
+            traces_sample_rate=0,
+        )
+        logger.info("Sentry error tracking active (env=%s)", config.ENVIRONMENT or "unknown")
+    except Exception as e:  # noqa: BLE001 — never let observability break the app
+        logger.warning("SENTRY_DSN is set but Sentry init failed: %s", e)
+
+
+_init_sentry()
 app = FastAPI(title="AI Quiz Game Backend", lifespan=lifespan)
 from game_catalog import (
     GAME_CATALOG,

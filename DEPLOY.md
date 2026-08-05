@@ -997,6 +997,39 @@ gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --c
 
 ---
 
+## Observability (REVIEW-2026-08 O2)
+
+Two independent layers; each is inert until activated.
+
+### Error tracking (Sentry)
+
+The backend initializes Sentry **only when `SENTRY_DSN` is set** — no DSN, no import, no
+behavior change. Activation:
+
+1. Create a (free-tier) Sentry project → copy the DSN.
+2. Add `SENTRY_DSN=https://…` to `/home/revelry-games/app/.env.gamma` (gamma first), then `.env`.
+3. `docker rm` + `docker run` the container (remember: `docker restart` does NOT re-read
+   `--env-file`) — or just run the next deploy, which recreates the container anyway.
+
+What you get: unhandled endpoint exceptions AND every `logger.error(...)` — including the
+`spawn()` background-task crash reports (`question-timer:CODE`, `housie-auto:CODE`, …) — as
+alertable events, tagged `environment=gamma|production`. Tracing is off (`traces_sample_rate=0`);
+this is purely an error surface.
+
+### Uptime alerting (GCP)
+
+```bash
+./scripts/setup-monitoring.sh you@example.com
+```
+
+Creates an email channel, an HTTPS uptime check on `gamesapi.revelryapp.me/health` (60s), an
+alert policy, **and the firewall rule admitting Google's probe IPs** — required because the VM
+firewall is home-IP-restricted, and without it every probe is dropped and the check flatlines.
+Idempotent; review before running (it mutates project infra). The alert's runbook text points at
+`docker logs` and notes that deploys self-roll-back, so a firing alert means VM/nginx trouble.
+
+---
+
 ## Nginx Configuration
 
 Nginx runs on the VM as a reverse proxy. Each subdomain has its own config file:
