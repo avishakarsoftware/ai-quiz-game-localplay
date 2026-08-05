@@ -417,6 +417,15 @@ Because it cannot be reproduced on demand, the timeout message now dumps live th
 codes, and states that the blocked `receive_json` thread survives and will race any later recv on the
 same socket. The next occurrence is the evidence; don't discard it.
 
+**First captured occurrence (2026-08-04, post-instrumentation):** at stall time the live threads
+were `MainThread, Thread-141 (_receive), asyncio-portal-10ca8c7d0, asyncio-portal-10cb097f0,
+asyncio_0, pytest_timeout` — **two anyio blocking-portal threads coexisting**, i.e. two TestClient
+event loops alive at once, with the room (`DWRVL8`) still registered. Best current hypothesis: a
+lingering portal from an earlier test's TestClient keeps a second loop alive and the WS delivery
+lands on the wrong one. Also honestly noted: observed rate that day was ~3/12 (vs 1/25 measured
+earlier) in runs that followed unrelated request-path changes (S2 middleware) — could be noise at
+these sample sizes, could be timing perturbation; the failure signature was identical.
+
 **Do not bisect this one run per step.** A ~4% failure rate means a single green run proves nothing —
 that mistake has already produced a confidently wrong conclusion once here. Note also that 10
 consecutive passes looked like a fix during this very session, and run 20 then failed; 25 runs was

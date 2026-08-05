@@ -785,6 +785,13 @@ def _utc_yesterday_str() -> str:
     return (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
 
 
+def wallet_exists(wallet_id: str) -> bool:
+    """Cheap existence probe so the signup-bonus IP gate only spends quota on ACTUAL creations —
+    a returning device's balance poll must not drain its party's allowance (REVIEW-2026-08 S2)."""
+    conn = _get_conn()
+    return conn.execute("SELECT 1 FROM wallets WHERE id = ?", (wallet_id,)).fetchone() is not None
+
+
 def get_or_create_wallet(wallet_id: str, signup_bonus: bool = True) -> dict:
     """Get wallet by ID, or create one with optional signup bonus.
     Returns wallet dict with keys: id, balance, lifetime_purchased, last_daily_bonus_date,
@@ -2076,6 +2083,7 @@ if config.DB_BACKEND == "supabase":
         "lookup_by_user",
         "lookup_user_by_email",
         "_utc_date_str",
+        "wallet_exists",
         "get_or_create_wallet",
         "get_wallet_balance",
         "debit_tokens",

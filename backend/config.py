@@ -153,6 +153,16 @@ BONUS_ROUND_FRACTION = 0.3  # ~30% of questions will be bonus rounds (2x points)
 
 # --- Token Economy ---
 SIGNUP_BONUS_TOKENS = int(os.getenv("SIGNUP_BONUS_TOKENS", "20"))
+# Abuse guards (REVIEW-2026-08 S2). Any fresh UUID presented as X-Device-Id gets a wallet with
+# the signup bonus, so minting device ids farmed 20 sparks per request — and each spark funds an
+# LLM call, so the farm drained the shared MAX_LLM_CALLS_PER_HOUR budget that real users need.
+# Per-IP cap on BONUS-BEARING wallet creations per UTC day (wallets are still created past the
+# cap, just without the grant — nobody is blocked from playing). 0 disables.
+SIGNUP_BONUS_IP_DAILY_LIMIT = int(os.getenv("SIGNUP_BONUS_IP_DAILY_LIMIT", "20"))
+# Per-wallet hourly LLM-generation cap so no single identity (minted or whale) can drain the
+# global hourly pool for everyone else. 0 disables. Generous vs. real usage: each call also
+# costs a spark, so an honest host hitting 20/hr is running a marathon.
+MAX_LLM_CALLS_PER_WALLET_PER_HOUR = int(os.getenv("MAX_LLM_CALLS_PER_WALLET_PER_HOUR", "20"))
 DAILY_BONUS_TOKENS = int(os.getenv("DAILY_BONUS_TOKENS", "10"))
 MAX_TOKEN_BALANCE = int(os.getenv("MAX_TOKEN_BALANCE", "1000"))
 # Login-streak daily bonus (SPEC-STREAK-BONUS): reward = min(BASE + (streak-1)*STEP, MAX).

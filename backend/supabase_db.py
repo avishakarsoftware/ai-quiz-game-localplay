@@ -345,6 +345,11 @@ def lookup_user_by_email(email: str) -> list[dict]:
     return _sb().select("users", filters={"email": f"ilike.*{escaped}*"}, limit=20)
 
 
+def wallet_exists(wallet_id: str) -> bool:
+    rows = _sb().select("wallets", filters={"id": f"eq.{wallet_id}"}, limit=1)
+    return bool(rows)
+
+
 def get_or_create_wallet(wallet_id: str, signup_bonus: bool = True) -> dict:
     result = _sb().rpc("ensure_wallet", {
         "p_wallet_id": wallet_id,

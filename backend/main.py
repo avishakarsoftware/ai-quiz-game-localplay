@@ -220,6 +220,15 @@ def _init_sentry() -> None:
 
 _init_sentry()
 app = FastAPI(title="AI Quiz Game Backend", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def _publish_client_ip(request: Request, call_next):
+    """Expose the (proxy-resolved) client IP to layers that have no Request in scope —
+    specifically the signup-bonus IP gate in tokens.py (REVIEW-2026-08 S2). A contextvar
+    instead of threading an argument through the 15+ ensure_wallet call sites."""
+    tokens.set_request_client_ip(_get_client_ip(request))
+    return await call_next(request)
 from game_catalog import (
     GAME_CATALOG,
     REVELRY_PARTY_GAME_TYPES,
@@ -311,12 +320,34 @@ def _check_rate_limit(client_ip: str) -> bool:
     return True
 
 
-def _check_llm_budget() -> bool:
-    """Return True if global LLM call budget allows another call. 0 = unlimited."""
-    if config.MAX_LLM_CALLS_PER_HOUR <= 0:
-        return True
+_llm_calls_by_wallet: dict = {}
+
+
+def _check_llm_budget(wallet_id: str = "") -> bool:
+    """Return True if the LLM budgets allow another call.
+
+    Two ceilings (REVIEW-2026-08 S2): the global hourly pool (0 = unlimited), and a per-wallet
+    hourly cap so no single identity — a minted-device farm or a whale — can drain that shared
+    pool for everyone else. The per-wallet check runs FIRST so one hog's rejections don't
+    consume global budget."""
     now = time.time()
     cutoff = now - 3600
+    if wallet_id and config.MAX_LLM_CALLS_PER_WALLET_PER_HOUR > 0:
+        stamps = [s for s in _llm_calls_by_wallet.get(wallet_id, []) if s > cutoff]
+        if len(stamps) >= config.MAX_LLM_CALLS_PER_WALLET_PER_HOUR:
+            _llm_calls_by_wallet[wallet_id] = stamps
+            logger.warning("Per-wallet LLM cap hit: %s (%d/hr)", wallet_id[:8],
+                           config.MAX_LLM_CALLS_PER_WALLET_PER_HOUR)
+            return False
+        stamps.append(now)
+        _llm_calls_by_wallet[wallet_id] = stamps
+        # Opportunistic eviction: drop wallets whose entries all expired, so the dict
+        # cannot grow unboundedly across a long uptime.
+        if len(_llm_calls_by_wallet) > 1000:
+            for k in [k for k, v in _llm_calls_by_wallet.items() if not any(s > cutoff for s in v)]:
+                del _llm_calls_by_wallet[k]
+    if config.MAX_LLM_CALLS_PER_HOUR <= 0:
+        return True
     _llm_call_timestamps[:] = [t for t in _llm_call_timestamps if t > cutoff]
     if len(_llm_call_timestamps) >= config.MAX_LLM_CALLS_PER_HOUR:
         logger.warning("LLM budget exhausted: %d/%d calls in the last hour", len(_llm_call_timestamps), config.MAX_LLM_CALLS_PER_HOUR)
@@ -1128,7 +1159,7 @@ async def generate_quiz(request: QuizRequest, req: Request):
     if not tokens.can_generate(wallet_id):
         raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
 
-    if not _check_llm_budget():
+    if not _check_llm_budget(wallet_id):
         raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
 
     await remote_config.get_config()  # refresh if stale
@@ -4111,7 +4142,7 @@ async def generate_mlt(request: MLTRequest, req: Request):
     if not tokens.can_generate(wallet_id):
         raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
 
-    if not _check_llm_budget():
+    if not _check_llm_budget(wallet_id):
         raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
 
     await remote_config.get_config()  # refresh if stale
@@ -4316,7 +4347,7 @@ async def generate_drawing(request: DrawingRequest, req: Request):
     if not tokens.can_generate(wallet_id):
         raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
 
-    if not _check_llm_budget():
+    if not _check_llm_budget(wallet_id):
         raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
 
     await remote_config.get_config()
@@ -4543,7 +4574,7 @@ async def generate_who_am_i(request: WhoAmIGenerateRequest, req: Request):
     tokens.ensure_wallet(wallet_id)
     if not tokens.can_generate(wallet_id):
         raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate.")
-    if not _check_llm_budget():
+    if not _check_llm_budget(wallet_id):
         raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
     await remote_config.get_config()
     provider = request.provider or remote_config.get_provider()
@@ -4742,7 +4773,7 @@ async def generate_chit_pull(request: ChitPullGenerateRequest, req: Request):
     tokens.ensure_wallet(wallet_id)
     if not tokens.can_generate(wallet_id):
         raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate.")
-    if not _check_llm_budget():
+    if not _check_llm_budget(wallet_id):
         raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
     await remote_config.get_config()
     provider = request.provider or remote_config.get_provider()
@@ -4966,7 +4997,7 @@ async def generate_party_quests(request: PartyQuestsGenerateRequest, req: Reques
     tokens.ensure_wallet(wallet_id)
     if not tokens.can_generate(wallet_id):
         raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate.")
-    if not _check_llm_budget():
+    if not _check_llm_budget(wallet_id):
         raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
     await remote_config.get_config()
     provider = request.provider or remote_config.get_provider()
@@ -5210,7 +5241,7 @@ async def generate_bingo(request: BingoGenerateRequest, req: Request):
     tokens.ensure_wallet(wallet_id)
     if not tokens.can_generate(wallet_id):
         raise HTTPException(status_code=402, detail=f"You need {config.COST_GENERATE} token to generate. Buy tokens or watch an ad!")
-    if not _check_llm_budget():
+    if not _check_llm_budget(wallet_id):
         raise HTTPException(status_code=503, detail="Server is busy. Please try again later.")
 
     await remote_config.get_config()

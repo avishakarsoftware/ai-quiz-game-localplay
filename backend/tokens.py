@@ -6,6 +6,50 @@ from typing import Optional
 from fastapi import Request
 
 import config
+from contextvars import ContextVar
+
+# Set per-request by main.py's middleware; empty when there is no HTTP context (tests, internal
+# calls) — in which case the signup gate ALLOWS, because a gate that misfires on internal paths
+# would be worse than the farming it prevents.
+_request_client_ip: ContextVar[str] = ContextVar("request_client_ip", default="")
+
+# {ip: (utc_date_str, bonus_creations_today)} — in-memory like every other limiter here; a
+# restart resets it, which merely re-opens the day's allowance. Single-process by design.
+_signup_grants_by_ip: dict = {}
+
+
+def set_request_client_ip(ip: str) -> None:
+    _request_client_ip.set(ip or "")
+
+
+def _signup_bonus_allowed() -> bool:
+    """Consume one unit of the per-IP bonus allowance. Call ONLY when actually creating a wallet.
+
+    Any fresh UUID in X-Device-Id used to get SIGNUP_BONUS_TOKENS unconditionally: mint ids,
+    farm grants, spend them on LLM generation — draining the shared hourly LLM budget
+    (REVIEW-2026-08 S2). Past the cap the wallet is still created, just grantless, so a real
+    guest at a big party can always play; only the freebie stops. Legit parties fit far under
+    the default (guests join rooms — they don't each need a bonus-bearing wallet-per-minute)."""
+    limit = config.SIGNUP_BONUS_IP_DAILY_LIMIT
+    if limit <= 0:
+        return True
+    ip = _request_client_ip.get()
+    if not ip:
+        return True
+    today = db._utc_date_str()
+    date, count = _signup_grants_by_ip.get(ip, (today, 0))
+    if date != today:
+        count = 0
+    if count >= limit:
+        return False
+    _signup_grants_by_ip[ip] = (today, count + 1)
+    return True
+
+
+def _create_or_get_wallet_gated(wallet_id: str) -> dict:
+    if db.wallet_exists(wallet_id):
+        return db.get_or_create_wallet(wallet_id, signup_bonus=True)  # existing: no creation happens
+    return db.get_or_create_wallet(wallet_id, signup_bonus=_signup_bonus_allowed())
 import db
 import auth as auth_module
 
@@ -52,8 +96,9 @@ def get_wallet_id(req: Request) -> str:
 
 
 def ensure_wallet(wallet_id: str) -> dict:
-    """Ensure a wallet exists for this ID, creating with signup bonus if new."""
-    return db.get_or_create_wallet(wallet_id, signup_bonus=True)
+    """Ensure a wallet exists for this ID, creating with signup bonus if new.
+    The bonus is subject to the per-IP daily allowance — see _signup_bonus_allowed."""
+    return _create_or_get_wallet_gated(wallet_id)
 
 
 # --- Balance checks ---
@@ -61,7 +106,7 @@ def ensure_wallet(wallet_id: str) -> dict:
 def get_token_status(wallet_id: str) -> dict:
     """Get full token status for the /tokens/balance endpoint.
     Auto-grants daily bonus if new UTC day."""
-    wallet = db.get_or_create_wallet(wallet_id, signup_bonus=True)
+    wallet = _create_or_get_wallet_gated(wallet_id)
     today = db._utc_date_str()
 
     # Auto-grant daily bonus (always call — db function handles idempotency atomically)
