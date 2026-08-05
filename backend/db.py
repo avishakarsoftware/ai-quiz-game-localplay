@@ -1545,12 +1545,14 @@ def migrate_entitlements_to_wallets():
     logger.info("Migrated %d active entitlements to token wallets", len(rows))
 
 
-def admin_grant_tokens(wallet_id: str, amount: int) -> int:
-    """Admin: grant tokens to a wallet. Returns new balance."""
+def admin_grant_tokens(wallet_id: str, amount: int, note: str = "") -> int:
+    """Admin: grant tokens to a wallet. Returns new balance.
+    `note` lands in the ledger row's reference_id — the support runbook (DEPLOY.md M2) requires
+    every remediation grant to carry the provider reference (cs_… / iap:…) as its audit link."""
     if amount <= 0 or amount > config.MAX_TOKEN_BALANCE:
         raise ValueError(f"admin_grant amount must be between 1 and {config.MAX_TOKEN_BALANCE}, got {amount}")
     get_or_create_wallet(wallet_id, signup_bonus=False)
-    _, new_balance = credit_tokens(wallet_id, amount, "admin_grant")
+    _, new_balance = credit_tokens(wallet_id, amount, "admin_grant", reference_id=note)
     return new_balance
 
 

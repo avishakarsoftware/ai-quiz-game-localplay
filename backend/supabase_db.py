@@ -683,11 +683,11 @@ def migrate_entitlements_to_wallets():
     return
 
 
-def admin_grant_tokens(wallet_id: str, amount: int) -> int:
+def admin_grant_tokens(wallet_id: str, amount: int, note: str = "") -> int:
     if amount <= 0 or amount > config.MAX_TOKEN_BALANCE:
         raise ValueError(f"admin_grant amount must be between 1 and {config.MAX_TOKEN_BALANCE}, got {amount}")
     get_or_create_wallet(wallet_id, signup_bonus=False)
-    _, new_balance = credit_tokens(wallet_id, amount, "admin_grant")
+    _, new_balance = credit_tokens(wallet_id, amount, "admin_grant", reference_id=note)
     return new_balance
 
 

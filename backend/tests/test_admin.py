@@ -338,3 +338,35 @@ class TestRound3BugFixes:
         data = resp.json()
         assert data["restored"] is False
         assert data["reason"] == "expired"
+
+
+class TestAdminGrantAuditNote:
+    """The support runbook (DEPLOY.md M2) hinges on tying every remediation grant to the payment
+    it fixes. Before `note`, admin grants were anonymous 'admin_grant' ledger rows."""
+
+    def test_note_lands_in_the_ledger_as_reference_id(self, client):
+        res = client.post(
+            "/admin/grant",
+            params={"wallet_id": "audit-note-wallet", "amount": 55,
+                    "note": "support:cs_test_123_undelivered"},
+            headers=admin_headers(),
+        )
+        assert res.status_code == 200
+        assert res.json()["note"] == "support:cs_test_123_undelivered"
+
+        conn = db._get_conn()
+        row = conn.execute(
+            "SELECT reference_id FROM token_transactions "
+            "WHERE wallet_id = ? AND reason = 'admin_grant' ORDER BY created_at DESC LIMIT 1",
+            ("audit-note-wallet",),
+        ).fetchone()
+        assert row is not None
+        assert row["reference_id"] == "support:cs_test_123_undelivered"
+
+    def test_note_is_optional(self, client):
+        res = client.post(
+            "/admin/grant",
+            params={"wallet_id": "audit-note-wallet-2", "amount": 5},
+            headers=admin_headers(),
+        )
+        assert res.status_code == 200

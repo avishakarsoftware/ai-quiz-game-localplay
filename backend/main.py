@@ -6403,15 +6403,16 @@ async def admin_lookup(req: Request, device_id: str = "", wallet_id: str = "", u
 
 
 @app.post("/admin/grant")
-async def admin_grant(req: Request, wallet_id: str = "", device_id: str = "", user_id: str = "", amount: int = 110):
+async def admin_grant(req: Request, wallet_id: str = "", device_id: str = "", user_id: str = "", amount: int = 110, note: str = ""):
     _check_admin(req)
     target = wallet_id or user_id or device_id
     if not target:
         raise HTTPException(status_code=400, detail="Provide wallet_id, device_id, or user_id")
     if amount <= 0 or amount > config.MAX_TOKEN_BALANCE:
         raise HTTPException(status_code=400, detail=f"Amount must be between 1 and {config.MAX_TOKEN_BALANCE}")
-    new_balance = db.admin_grant_tokens(target, amount)
-    return {"status": "granted", "wallet_id": target, "tokens_granted": amount, "new_balance": new_balance}
+    new_balance = db.admin_grant_tokens(target, amount, note=note[:200])
+    return {"status": "granted", "wallet_id": target, "tokens_granted": amount, "new_balance": new_balance,
+            "note": note[:200]}
 
 
 @app.get("/admin/stats")

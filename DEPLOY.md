@@ -1030,6 +1030,50 @@ Idempotent; review before running (it mutates project infra). The alert's runboo
 
 ---
 
+## Runbook: "I paid and didn't get my sparks" (REVIEW-2026-08 M2)
+
+Every credit is reconstructable — the data model is sound; this page exists so the procedure
+doesn't have to be reinvented while a customer is angry.
+
+**Reference-id conventions:** Stripe credits use the checkout session id (`cs_…`); native IAP
+credits use `iap:{APP_STORE|PLAY_STORE}:{transaction_id}`. `credit_purchase` is idempotent on
+that reference, so re-delivered webhooks can never double-credit — and a *missing* credit means
+the reference never reached a successful `credit_purchase`.
+
+1. **Get the payment evidence** — Stripe Dashboard → Payments (or RevenueCat → Customers): find
+   the session/transaction id and its status. If the provider shows no completed payment, stop:
+   there is nothing to credit.
+2. **Find the wallet** —
+   ```
+   curl -H "Authorization: Bearer $ADMIN_API_KEY" \
+     "https://gamesapi.revelryapp.me/admin/lookup?device_id=…"   # or wallet_id= / user_id= / email=
+   ```
+   The result includes the transaction ledger. Search it for the reference id from step 1.
+3. **Diagnose by where the trail stops:**
+   - *Ledger has the reference* → sparks were credited. Check `amount` on that row: if it's less
+     than the pack (or 0), the balance cap clamped it — pre-2026-08-04 purchases could pay and
+     credit zero (fixed since: checkout 409s and the modal greys packs that don't fit).
+     Remediate with step 4.
+   - *No ledger row + Stripe shows the webhook failed/unsent* (Dashboard → Developers →
+     Webhooks) → the webhook never landed. Re-send it from the dashboard; idempotency makes
+     replay safe.
+   - *No ledger row + webhook shows delivered-OK* → the credit landed on a **different wallet**
+     (classic: user signed out between purchase and fulfillment, so it went to the device wallet
+     instead of the user wallet, or vice versa). Look up the *other* id from step 2's `legacy`
+     block and search its ledger for the reference.
+4. **Remediate** — credit the missing amount with an auditable admin grant (query params, not a
+   JSON body):
+   ```
+   curl -X POST -H "Authorization: Bearer $ADMIN_API_KEY" \
+     "https://gamesapi.revelryapp.me/admin/grant?wallet_id=…&amount=200&note=support:cs_XXX_undelivered"
+   ```
+   **Always set `note`** with the provider reference — it lands in the ledger row's
+   `reference_id` and is the audit link between the payment and the remediation. (The `note`
+   param was added 2026-08-04; before that, admin grants were anonymous `admin_grant` ledger
+   rows with no way to tie them back to a payment.)
+
+---
+
 ## Nginx Configuration
 
 Nginx runs on the VM as a reverse proxy. Each subdomain has its own config file:
