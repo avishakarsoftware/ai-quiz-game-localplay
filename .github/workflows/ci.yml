@@ -22,10 +22,21 @@ jobs:
           cd backend
           pip install -r requirements.txt
 
-      - name: Run unit & API tests
+      # --cov makes coverage VISIBLE, not gated: no floor, no failure threshold. Before this,
+      # pytest-cov was installed and never invoked, so every coverage statement about this repo
+      # was inference (REVIEW-2026-08 T4). The xml lands as an artifact on every run.
+      - name: Run unit & API tests (with coverage)
         run: |
           cd backend
-          python -m pytest tests/ -q --ignore=tests/test_e2e.py
+          python -m pytest tests/ -q --ignore=tests/test_e2e.py \
+            --cov=. --cov-report=xml --cov-report=term:skip-covered
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          retention-days: 30
 
       # test_e2e.py runs sync-TestClient WebSocket flows that are timing-sensitive
       # under full-suite load (intermittent one-test flakes when interleaved).
@@ -111,3 +122,59 @@ jobs:
         run: |
           cd frontend
           npm run build
+
+  # The canonical "every game is playable" suite (frontend/e2e/all-games.spec.ts) previously ran
+  # in NO CI — only when someone remembered on a laptop. The catalog could regress a game and CI
+  # stayed green (REVIEW-2026-08 T1). It enumerates GET /catalog at runtime, so a newly added
+  # game is covered with zero test-writing; test_e2e_game_coverage.py guards drivability.
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # scripts/e2e-local-stack.sh looks for backend/venv, same as local dev.
+      - name: Install backend into a venv
+        run: |
+          python -m venv backend/venv
+          backend/venv/bin/pip install -q -r backend/requirements.txt
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Install Playwright Chromium
+        run: |
+          cd frontend
+          npx playwright install --with-deps chromium
+
+      - name: All-games behavioral suite (REQUIRED)
+        run: ./scripts/e2e-local-stack.sh npx playwright test e2e/all-games.spec.ts --project chromium-desktop --workers=2 --reporter=line
+
+      # ADVISORY until linux baselines are committed: every committed screenshot baseline is
+      # *-darwin.png, and Playwright names snapshots per-platform, so this run writes the missing
+      # *-linux.png files and fails. The artifact below carries those linux baselines — download,
+      # review, commit them into frontend/e2e/*-snapshots/, then delete this comment and the
+      # continue-on-error line to make the visual suite gate too.
+      - name: Visual regression (advisory — see comment)
+        continue-on-error: true
+        run: ./scripts/visual-regression.sh --project chromium-desktop
+
+      - name: Upload visual snapshots + results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-linux-baselines
+          path: |
+            frontend/e2e/*-snapshots/
+            frontend/test-results-visual/
+          retention-days: 14
