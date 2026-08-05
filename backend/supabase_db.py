@@ -345,6 +345,38 @@ def lookup_user_by_email(email: str) -> list[dict]:
     return _sb().select("users", filters={"email": f"ilike.*{escaped}*"}, limit=20)
 
 
+def party_grace_state(wallet_id: str) -> tuple[int, int]:
+    rows = _sb().select(
+        "token_transactions",
+        filters={"wallet_id": f"eq.{wallet_id}", "reason": "eq.grace_room"},
+        order="created_at.asc",
+    )
+    if not rows:
+        return (0, 0)
+    return (int(rows[0]["created_at"]), len(rows))
+
+
+def has_room_spend(wallet_id: str) -> bool:
+    rows = _sb().select(
+        "token_transactions",
+        filters={"wallet_id": f"eq.{wallet_id}", "reason": "eq.spend_room"},
+        limit=1,
+    )
+    return bool(rows)
+
+
+def record_grace_room(wallet_id: str) -> None:
+    _sb().insert("token_transactions", {
+        "wallet_id": wallet_id,
+        "amount": 0,
+        "reason": "grace_room",
+        "reference_id": None,
+        "balance_after": get_wallet_balance(wallet_id),
+        "metadata": "",
+        "created_at": _now(),
+    })
+
+
 def wallet_exists(wallet_id: str) -> bool:
     rows = _sb().select("wallets", filters={"id": f"eq.{wallet_id}"}, limit=1)
     return bool(rows)

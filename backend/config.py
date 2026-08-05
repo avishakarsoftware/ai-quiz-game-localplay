@@ -212,6 +212,15 @@ SHARE_TTL_SECONDS = int(os.getenv("SHARE_TTL_SECONDS", str(7 * 86400)))
 MAX_SHARE_SNAPSHOTS = int(os.getenv("MAX_SHARE_SNAPSHOTS", "500"))
 COST_GENERATE = int(os.getenv("COST_GENERATE", "1"))
 COST_ROOM = int(os.getenv("COST_ROOM", "10"))
+
+# First-party grace (REVIEW-2026-08 P1). The economy used to paywall a brand-new host at
+# ~game 2 — mid-party, friends watching, the worst possible moment to ask for money. Instead:
+# a wallet's FIRST room starts a grace window in which rooms are free (generation still costs
+# sparks), so the purchase ask arrives after a great first party, not during it.
+# Hours the window stays open from the first room; 0 disables the feature entirely.
+PARTY_GRACE_HOURS = int(os.getenv("PARTY_GRACE_HOURS", "6"))
+# Safety cap on free rooms inside the window (a real game night is well under this).
+PARTY_GRACE_MAX_ROOMS = int(os.getenv("PARTY_GRACE_MAX_ROOMS", "10"))
 AD_REWARD_TOKENS = int(os.getenv("AD_REWARD_TOKENS", "5"))
 MAX_ADS_PER_DAY = int(os.getenv("MAX_ADS_PER_DAY", "5"))
 # The /tokens/ad-reward endpoint is a "trust the client" stub with NO ad verification —

@@ -5,6 +5,7 @@ import { BINGO_FAMILY_IDS, filterGameModesForCatalog, GAME_MODE_CONFIGS, isMostP
 import { ENABLE_BINGO } from '../../config';
 import { useRemoteConfigContext } from '../../context/RemoteConfigContext';
 import GameRulesModal from '../GameRulesModal';
+import PartyGraceBanner from '../PartyGraceBanner';
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../../gameRules';
 
 interface GameSelectScreenProps {
@@ -114,6 +115,7 @@ export default function GameSelectScreen({ onSelect, catalog }: GameSelectScreen
                     </div>
                     <h1 className="hero-title">Choose a Game</h1>
                     <p className="text-[--text-tertiary] mt-2">Pick a game to play with your group</p>
+                    <PartyGraceBanner />
                 </div>
 
                 <div className="game-catalog-tools" role="search">

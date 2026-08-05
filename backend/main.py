@@ -5990,6 +5990,9 @@ async def token_balance(req: Request):
     # The purchase modal greys out packs that wouldn't fit under the cap (REVIEW-2026-08 M1),
     # so the cap must travel with the balance rather than being hardcoded client-side.
     status["max_balance"] = config.MAX_TOKEN_BALANCE
+    # First-party grace (REVIEW-2026-08 P1): the frontend banner needs to know whether this
+    # host's first party is free, live-until-when, or over.
+    status["party_grace"] = tokens.party_grace_status(wallet_id)
     if status.get("daily_bonus_granted"):
         analytics.capture_bg(wallet_id, "spark_earned",
                              {"source": "daily_bonus", "amount": status.get("bonus_amount", 0),

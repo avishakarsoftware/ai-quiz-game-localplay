@@ -12,6 +12,13 @@ export interface TokenStatus {
     cost_generate: number;
     cost_room: number;
     ads_remaining_today?: number;
+    max_balance?: number;
+    /** First-party grace (REVIEW-2026-08 P1): free rooms for a new host's first evening. */
+    party_grace?: {
+        state: 'available' | 'active' | 'expired' | 'ineligible';
+        until: number;
+        rooms_used: number;
+    };
 }
 
 const DEFAULT: TokenStatus = {

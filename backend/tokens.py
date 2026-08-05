@@ -154,8 +154,48 @@ def can_create_room(wallet_id: str) -> bool:
     return db.get_wallet_balance(wallet_id) >= config.COST_ROOM
 
 
+def party_grace_status(wallet_id: str) -> dict:
+    """Read-only grace status for the balance payload — never consumes a room.
+
+    states: 'available' (new host, first room will open the window), 'active' (window open),
+    'expired' (window closed or cap reached), 'ineligible' (veteran payer / feature off)."""
+    if config.PARTY_GRACE_HOURS <= 0:
+        return {"state": "ineligible", "until": 0, "rooms_used": 0}
+    anchor, rooms = db.party_grace_state(wallet_id)
+    if anchor == 0:
+        if db.has_room_spend(wallet_id):
+            return {"state": "ineligible", "until": 0, "rooms_used": 0}
+        return {"state": "available", "until": 0, "rooms_used": 0}
+    until = anchor + config.PARTY_GRACE_HOURS * 3600
+    import time as _time
+    if _time.time() < until and rooms < config.PARTY_GRACE_MAX_ROOMS:
+        return {"state": "active", "until": until, "rooms_used": rooms}
+    return {"state": "expired", "until": until, "rooms_used": rooms}
+
+
+def _try_grace_room(wallet_id: str) -> bool:
+    """Consume one free room from the first-party grace window if the wallet qualifies
+    (REVIEW-2026-08 P1). The window anchors on the wallet's FIRST room ever, so the paywall
+    stops interrupting a live first party and the ask moves to after it."""
+    status = party_grace_status(wallet_id)
+    if status["state"] not in ("available", "active"):
+        return False
+    db.record_grace_room(wallet_id)
+    logger.info("grace_room: wallet=%s room#%d of first-party window",
+                wallet_id[:8], status["rooms_used"] + 1)
+    # Funnel evidence: whether grace converts (post-party purchases) is THE question this
+    # feature exists to answer. No-op unless PostHog is configured.
+    import analytics
+    analytics.capture_bg(wallet_id, "grace_room_used", {"room_number": status["rooms_used"] + 1})
+    return True
+
+
 def spend_room(wallet_id: str) -> tuple[bool, int]:
-    """Debit tokens for game start/reset. Returns (success, new_balance)."""
+    """Debit tokens for game start/reset. Returns (success, new_balance).
+    The first-party grace window (PARTY_GRACE_HOURS) makes rooms free for a new host's first
+    evening — this seam covers BOTH socket-layer charge sites (start + reset)."""
+    if _try_grace_room(wallet_id):
+        return True, db.get_wallet_balance(wallet_id)
     success, balance = db.debit_tokens(wallet_id, config.COST_ROOM, "spend_room")
     if success:
         logger.info("spend_room: wallet=%s cost=%d balance=%d", wallet_id[:8], config.COST_ROOM, balance)

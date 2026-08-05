@@ -785,6 +785,41 @@ def _utc_yesterday_str() -> str:
     return (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
 
 
+def party_grace_state(wallet_id: str) -> tuple[int, int]:
+    """(anchor_epoch, rooms_used) of the first-party grace window — (0, 0) if never started.
+    State lives in the ledger as zero-amount 'grace_room' rows: no schema change, and the
+    window anchors on the FIRST free room (REVIEW-2026-08 P1)."""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT MIN(created_at) AS anchor, COUNT(*) AS rooms FROM token_transactions "
+        "WHERE wallet_id = ? AND reason = 'grace_room'",
+        (wallet_id,),
+    ).fetchone()
+    return (row["anchor"] or 0, row["rooms"] or 0)
+
+
+def has_room_spend(wallet_id: str) -> bool:
+    """Has this wallet ever PAID for a room? Veterans predating the grace feature don't get a
+    surprise free evening — grace is a first-party experience, not a refund."""
+    conn = _get_conn()
+    return conn.execute(
+        "SELECT 1 FROM token_transactions WHERE wallet_id = ? AND reason = 'spend_room' LIMIT 1",
+        (wallet_id,),
+    ).fetchone() is not None
+
+
+def record_grace_room(wallet_id: str) -> None:
+    """Ledger marker for a free grace room: amount 0, balance unchanged."""
+    conn = _get_conn()
+    balance = get_wallet_balance(wallet_id)
+    conn.execute(
+        "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, metadata, created_at) "
+        "VALUES (?, 0, 'grace_room', NULL, ?, '', ?)",
+        (wallet_id, balance, int(time.time())),
+    )
+    conn.commit()
+
+
 def wallet_exists(wallet_id: str) -> bool:
     """Cheap existence probe so the signup-bonus IP gate only spends quota on ACTUAL creations —
     a returning device's balance poll must not drain its party's allowance (REVIEW-2026-08 S2)."""
@@ -2086,6 +2121,9 @@ if config.DB_BACKEND == "supabase":
         "lookup_user_by_email",
         "_utc_date_str",
         "wallet_exists",
+        "party_grace_state",
+        "has_room_spend",
+        "record_grace_room",
         "get_or_create_wallet",
         "get_wallet_balance",
         "debit_tokens",

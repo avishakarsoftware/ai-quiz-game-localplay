@@ -54,6 +54,10 @@ def isolate_test_database(tmp_path, monkeypatch):
     and `_get_conn()` only reads `DB_PATH` when it opens one, so without a fresh `threading.local()`
     an already-open handle to the old path would survive the patch.
     """
+    # First-party grace would make the FIRST room free for every fresh test wallet, silently
+    # rewriting the expectations of every economy/room test. The suite pins the pre-grace
+    # behavior; test_party_grace.py re-enables the feature explicitly.
+    monkeypatch.setattr(config, "PARTY_GRACE_HOURS", 0)
     import threading
     monkeypatch.setattr(db, "_local", threading.local())
     monkeypatch.setattr(db, "DB_DIR", str(tmp_path))
