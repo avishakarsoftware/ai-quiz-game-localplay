@@ -1,4 +1,7 @@
-FROM python:3.12-slim
+# 3.14 to match CI and the local dev venv (REVIEW-2026-08 O5) — before this, all 1,400+
+# backend tests ran on an interpreter prod never used. Timing-sensitive asyncio code makes
+# version skew a real risk, not a cosmetic one.
+FROM python:3.14-slim
 
 WORKDIR /app
 
