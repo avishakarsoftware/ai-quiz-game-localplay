@@ -15,12 +15,15 @@
 # (native x86, datacenter network, a few MB of context vs a large image tarball).
 #
 # What this script does:
-#   1. Builds the Docker image locally
+#   1. Builds the Docker image locally (or on the VM)
 #   2. Copies it to the GCP VM
 #   3. Backs up the SQLite database
-#   4. Stops the old container
-#   5. Starts the new container WITH volume mount (data persists)
-#   6. Verifies the deploy
+#   4. PRE-FLIGHTS the new image on a side port (live container untouched; a bad image
+#      aborts here with production still running the previous version)
+#   5. Captures the running image ID as the rollback point, then swaps containers
+#   6. Verifies via /health — and on failure AUTOMATICALLY rolls back to the captured
+#      image, so a failed deploy ends on the previous version, not on nothing
+#   Gamma containers get --memory/--cpus caps so a bad gamma deploy can't starve prod.
 #
 # Prerequisites:
 #   - gcloud CLI authenticated
@@ -416,21 +419,66 @@ BACKUP_RESULT=$(ssh_cmd "
 ")
 info "$BACKUP_RESULT"
 
-# --- Step 5: Stop old container ---
-info "Stopping old container..."
-ssh_cmd "docker stop $CONTAINER_NAME 2>/dev/null; docker rm $CONTAINER_NAME 2>/dev/null; true"
+# Resource caps: gamma shares the VM with prod, so it must never be able to starve it
+# (REVIEW-2026-08 O3). Prod stays uncapped.
+RESOURCE_FLAGS=""
+if [[ "$ENVIRONMENT" == "gamma" ]]; then
+    RESOURCE_FLAGS="--memory=768m --cpus=1.0"
+fi
 
-# --- Step 6: Start new container with volume mount ---
-info "Starting new container..."
+# --- Step 5: Pre-flight the new image WITHOUT touching the live container ---
+# The old flow stopped+removed the live container before the new one had ever run, so a bad
+# image left the service DOWN with nothing to fall back to (REVIEW-2026-08 O1). The pre-flight
+# boots the new image on a side port first: no data volume (so it can't touch prod state) and
+# ROOM_SNAPSHOT_ENABLED=false (so its empty room state can't overwrite live snapshots).
+# /health is deliberately shallow, so this needs no database access.
+PREFLIGHT_NAME="${CONTAINER_NAME}-preflight"
+PREFLIGHT_PORT=$((HOST_PORT + 70))
+info "Pre-flighting new image on port $PREFLIGHT_PORT (live container untouched)..."
+PREFLIGHT=$(ssh_cmd "
+    docker rm -f $PREFLIGHT_NAME >/dev/null 2>&1 || true
+    docker run -d --name $PREFLIGHT_NAME \
+        --env-file $REMOTE_ENV_FILE \
+        -e ROOM_SNAPSHOT_ENABLED=false \
+        -p 127.0.0.1:$PREFLIGHT_PORT:8000 \
+        $IMAGE_NAME:latest >/dev/null
+    CODE='fail'
+    for i in \$(seq 1 20); do
+        CODE=\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:$PREFLIGHT_PORT/health 2>/dev/null || echo 'fail')
+        if [ \"\$CODE\" = '200' ]; then break; fi
+        sleep 1
+    done
+    if [ \"\$CODE\" != '200' ]; then
+        echo '--- preflight logs ---' >&2
+        docker logs $PREFLIGHT_NAME --tail 15 >&2 || true
+    fi
+    docker rm -f $PREFLIGHT_NAME >/dev/null 2>&1 || true
+    echo \"\$CODE\"
+")
+if [[ "$PREFLIGHT" != *"200"* ]]; then
+    error "Pre-flight FAILED (HTTP $PREFLIGHT): the new image does not boot."
+    error "The live container was NOT touched — production is still on the previous version."
+    exit 1
+fi
+info "Pre-flight passed."
+
+# --- Step 6: Swap containers (rollback point captured first) ---
+info "Capturing rollback point and swapping..."
+ssh_cmd "docker inspect --format '{{.Image}}' $CONTAINER_NAME > /tmp/${CONTAINER_NAME}.prev-image 2>/dev/null || echo '' > /tmp/${CONTAINER_NAME}.prev-image"
+ssh_cmd "docker stop $CONTAINER_NAME 2>/dev/null; docker rm $CONTAINER_NAME 2>/dev/null; true"
 ssh_cmd "docker run -d \
     --name $CONTAINER_NAME \
     --env-file $REMOTE_ENV_FILE \
     -p 127.0.0.1:$HOST_PORT:8000 \
     -v $REMOTE_DATA_DIR:/app/data \
     --restart unless-stopped \
+    $RESOURCE_FLAGS \
     $IMAGE_NAME:latest"
 
-# --- Step 7: Verify ---
+# --- Step 7: Verify, and ROLL BACK automatically on failure ---
+# Pre-flight proves the image boots in isolation; this proves it boots in the real harness
+# (volume, port, restart policy). If it fails here, restart the previous image rather than
+# leaving the service down — image IDs are immutable, so the captured ID survives retagging.
 info "Waiting for container to start..."
 HEALTH=$(ssh_cmd "
     for i in \$(seq 1 20); do
@@ -446,8 +494,46 @@ HEALTH=$(ssh_cmd "
 if [[ "$HEALTH" == "200" ]]; then
     info "Health check passed!"
 else
-    error "Health check failed (HTTP $HEALTH). Check logs:"
-    error "  gcloud compute ssh $VM_NAME --zone $VM_ZONE --command 'docker logs $CONTAINER_NAME --tail 20'"
+    error "Health check failed (HTTP $HEALTH). Rolling back to the previous image..."
+    ROLLBACK=$(ssh_cmd "
+        PREV=\$(cat /tmp/${CONTAINER_NAME}.prev-image 2>/dev/null || true)
+        docker logs $CONTAINER_NAME --tail 15 >&2 || true
+        docker rm -f $CONTAINER_NAME >/dev/null 2>&1 || true
+        if [ -z \"\$PREV\" ]; then
+            echo 'no-previous-image'
+            exit 0
+        fi
+        docker run -d \
+            --name $CONTAINER_NAME \
+            --env-file $REMOTE_ENV_FILE \
+            -p 127.0.0.1:$HOST_PORT:8000 \
+            -v $REMOTE_DATA_DIR:/app/data \
+            --restart unless-stopped \
+            $RESOURCE_FLAGS \
+            \"\$PREV\" >/dev/null
+        for i in \$(seq 1 20); do
+            CODE=\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:$HOST_PORT/health 2>/dev/null || echo 'fail')
+            if [ \"\$CODE\" = '200' ]; then
+                echo rolled-back
+                exit 0
+            fi
+            sleep 1
+        done
+        echo rollback-unhealthy
+    ")
+    case "$ROLLBACK" in
+        *rolled-back*)
+            error "Deploy FAILED but rollback succeeded — service is running the PREVIOUS version."
+            error "Fix the new image and redeploy. New-container logs are above."
+            ;;
+        *no-previous-image*)
+            error "Deploy FAILED and no previous image was recorded (fresh VM?) — service is DOWN."
+            ;;
+        *)
+            error "Deploy FAILED and rollback did not become healthy ($ROLLBACK) — service is DOWN."
+            error "  gcloud compute ssh $VM_NAME --zone $VM_ZONE --command 'docker logs $CONTAINER_NAME --tail 40'"
+            ;;
+    esac
     exit 1
 fi
 
