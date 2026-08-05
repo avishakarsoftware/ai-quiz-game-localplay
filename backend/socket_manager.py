@@ -273,6 +273,40 @@ from housie_engine import (
 
 logger = logging.getLogger(__name__)
 
+# Strong references for background tasks (see spawn()). asyncio.create_task returns a task the
+# event loop holds only WEAKLY -- a task nobody references can be garbage-collected mid-flight.
+_background_tasks: set = set()
+
+
+def spawn(coro, *, name: str) -> asyncio.Task:
+    """create_task with the two safety properties every fire-and-forget task here needs
+    (REVIEW-2026-08 A3):
+
+    1. A strong reference for the task's lifetime. Four call sites used to do a bare
+       asyncio.create_task with the result discarded -- the musical-chairs round/game
+       completions -- which the asyncio docs explicitly warn can be collected before running.
+    2. An exception surface. An unawaited task's exception is reported only when the task is
+       garbage-collected, if ever; a crashed question timer or snapshot loop just silently stops.
+       The done-callback logs it immediately, with the name, at ERROR (CancelledError excluded --
+       cancellation is how these tasks are routinely stopped).
+
+    Callers that cancel later still work unchanged: room.timer_task = spawn(...) -- the extra
+    reference in _background_tasks is dropped as soon as the task finishes or is cancelled.
+    """
+    task = asyncio.create_task(coro, name=name)
+    _background_tasks.add(task)
+
+    def _finished(t: asyncio.Task) -> None:
+        _background_tasks.discard(t)
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc is not None:
+            logger.error("Background task %r crashed: %s", name, exc, exc_info=exc)
+
+    task.add_done_callback(_finished)
+    return task
+
 
 # --- Game-type sets, derived rather than hand-listed -------------------------------------------
 #
@@ -954,7 +988,7 @@ class SocketManager:
     def start_cleanup_loop(self):
         """Start the background room cleanup task."""
         if self._cleanup_task is None:
-            self._cleanup_task = asyncio.create_task(self._cleanup_expired_rooms())
+            self._cleanup_task = spawn(self._cleanup_expired_rooms(), name="room-cleanup-loop")
 
     def stop_cleanup_loop(self):
         """Cancel the background room cleanup task."""
@@ -967,7 +1001,7 @@ class SocketManager:
     def start_snapshot_loop(self):
         """Start the periodic room-snapshot task (see room_snapshot.py)."""
         if config.ROOM_SNAPSHOT_ENABLED and self._snapshot_task is None:
-            self._snapshot_task = asyncio.create_task(self._snapshot_rooms_loop())
+            self._snapshot_task = spawn(self._snapshot_rooms_loop(), name="room-snapshot-loop")
 
     def stop_snapshot_loop(self):
         """Cancel the snapshot task and take one final snapshot (deploy shutdown path)."""
@@ -1011,7 +1045,7 @@ class SocketManager:
             if room.state == "QUESTION":
                 # Fresh countdown for the interrupted question; scoring still
                 # uses the original question_start_time.
-                room.timer_task = asyncio.create_task(self.question_timer(room))
+                room.timer_task = spawn(self.question_timer(room), name=f"question-timer:{room.room_code}")
         if restored:
             logger.info("Restored %d room(s) from snapshots: %s",
                         len(restored), ", ".join(r.room_code for r in restored))
@@ -1343,8 +1377,9 @@ class SocketManager:
                         await self._set_housie_auto_status(room, "paused")
                     await room.broadcast({"type": "ORGANIZER_DISCONNECTED"})
                     # Start grace period — delete room if organizer doesn't reconnect
-                    room._organizer_cleanup_task = asyncio.create_task(
-                        self._delayed_room_cleanup(room_code, delay=config.ORGANIZER_RECONNECT_GRACE_SECONDS)
+                    room._organizer_cleanup_task = spawn(
+                        self._delayed_room_cleanup(room_code, delay=config.ORGANIZER_RECONNECT_GRACE_SECONDS),
+                        name=f"organizer-grace:{room_code}",
                     )
             if room._player_event:
                 event_type, nickname = room._player_event
@@ -4788,7 +4823,7 @@ class SocketManager:
         if not deadline:
             return
         delay = max(0.1, float(deadline) - time.time())
-        room.mafia_timer_task = asyncio.create_task(self._mafia_timer_expired(room.room_code, delay))
+        room.mafia_timer_task = spawn(self._mafia_timer_expired(room.room_code, delay), name=f"mafia-timer:{room.room_code}")
 
     async def _mafia_timer_expired(self, room_code: str, delay: float):
         try:
@@ -5271,7 +5306,7 @@ class SocketManager:
             if room.game_type != "musical_chairs" or room.state not in ("MC_BETWEEN_ROUNDS", "MC_REVEAL"):
                 return
             if len(room.mc_active_players) <= 1:
-                asyncio.create_task(self._mc_complete_game(room))
+                spawn(self._mc_complete_game(room), name=f"mc-complete:{room.room_code}")
                 return
             if room.mc_auto_stop_task:
                 room.mc_auto_stop_task.cancel()
@@ -5293,7 +5328,7 @@ class SocketManager:
                 "stop_after_seconds": round(stop_after, 2),
             })
             if bool(room.mc_config.get("auto_stop", True)):
-                room.mc_auto_stop_task = asyncio.create_task(self._mc_auto_stop(room, stop_after))
+                room.mc_auto_stop_task = spawn(self._mc_auto_stop(room, stop_after), name=f"mc-auto-stop:{room.room_code}")
 
     async def _mc_auto_stop(self, room: Room, delay: float):
         try:
@@ -5320,7 +5355,7 @@ class SocketManager:
                 "musical_chairs": room.mc_public_state(),
             })
             if not physical_mode:
-                room.mc_grab_task = asyncio.create_task(self._mc_grab_deadline(room, grab_window))
+                room.mc_grab_task = spawn(self._mc_grab_deadline(room, grab_window), name=f"mc-grab:{room.room_code}")
 
     async def _mc_grab_deadline(self, room: Room, delay: float):
         try:
@@ -5353,7 +5388,7 @@ class SocketManager:
                 if room.mc_grab_task:
                     room.mc_grab_task.cancel()
                     room.mc_grab_task = None
-                asyncio.create_task(self._mc_end_round(room))
+                spawn(self._mc_end_round(room), name=f"mc-end-round:{room.room_code}")
 
     async def _mc_eliminate_physical(self, room: Room, nickname: str):
         async with room.lock:
@@ -5397,7 +5432,7 @@ class SocketManager:
                 "musical_chairs": room.mc_public_state(),
             })
             if len(room.mc_active_players) <= 1:
-                asyncio.create_task(self._mc_complete_game(room))
+                spawn(self._mc_complete_game(room), name=f"mc-complete:{room.room_code}")
             else:
                 room.state = "MC_BETWEEN_ROUNDS"
                 await room.broadcast({"type": "MC_SYNC", "musical_chairs": room.mc_public_state()})
@@ -5448,7 +5483,7 @@ class SocketManager:
                 "musical_chairs": room.mc_public_state(),
             })
             if len(room.mc_active_players) <= 1:
-                asyncio.create_task(self._mc_complete_game(room))
+                spawn(self._mc_complete_game(room), name=f"mc-complete:{room.room_code}")
             else:
                 room.state = "MC_BETWEEN_ROUNDS"
                 await room.broadcast({"type": "MC_SYNC", "musical_chairs": room.mc_public_state()})
@@ -5494,7 +5529,7 @@ class SocketManager:
         room.housie_next_auto_call_at = None
         if status == "running" and room.state == "BINGO_CALLING" and room.housie_deck:
             room.housie_caller_mode = "auto"
-            room.housie_auto_task = asyncio.create_task(self._housie_auto_loop(room))
+            room.housie_auto_task = spawn(self._housie_auto_loop(room), name=f"housie-auto:{room.room_code}")
         elif status == "stopped":
             room.housie_caller_mode = "manual"
         await self._broadcast_housie_auto_status(room)
@@ -6356,7 +6391,7 @@ class SocketManager:
             return
 
         room.question_start_time = time.time()
-        room.timer_task = asyncio.create_task(self.question_timer(room))
+        room.timer_task = spawn(self.question_timer(room), name=f"question-timer:{room.room_code}")
 
     async def question_timer(self, room: Room):
         """Timer that ends the question after time_limit seconds."""
@@ -6448,7 +6483,7 @@ class SocketManager:
             room.drawing_auto_task.cancel()
             room.drawing_auto_task = None
         if room.drawing_auto_advance:
-            room.drawing_auto_task = asyncio.create_task(self._drawing_auto_advance_after_pause(room, is_final))
+            room.drawing_auto_task = spawn(self._drawing_auto_advance_after_pause(room, is_final), name=f"drawing-auto:{room.room_code}")
 
     async def _drawing_auto_advance_after_pause(self, room: Room, is_final: bool):
         delay = max(0, min(30, int(room.drawing_inter_round_seconds or 5)))
