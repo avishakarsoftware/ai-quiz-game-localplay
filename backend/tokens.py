@@ -1,12 +1,12 @@
 """Token-based economy — wallet balance checks, spending, and status."""
 import re
 import logging
+from contextvars import ContextVar, Token
 from typing import Optional
 
 from fastapi import Request
 
 import config
-from contextvars import ContextVar
 
 # Set per-request by main.py's middleware; empty when there is no HTTP context (tests, internal
 # calls) — in which case the signup gate ALLOWS, because a gate that misfires on internal paths
@@ -18,8 +18,12 @@ _request_client_ip: ContextVar[str] = ContextVar("request_client_ip", default=""
 _signup_grants_by_ip: dict = {}
 
 
-def set_request_client_ip(ip: str) -> None:
-    _request_client_ip.set(ip or "")
+def set_request_client_ip(ip: str) -> Token[str]:
+    return _request_client_ip.set(ip or "")
+
+
+def reset_request_client_ip(token: Token[str]) -> None:
+    _request_client_ip.reset(token)
 
 
 def _signup_bonus_allowed() -> bool:
@@ -163,7 +167,7 @@ def party_grace_status(wallet_id: str) -> dict:
         return {"state": "ineligible", "until": 0, "rooms_used": 0}
     anchor, rooms = db.party_grace_state(wallet_id)
     if anchor == 0:
-        if db.has_room_spend(wallet_id):
+        if db.has_room_spend(wallet_id) or not db.has_signup_bonus(wallet_id):
             return {"state": "ineligible", "until": 0, "rooms_used": 0}
         return {"state": "available", "until": 0, "rooms_used": 0}
     until = anchor + config.PARTY_GRACE_HOURS * 3600

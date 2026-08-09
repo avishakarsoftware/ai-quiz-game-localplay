@@ -365,6 +365,15 @@ def has_room_spend(wallet_id: str) -> bool:
     return bool(rows)
 
 
+def has_signup_bonus(wallet_id: str) -> bool:
+    rows = _sb().select(
+        "token_transactions",
+        filters={"wallet_id": f"eq.{wallet_id}", "reason": "eq.signup_bonus"},
+        limit=1,
+    )
+    return bool(rows)
+
+
 def record_grace_room(wallet_id: str) -> None:
     _sb().insert("token_transactions", {
         "wallet_id": wallet_id,

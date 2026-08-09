@@ -31,11 +31,14 @@ def grace_enabled(monkeypatch):
     yield
 
 
-def _host(balance: int = 20) -> str:
+def _host(balance: int = 20, signup_bonus: bool = True) -> str:
     wallet_id = str(uuid.uuid4())
-    db.get_or_create_wallet(wallet_id, signup_bonus=False)
-    if balance:
-        db.credit_tokens(wallet_id, balance, "test_fund")
+    db.get_or_create_wallet(wallet_id, signup_bonus=signup_bonus)
+    current_balance = db.get_wallet_balance(wallet_id)
+    if balance > current_balance:
+        db.credit_tokens(wallet_id, balance - current_balance, "test_fund")
+    elif balance < current_balance:
+        db.debit_tokens(wallet_id, current_balance - balance, "test_drain")
     return wallet_id
 
 
@@ -89,6 +92,16 @@ def test_veteran_payers_are_not_granted_a_surprise_free_evening():
     ok, balance = tokens.spend_room(host)
     assert ok
     assert balance == 50 - 2 * config.COST_ROOM  # historical debit + this normal debit, no grace
+    assert db.party_grace_state(host) == (0, 0)
+
+
+def test_grantless_wallets_are_not_granted_free_rooms():
+    """Wallets created after the per-IP signup allowance is exhausted can still play, but they
+    cannot be minted into free first-party hosts."""
+    host = _host(0, signup_bonus=False)
+    assert tokens.party_grace_status(host)["state"] == "ineligible"
+    ok, _ = tokens.spend_room(host)
+    assert not ok
     assert db.party_grace_state(host) == (0, 0)
 
 

@@ -808,6 +808,18 @@ def has_room_spend(wallet_id: str) -> bool:
     ).fetchone() is not None
 
 
+def has_signup_bonus(wallet_id: str) -> bool:
+    """Did this wallet receive the normal first-party signup grant?
+
+    Grantless wallets are still created after the per-IP allowance is exhausted so late guests can
+    play, but they must not become an unlimited source of free grace rooms."""
+    conn = _get_conn()
+    return conn.execute(
+        "SELECT 1 FROM token_transactions WHERE wallet_id = ? AND reason = 'signup_bonus' LIMIT 1",
+        (wallet_id,),
+    ).fetchone() is not None
+
+
 def record_grace_room(wallet_id: str) -> None:
     """Ledger marker for a free grace room: amount 0, balance unchanged."""
     conn = _get_conn()
@@ -2123,6 +2135,7 @@ if config.DB_BACKEND == "supabase":
         "wallet_exists",
         "party_grace_state",
         "has_room_spend",
+        "has_signup_bonus",
         "record_grace_room",
         "get_or_create_wallet",
         "get_wallet_balance",

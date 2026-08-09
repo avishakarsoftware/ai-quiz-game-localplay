@@ -17,6 +17,7 @@ import tokens
 # fund_test_wallet monkeypatches tokens.ensure_wallet to a no-op for the general suites,
 # and these tests need the real implementation.
 _REAL_ENSURE_WALLET = tokens.ensure_wallet
+_REAL_SPEND_ROOM = tokens.spend_room
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +25,7 @@ def reset_guard_state(monkeypatch):
     tokens._signup_grants_by_ip.clear()
     tokens.set_request_client_ip("")
     monkeypatch.setattr(tokens, "ensure_wallet", _REAL_ENSURE_WALLET)
+    monkeypatch.setattr(tokens, "spend_room", _REAL_SPEND_ROOM)
     yield
     tokens._signup_grants_by_ip.clear()
     tokens.set_request_client_ip("")
@@ -83,6 +85,31 @@ class TestSignupBonusIpAllowance:
         tokens.set_request_client_ip("198.51.100.10")
         for _ in range(5):
             assert tokens.ensure_wallet(_fresh())["balance"] == config.SIGNUP_BONUS_TOKENS
+
+    def test_grantless_wallets_do_not_get_grace_rooms(self, monkeypatch):
+        """The signup IP allowance and first-party grace must compose: once an IP's bonus-bearing
+        wallet allowance is exhausted, newly created grantless wallets cannot be turned into free
+        room hosts through the WebSocket spend_room seam."""
+        monkeypatch.setattr(config, "SIGNUP_BONUS_IP_DAILY_LIMIT", 1)
+        monkeypatch.setattr(config, "PARTY_GRACE_HOURS", 6)
+        monkeypatch.setattr(config, "PARTY_GRACE_MAX_ROOMS", 4)
+        tokens.set_request_client_ip("198.51.100.11")
+
+        first = tokens.ensure_wallet(_fresh())
+        second = tokens.ensure_wallet(_fresh())
+        assert first["balance"] == config.SIGNUP_BONUS_TOKENS
+        assert second["balance"] == 0
+
+        ok, _ = tokens.spend_room(second["id"])
+        assert not ok
+        assert tokens.party_grace_status(second["id"])["state"] == "ineligible"
+        assert db.party_grace_state(second["id"]) == (0, 0)
+
+    def test_request_ip_context_can_be_reset(self):
+        context_token = tokens.set_request_client_ip("198.51.100.12")
+        assert tokens._request_client_ip.get() == "198.51.100.12"
+        tokens.reset_request_client_ip(context_token)
+        assert tokens._request_client_ip.get() == ""
 
 
 class TestPerWalletLlmQuota:

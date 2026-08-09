@@ -227,8 +227,11 @@ async def _publish_client_ip(request: Request, call_next):
     """Expose the (proxy-resolved) client IP to layers that have no Request in scope —
     specifically the signup-bonus IP gate in tokens.py (REVIEW-2026-08 S2). A contextvar
     instead of threading an argument through the 15+ ensure_wallet call sites."""
-    tokens.set_request_client_ip(_get_client_ip(request))
-    return await call_next(request)
+    request_ip_token = tokens.set_request_client_ip(_get_client_ip(request))
+    try:
+        return await call_next(request)
+    finally:
+        tokens.reset_request_client_ip(request_ip_token)
 from game_catalog import (
     GAME_CATALOG,
     REVELRY_PARTY_GAME_TYPES,
