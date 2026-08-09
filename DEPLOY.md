@@ -1032,20 +1032,36 @@ gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --c
 
 Two independent layers; each is inert until activated.
 
-### Error tracking (Sentry)
+### Error tracking (Cloud Logging → Error Reporting) — **live on both envs**
 
-The backend initializes Sentry **only when `SENTRY_DSN` is set** — no DSN, no import, no
-behavior change. Activation:
+**No Sentry, deliberately.** Sentry would have meant a third-party account, a vendor SDK in the
+image, and exception payloads — which here carry device ids, wallet ids and emails — leaving our
+infrastructure to another processor. Google already hosts the VM and the DB, so this adds no new
+trust boundary, no account, and no privacy-policy processor. The Sentry wiring was written and then
+removed the same day (2026-08-09) once that was thought through.
 
-1. Create a (free-tier) Sentry project → copy the DSN.
-2. Add `SENTRY_DSN=https://…` to `/home/revelry-games/app/.env.gamma` (gamma first), then `.env`.
-3. `docker rm` + `docker run` the container (remember: `docker restart` does NOT re-read
-   `--env-file`) — or just run the next deploy, which recreates the container anyway.
+**How it works, and why no API key or scope change was needed:** Error Reporting *infers* error
+events from Cloud Logging entries containing a stack trace at severity ≥ ERROR — no Error Reporting
+API call. So `backend/error_reporting.py` just writes logs, needing only the `logging.write` scope
+the VM already had. (The Error Reporting *client library* would have needed `cloud-platform`, and VM
+scopes can only change while the instance is STOPPED — prod downtime for zero benefit.)
 
-What you get: unhandled endpoint exceptions AND every `logger.error(...)` — including the
-`spawn()` background-task crash reports (`question-timer:CODE`, `housie-auto:CODE`, …) — as
-alertable events, tagged `environment=gamma|production`. Tracing is off (`traces_sample_rate=0`);
-this is purely an error surface.
+Activated by `ERROR_REPORTING_ENABLED=true` (set on prod `.env` and gamma `.env.gamma`). Log names
+are per-environment — `revelry-games-production` / `revelry-games-gamma` — so a gamma stack trace
+never looks like a production incident.
+
+**What it captures:** every `logger.error`/`logger.exception`, uvicorn's unhandled-endpoint
+exceptions, and therefore the `spawn()` background-task crash reports
+(`question-timer:ABC123`, `housie-auto:XYZ`) that previously lived only in unread `docker logs`.
+
+**Verify it any time** — configured ≠ working:
+```
+curl -X POST -H "Authorization: Bearer $ADMIN_API_KEY" https://gamesapi.revelryapp.me/admin/selftest-error
+```
+Returns a marker; find it in Error Reporting or:
+`gcloud logging read '"<marker>"' --freshness=10m`. Absence means the pipeline is broken.
+Verified end-to-end on both envs 2026-08-09 (gamma marker `59eb7310`, prod `5aa52850` — both
+arrived with full multi-line tracebacks and grouped into Error Reporting).
 
 ### Uptime alerting (GCP)
 
@@ -1053,8 +1069,9 @@ this is purely an error surface.
 ./scripts/setup-monitoring.sh you@example.com
 ```
 
-Creates an email channel, an HTTPS uptime check on `gamesapi.revelryapp.me/health` (60s), an
-alert policy, **and the firewall rule admitting Google's probe IPs** — required because the VM
+Creates an email channel, an HTTPS uptime check on `gamesapi.revelryapp.me/health` (60s), **two**
+alert policies — `games-backend-down` (uptime) and `games-backend-errors` (any production
+traceback, one email per 30 min, gamma excluded) — **and the firewall rule admitting Google's probe IPs** — required because the VM
 firewall is home-IP-restricted, and without it every probe is dropped and the check flatlines.
 Idempotent; review before running (it mutates project infra). The alert's runbook text points at
 `docker logs` and notes that deploys self-roll-back, so a firing alert means VM/nginx trouble.

@@ -370,3 +370,24 @@ class TestAdminGrantAuditNote:
             headers=admin_headers(),
         )
         assert res.status_code == 200
+
+
+class TestErrorReportingSelftest:
+    """The selftest endpoint is how anyone confirms the error pipeline actually carries a
+    traceback — see error_reporting.py. It must stay admin-gated and side-effect free."""
+
+    def test_requires_admin(self, client):
+        assert client.post("/admin/selftest-error").status_code == 403
+
+    def test_logs_an_error_with_a_traceback(self, client, caplog):
+        import logging
+        with caplog.at_level(logging.ERROR, logger="main"):
+            res = client.post("/admin/selftest-error", headers=admin_headers())
+        assert res.status_code == 200
+        marker = res.json()["marker"]
+        hit = [r for r in caplog.records if marker in r.getMessage()]
+        assert hit, f"selftest did not log its marker {marker}"
+        assert hit[0].exc_info is not None, (
+            "the record must carry exc_info — the TRACEBACK is what Error Reporting groups on; "
+            "without it the entry is an ordinary log line and never becomes an error event"
+        )

@@ -15,4 +15,4 @@ pytest-asyncio
 httpx
 pytest-timeout
 pytest-cov
-sentry-sdk
+google-cloud-logging

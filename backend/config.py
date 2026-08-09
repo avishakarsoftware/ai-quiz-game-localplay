@@ -36,9 +36,11 @@ DB_BACKEND = os.getenv("DB_BACKEND", "sqlite").strip().lower()
 TABLE_PREFIX = os.getenv("TABLE_PREFIX", "games_").strip()
 ENVIRONMENT = os.getenv("LOCALPLAY_ENV", os.getenv("APP_ENV", "")).strip().lower()
 
-# Error tracking (REVIEW-2026-08 O2). Inert unless a DSN is set — the sentry_sdk import lives
-# behind the same guard, so local dev and CI need neither the package configured nor an account.
-SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
+# Ship ERROR-level logs to Cloud Logging, where Error Reporting groups them (see
+# error_reporting.py for why this instead of Sentry). Off by default so local dev, CI and the
+# test suites never attempt a network call or need credentials.
+ERROR_REPORTING_ENABLED = os.getenv("ERROR_REPORTING_ENABLED", "false").lower() == "true"
+
 if not ENVIRONMENT:
     if DB_BACKEND == "supabase" and TABLE_PREFIX == "games_gamma_":
         ENVIRONMENT = "gamma"

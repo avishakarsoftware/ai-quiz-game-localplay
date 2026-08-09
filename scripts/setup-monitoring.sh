@@ -8,7 +8,10 @@
 #      (REQUIRED here: the VM firewall restricts HTTPS to the home IP, so without
 #      this rule every probe is silently dropped and the check reports DOWN forever)
 #   3. An HTTPS uptime check on gamesapi.revelryapp.me/health (60s interval)
-#   4. An alert policy: email when the uptime check fails
+#   4. An alert policy: email when the uptime check fails (prod is DOWN)
+#   5. An alert policy: email when the production backend logs an ERROR/traceback
+#      (requires ERROR_REPORTING_ENABLED=true on the container and the
+#      clouderrorreporting API enabled for the grouped view)
 #
 # REVIEW BEFORE RUNNING — this mutates project infra. Then:
 #   ./scripts/setup-monitoring.sh you@example.com
@@ -30,6 +33,7 @@ HOST="gamesapi.revelryapp.me"
 CHECK_NAME="games-backend-health"
 CHANNEL_NAME="games-backend-alerts"
 POLICY_NAME="games-backend-down"
+ERROR_POLICY_NAME="games-backend-errors"
 FIREWALL_RULE="allow-gcp-uptime-checks"
 
 PROJECT=$(gcloud config get-value project 2>/dev/null)
@@ -142,6 +146,57 @@ EOF
         exit 1
     fi
     echo "[monitoring] alert policy created and linked to $EMAIL"
+fi
+
+# --- 5. Error-log alert policy ----------------------------------------------
+# The uptime check only catches "prod is DOWN". A webhook 500ing for three days while /health
+# stays green is invisible to it — the exact scenario that motivated REVIEW-2026-08 O2. This
+# alerts on any ERROR-severity entry (i.e. a traceback) from the PRODUCTION log stream that
+# backend/error_reporting.py writes. Gamma is deliberately excluded: test traffic would train
+# you to ignore the emails.
+ERROR_POLICY_EXISTS=$(curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+    "https://monitoring.googleapis.com/v3/projects/$PROJECT/alertPolicies" \
+    | python3 -c "import sys,json; print(any(p.get('displayName')=='$ERROR_POLICY_NAME' for p in json.load(sys.stdin).get('alertPolicies',[])))" 2>/dev/null || echo False)
+
+if [[ "$ERROR_POLICY_EXISTS" == "True" ]]; then
+    echo "[monitoring] error alert policy exists: $ERROR_POLICY_NAME"
+else
+    echo "[monitoring] creating error alert policy"
+    EP_JSON=$(mktemp)
+    cat > "$EP_JSON" <<EOF
+{
+  "displayName": "$ERROR_POLICY_NAME",
+  "combiner": "OR",
+  "conditions": [{
+    "displayName": "ERROR log in production",
+    "conditionMatchedLog": {
+      "filter": "logName=\"projects/$PROJECT/logs/revelry-games-production\" AND severity>=ERROR"
+    }
+  }],
+  "alertStrategy": {
+    "notificationRateLimit": {"period": "1800s"},
+    "autoClose": "86400s"
+  },
+  "notificationChannels": ["$CHANNEL"],
+  "documentation": {
+    "content": "An ERROR with a traceback was logged by the PRODUCTION backend. Open Error Reporting for the grouped stack trace, or: gcloud logging read 'logName=~\"revelry-games-production\" AND severity>=ERROR' --limit 5 --freshness=1h. One email per 30 min. Verify the pipeline any time with POST /admin/selftest-error (admin-gated; its event says 'this is intentional').",
+    "mimeType": "text/markdown"
+  }
+}
+EOF
+    EP_RESULT=$(curl -s -X POST \
+        -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+        -H "Content-Type: application/json" \
+        -d @"$EP_JSON" \
+        "https://monitoring.googleapis.com/v3/projects/$PROJECT/alertPolicies")
+    rm -f "$EP_JSON"
+    if echo "$EP_RESULT" | grep -q '"error"'; then
+        echo "[monitoring] ERROR: error-log alert policy NOT created:" >&2
+        echo "$EP_RESULT" | python3 -c "import sys,json; print('  ' + json.load(sys.stdin)['error'].get('message','')[:300])" >&2
+        echo "[monitoring] Tracebacks will be recorded but WILL NOT email you. Fix and re-run." >&2
+        exit 1
+    fi
+    echo "[monitoring] error alert policy created and linked to $EMAIL"
 fi
 
 echo ""

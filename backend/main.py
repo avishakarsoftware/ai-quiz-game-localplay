@@ -62,6 +62,7 @@ import analytics
 import share
 import share_image
 import remote_config
+import error_reporting
 from game_rules import attach_rules
 from host_app_catalog_policy import clear_policy_cache, effective_catalog, is_game_allowed
 
@@ -176,6 +177,8 @@ def _check_payment_config():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting LocalPlay backend")
+    # First, so a crash in any later startup step is itself reported.
+    error_reporting.init()
     # Fail fast BEFORE touching the DB: a deployed container accidentally on SQLite loses all data on
     # the next rebuild. Raises RuntimeConfigError (→ startup crash) on that misconfig. No-op for local
     # dev / tests, which set no Supabase vars. See config.validate_runtime_db_config.
@@ -193,32 +196,9 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down LocalPlay backend")
     socket_manager.stop_cleanup_loop()
     socket_manager.stop_snapshot_loop()  # takes a final snapshot for the incoming process
+    error_reporting.shutdown()  # flush buffered reports before the process goes away
 
 
-def _init_sentry() -> None:
-    """Activate error tracking when SENTRY_DSN is set (REVIEW-2026-08 O2).
-
-    Until this, the backend had NO error surface at all: an exception in a webhook or a
-    background task was visible only in docker logs nobody watches. With a DSN configured,
-    unhandled exceptions AND every logger.error(...) — including spawn()'s background-task
-    crash reports — become alertable events. Failure to initialize must never block startup:
-    observability is a feature, not a dependency."""
-    if not config.SENTRY_DSN:
-        return
-    try:
-        import sentry_sdk
-        sentry_sdk.init(
-            dsn=config.SENTRY_DSN,
-            environment=config.ENVIRONMENT or "unknown",
-            # No performance tracing — this is purely an error surface; keep the quota tiny.
-            traces_sample_rate=0,
-        )
-        logger.info("Sentry error tracking active (env=%s)", config.ENVIRONMENT or "unknown")
-    except Exception as e:  # noqa: BLE001 — never let observability break the app
-        logger.warning("SENTRY_DSN is set but Sentry init failed: %s", e)
-
-
-_init_sentry()
 app = FastAPI(title="AI Quiz Game Backend", lifespan=lifespan)
 
 
@@ -6419,6 +6399,28 @@ async def admin_grant(req: Request, wallet_id: str = "", device_id: str = "", us
     new_balance = db.admin_grant_tokens(target, amount, note=note[:200])
     return {"status": "granted", "wallet_id": target, "tokens_granted": amount, "new_balance": new_balance,
             "note": note[:200]}
+
+
+@app.post("/admin/selftest-error")
+async def admin_selftest_error(req: Request):
+    """Deliberately log a handled exception, to verify the error pipeline end-to-end.
+
+    Exists because "error reporting is configured" and "error reporting works" are different
+    claims, and only one of them is checkable. The monitoring script already shipped once with a
+    silent hole (it created the uptime check and skipped the alert policy, then printed "done"), so
+    this endpoint is how you confirm a traceback actually reaches Cloud Logging / Error Reporting
+    after any change to credentials, scopes, log routing or the container.
+
+    Admin-gated, raises nothing, changes no state — it only writes a log line.
+    """
+    _check_admin(req)
+    marker = uuid.uuid4().hex[:8]
+    try:
+        raise RuntimeError(f"error-reporting selftest {marker} — this is intentional, not an incident")
+    except RuntimeError:
+        logger.error("Error-reporting selftest %s", marker, exc_info=True)
+    return {"reported": True, "marker": marker,
+            "hint": "find this marker in Cloud Logging / Error Reporting; absence means the pipeline is broken"}
 
 
 @app.get("/admin/stats")
