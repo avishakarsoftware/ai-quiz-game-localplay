@@ -55,6 +55,14 @@ lsof -ti:$FRONTEND_PORT 2>/dev/null | xargs kill 2>/dev/null
 
 mkdir -p "$WORK_DIR/db"
 
+# SIGNUP_BONUS_IP_DAILY_LIMIT=0 below: the per-IP signup-bonus allowance (REVIEW-2026-08 S2) is
+# meaningless in a throwaway single-IP harness and actively breaks it. This suite mints ~76 device
+# wallets from one address, so wallet #21+ gets the daily bonus only (10 sparks, exactly COST_ROOM)
+# and — since grace requires a signup-bonus proof (2026-08-08 hardening) — no free rooms either.
+# That combination failed 37 of 76 all-games tests in CI. 0 disables the allowance.
+# NOTE: keep it inside the unbroken `VAR=x \` chain. A comment line between continuations makes
+# bash join `... # comment` and swallow everything after it, INCLUDING the exec — `bash -n` still
+# passes and the backend simply never starts.
 echo "[stack] backend on :$BACKEND_PORT (db: $WORK_DIR/db)"
 (
     cd "$ROOT/backend" || exit 1
@@ -62,6 +70,7 @@ echo "[stack] backend on :$BACKEND_PORT (db: $WORK_DIR/db)"
     JWT_SECRET="e2e-local-stack-secret-32bytes!!" \
     ADMIN_API_KEY="e2e-local-stack-admin-key" \
     ALLOWED_ORIGINS="$BASE_URL,http://localhost:$FRONTEND_PORT" \
+    SIGNUP_BONUS_IP_DAILY_LIMIT=0 \
     exec "$PY" -m uvicorn main:app --host 127.0.0.1 --port "$BACKEND_PORT"
 ) > "$WORK_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
