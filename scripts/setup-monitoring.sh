@@ -85,14 +85,23 @@ else
     echo "[monitoring] uptime check exists: $EXISTING_CHECK"
 fi
 
-# --- 4. Alert policy ----------------------------------------------------------
-EXISTING_POLICY=$(gcloud alpha monitoring policies list \
-    --filter="displayName='$POLICY_NAME'" --format="value(name)" 2>/dev/null | head -1)
-if [[ -n "$EXISTING_POLICY" ]]; then
-    echo "[monitoring] alert policy exists: $EXISTING_POLICY"
+# --- 4. Alert policy (Monitoring REST API) ---------------------------------
+# NOT `gcloud alpha monitoring policies`: the alpha component is frequently absent, installing it
+# needs write access to the SDK dir (sudo), and the first version of this script hid that behind
+# `2>/dev/null` — so it created the check and the channel, silently skipped the POLICY, and printed
+# "done". An uptime check with no policy emails nobody: the exact failure this script exists to
+# prevent. The REST call needs no components, and its result is checked.
+POLICY_EXISTS=$(curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+    "https://monitoring.googleapis.com/v3/projects/$PROJECT/alertPolicies" \
+    | python3 -c "import sys,json; print(any(p.get('displayName')=='$POLICY_NAME' for p in json.load(sys.stdin).get('alertPolicies',[])))" 2>/dev/null || echo False)
+
+if [[ "$POLICY_EXISTS" == "True" ]]; then
+    echo "[monitoring] alert policy exists: $POLICY_NAME"
 else
     echo "[monitoring] creating alert policy"
     POLICY_JSON=$(mktemp)
+    # NOTE: host is a RESOURCE label, not a metric label. metric.labels.host is rejected with
+    # "cannot find metric(s) that match ... label = host".
     cat > "$POLICY_JSON" <<EOF
 {
   "displayName": "$POLICY_NAME",
@@ -100,7 +109,7 @@ else
   "conditions": [{
     "displayName": "uptime check failing",
     "conditionThreshold": {
-      "filter": "metric.type=\\"monitoring.googleapis.com/uptime_check/check_passed\\" AND resource.type=\\"uptime_url\\" AND resource.labels.host=\\"$HOST\\"",
+      "filter": "metric.type=\"monitoring.googleapis.com/uptime_check/check_passed\" AND resource.type=\"uptime_url\" AND resource.labels.host=\"$HOST\"",
       "aggregations": [{
         "alignmentPeriod": "300s",
         "perSeriesAligner": "ALIGN_FRACTION_TRUE",
@@ -115,12 +124,24 @@ else
   }],
   "notificationChannels": ["$CHANNEL"],
   "documentation": {
-    "content": "gamesapi.revelryapp.me/health is failing. Check: gcloud compute ssh revelry-backend --zone us-central1-a --command 'docker ps; docker logs games-backend --tail 40'. A failed deploy auto-rolls-back (deploy-gcp.sh step 7); if this fired anyway, the VM or nginx is the likely culprit."
+    "content": "$HOST/health is failing. Check: gcloud compute ssh revelry-backend --zone us-central1-a --command 'docker ps; docker logs games-backend --tail 40'. Deploys auto-roll-back (deploy-gcp.sh step 7), so if this fired anyway the VM or nginx is the likely culprit.",
+    "mimeType": "text/markdown"
   }
 }
 EOF
-    gcloud alpha monitoring policies create --policy-from-file="$POLICY_JSON"
+    RESULT=$(curl -s -X POST \
+        -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+        -H "Content-Type: application/json" \
+        -d @"$POLICY_JSON" \
+        "https://monitoring.googleapis.com/v3/projects/$PROJECT/alertPolicies")
     rm -f "$POLICY_JSON"
+    if echo "$RESULT" | grep -q '"error"'; then
+        echo "[monitoring] ERROR: alert policy NOT created:" >&2
+        echo "$RESULT" | python3 -c "import sys,json; print('  ' + json.load(sys.stdin)['error'].get('message','')[:300])" >&2
+        echo "[monitoring] The uptime check exists but NOTHING WILL EMAIL YOU. Fix and re-run." >&2
+        exit 1
+    fi
+    echo "[monitoring] alert policy created and linked to $EMAIL"
 fi
 
 echo ""
