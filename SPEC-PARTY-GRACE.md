@@ -28,6 +28,23 @@ first party.
   no-ops on a drained wallet.
 - `PARTY_GRACE_HOURS=0` disables the feature entirely.
 
+### Known interaction with the per-IP signup allowance — deliberate, worth watching
+
+Grace eligibility depends on the signup grant, and that grant is capped per IP per day
+(`SIGNUP_BONUS_IP_DAILY_LIMIT`, default 20 — REVIEW-2026-08 S2). So the 21st **new host** from one
+IP in a day gets the daily bonus only (10 ⚡, exactly `COST_ROOM`) and no grace: one game, then the
+paywall. Measured on a live stack — wallets #1–20 came back `balance=30/available`, #21+
+`balance=10/ineligible`.
+
+This is the intended trade (it is what bounds room-farming by minted device ids, since grace needs
+no sparks), and 20 first-time hosts sharing an IP in one day is implausible at current scale. But it
+is a real degradation for a venue/dorm/office behind one NAT, so:
+- **the throwaway test harnesses set `SIGNUP_BONUS_IP_DAILY_LIMIT=0`** — a single-IP harness minting
+  ~76 wallets is precisely what the limiter cannot reason about; leaving it on failed 37 of 76
+  all-games tests in CI;
+- if real users ever report "I only got one free game", raise the limit rather than weakening the
+  grace proof — the proof is what stops the farm.
+
 ## Mechanics (no schema change)
 
 - State lives in the ledger: each free room writes a zero-amount `grace_room` row;
