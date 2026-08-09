@@ -138,3 +138,61 @@ class TestGraceStatus:
         host = _host(50)
         db.debit_tokens(host, config.COST_ROOM, "spend_room")
         assert tokens.party_grace_status(host)["state"] == "ineligible"
+
+
+class TestGraceSurvivesSignIn:
+    """merge_wallet moves balance only, so before migrate_grace_proofs the sign-in flow
+    stranded every grace proof on the device wallet: a brand-new host who signed in BEFORE
+    hosting (the flow the app itself encourages) read as ineligible and silently lost their
+    free first party — while a veteran's history vanished, handing them a fresh free evening."""
+
+    def test_new_host_keeps_eligibility_after_sign_in(self):
+        device = _host(20)                       # signup bonus on the device wallet
+        user = f"user-{uuid.uuid4()}"
+        db.merge_wallet(device, user)
+        db.migrate_grace_proofs(device, user)
+        assert tokens.party_grace_status(user)["state"] == "available", (
+            "signing in before the first game must not cost a new host their free party"
+        )
+
+    def test_open_window_carries_over_without_resetting(self):
+        device = _host(20)
+        tokens.spend_room(device)                # opens the window on the device wallet
+        tokens.spend_room(device)
+        device_anchor, device_rooms = db.party_grace_state(device)
+
+        user = f"user-{uuid.uuid4()}"
+        db.merge_wallet(device, user)
+        db.migrate_grace_proofs(device, user)
+        user_anchor, user_rooms = db.party_grace_state(user)
+        assert user_anchor == device_anchor, "the deadline must carry over, not restart"
+        assert user_rooms == device_rooms == 2
+        assert tokens.party_grace_status(user)["state"] == "active"
+
+    def test_veteran_stays_ineligible_after_sign_in(self):
+        device = _host(50)
+        db.debit_tokens(device, config.COST_ROOM, "spend_room")   # paid room history
+        user = f"user-{uuid.uuid4()}"
+        db.merge_wallet(device, user)
+        db.migrate_grace_proofs(device, user)
+        assert tokens.party_grace_status(user)["state"] == "ineligible", (
+            "sign-in must not launder away a veteran's paid history into a fresh free evening"
+        )
+
+    def test_proofs_migrate_even_when_merge_wallet_noops_on_zero_balance(self):
+        device = _host(0)                        # signup bonus row exists, balance drained to 0
+        db.get_or_create_wallet(device, signup_bonus=False)
+        user = f"user-{uuid.uuid4()}"
+        db.merge_wallet(device, user)            # no-ops: nothing to transfer
+        db.migrate_grace_proofs(device, user)    # must still carry the proof
+        assert tokens.party_grace_status(user)["state"] == "available"
+
+    def test_migration_is_idempotent(self):
+        device = _host(20)
+        tokens.spend_room(device)
+        user = f"user-{uuid.uuid4()}"
+        db.merge_wallet(device, user)
+        db.migrate_grace_proofs(device, user)
+        first = db.party_grace_state(user)
+        db.migrate_grace_proofs(device, user)    # double sign-in / retry
+        assert db.party_grace_state(user) == first, "re-running must not duplicate the window"

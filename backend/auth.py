@@ -166,6 +166,9 @@ def signin(provider: str, id_token: str, device_id: str) -> Optional[dict]:
 
     # 4. Merge device token wallet to user wallet
     db.merge_wallet(device_id, user["id"])
+    # Grace identity must follow the merge: without this, signing in strands the signup proof
+    # (and any open grace window / veteran history) on the device wallet — see migrate_grace_proofs.
+    db.migrate_grace_proofs(device_id, user["id"])
 
     # 4. Create session JWT
     session_token = create_session_token(user["id"], device_id)

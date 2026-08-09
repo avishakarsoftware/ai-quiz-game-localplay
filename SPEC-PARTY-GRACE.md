@@ -19,6 +19,13 @@ first party.
 - Eligibility requires a positive signup proof: the wallet must have received a `signup_bonus`
   ledger row. Wallets that are created grantless after the per-IP signup allowance is exhausted
   can still join/play, but they cannot be minted into free first-party host rooms.
+- **Grace identity survives sign-in** (added 2026-08-09): `merge_wallet` moves balance only, so
+  `db.migrate_grace_proofs` (called from `auth.signin` beside the merge) carries the three proofs
+  device→user as zero-amount marker rows: signup proof (else signing in before the first game
+  silently cost a new host their free party), the open window verbatim with original timestamps
+  (no deadline reset, no double allowance), and `spend_room` veteran history (else sign-in
+  laundered a veteran into a fresh free evening). Idempotent; runs even when the balance merge
+  no-ops on a drained wallet.
 - `PARTY_GRACE_HOURS=0` disables the feature entirely.
 
 ## Mechanics (no schema change)

@@ -374,6 +374,29 @@ def has_signup_bonus(wallet_id: str) -> bool:
     return bool(rows)
 
 
+def migrate_grace_proofs(from_id: str, to_id: str) -> None:
+    if from_id == to_id:
+        return
+    balance = get_wallet_balance(to_id)
+
+    def _marker(reason: str, created_at: int) -> dict:
+        return {"wallet_id": to_id, "amount": 0, "reason": reason,
+                "reference_id": f"migrated:{from_id}", "balance_after": balance,
+                "metadata": "", "created_at": created_at}
+
+    if has_signup_bonus(from_id) and not has_signup_bonus(to_id):
+        _sb().insert("token_transactions", _marker("signup_bonus", _now()))
+    if has_room_spend(from_id) and not has_room_spend(to_id):
+        _sb().insert("token_transactions", _marker("spend_room", _now()))
+    from_anchor, _ = party_grace_state(from_id)
+    to_anchor, _ = party_grace_state(to_id)
+    if from_anchor and not to_anchor:
+        rows = _sb().select("token_transactions",
+                            filters={"wallet_id": f"eq.{from_id}", "reason": "eq.grace_room"})
+        for row in rows:
+            _sb().insert("token_transactions", _marker("grace_room", int(row["created_at"])))
+
+
 def record_grace_room(wallet_id: str) -> None:
     _sb().insert("token_transactions", {
         "wallet_id": wallet_id,

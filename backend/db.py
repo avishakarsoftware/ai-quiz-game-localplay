@@ -820,6 +820,50 @@ def has_signup_bonus(wallet_id: str) -> bool:
     ).fetchone() is not None
 
 
+def migrate_grace_proofs(from_id: str, to_id: str) -> None:
+    """Carry first-party-grace identity across the device->user wallet merge at sign-in.
+
+    merge_wallet moves BALANCE only, so without this a brand-new host who signs in before
+    hosting reads as grace-ineligible (their signup_bonus row is stranded on the device
+    wallet), an open grace window silently resets, and a veteran's spend_room history
+    disappears — handing them a fresh free evening. Three proofs move as zero-amount marker
+    rows; each piece is skipped when the target already has it, so the call is idempotent.
+    """
+    if from_id == to_id:
+        return
+    conn = _get_conn()
+    now = int(time.time())
+    balance = get_wallet_balance(to_id)
+    if has_signup_bonus(from_id) and not has_signup_bonus(to_id):
+        conn.execute(
+            "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, metadata, created_at) "
+            "VALUES (?, 0, 'signup_bonus', ?, ?, '', ?)",
+            (to_id, f"migrated:{from_id}", balance, now),
+        )
+    if has_room_spend(from_id) and not has_room_spend(to_id):
+        conn.execute(
+            "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, metadata, created_at) "
+            "VALUES (?, 0, 'spend_room', ?, ?, '', ?)",
+            (to_id, f"migrated:{from_id}", balance, now),
+        )
+    from_anchor, _ = party_grace_state(from_id)
+    to_anchor, _ = party_grace_state(to_id)
+    if from_anchor and not to_anchor:
+        # Copy the window verbatim — original timestamps, so the anchor (and therefore the
+        # deadline) carries over instead of restarting a fresh window on the user wallet.
+        rows = conn.execute(
+            "SELECT created_at FROM token_transactions WHERE wallet_id = ? AND reason = 'grace_room'",
+            (from_id,),
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                "INSERT INTO token_transactions (wallet_id, amount, reason, reference_id, balance_after, metadata, created_at) "
+                "VALUES (?, 0, 'grace_room', ?, ?, '', ?)",
+                (to_id, f"migrated:{from_id}", balance, row["created_at"]),
+            )
+    conn.commit()
+
+
 def record_grace_room(wallet_id: str) -> None:
     """Ledger marker for a free grace room: amount 0, balance unchanged."""
     conn = _get_conn()
@@ -2136,6 +2180,7 @@ if config.DB_BACKEND == "supabase":
         "party_grace_state",
         "has_room_spend",
         "has_signup_bonus",
+        "migrate_grace_proofs",
         "record_grace_room",
         "get_or_create_wallet",
         "get_wallet_balance",
