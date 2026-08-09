@@ -71,7 +71,7 @@ link here instead of restating environment status (stale spec headers were a rec
 
 | Capability / feature | Gamma | Prod | Notes |
 |---|---|---|---|
-| Deployed code (backend+SPA) | `1665cafc` (2026-08-09) | `b0c1fc03` (2026-07-26) | **Gamma redeployed 2026-08-09** — adds Codex's grace hardening (`8ada1171`: grace now requires a `signup_bonus` ledger proof, so wallets created past the per-IP allowance can play but can't farm free rooms), the sign-in identity fix (`6b65451c`: `migrate_grace_proofs` carries signup proof / open window / veteran history across the device→user wallet merge, which `merge_wallet` never did — without it, signing in before your first game silently cost a new host their free party), and the test-harness allowance fix (`1665cafc`). Supersedes the 2026-08-04 `f87e8da3` deploy. **Live verification:** grace proven free at the real charge seam over WebSocket (3 rooms started, balance 30→30→30, `rooms_used` 1→2→3 on real Postgres); grantless wallet #18 correctly `ineligible`; 5 repeat status reads never consume the window; gamma smoke 2/2; **all-games live 74 passed / 1 skipped** with the one `party_quests` miss passing 2/2 in isolation (pre-existing worker flake, not a regression). **Gamma-only env change:** `SIGNUP_BONUS_IP_DAILY_LIMIT=500` appended to `.env.gamma` (timestamped backup left beside it) because the all-games suite mints ~76 wallets from ONE IP and the production default of 20 makes wallet #21+ grantless→grace-ineligible; this failed 37/76 in CI. **Prod keeps the default 20** — see SPEC-PARTY-GRACE.md "Known interaction". **PROD IS STILL `b0c1fc03`**: the July restore-leak/prompt-fence fixes plus S1/M1 and all of the above are not production runtime. |
+| Deployed code (backend+SPA) | `1665cafc` (2026-08-09) | **`40b8dd09` (2026-08-09)** | **PROD DEPLOYED 2026-08-09** after 2 weeks on `b0c1fc03` — 74 commits / 17k lines: the whole REVIEW-2026-08 batch (S1 XFF, M1 cap-overflow guard, A3 spawn, S2 abuse guards, D1 export guard, M2 audit notes), July's undeployed restore-leak + prompt-fence fixes, pass-and-play + Impostor, TV pages, and the Python 3.14 container. Backend+SPA via pre-flight/rollback deploy; IONOS frontend uploaded to `~/revelryapp/games/` (root — **not** `/quiz/`, see below). **Grace ships OFF on prod by decision** (`PARTY_GRACE_HOURS=0`, verified live: fresh wallet reports `ineligible` and a room debits the full 10 sparks). Gamma keeps it enabled. **Verification:** `regression.py --target prod` **PASS 65/65, 0 failed**; grace-off + room cost + referral host + admin auth + ad-reward lock all probed individually. Prod scale at deploy: 858 wallets, 23,087 sparks circulating, 0 purchases, 2 signed-in accounts. |
 | Account deletion (migration + endpoint) | ✅ live + verified | ✅ live + verified | 2026-07-19: `sql/migrations/20260718T000000_account_deletion.sql` applied via Management API (gamma first, then prod): `*_deleted_accounts` denylist + `*_delete_account` RPC created, `*_token_transactions_wallet_id_fkey` **CASCADE dropped** (constraint names pre-verified against pg_constraint on both prefixes). Synthetic account cycle on each env: user+wallet(240)+ledger row → RPC delete → user/wallet gone, **ledger retained**, denylisted, re-delete `already_deleted`; live resurrection probe (`/tokens/balance` with the deleted id) returned 200/balance:0 and created **no wallet, no signup bonus**. All test rows cleaned (0 residue). |
 | Login-streak bonus (SQL RPC) | ✅ live | ✅ live | applied 2026-07-08, targeted migration |
 | Check-in games policy (`party_quests`, `find_someone`) | ✅ enabled | ✅ enabled | policy rows 2026-07-08; prod Party Quests upgraded from quick-start-only on 2026-07-14 |
@@ -94,6 +94,37 @@ link here instead of restating environment status (stale spec headers were a rec
 | Store-required legal pages (`/privacy`, `/support`) | ✅ live | ✅ live (all 3 surfaces) | Deployed 2026-07-18 (`72d03165`). Privacy policy rewritten to match reality (accounts + purchases + all processors); new support page for Apple's required Support URL. Extensionless paths now resolve on the backend SPA too (MultiViews-style), not just IONOS. Guarded by `e2e/legal-pages.spec.ts` (asserts rendered content, not status — the old `/support` returned **200** while rendering 11 chars) and `backend/tests/test_frontend_static.py`. Store console values: `https://games.revelryapp.me/privacy` + `/support`. |
 | Analytics (PostHog keys) | ❌ unset | ❌ unset | code no-ops until keys set |
 | Ads (`ADS_ENABLED` / `ads_enabled`) | ❌ off (locked) | ❌ off (locked) | Rewarded-AdMob SSV (SPEC-ADS) still unbuilt (no ad SDK). The legacy trust-the-client `/tokens/ad-reward` stub was farmable (any caller rotating device ids could mint the daily cap). Gated behind `ADS_ENABLED` (default false → 403) in commit `672b7fb0`; **deployed 2026-07-26 — `/tokens/ad-reward` now returns 403 on gamma AND prod**, verified live. The hole was open on prod from 2026-07-21 until this deploy. Do NOT set `ADS_ENABLED=true` until SSV replaces the stub. |
+
+### Prod deploy 2026-08-09 — three live issues found by verifying rather than assuming
+
+**1. `REMOTE_CONFIG_URL` pointed at a stale file for ~2.5 months.** Prod fetched its remote config
+from `https://games.revelryapp.me/quiz/config.json` — the **legacy** `/quiz/` path, last written
+2026-05-31. The live app has been served from the IONOS **root** since July; `/quiz/` is a stale
+copy. Consequence: `/config/public` advertised the **expired `launch_2026` promo** (expired
+2026-04-30) and the retired 110-spark single-pack price, long after both were removed from source.
+The AI model happened to match, so nothing worse leaked. Repointed to
+`https://games.revelryapp.me/config.json` and recreated the container — `pricing` block is now
+absent and the regression warning cleared. **Only the backend read that file** (web and native both
+bake `VITE_CONFIG_URL=${API}/config/public`), so no client needed changing.
+
+**2. `ADMIN_API_KEY` was never set on prod**, so `/admin/*` returned 503 — the "I paid and got
+nothing" runbook was **unexecutable**: a paying customer could be neither looked up nor remediated.
+Now set (32-byte random; value in `backupenv/quiz/keys/prod-admin-api-key.env`), verified 403
+unauthenticated / 200 authenticated.
+
+**3. `PUBLIC_SITE_URL` was unset**, so every referral and share link rendered as the API host
+(`gamesapi.revelryapp.me/?ref=…`). Now `https://games.revelryapp.me`, verified live.
+
+Monitoring was activated **before** the deploy: uptime check on `/health`, alert policy
+`games-backend-down` → owner email, plus the firewall rule for Google's 54 probe IPs. Note the
+monitoring script itself had a silent-failure bug (it skipped the alert policy and still printed
+"done") — fixed and idempotency-verified. **Sentry still needs a DSN** to activate.
+
+IONOS rollback point: `~/revelryapp/games/index.html.bak-20260809_132703` (uploads use no
+`--delete`, so prior content-hashed assets remain for cache-in-flight clients).
+
+Remaining known-stale: the `/quiz/` legacy directory on IONOS (harmless once nothing reads it) and
+its `/quiz/support.html`, which the regression flags as a warning.
 
 ### Recent gamma + prod + IONOS deploy — July 26, 2026 (growth features + ad-reward lockdown)
 
