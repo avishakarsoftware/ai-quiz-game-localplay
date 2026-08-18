@@ -138,6 +138,37 @@ keys). The money path is verified only synthetically.
 
 ---
 
+## PROGRESS — items 1 and 2 done (2026-08-09, later the same day)
+
+`supabase_db.py`: **30% → 82%**, via a real PostgREST + Postgres harness
+(`backend/tests/postgrest_harness.py`, `scripts/parity-stack.sh`). 60 new tests across four suites:
+money rails, races, economy features (gifting/referrals/achievements/restore/account lifecycle) and
+the content layer (packs, media, sessions, share cards, settings, admin). Now gated in CI by the
+`backend-supabase-rest` job, which re-runs the race suite five times because races are probabilistic.
+
+**Two production bugs found, both fixed:**
+1. `credit_purchase` **raised** on a concurrent duplicate payment. The RPC's own duplicate check
+   passes in both racers and the `*_purchase_once` unique index rejects the loser with SQLSTATE
+   23505. Money was never at risk, but the raise became a 500 to Stripe/RevenueCat → retry of an
+   already-credited payment → after ~3 days Stripe disables the endpoint. Reproduced ~3 times in 8
+   runs; now mapped to the idempotent `(True, balance)` result, matching what BOTH backends return
+   for a sequential replay (measured, not assumed).
+2. `migrate_grace_proofs` (written hours earlier) **duplicated the grace window** under concurrent
+   sign-ins — check-then-insert, which two racers both pass. Fixed with a new `claim_once()`
+   primitive on both backends, built on `request_log`'s PRIMARY KEY so the *database* picks the
+   winner. No migration needed. SQLite's `credit_purchase` was checked and is safe (`BEGIN
+   IMMEDIATE` serializes it).
+
+Also confirmed by the harness, worth keeping: allowed `game_sessions.status` values are
+`lobby|active|paused|complete|expired|cancelled|superseded` — note **`complete`, not `completed`**
+(the app writes the legal value); `game_id` is a column distinct from `game_type`, and
+`game_content_has_sessions` filters on `game_id`; `admin_lookup_wallet` returns
+`{"wallet": …, "transactions": …}` while `get_admin_stats` returns a flat dict (main.py does the
+nesting); `finalize_media_asset` stores the size in a `bytes` column.
+
+Remaining from the list below: items 3 (socket_manager scenario coverage — still the prerequisite
+for A1), 4 (load harness), 5 (frontend coverage).
+
 ## Recommended order for a large token budget
 
 1. **Postgres parity expansion** — `supabase_db` 30% → 85%+ against the real Postgres in CI.

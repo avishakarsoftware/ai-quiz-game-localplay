@@ -31,9 +31,23 @@ PG_IMAGE="postgres:16"
 
 die() { echo "[parity] ERROR: $*" >&2; exit 1; }
 
+# PyJWT lives in backend/venv locally, but CI installs requirements into the system python.
+# Resolve whichever has it, so the same script works in both places.
+resolve_python() {
+    for candidate in "$ROOT/backend/venv/bin/python" "$ROOT/backend/.venv/bin/python" python3 python; do
+        if command -v "$candidate" >/dev/null 2>&1 || [ -x "$candidate" ]; then
+            if "$candidate" -c "import jwt" >/dev/null 2>&1; then
+                echo "$candidate"; return 0
+            fi
+        fi
+    done
+    return 1
+}
+
 mint_jwt() {
+    local py; py="$(resolve_python)" || die "no python with PyJWT found (pip install PyJWT)"
     # A service_role JWT, exactly the shape Supabase issues, so PostgREST assumes that role.
-    "$ROOT/backend/venv/bin/python" - "$JWT_SECRET" <<'PY'
+    "$py" - "$JWT_SECRET" <<'PY'
 import sys
 import jwt
 print(jwt.encode({"role": "service_role"}, sys.argv[1], algorithm="HS256"))
@@ -64,7 +78,7 @@ up) ;;
 esac
 
 for p in "$PG_PORT" "$REST_PORT"; do
-    if lsof -ti:"$p" >/dev/null 2>&1; then
+    if command -v lsof >/dev/null 2>&1 && lsof -ti:"$p" >/dev/null 2>&1; then
         # Only complain if it isn't our own stack already listening.
         docker ps --format '{{.Names}}' | grep -qE "^($PG_NAME|$REST_NAME)$" || \
             die "port $p is in use by something else. Set PARITY_PG_PORT/PARITY_REST_PORT."

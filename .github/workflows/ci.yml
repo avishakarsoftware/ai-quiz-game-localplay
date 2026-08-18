@@ -178,3 +178,73 @@ jobs:
             frontend/e2e/*-snapshots/
             frontend/test-results-visual/
           retention-days: 14
+
+  # supabase_db.py is what PRODUCTION runs, and it sat at 30% coverage with 33 functions never
+  # executed (ANALYSIS-2026-08-09-coverage.md). These suites drive the REAL module against REAL
+  # PostgREST + Postgres and immediately found two prod-reachable bugs: credit_purchase raising on
+  # a concurrent duplicate payment (Stripe retry storm) and migrate_grace_proofs duplicating a
+  # grace window. They must run on every push or that coverage decays again.
+  #
+  # Deliberately reuses scripts/parity-stack.sh — the same path developers run locally, so CI and
+  # local cannot drift. Docker is available on ubuntu runners, so no service containers are needed
+  # (and PostgREST must start AFTER the schema exists, which a service container cannot express:
+  # it caches the schema at boot).
+  backend-supabase-rest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install psycopg[binary]
+
+      - name: Bring up Postgres + PostgREST
+        run: ./scripts/parity-stack.sh up
+
+      - name: Run the Supabase-path suites (money rails, races, economy, content)
+        run: |
+          eval "$(./scripts/parity-stack.sh env)"
+          cd backend
+          python -m pytest \
+            tests/test_supabase_money_rails.py \
+            tests/test_supabase_concurrency.py \
+            tests/test_supabase_economy_features.py \
+            tests/test_supabase_content_layer.py \
+            -q -p no:randomly
+
+      # The races are probabilistic: the credit_purchase bug reproduced ~3 times in 8 runs. One
+      # pass proves little, so the concurrency suite runs repeatedly.
+      - name: Re-run the concurrency suite (races need repetition)
+        run: |
+          eval "$(./scripts/parity-stack.sh env)"
+          cd backend
+          for i in 1 2 3 4 5; do
+            echo "--- concurrency run $i ---"
+            python -m pytest tests/test_supabase_concurrency.py -q -p no:randomly || exit 1
+          done
+
+      - name: Coverage of the production DB layer
+        run: |
+          eval "$(./scripts/parity-stack.sh env)"
+          cd backend
+          python -m pytest tests/ -q --ignore=tests/test_e2e.py \
+            --cov=supabase_db --cov-report=term --cov-report=xml:supabase-coverage.xml
+
+      - name: Upload supabase_db coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-db-coverage
+          path: backend/supabase-coverage.xml
+          retention-days: 30
+
+      - name: Tear down
+        if: always()
+        run: ./scripts/parity-stack.sh down
