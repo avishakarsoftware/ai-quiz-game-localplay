@@ -34,7 +34,22 @@ def receive_json_with_timeout(ws, *, timeout=DEFAULT_WS_RECEIVE_TIMEOUT, context
     try:
         status, value = result_queue.get(timeout=timeout)
     except queue.Empty:
-        raise TimeoutError(f"Timed out after {timeout:.1f}s waiting for {context}")
+        # UNBLOCK THE READER BEFORE RAISING. The thread above is parked inside
+        # `ws.receive_json()` and will stay there for the life of the process, which keeps the
+        # websocket — and therefore its anyio blocking portal — alive. The next test then opens a
+        # SECOND portal, and both instrumented captures of this flake (2026-08-09 and 2026-08-18 CI)
+        # showed exactly that: two `asyncio-portal-*` threads coexisting at stall time. Closing the
+        # socket makes receive_json raise, the thread exits, and the portal is released — so a single
+        # timeout can no longer seed the condition for the next one.
+        try:
+            ws.close()
+        except Exception:  # noqa: BLE001 — best effort; the caller's `with` will close again
+            pass
+        raise TimeoutError(
+            f"Timed out after {timeout:.1f}s waiting for {context}. "
+            f"live threads={threading.active_count()} "
+            f"({', '.join(sorted(th.name for th in threading.enumerate()))})"
+        )
     if status == "error":
         raise TimeoutError(f"Connection closed while waiting for {context}: {value}")
     return value

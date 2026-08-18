@@ -130,6 +130,32 @@
   portals) or run `test_e2e.py` in its own pytest process (`-p xdist --dist loadfile`, or a separate
   CI step). Try `--capture=tee-sys` too — if that also passes, it narrows it to fd-level capture.
 
+  **UPDATE 2026-08-18 — the deterministic repro no longer fires locally, but CI still flakes.**
+  On today's tree `pytest tests/test_ws_flow.py tests/test_e2e.py` (capture ON) passes, measured
+  **12 consecutive runs across three variants**: as-is, without the new `ws.close()` timeout cleanup,
+  and with `spawn()`'s strong reference removed. So neither of those is what changed it, and I could
+  not attribute the improvement — stated plainly rather than claimed. One suggestive signal: runtime
+  dropped from the documented ~14s passing to **5.4s**, which points at the per-test SQLite isolation
+  added the same week (the shared dev DB had grown to ~7.9 MB, and timing was always the trigger).
+
+  **It is NOT fixed.** CI failed once today (run 32108611618, `backend-test`) on
+  `TestTokenEconomyE2E::test_history_scoped_to_wallet`, same signature: "waiting for QUESTION after
+  no messages", 15s stall. The instrumented dump again showed **two `asyncio-portal-*` threads**
+  coexisting — now observed twice (2026-08-09 local, 2026-08-18 CI), which is the strongest standing
+  clue and matches the "multiple TestClient portals" hypothesis below.
+
+  Two things done rather than theorised:
+  1. A timed-out receive now **closes the socket before raising**, so the parked reader thread exits
+     and its portal is released. Theory 3 below (orphaned reader as message *thief*) stays disproven —
+     this is about not *accumulating* portals after a failure, and it measurably changed nothing on
+     its own (3/3 pass either way), so it is hygiene, not a fix.
+  2. `test_history_scoped_to_wallet` no longer asserts `len(games) == 1`; it asserts the room_code
+     is visible to the host wallet and invisible to the other — the property it is named for, and
+     immune to anything else writing history.
+
+  Still-untried next steps, in order: `--capture=tee-sys` (narrows fd-level vs sys-level capture),
+  one shared `TestClient` fixture across socket suites, or running `test_e2e.py` in its own process.
+
   **Confirmed pre-existing** — reproduced with the working tree stashed at `0b86c619`. Practical
   impact: a socket-suite run is not a trustworthy regression signal, and CI may fail spuriously.
   `test_ws_flow`/`test_websocket_integration`/`test_socket_unit`/`test_mafia_socket`/`test_generic_prompt_socket`

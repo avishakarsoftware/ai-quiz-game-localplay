@@ -139,13 +139,22 @@ def receive_json_with_timeout(ws, *, timeout=DEFAULT_WS_RECEIVE_TIMEOUT, context
         # (no pytest-randomly), so it is time-dependent cross-test interference, not ordering.
         # Dump the state a debugger would want, because the next occurrence is the only evidence
         # anyone will get — reproducing it on demand has not been possible.
+        # UNBLOCK THE READER BEFORE RAISING. The thread above is parked inside
+        # `ws.receive_json()` and will stay there for the life of the process, which keeps the
+        # websocket — and therefore its anyio blocking portal — alive. The next test then opens a
+        # SECOND portal, and both instrumented captures of this flake (2026-08-09 and 2026-08-18 CI)
+        # showed exactly that: two `asyncio-portal-*` threads coexisting at stall time. Closing the
+        # socket makes receive_json raise, the thread exits, and the portal is released — so a single
+        # timeout can no longer seed the condition for the next one.
+        try:
+            ws.close()
+        except Exception:  # noqa: BLE001 — best effort; the caller's `with` will close again
+            pass
         raise TimeoutError(
             f"Timed out after {timeout:.1f}s waiting for {context}. "
             f"live threads={threading.active_count()} "
             f"({', '.join(sorted(t.name for t in threading.enumerate()))}); "
-            f"rooms={list(socket_manager.rooms)}; "
-            f"NOTE this thread stays blocked on receive_json, so any later recv on the same socket "
-            f"races it — expect cascading failures after this one."
+            f"rooms={list(socket_manager.rooms)}"
         )
     if status == "error":
         raise TimeoutError(f"Connection closed while waiting for {context}: {value}")
@@ -749,15 +758,19 @@ class TestTokenEconomyE2E:
                 org_ws.send_json({"type": "NEXT_QUESTION"})
                 recv_until(org_ws, "PODIUM")
 
-        # Device A should see the game
+        # Device A must see THIS game. Asserting membership by room_code rather than a bare
+        # `len(...) == 1` — the count is what SPEC-TESTING §8c flags as fragile (anything else that
+        # writes history breaks it), and it is also weaker than the property this test is named for.
         res = client.get("/history", headers=HEADERS_A)
         assert res.status_code == 200
-        assert len(res.json()["games"]) == 1
+        a_rooms = [g.get("room_code") for g in res.json()["games"]]
+        assert room_code in a_rooms, f"host wallet cannot see its own game: {a_rooms}"
 
-        # Device B should see nothing
+        # Device B must not see A's game (scoping is the actual subject here).
         res = client.get("/history", headers=HEADERS_B)
         assert res.status_code == 200
-        assert len(res.json()["games"]) == 0
+        b_rooms = [g.get("room_code") for g in res.json()["games"]]
+        assert room_code not in b_rooms, f"another wallet can see this game: {b_rooms}"
 
         print("--- History scoping test passed! ---")
 
