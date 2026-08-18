@@ -52,3 +52,7 @@ backupenv/
 # OS
 .DS_Store
 codex-context.md
+
+# vitest coverage output (frontend/coverage/) — generated, never committed
+frontend/coverage/
+coverage.xml

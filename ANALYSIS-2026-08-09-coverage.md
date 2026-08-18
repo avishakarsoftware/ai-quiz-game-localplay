@@ -103,7 +103,16 @@ correctness through the UI. "75/76 passing" means 75 games *launch*, not 75 game
 
 ## 4. Frontend: never measured, and the biggest file is untested
 
-`@vitest/coverage-v8` is **not installed** — there has never been a frontend coverage number.
+`@vitest/coverage-v8` was **not installed** — there had never been a frontend coverage number.
+
+**NOW MEASURED (2026-08-09):** **35.85% statements**, 32.76% branches, 40.87% functions.
+
+A methodological trap worth remembering: the first run reported **50.42%**, because v8 only
+instruments files that a test imports, so 16 entirely untested files — including
+`OrganizerPage.tsx`, the largest in the repo — were absent from the DENOMINATOR. Setting
+`coverage.include: ['src/**/*.{ts,tsx}']` in `vite.config.ts` grew the denominator from 5,489 to
+7,721 statements and dropped the figure by 15 points. Any coverage number from a v8 setup without
+an explicit `include` is flattering itself.
 
 Proxy measurement (is a component's name mentioned in any test file — generous, since being
 *named* is not being *covered*):

@@ -113,10 +113,23 @@ jobs:
           cd frontend
           npx tsc -b --force
 
-      - name: Unit tests
+      # --coverage gives the number a name. It is VISIBILITY, not a gate: no floor, no failure
+      # threshold. The honest baseline on 2026-08-09 was 35.85% statements — note that the first
+      # attempt reported 50.42% because v8 only instruments files a test imports, so 16 untested
+      # files (including OrganizerPage.tsx, the largest in the repo) were missing from the
+      # denominator. vite.config.ts now sets coverage.include to prevent that flattering.
+      - name: Unit tests (with coverage)
         run: |
           cd frontend
-          npx vitest run
+          npx vitest run --coverage
+
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          retention-days: 30
 
       - name: Build
         run: |
