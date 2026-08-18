@@ -820,6 +820,30 @@ def has_signup_bonus(wallet_id: str) -> bool:
     ).fetchone() is not None
 
 
+def claim_once(key: str) -> bool:
+    """Atomically claim a one-shot operation. True exactly once per key, for one caller.
+
+    Uses request_log, whose `idempotency_key` is a PRIMARY KEY on BOTH backends, so the database
+    — not application logic — decides the winner. `INSERT OR IGNORE` + rowcount is the signal.
+
+    Added 2026-08-09 after the PostgREST concurrency suite caught migrate_grace_proofs
+    duplicating a grace window under concurrent sign-ins: it was check-then-insert, which two
+    racers both pass. Rows here are pruned after an hour by check_idempotency, which is fine —
+    the claim prevents the CONCURRENT race, and the value checks inside the operation prevent
+    SEQUENTIAL repetition.
+    """
+    if not key:
+        return False
+    conn = _get_conn()
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO request_log (idempotency_key, device_id, result_id, created_at) "
+        "VALUES (?, 'claim', '', ?)",
+        (key, int(time.time())),
+    )
+    conn.commit()
+    return cur.rowcount == 1
+
+
 def migrate_grace_proofs(from_id: str, to_id: str) -> None:
     """Carry first-party-grace identity across the device->user wallet merge at sign-in.
 
@@ -830,6 +854,10 @@ def migrate_grace_proofs(from_id: str, to_id: str) -> None:
     rows; each piece is skipped when the target already has it, so the call is idempotent.
     """
     if from_id == to_id:
+        return
+    # One winner only: two sign-in requests racing would both pass the value checks below and
+    # duplicate the window (caught by test_supabase_concurrency.py).
+    if not claim_once(f"grace-migrate:{from_id}:{to_id}"):
         return
     conn = _get_conn()
     now = int(time.time())
@@ -2181,6 +2209,7 @@ if config.DB_BACKEND == "supabase":
         "has_room_spend",
         "has_signup_bonus",
         "migrate_grace_proofs",
+        "claim_once",
         "record_grace_room",
         "get_or_create_wallet",
         "get_wallet_balance",

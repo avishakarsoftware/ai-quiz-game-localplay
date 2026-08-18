@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 import time
 import uuid
 from typing import Optional
@@ -11,6 +12,7 @@ import httpx
 
 import config
 
+logger = logging.getLogger(__name__)
 
 _PENDING_TOKEN_TTL = 3600
 
@@ -374,8 +376,26 @@ def has_signup_bonus(wallet_id: str) -> bool:
     return bool(rows)
 
 
+def claim_once(key: str) -> bool:
+    """Atomically claim a one-shot operation — see db.claim_once.
+
+    PostgREST returns the inserted representation, so an empty array means the row already
+    existed (Prefer: resolution=ignore-duplicates) and this caller LOST the race.
+    """
+    if not key:
+        return False
+    rows = _sb().insert(
+        "request_log",
+        {"idempotency_key": key, "device_id": "claim", "result_id": "", "created_at": _now()},
+        ignore_duplicates=True,
+    )
+    return bool(rows)
+
+
 def migrate_grace_proofs(from_id: str, to_id: str) -> None:
     if from_id == to_id:
+        return
+    if not claim_once(f"grace-migrate:{from_id}:{to_id}"):
         return
     balance = get_wallet_balance(to_id)
 
@@ -701,13 +721,34 @@ def delete_setting(key: str) -> None:
 def credit_purchase(wallet_id: str, amount: int, reference_id: str, metadata: str = "") -> tuple[bool, int]:
     if amount <= 0:
         raise ValueError(f"credit_purchase amount must be positive, got {amount}")
-    result = _sb().rpc("credit_purchase", {
+    payload = {
         "p_wallet_id": wallet_id,
         "p_amount": amount,
         "p_reference_id": reference_id,
         "p_metadata": metadata or "",
         "p_max_balance": _effective_max_balance(wallet_id),
-    })
+    }
+    try:
+        result = _sb().rpc("credit_purchase", payload)
+    except SupabaseDBError as exc:
+        # A CONCURRENT re-delivery of the same payment. The RPC's own duplicate check passes in
+        # both racers, and the `*_purchase_once` unique index then rejects the loser with SQLSTATE
+        # 23505. The money is safe — exactly one credit landed — but raising here surfaced as a 500
+        # to Stripe/RevenueCat, which then retried the ALREADY-CREDITED payment, and after ~3 days
+        # of that Stripe disables the endpoint. So a duplicate is reported the same way the
+        # sequential path reports it: not newly credited, plus the current balance.
+        # Found by tests/test_supabase_concurrency.py (~3 runs in 8 before this fix).
+        message = str(exc)
+        if "23505" in message and "purchase_once" in message:
+            logger.info("credit_purchase: concurrent duplicate for reference %s — already credited",
+                        reference_id)
+            # (True, balance) — NOT (False, ...). Measured on both backends: a SEQUENTIAL replay
+            # returns (True, balance), i.e. `success` means "this payment is credited", not "I
+            # credited it just now". A concurrent duplicate is the same situation, so it must
+            # answer identically, or a caller doing `if not ok: alert(...)` raises a false alarm
+            # on a payment that was in fact fulfilled.
+            return True, get_wallet_balance(wallet_id)
+        raise
     return bool(result["success"]), int(result["balance"])
 
 
