@@ -2678,15 +2678,17 @@ class SocketManager:
                     await self._broadcast_generic_prompt_sync(room)
                     return
 
-                # Block new players if room is locked
-                if room.locked:
-                    conn = room.connections.get(client_id)
-                    if conn:
-                        await conn.send_json({"type": "ERROR", "message": "Room is locked by the host"})
-                        await conn.close()
-                    return
-
-                # Block new players if game is in progress
+                # ORDER MATTERS. "game in progress" is checked FIRST, because starting a game always
+                # sets room.locked (see START_GAME), so with the locked check first this branch was
+                # UNREACHABLE: every guest arriving mid-game was told "Room is locked by the host",
+                # which PlayerPage renders as "ask the host to unlock the room to join" — advice
+                # nobody can act on, since the lock toggle is a LOBBY control. Meanwhile PlayerPage
+                # carries a whole GAME_IN_PROGRESS state and screen (with question progress) that
+                # could never render. Found 2026-08-09 while writing test_socket_scenarios.py.
+                #
+                # A locked LOBBY is still a real, distinct case (the host used TOGGLE_LOCK before
+                # starting), and for THAT the "ask the host to unlock" copy is accurate — so the
+                # locked branch stays, just second.
                 if room.state != "LOBBY":
                     conn = room.connections.get(client_id)
                     if conn:
@@ -2695,6 +2697,14 @@ class SocketManager:
                             "question_number": room.current_question_index + 1,
                             "total_questions": room.total_rounds(),
                         })
+                        await conn.close()
+                    return
+
+                # Block new players if the host locked the lobby (unlockable, unlike a running game)
+                if room.locked:
+                    conn = room.connections.get(client_id)
+                    if conn:
+                        await conn.send_json({"type": "ERROR", "message": "Room is locked by the host"})
                         await conn.close()
                     return
 

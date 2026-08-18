@@ -93,7 +93,11 @@ function normalizeRoomCode(value: string | null | undefined): string {
 const FRIENDLY_JOIN_ERRORS: Record<string, string> = {
     'Room not found': "We couldn't find that room — double-check the code with your host.",
     'Room is full': 'This room is full. Ask the host to start a new one.',
-    'Room is locked by the host': 'The game has already started — ask the host to unlock the room to join.',
+    // Reached ONLY for a locked LOBBY now. Before 2026-08-09 the backend sent this for an
+    // in-progress game too (the locked check ran first), so the copy claimed the game had
+    // started — which is false here, and the advice was unactionable mid-game. A running game
+    // now sends GAME_IN_PROGRESS, which has its own screen.
+    'Room is locked by the host': 'The host has locked this room — ask them to unlock it so you can join.',
     'Nickname is taken': 'That nickname is taken — try a different one.',
     'Game content not found. Please generate a new game.': 'This game is no longer available. Ask the host to start a new one.',
     "You don't have permission to use this content.": 'This game is no longer available. Ask the host to start a new one.',
