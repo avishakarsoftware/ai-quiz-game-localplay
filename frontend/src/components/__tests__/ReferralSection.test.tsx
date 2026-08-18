@@ -137,7 +137,7 @@ describe('ReferralSection', () => {
     });
 
     it('copies the invite when the native share sheet is unavailable', async () => {
-        const writeText = vi.fn(async () => {});
+        const writeText = vi.fn<(text: string) => Promise<void>>(async () => undefined);
         vi.stubGlobal('navigator', { ...navigator, share: undefined, clipboard: { writeText } });
         apiFetch.mockResolvedValue(jsonResponse(CODE_INFO));
 
@@ -153,7 +153,7 @@ describe('ReferralSection', () => {
     });
 
     it('prefers the native share sheet when present', async () => {
-        const share = vi.fn(async () => {});
+        const share = vi.fn<(data: ShareData) => Promise<void>>(async () => undefined);
         vi.stubGlobal('navigator', { ...navigator, share, clipboard: { writeText: vi.fn() } });
         apiFetch.mockResolvedValue(jsonResponse(CODE_INFO));
 
@@ -168,7 +168,8 @@ describe('ReferralSection', () => {
     });
 
     it('a cancelled share sheet is not an error', async () => {
-        const share = vi.fn(async () => { throw new Error('AbortError'); });
+        const share = vi.fn<(data: ShareData) => Promise<void>>(
+            async () => { throw new Error('AbortError'); });
         vi.stubGlobal('navigator', { ...navigator, share, clipboard: { writeText: vi.fn() } });
         apiFetch.mockResolvedValue(jsonResponse(CODE_INFO));
 

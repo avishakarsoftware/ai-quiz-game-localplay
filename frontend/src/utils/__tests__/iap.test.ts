@@ -22,13 +22,17 @@ vi.mock('../storage', () => ({
     getUserProfile: () => null,
 }));
 
+// Explicit signatures matter here: `vi.fn(async () => ({ availablePackages: [] }))` would infer
+// `never[]` and a narrow object type, so every later mockResolvedValue with a real offerings shape
+// fails `tsc -b` (vitest itself does not typecheck, so this only shows up in the build).
+type AnyFn = (...args: never[]) => Promise<unknown>;
 const purchases = {
-    configure: vi.fn(async () => {}),
-    logIn: vi.fn(async () => ({})),
-    logOut: vi.fn(async () => ({})),
-    getOfferings: vi.fn(async () => ({ offerings: { current: { availablePackages: [] } } })),
-    purchasePackage: vi.fn(async () => ({})),
-    restorePurchases: vi.fn(async () => ({})),
+    configure: vi.fn<AnyFn>(async () => undefined),
+    logIn: vi.fn<AnyFn>(async () => ({})),
+    logOut: vi.fn<AnyFn>(async () => ({})),
+    getOfferings: vi.fn<AnyFn>(async () => ({ offerings: { current: { availablePackages: [] } } })),
+    purchasePackage: vi.fn<AnyFn>(async () => ({})),
+    restorePurchases: vi.fn<AnyFn>(async () => ({})),
 };
 vi.mock('@revenuecat/purchases-capacitor', () => ({ Purchases: purchases }));
 
