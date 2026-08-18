@@ -48,3 +48,28 @@ vi.stubGlobal('ResizeObserver', vi.fn().mockImplementation(() => ({
     unobserve: vi.fn(),
     disconnect: vi.fn(),
 })));
+
+// Working localStorage / sessionStorage.
+//
+// Node 22+ ships an experimental built-in `localStorage` that SHADOWS jsdom's implementation here,
+// and it is a hollow stub: `typeof localStorage.setItem === 'undefined'` (the runtime also warns
+// "`--localstorage-file` was provided without a valid path"). Anything under test that persists
+// state therefore silently did nothing, and `localStorage.clear()` in a test throws. That is why
+// AnnouncementBanner.test.tsx defines its own mock — this makes it unnecessary for new tests.
+function createStorage(): Storage {
+    let store: Record<string, string> = {};
+    return {
+        get length() { return Object.keys(store).length; },
+        key: (index: number) => Object.keys(store)[index] ?? null,
+        getItem: (key: string) => (key in store ? store[key] : null),
+        setItem: (key: string, value: string) => { store[key] = String(value); },
+        removeItem: (key: string) => { delete store[key]; },
+        clear: () => { store = {}; },
+    } as Storage;
+}
+
+for (const name of ['localStorage', 'sessionStorage'] as const) {
+    Object.defineProperty(window, name, { value: createStorage(), writable: true, configurable: true });
+    // `localStorage` is also referenced bare (not via window) in app code and tests.
+    Object.defineProperty(globalThis, name, { value: window[name], writable: true, configurable: true });
+}
