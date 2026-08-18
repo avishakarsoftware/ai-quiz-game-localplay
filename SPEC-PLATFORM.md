@@ -1717,3 +1717,40 @@ This is the main infrastructure investment needed before Chinese Whispers or Dra
 10. Persist completed results in the normalized result shape.
 11. **Add Chinese Whispers (text-only)** — first true private-turn game, builds turn-queue infrastructure.
 12. Add drawing games (Chinese Whispers drawing variant, then DrawingGame) after the turn-queue and session/result model are solid.
+
+## Podium: "next game" strip (added 2026-08-18, REVIEW-2026-08 P4)
+
+**The gap:** after a game the host's only forward option was *Choose Another Game*, which drops them
+into a 38-card grid. That is a decision cost at the precise moment the party has momentum, and a host
+standing in front of bored friends will often just stop.
+
+**The change:** three concrete, one-tap suggestions above the existing buttons. *Play Again* and the
+full picker both remain — the strip removes the choosing, it does not remove the choice.
+
+`suggestNextGames()` (`frontend/src/components/organizer/nextGameSuggestions.ts`) is a **pure
+function over catalog metadata already in the client** — no backend, no endpoint, fully unit-tested.
+Rules, in order:
+
+1. Never the game just played (*Play Again* covers that).
+2. Only games the current group size can start — a suggestion that then refuses to start is worse
+   than no suggestion.
+3. Prefer a different *kind* than the game just finished.
+4. Prefer no-AI-generation games, so the next round starts instantly and costs no sparks.
+5. Break ties on curated popularity.
+6. **At most one game per player-facing family.**
+
+Rule 6 exists because of what the first version actually rendered: *Housie, Bingo, Baby Bingo* — three
+flavours of one game, each individually a valid "different kind than quiz". Then a second pass was
+needed because `runtimeType` is the wrong grain: Housie (`housie`) and Bingo (`bingo`) are separate
+runtimes but the *same experience* to a guest, so number-calling games collapse into one family
+regardless of runtime. Both mistakes were caught by looking at the rendered screenshot, not by the
+unit tests — and both are now pinned by tests named after the regression.
+
+Also fixed there: `.btn` carries a fixed line-height for single-line labels, so the three-line
+icon/title/reason stack overflowed and the reason text landed on top of the next button. Visible only
+in the visual diff; jsdom reported nothing.
+
+Hidden in `hostAppMode`: there the exit is "Back to Revelry" and the catalog belongs to the host app.
+
+**Tests:** `nextGameSuggestions.test.ts` (14, incl. both regressions) and
+`PodiumNextGameStrip.test.tsx` (6). Visual baselines updated after review.

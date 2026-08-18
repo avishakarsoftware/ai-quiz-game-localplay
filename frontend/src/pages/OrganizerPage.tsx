@@ -44,6 +44,7 @@ import ImpostorGame from '../components/passplay/ImpostorGame';
 import SeatRosterSetup from '../components/passplay/SeatRosterSetup';
 import PhotoClueGame from '../components/PhotoClueGame';
 import GameRulesModal from '../components/GameRulesModal';
+import { suggestNextGames } from '../components/organizer/nextGameSuggestions';
 import { HousieCalledBoard, HousieWinners } from '../components/HousieBoard';
 import { BingoCalledList, BingoCallOverlay } from '../components/BingoBoard';
 import ImageGenerationScreen from '../components/organizer/ImageGenerationScreen';
@@ -57,7 +58,7 @@ import BonusSplash from '../components/BonusSplash';
 import ErrorModal from '../components/ErrorModal';
 import SparkPurchaseModal from '../components/SparkPurchaseModal';
 import { useRemoteConfigContext } from '../context/RemoteConfigContext';
-import { GENERIC_PROMPT_GAME_IDS, getGameModeConfig, getMinPlayers, isQuizRuntimeGame, runtimeGameType } from '../gameModes';
+import { GENERIC_PROMPT_GAME_IDS, getGameModeConfig, getMinPlayers, isQuizRuntimeGame, runtimeGameType, filterGameModesForCatalog } from '../gameModes';
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
 
@@ -3129,6 +3130,20 @@ export default function OrganizerPage() {
                         onShareResults={hostAppMode ? undefined : () => shareGameResult(gameTypeRef.current, leaderboard)}
                         playAgainLabel="Play Again"
                         chooseAnotherLabel={hostAppMode ? 'Back to Revelry Games' : 'Choose Another Game'}
+                        // P4. Hidden in hostAppMode: there the exit is "Back to Revelry", and the
+                        // catalog belongs to the host app, not to us.
+                        nextGameSuggestions={hostAppMode ? undefined : suggestNextGames(
+                            gameTypeRef.current,
+                            players.length,
+                            filterGameModesForCatalog(catalog),
+                        )}
+                        onPickNextGame={hostAppMode ? undefined : (id) => {
+                            // Same two steps the picker takes: full reset, then route to that game's
+                            // setup. Reusing both means a suggestion can never behave differently
+                            // from choosing the game by hand.
+                            chooseAnotherGame();
+                            handleGameSelect(id);
+                        }}
                     />
                 )}
             </div>

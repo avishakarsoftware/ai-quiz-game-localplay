@@ -1,3 +1,5 @@
+import type { GameType } from '../../types';
+import type { NextGameSuggestion } from './nextGameSuggestions';
 import { useState, useEffect } from 'react';
 import { type LeaderboardEntry, type TeamLeaderboardEntry } from '../../types';
 import { soundManager } from '../../utils/sound';
@@ -22,6 +24,9 @@ interface PodiumScreenProps {
     onShareResults?: () => void;
     playAgainLabel?: string;
     chooseAnotherLabel?: string;
+    /** REVIEW-2026-08 P4: one-tap "next game" suggestions. Omit any of these and the strip hides. */
+    nextGameSuggestions?: NextGameSuggestion[];
+    onPickNextGame?: (id: GameType) => void;
 }
 
 export default function PodiumScreen({
@@ -33,6 +38,8 @@ export default function PodiumScreen({
     onShareResults,
     playAgainLabel = 'Play Again',
     chooseAnotherLabel = 'Choose Another Game',
+    nextGameSuggestions,
+    onPickNextGame,
 }: PodiumScreenProps) {
     const [revealPhase, setRevealPhase] = useState(0);
 
@@ -197,6 +204,45 @@ export default function PodiumScreen({
                                 <div style={{ fontWeight: 600 }}>{s.winner}</div>
                                 <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>{s.detail}</div>
                             </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* P4: the between-games moment. "Choose Another Game" drops the host into a 38-card
+                grid — a decision cost exactly when the party has momentum. Three concrete taps
+                remove the choosing; the grid stays below as the escape hatch. */}
+            {revealPhase >= 4 && onPickNextGame && nextGameSuggestions && nextGameSuggestions.length > 0 && (
+                <div
+                    data-testid="next-game-strip"
+                    className="stagger-in"
+                    style={{ position: 'relative', zIndex: 11, marginTop: '1rem', width: '100%', maxWidth: 560 }}
+                >
+                    <p style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem', textAlign: 'center', marginBottom: 8 }}>
+                        Keep the party going
+                    </p>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                        {nextGameSuggestions.map((suggestion) => (
+                            <button
+                                key={suggestion.id}
+                                type="button"
+                                className="btn btn-secondary"
+                                data-testid={`next-game-${suggestion.id}`}
+                                onClick={() => onPickNextGame(suggestion.id)}
+                                style={{
+                                    display: 'flex', flexDirection: 'column', alignItems: 'center',
+                                    gap: 2, padding: '10px 14px',
+                                    // .btn ships a fixed line-height/height for single-line labels; a
+                                    // three-line stack overflowed it and the reason text landed on top
+                                    // of the next button (caught in the visual diff, not in jsdom).
+                                    height: 'auto', minHeight: 0, lineHeight: 1.25, whiteSpace: 'normal',
+                                    flex: '1 1 150px', maxWidth: 200,
+                                }}
+                            >
+                                <span style={{ fontSize: '1.2rem' }}>{suggestion.icon}</span>
+                                <span style={{ fontWeight: 700, fontSize: '0.85rem' }}>{suggestion.title}</span>
+                                <span style={{ color: 'var(--text-tertiary)', fontSize: '0.7rem' }}>{suggestion.reason}</span>
+                            </button>
                         ))}
                     </div>
                 </div>
