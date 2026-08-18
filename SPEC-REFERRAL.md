@@ -81,3 +81,34 @@ Resolve wallet (`tokens.get_wallet_id`; require device id / session). Lazily cre
 - `backend/config.py` (REFERRAL_REWARD, MAX_REFERRALS_PER_DAY), `backend/db.py` (migration + 3 fns),
   `backend/supabase_db.py` (+ migration/parity), `backend/main.py` (2 endpoints), `backend/tests/test_referral.py`.
 - Frontend: `SettingsDrawer` (code/share/redeem UI), `App`/router (`?ref=` capture), balance refresh.
+
+## Guest-facing surface — the player podium (added 2026-08-18, REVIEW-2026-08 P2)
+
+**The gap:** referrals were surfaced only in the host's `SettingsDrawer`. Guests — the people best
+placed to become the next host — never saw the loop at all. A host inviting themselves is not a loop.
+
+**The moment:** the player podium. A guest at the final scoreboard has just had a good time, and the
+screen already says "Waiting for host to start a new game…", so they are *idle*. The CTA goes there,
+AFTER the scores, so it fills dead time instead of competing with the celebration.
+
+**The mechanism:** `GET /room/{room_code}/invite` returns the **host's** referral code, so a guest who
+starts hosting with it pays both sides `REFERRAL_REWARD`.
+
+- An endpoint rather than a field on the `PODIUM` broadcast, because PODIUM is broadcast from **19
+  separate places** in `socket_manager.py` — threading a field through would be 19 edits and 19
+  chances to miss one. The client asks once, when it reaches the podium.
+- Always **200** with a possibly-empty `{available: false}`. Referrals disabled, unknown room, a
+  Revelry-hosted room with no organizer wallet, or a DB failure all degrade to silence. A podium is a
+  celebration; it must never have to render an error.
+- Not sensitive: a referral code exists to be shared, the room code is already known to every guest,
+  and a redemption *pays* the host. Redemption keeps its own guards (self-referral, one per wallet,
+  daily cap).
+
+**Client:** `PodiumInviteCta` renders nothing unless the backend reports an invite. Shares via
+`navigator.share`, falling back to the clipboard; a dismissed share sheet is not an error. Emits
+`podium_invite_shared` so the loop is measurable — the whole point is to find out whether guests
+convert into hosts.
+
+**Tests:** `backend/tests/test_room_invite.py` (7 — including case-insensitive room codes, no host
+wallet, flag off, and DB failure) and `PodiumInviteCta.test.tsx` (12 — every silence path plus the
+share text carrying the host's code).

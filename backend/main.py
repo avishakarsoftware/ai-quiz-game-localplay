@@ -6048,6 +6048,46 @@ async def referral_code(req: Request):
     return {"code": code, "share_url": share_url, "reward": config.REFERRAL_REWARD}
 
 
+@app.get("/room/{room_code}/invite")
+async def room_invite(room_code: str):
+    """The HOST's referral code, for the guests in their room (SPEC-REFERRAL, REVIEW-2026-08 P2).
+
+    Why this exists: referrals were only surfaced in the host's SettingsDrawer, so the people best
+    placed to act on them — the guests who just had fun — never saw the loop at all. The viral moment
+    is the player podium: a guest who enjoyed the party is the most likely NEXT host, and if they
+    start with this code both sides get REFERRAL_REWARD sparks.
+
+    Why an endpoint rather than adding a field to the podium payload: PODIUM is broadcast from **19
+    separate places** in socket_manager, so threading a field through would be 19 edits and 19 chances
+    to miss one. The client asks for this once, only when it reaches the podium.
+
+    Not sensitive: a referral code exists to be shared, the room code is already shared with every
+    guest, and a redemption PAYS the host. Redemption itself stays guarded (self-referral, one per
+    wallet, daily cap) in redeem_referral.
+
+    Always 200 with a possibly-empty payload — a missing invite must never break a podium screen.
+    """
+    if not _REFERRALS_SUPPORTED:
+        return {"available": False}
+    room = socket_manager.rooms.get(room_code.upper())
+    if not room or not room.wallet_id:
+        # Unknown room, or a Revelry-hosted room with no organizer wallet to credit.
+        return {"available": False}
+    try:
+        code = db.get_or_create_referral_code(room.wallet_id)
+    except Exception:  # noqa: BLE001 — a podium must render even if referrals misbehave
+        logger.warning("Could not resolve invite code for room %s", room_code, exc_info=True)
+        return {"available": False}
+    if not code:
+        return {"available": False}
+    return {
+        "available": True,
+        "code": code,
+        "reward": config.REFERRAL_REWARD,
+        "share_url": f"{config.PUBLIC_SITE_URL}/?ref={code}" if config.PUBLIC_SITE_URL else f"/?ref={code}",
+    }
+
+
 @app.post("/referral/redeem")
 async def referral_redeem(body: ReferralRedeemRequest, req: Request):
     """Redeem a referral code — credits both parties once (SPEC-REFERRAL)."""

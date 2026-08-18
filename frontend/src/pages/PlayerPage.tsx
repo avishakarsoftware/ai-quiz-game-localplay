@@ -17,6 +17,7 @@ import { HousieClaimButtons, HousieTicketGrid, HousieWinners } from '../componen
 import { BingoCallOverlay, BingoCardGrid, BingoCalledList, BingoClaimButtons } from '../components/BingoBoard';
 import { mediaUrl } from '../utils/media';
 import { apiUrl } from '../utils/api';
+import PodiumInviteCta from '../components/PodiumInviteCta';
 import { hasEmoji, isEmojiForwardGame } from '../utils/emoji';
 import { returnToHostApp } from '../utils/hostAppReturn';
 import MusicalChairsPlayer from '../components/player/MusicalChairsPlayer';
@@ -2248,6 +2249,12 @@ export default function PlayerPage() {
                                     style={{ animationDelay: `${i * 0.15}s` }} />
                             ))}
                         </div>
+
+                        {/* REVIEW-2026-08 P2. Placed AFTER the scores and the "waiting for host" line
+                            on purpose: the guest is idle here, so the invite fills dead time instead of
+                            competing with the celebration. Renders nothing unless the backend says an
+                            invite is available. */}
+                        <PodiumInviteCta roomCode={roomCode} />
                     </div>
                 )}
 
