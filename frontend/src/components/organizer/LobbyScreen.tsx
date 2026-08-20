@@ -33,7 +33,7 @@ interface LobbyScreenProps {
 export default function LobbyScreen({
     roomCode,
     joinUrl,
-    gameTitle = 'Game',
+    gameTitle = 'Room',
     playerCount,
     players,
     minPlayers = 1,
@@ -59,6 +59,7 @@ export default function LobbyScreen({
     const showQr = Boolean(qrUrl) && (!hostAppMode || Boolean(hostAppJoinUrl));
     const showHostAppShare = hostAppMode && Boolean(hostAppJoinUrl);
     const offlineCount = players.filter((player) => player.status === 'offline' || player.status === 'reconnecting').length;
+    const lobbyTitle = `${(gameTitle || 'Room').trim() || 'Room'} Lobby`;
 
     useEffect(() => {
         if (playerCount > prevCountRef.current) {
@@ -132,7 +133,7 @@ export default function LobbyScreen({
             )}
 
             <div className="screen-hero">
-                <h1 className="hero-title">{gameTitle} Lobby</h1>
+                <h1 className="hero-title">{lobbyTitle}</h1>
                 <p className="hero-subtitle">{hostAppMode ? (hostAppJoinUrl ? hostAppJoinLabel : 'Players can join from Revelry') : 'Share the code below to invite players'}</p>
             </div>
 

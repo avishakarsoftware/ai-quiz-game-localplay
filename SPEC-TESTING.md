@@ -167,7 +167,9 @@ it masks, and how to review and accept a diff.**
 N disposable `two_truths` rooms, connects one organizer plus M `QA-*` players per room over real
 WebSockets with a browser-like `Origin`, holds briefly, then cancels every room through the organizer
 socket. It spends no sparks because rooms are never started, and it must leave zero live rooms from
-the run. Use it to answer "can this target accept a burst of live lobbies and clean them up?"
+the run. Use it to answer "can this target accept a burst of live lobbies and clean them up?" The
+product/runtime contract behind this harness lives in `SPEC-ROOM-LIFECYCLE-RELIABILITY.md`; update
+that spec whenever lobby seats, reset, reconnect grace, or cleanup semantics change.
 
 ```bash
 # Local, with the isolated stack wrapper. The wrapper owns ports 9100/9200 and a temp DB.

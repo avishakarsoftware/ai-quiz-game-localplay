@@ -20,6 +20,12 @@ describe('LobbyScreen min-player gating', () => {
         expect(screen.getByRole('heading', { name: 'Party Quests Lobby' })).toBeInTheDocument();
     });
 
+    it('does not leak the old generic Game Lobby fallback when a caller omits the game title', () => {
+        render(<LobbyScreen {...baseProps} playerCount={0} minPlayers={1} />);
+        expect(screen.getByRole('heading', { name: 'Room Lobby' })).toBeInTheDocument();
+        expect(screen.queryByRole('heading', { name: 'Game Lobby' })).not.toBeInTheDocument();
+    });
+
     it('disables Start and explains how many more players are needed', () => {
         render(<LobbyScreen {...baseProps} playerCount={1} minPlayers={3} />);
         expect(screen.getByRole('button', { name: 'Start Game' })).toBeDisabled();
