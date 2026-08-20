@@ -6,6 +6,8 @@ default, survives a broken client, and cannot take the app down.
 """
 import builtins
 import logging
+import sys
+import types
 
 import config
 import error_reporting
@@ -53,12 +55,10 @@ def test_survives_credential_failure(monkeypatch):
     monkeypatch.setattr(config, "ERROR_REPORTING_ENABLED", True)
     monkeypatch.setattr(error_reporting, "_handler", None)
 
-    import google.cloud.logging
-
     def boom(*a, **k):
         raise RuntimeError("could not determine credentials")
 
-    monkeypatch.setattr(google.cloud.logging, "Client", boom)
+    _install_google_logging_modules(monkeypatch, client_factory=boom)
     assert error_reporting.init() is False
 
 
@@ -74,13 +74,34 @@ class _FakeHandler(logging.Handler):
         self.records.append(record)
 
 
+def _install_google_logging_modules(monkeypatch, client_factory=None, handler_factory=None):
+    """Install fake google.cloud.logging modules without requiring google-cloud-logging.
+
+    The runtime deliberately treats this package as optional/fail-open, so the tests must not
+    import the real dependency either. Otherwise a clean local venv proves only that the package is
+    absent, not that error_reporting behaves correctly.
+    """
+    google_mod = types.ModuleType("google")
+    cloud_mod = types.ModuleType("google.cloud")
+    logging_mod = types.ModuleType("google.cloud.logging")
+    handlers_mod = types.ModuleType("google.cloud.logging.handlers")
+
+    logging_mod.Client = client_factory or (lambda *a, **k: object())
+    handlers_mod.CloudLoggingHandler = handler_factory or _FakeHandler
+    logging_mod.handlers = handlers_mod
+    cloud_mod.logging = logging_mod
+    google_mod.cloud = cloud_mod
+
+    monkeypatch.setitem(sys.modules, "google", google_mod)
+    monkeypatch.setitem(sys.modules, "google.cloud", cloud_mod)
+    monkeypatch.setitem(sys.modules, "google.cloud.logging", logging_mod)
+    monkeypatch.setitem(sys.modules, "google.cloud.logging.handlers", handlers_mod)
+    return logging_mod, handlers_mod
+
+
 def _install_fake(monkeypatch) -> _FakeHandler:
     monkeypatch.setattr(config, "ERROR_REPORTING_ENABLED", True)
     monkeypatch.setattr(error_reporting, "_handler", None)
-    import google.cloud.logging
-    from google.cloud.logging import handlers as gcl_handlers
-
-    monkeypatch.setattr(google.cloud.logging, "Client", lambda *a, **k: object())
     created: list[_FakeHandler] = []
 
     def factory(client, name="", **kwargs):
@@ -88,7 +109,7 @@ def _install_fake(monkeypatch) -> _FakeHandler:
         created.append(h)
         return h
 
-    monkeypatch.setattr(gcl_handlers, "CloudLoggingHandler", factory)
+    _install_google_logging_modules(monkeypatch, handler_factory=factory)
     assert error_reporting.init() is True
     return created[0]
 

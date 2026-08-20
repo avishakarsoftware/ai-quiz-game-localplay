@@ -1054,6 +1054,11 @@ never looks like a production incident.
 exceptions, and therefore the `spawn()` background-task crash reports
 (`question-timer:ABC123`, `housie-auto:XYZ`) that previously lived only in unread `docker logs`.
 
+**Test contract:** the runtime must stay fail-open if `google-cloud-logging` is absent or credentials
+are unavailable. `backend/tests/test_error_reporting.py` stubs the `google.cloud.logging` modules
+instead of importing the real package, so a clean local venv can verify the optional-dependency
+contract without requiring Cloud Logging to be installed.
+
 **Verify it any time** — configured ≠ working:
 ```
 curl -X POST -H "Authorization: Bearer $ADMIN_API_KEY" https://gamesapi.revelryapp.me/admin/selftest-error
