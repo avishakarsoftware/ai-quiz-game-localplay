@@ -2,7 +2,7 @@
 
 Status: Gamma bridge plus party-scoped quiz authoring, generic WMLT/Drawing/Housie/Random Chit setup-save-start flow, catalog-driven party hub creation, and party hub start flow implemented; production expansion remains policy/QA gated for games that are not explicitly enabled. June 24, 2026 expanded LocalPlay host-app quick-start eligibility to Bluff, Find Someone Who, Random Chit, Mafia, Would You Rather, Never Have I Ever, Word Association, Acronym Game, Photo Clue, and Party Poker; policy enablement/embedded QA still gates actual Revelry exposure. The July 9, 2026 Party Quests staged setup/check-in/cancellation contract is implemented, regression-tested, and enabled for both gamma and production: gamma was flipped strict on 2026-07-09, and production `generated_content.content_type` DDL plus the strict authoring/check-in policy row were applied on 2026-07-14 after the LocalPlay-owned gamma pre-prod harness passed setup-required -> saved preview -> prepared start -> correct game lobby -> first-player auto-start -> late join -> cancellation. See the *Environment status ledger* in `DEPLOY.md` for the authoritative what-is-live-where table (this spec deliberately stops restating deploy SHAs; stale spec headers were a recurring bug).
 
-Last updated: 2026-07-14
+Last updated: 2026-08-20
 
 ## July 6, 2026 — Implementation-ready Revelry production expansion plan
 
@@ -537,6 +537,11 @@ LocalPlay frontend/Playwright tests:
 - first guest join auto-starts armed Party Quests; a late guest gets a private board;
 - cancellation moves organizer/player/spectator clients to a friendly terminal state without reconnect loops;
 - host-app mode shows no LocalPlay sparks/account/paywall chrome.
+- podium-to-next-game replay keeps the same room code and sends `ROOM_RESET` to organizer, player,
+  and spectator clients so guests on a prior final-results screen move into the next lobby without
+  rescanning or creating duplicate/stale roster state.
+- pre-prod room/socket load smoke opens multiple disposable rooms and player sockets, then cancels
+  every room, proving the room cap and cleanup path recover before production promotion.
 
 Revelry gamma contract tests:
 

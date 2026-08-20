@@ -2149,6 +2149,31 @@ npm run test:e2e:gamma
 
 This points Playwright at `https://gamesapi-gamma.revelryapp.me`, verifies the standalone catalog renders on desktop and mobile, checks `/media/status`, and fails on browser console/page errors.
 
+For broad deployed game coverage, run `npm run test:e2e:all-games:gamma` from `frontend/`.
+It creates one disposable room per catalog game and intentionally uses modest parallelism; use the
+room/socket load smoke below for deliberate concurrency.
+
+#### Room/socket load smoke
+
+Run this after changes that touch room creation, WebSocket auth/origins, lobby reconnect, room reset,
+or room cleanup. It creates disposable `two_truths` lobbies, connects one organizer plus synthetic
+`QA-*` players, holds briefly, then cancels every room through the organizer socket. It does **not**
+start games, so it does not spend sparks.
+
+```bash
+# Local isolated stack; avoids dev DB and port conflicts with other projects.
+./scripts/e2e-local-stack.sh ../backend/venv/bin/python ../scripts/load-room-smoke.py \
+  --api http://127.0.0.1:9100 --rooms 8 --players 3 --concurrency 4 --dwell 1
+
+# Gamma after deploys touching shared room/socket behavior.
+backend/venv/bin/python scripts/load-room-smoke.py \
+  --target gamma --rooms 12 --players 4 --concurrency 4 --dwell 2
+```
+
+Prod use requires explicit approval and should stay modest, for example
+`--target prod --rooms 4 --players 2 --concurrency 2 --dwell 1`, because those are live lobbies
+even though they are disposable and cancelled.
+
 #### Pre-prod live game regression
 
 Run this before major production deployments that touch room creation, WebSockets, game runtime logic, or shared player/host/spectator surfaces:

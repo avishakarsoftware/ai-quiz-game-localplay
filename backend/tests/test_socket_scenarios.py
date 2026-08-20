@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 
 import config
 import socket_manager as sm
-from main import app
+from main import app, quizzes
 
 # The module holds a manager INSTANCE of the same name; rooms/allowed_origins live on it.
 manager = sm.socket_manager
@@ -65,6 +65,30 @@ def _make_room(game_type: str = "two_truths") -> tuple[str, str]:
     which is why the scenarios below seat three."""
     body = {"game_type": game_type, "time_limit": 30}
     res = client.post("/room/create", json=body, headers=HEADERS)
+    assert res.status_code == 200, res.text
+    data = res.json()
+    return data["room_code"], data["organizer_token"]
+
+
+def _seed_quiz(title: str = "Socket Scenario Quiz", questions: int = 1) -> str:
+    quiz_id = str(uuid.uuid4())
+    quizzes[quiz_id] = {
+        "quiz_title": title,
+        "questions": [
+            {
+                "id": idx + 1,
+                "text": f"Question {idx + 1}?",
+                "options": ["A", "B", "C", "D"],
+                "answer_index": 0,
+            }
+            for idx in range(questions)
+        ],
+    }
+    return quiz_id
+
+
+def _make_quiz_room(quiz_id: str) -> tuple[str, str]:
+    res = client.post("/room/create", json={"quiz_id": quiz_id, "time_limit": 30}, headers=HEADERS)
     assert res.status_code == 200, res.text
     data = res.json()
     return data["room_code"], data["organizer_token"]
@@ -227,6 +251,59 @@ def test_reset_is_ignored_outside_the_podium():
         org_ctx.__exit__(None, None, None)
 
 
+def test_reset_after_podium_moves_players_into_next_lobby():
+    """The same QR/room is reused between games: players parked on the previous podium must receive
+    ROOM_RESET and become lobby players for the next game. Otherwise the host sees stale seats, the
+    players see "waiting for host", and START_GAME refuses because nobody is actually in the new
+    lobby — exactly the big-party failure mode."""
+    first_quiz = _seed_quiz("First Quiz", questions=1)
+    room_code, token = _make_quiz_room(first_quiz)
+    org_ctx, org = _open_organizer(room_code, token)
+    p1_ctx, p1 = _join(room_code, "p1", "Ada")
+    p2_ctx, p2 = _join(room_code, "p2", "Grace")
+    try:
+        recv_until(org, "PLAYER_JOINED", max_messages=10)
+        recv_until(org, "PLAYER_JOINED", max_messages=10)
+
+        org.send_json({"type": "START_GAME"})
+        recv_until(org, "GAME_STARTING", max_messages=20)
+        recv_until(p1, "GAME_STARTING", max_messages=20)
+        recv_until(p2, "GAME_STARTING", max_messages=20)
+
+        org.send_json({"type": "NEXT_QUESTION"})
+        recv_until(p1, "QUESTION", max_messages=20)
+        recv_until(p2, "QUESTION", max_messages=20)
+        p1.send_json({"type": "ANSWER", "answer_index": 0})
+        p2.send_json({"type": "ANSWER", "answer_index": 1})
+        recv_until(org, "QUESTION_OVER", max_messages=20)
+
+        org.send_json({"type": "NEXT_QUESTION"})
+        recv_until(org, "PODIUM", max_messages=20)
+        recv_until(p1, "PODIUM", max_messages=20)
+        recv_until(p2, "PODIUM", max_messages=20)
+
+        next_quiz = _seed_quiz("Next Quiz", questions=1)
+        org.send_json({"type": "RESET_ROOM", "game_type": "quiz", "content_id": next_quiz, "time_limit": 20})
+        org_reset = recv_until(org, "ROOM_RESET", max_messages=20)
+        p1_reset = recv_until(p1, "ROOM_RESET", max_messages=20)
+        p2_reset = recv_until(p2, "ROOM_RESET", max_messages=20)
+
+        for reset in (org_reset, p1_reset, p2_reset):
+            assert reset["room_code"] == room_code
+            assert reset["game_type"] == "quiz"
+            assert reset["player_count"] == 2
+            assert {player["nickname"] for player in reset["players"]} == {"Ada", "Grace"}
+
+        org.send_json({"type": "START_GAME"})
+        recv_until(org, "GAME_STARTING", max_messages=20)
+        recv_until(p1, "GAME_STARTING", max_messages=20)
+        recv_until(p2, "GAME_STARTING", max_messages=20)
+    finally:
+        p2_ctx.__exit__(None, None, None)
+        p1_ctx.__exit__(None, None, None)
+        org_ctx.__exit__(None, None, None)
+
+
 def test_room_code_is_stable_across_its_lifetime():
     """The QR a guest scanned must stay valid: the code is assigned once and never rotates, which is
     what makes the "QR stops working" report a non-bug. Pinned so a refactor cannot quietly change
@@ -293,3 +370,37 @@ def test_room_codes_are_unique_across_many_creates():
         assert code not in codes, f"duplicate room code issued: {code}"
         codes.add(code)
     assert len(codes) == 25
+
+
+def test_room_capacity_is_recovered_after_host_cancel(monkeypatch):
+    """The global room cap is shared by every live party on a process. Hitting it must fail
+    closed, and a host-cancelled room must immediately free the slot; otherwise one noisy party
+    can wedge all new room creation until TTL cleanup."""
+    monkeypatch.setattr(config, "MAX_ROOMS", 2)
+
+    code_a, token_a = _make_room()
+    code_b, _token_b = _make_room()
+    blocked = client.post(
+        "/room/create",
+        json={"game_type": "two_truths", "time_limit": 30},
+        headers=HEADERS,
+    )
+    assert blocked.status_code == 429
+    assert "too many active rooms" in blocked.json()["detail"].lower()
+
+    with client.websocket_connect(f"/ws/{code_a}/org-cap?organizer=true") as org:
+        org.send_json({"type": "AUTH", "token": token_a})
+        recv_until(org, "ROOM_CREATED", max_messages=10)
+        org.send_json({"type": "CANCEL_GAME"})
+        closed = recv_until(org, "ROOM_CLOSED", max_messages=10)
+        assert closed["reason"] == "host_cancelled"
+
+    assert code_a not in manager.rooms
+    assert code_b in manager.rooms
+
+    replacement = client.post(
+        "/room/create",
+        json={"game_type": "two_truths", "time_limit": 30},
+        headers=HEADERS,
+    )
+    assert replacement.status_code == 200, replacement.text

@@ -1,12 +1,14 @@
 # SPEC-TESTING — the test architecture, and what is safe to run against production
 
-Status: **Spec + framework build in progress (2026-07-28).** Owner: Avi.
+Status: **Active test architecture (updated 2026-08-20).** Owner: Avi.
 Goal: Avi can run one command against **prod** at any time and get a trustworthy regression report.
 
 ## 0. What already exists (this is not greenfield)
 
-- **Backend**: 1269 pytest tests. Engines, endpoints, socket flows, Supabase parity.
-- **Frontend**: 375 vitest tests.
+- **Backend**: pytest coverage across engines, endpoints, socket flows, Supabase parity, money rails,
+  and room lifecycle recovery.
+- **Frontend**: vitest coverage for core components/utilities plus Playwright behavioral and visual
+  suites.
 - **Playwright**: 29 specs in `frontend/e2e/`, incl. a live harness (`liveGameHarness.ts`),
   gamma-live game specs, `preprod-live-regression`, store screenshots, legal pages.
 - **Remote smoke**: `scripts/smoke-remote.py` — already prod-safe, but narrow (one quiz + an
@@ -28,6 +30,7 @@ So the work is **consolidation and gap-filling**, not invention.
 | **L4 live (gamma)** | deployed gamma | ~min | The same flows against real infra + Postgres |
 | **L5 prod regression** | deployed prod | ~min | **Read-mostly**. Is prod healthy and correct *right now* |
 | **L6 visual** | local or gamma | ~min | Screenshot diffs; catches layout/theme regressions |
+| **L7 load smoke** | local, gamma, approved prod | min | Bounded many-room/many-socket cleanup probe |
 
 **Rule: a failure must be attributable.** If L5 fails but L4 passes, the fault is prod
 configuration or data, not code. Keep the suites structurally identical so that inference holds.
@@ -136,12 +139,19 @@ no hardcoded catalog anywhere in the spec — the guard in §5 fails if one appe
 
 Per-game exceptions (prepared content, settle timings, waivers) live in `frontend/e2e/game-coverage.json`,
 which is an exception list, never a catalog. **Do not point this suite at prod** — it creates a room
-per game; §2/§3 own the prod path.
+per game; §2/§3 own the prod path. The gamma script deliberately runs with lower parallelism than
+local (`--workers=2` as of 2026-08-20): L4 is the deployed behavior check, while L7 is the deliberate
+many-room/many-socket concurrency probe. If an L4 full run fails but an isolated `--grep` rerun passes,
+treat it as a live-suite stability signal and inspect logs before changing product code.
 
 Two things this suite had to learn the hard way, both worth knowing before touching it:
 - **Rooms must be handed back.** `MAX_ROOMS` is 50 and `ROOM_TTL_SECONDS` is 1800, so a 38-game run
   leaves 38 rooms squatting and the next run reports 429 for two thirds of the catalog. There is no
   REST endpoint for it, so teardown speaks the organizer socket: `AUTH` then `CANCEL_GAME`.
+- **Rooms can be reused across games.** `RESET_ROOM` deliberately keeps the same room code so guests
+  who scanned a QR or joined through Revelry do not need a fresh link. A bounded socket scenario now
+  pins that players sitting on the previous podium receive `ROOM_RESET`, move back to the lobby, and
+  count as connected players for the next `START_GAME`.
 - **Local runs need their own `DB_DIR`.** With a shared `backend/data/`, a concurrent `pytest` run
   reset wallets mid-suite and four games failed with "insufficient balance" on wallets that had been
   created seconds earlier with the full signup bonus. Same symptom as a real economy bug, entirely
@@ -152,6 +162,29 @@ Two things this suite had to learn the hard way, both worth knowing before touch
 **L6 (visual)** — Playwright screenshot diffing. Mask volatile regions (room codes, timers, spark
 balances) or every run diffs. Snapshots live beside the spec. **Built — see §7 for the suite, what
 it masks, and how to review and accept a diff.**
+
+**L7 (load smoke)** — bounded capacity smoke, not a soak test. `scripts/load-room-smoke.py` creates
+N disposable `two_truths` rooms, connects one organizer plus M `QA-*` players per room over real
+WebSockets with a browser-like `Origin`, holds briefly, then cancels every room through the organizer
+socket. It spends no sparks because rooms are never started, and it must leave zero live rooms from
+the run. Use it to answer "can this target accept a burst of live lobbies and clean them up?"
+
+```bash
+# Local, with the isolated stack wrapper. The wrapper owns ports 9100/9200 and a temp DB.
+./scripts/e2e-local-stack.sh ../backend/venv/bin/python ../scripts/load-room-smoke.py \
+  --api http://127.0.0.1:9100 --rooms 8 --players 3 --concurrency 4 --dwell 1
+
+# Gamma, after deploys that touch room creation, WebSockets, lobby/reconnect, or room cleanup.
+backend/venv/bin/python scripts/load-room-smoke.py \
+  --target gamma --rooms 12 --players 4 --concurrency 4 --dwell 2
+
+# Prod only with explicit approval and modest numbers; it creates live, disposable lobbies.
+backend/venv/bin/python scripts/load-room-smoke.py \
+  --target prod --rooms 4 --players 2 --concurrency 2 --dwell 1
+```
+
+Backend guard added 2026-08-20: `backend/tests/test_socket_scenarios.py` pins that `MAX_ROOMS`
+fails closed and that a host-cancelled room immediately frees capacity.
 
 ## 5. Guard: coverage cannot silently regress
 
