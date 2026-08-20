@@ -57,6 +57,7 @@ Required gates:
   - late join during running games where allowed
   - ignored reset outside podium
   - podium-to-next-game `ROOM_RESET` moves existing players into next lobby
+  - podium-to-default/config-driven game `ROOM_RESET` keeps live players startable without a new content id
   - room-code uniqueness
   - `MAX_ROOMS` fails closed and host cancellation recovers capacity
 - Frontend unit tests:
@@ -72,6 +73,7 @@ Required gates:
   - `PREPROD_LIVE=1 PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me npm run test:e2e:preprod-live` for action-level gameplay.
 - Load smoke:
   - `scripts/load-room-smoke.py` creates disposable rooms, opens organizer/player WebSockets, holds briefly, cancels, and verifies cleanup by probing the room codes.
+  - With `--reconnect-check`, the harness closes and reopens one lobby player per room using the issued session token and requires a `RECONNECTED` lobby sync before cleanup.
 
 Gamma all-games is not the concurrency test. It intentionally runs with lower parallelism than local so failures stay attributable to deployed behavior. Concurrency is owned by the load smoke.
 
@@ -95,4 +97,4 @@ Prod load smoke requires explicit approval and must use modest room/player count
 - Add a Revelry-aware mobile sleep/lobby-lull/reopen Playwright scenario.
 - Add runtime metrics for room create latency, socket join latency, reset delivery, cancellation cleanup time, and reconnect success/failure.
 - Add a bounded soak test that keeps rooms open across the lobby grace window using fake timers locally and a short-duration config in gamma.
-- Expand reset coverage beyond quiz to at least one default/config-driven social game and one Bingo/Housie-family game.
+- Expand reset coverage to one Bingo/Housie-family game.

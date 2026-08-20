@@ -9,6 +9,7 @@ sparks or leaving runtime rooms behind.
 Examples:
     backend/venv/bin/python scripts/load-room-smoke.py --target local --rooms 8 --players 3
     backend/venv/bin/python scripts/load-room-smoke.py --api https://gamesapi-gamma.revelryapp.me --rooms 12 --players 4
+    backend/venv/bin/python scripts/load-room-smoke.py --target gamma --rooms 4 --players 3 --reconnect-check
 """
 from __future__ import annotations
 
@@ -40,11 +41,19 @@ DEFAULT_ORIGINS = {
 
 
 @dataclass
+class PlayerHandle:
+    nickname: str
+    client_id: str
+    session_token: str
+    socket: Any
+
+
+@dataclass
 class RoomHandle:
     code: str
     token: str
     organizer: Any
-    players: list[Any]
+    players: list[PlayerHandle]
 
 
 def ws_base(api_base: str) -> str:
@@ -119,8 +128,13 @@ async def open_room(api: str, origin: str, code: str, token: str, players: int, 
                 "nickname": f"QA-{index}-{player_idx}",
                 "avatar": "🙂",
             }))
-            await recv_until(ws, "JOINED_ROOM")
-            player_sockets.append(ws)
+            joined = await recv_until(ws, "JOINED_ROOM")
+            player_sockets.append(PlayerHandle(
+                nickname=f"QA-{index}-{player_idx}",
+                client_id=f"load-p{index}-{player_idx}",
+                session_token=str(joined.get("session_token", "")),
+                socket=ws,
+            ))
         return RoomHandle(code=code, token=token, organizer=organizer, players=player_sockets)
     except Exception:
         try:
@@ -128,10 +142,45 @@ async def open_room(api: str, origin: str, code: str, token: str, players: int, 
             await recv_until(organizer, "ROOM_CLOSED", timeout=5.0)
         except Exception as exc:  # noqa: BLE001 - preserve the original smoke failure
             print(f"WARN cleanup cancel failed for partially opened room {code}: {exc}")
-        for ws in player_sockets:
-            await ws.close()
+        for player in player_sockets:
+            await player.socket.close()
         await organizer.close()
         raise
+
+
+async def reconnect_one_player(api: str, origin: str, room: RoomHandle, delay: float) -> bool:
+    if not room.players:
+        return True
+    player = room.players[0]
+    if not player.session_token:
+        print(f"WARN {room.code} player {player.nickname} did not receive a session token; skipping reconnect probe")
+        return False
+
+    await player.socket.close()
+    await asyncio.sleep(max(0.0, delay))
+
+    base = ws_base(api)
+    reconnect_id = f"{player.client_id}-reconnect-{uuid.uuid4().hex[:6]}"
+    ws = await websockets.connect(f"{base}/ws/{room.code}/{reconnect_id}", origin=origin)
+    await ws.send(json.dumps({
+        "type": "JOIN",
+        "nickname": player.nickname,
+        "avatar": "🙂",
+        "session_token": player.session_token,
+    }))
+    reconnected = await recv_until(ws, "RECONNECTED", timeout=8.0)
+    if reconnected.get("state") != "LOBBY":
+        print(f"WARN {room.code} reconnect returned state={reconnected.get('state')!r}, expected LOBBY")
+        await ws.close()
+        return False
+
+    room.players[0] = PlayerHandle(
+        nickname=player.nickname,
+        client_id=reconnect_id,
+        session_token=str(reconnected.get("session_token") or player.session_token),
+        socket=ws,
+    )
+    return True
 
 
 async def cancel_room(api: str, origin: str, room: RoomHandle) -> bool:
@@ -148,8 +197,8 @@ async def cancel_room(api: str, origin: str, room: RoomHandle) -> bool:
     except Exception as exc:  # noqa: BLE001 - cleanup is best effort, reported by caller
         print(f"WARN cancel send failed for {room.code}: {exc!r}")
     finally:
-        for ws in room.players:
-            await ws.close()
+        for player in room.players:
+            await player.socket.close()
         await room.organizer.close()
 
     gone = await verify_room_gone(api, origin, room.code)
@@ -160,7 +209,16 @@ async def cancel_room(api: str, origin: str, room: RoomHandle) -> bool:
     return True
 
 
-async def run(api: str, origin: str, rooms: int, players: int, concurrency: int, dwell: float) -> int:
+async def run(
+    api: str,
+    origin: str,
+    rooms: int,
+    players: int,
+    concurrency: int,
+    dwell: float,
+    reconnect_check: bool,
+    reconnect_delay: float,
+) -> int:
     started = time.monotonic()
     handles: list[RoomHandle] = []
     sem = asyncio.Semaphore(concurrency)
@@ -184,6 +242,21 @@ async def run(api: str, origin: str, rooms: int, players: int, concurrency: int,
 
             total_clients = rooms * (players + 1)
             print(f"PASS opened {rooms} rooms / {total_clients} sockets against {api} (origin {origin})")
+            if reconnect_check:
+                reconnect_results = await asyncio.gather(
+                    *(reconnect_one_player(api, origin, handle, reconnect_delay) for handle in handles),
+                    return_exceptions=True,
+                )
+                reconnect_failures = [
+                    result
+                    for result in reconnect_results
+                    if isinstance(result, Exception) or result is not True
+                ]
+                if reconnect_failures:
+                    for failure in reconnect_failures[:5]:
+                        print(f"FAIL reconnect probe failed: {failure!r}")
+                    return 1
+                print(f"PASS reconnected one lobby player in each of {len(handles)} room(s)")
             await asyncio.sleep(dwell)
         finally:
             cleanup_results = await asyncio.gather(
@@ -218,6 +291,12 @@ def main() -> int:
     parser.add_argument("--players", type=int, default=3)
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--dwell", type=float, default=2.0)
+    parser.add_argument(
+        "--reconnect-check",
+        action="store_true",
+        help="Close and reconnect one lobby player per room before cleanup.",
+    )
+    parser.add_argument("--reconnect-delay", type=float, default=0.2)
     args = parser.parse_args()
 
     api = (args.api or TARGETS[args.target]).rstrip("/")
@@ -230,7 +309,16 @@ def main() -> int:
     rooms = max(1, args.rooms)
     players = max(0, args.players)
     concurrency = max(1, min(args.concurrency, rooms))
-    return asyncio.run(run(api, origin, rooms, players, concurrency, max(0.0, args.dwell)))
+    return asyncio.run(run(
+        api,
+        origin,
+        rooms,
+        players,
+        concurrency,
+        max(0.0, args.dwell),
+        args.reconnect_check,
+        max(0.0, args.reconnect_delay),
+    ))
 
 
 if __name__ == "__main__":

@@ -304,6 +304,53 @@ def test_reset_after_podium_moves_players_into_next_lobby():
         org_ctx.__exit__(None, None, None)
 
 
+def test_reset_after_podium_to_default_social_game_keeps_players_startable():
+    """A host can choose a different default/config-driven game after results without making guests
+    rescan. This pins the non-quiz RESET_ROOM path used by "Choose Another Game" for catalog games
+    that do not have a generated content_id."""
+    room_code, token = _make_room("two_truths")
+    org_ctx, org = _open_organizer(room_code, token)
+    p1_ctx, p1 = _join(room_code, "p1", "Ada")
+    p2_ctx, p2 = _join(room_code, "p2", "Grace")
+    p3_ctx, p3 = _join(room_code, "p3", "Hopper")
+    p4_ctx, p4 = _join(room_code, "p4", "Maya")
+    try:
+        recv_until(org, "PLAYER_JOINED", max_messages=10)
+        recv_until(org, "PLAYER_JOINED", max_messages=10)
+        recv_until(org, "PLAYER_JOINED", max_messages=10)
+        recv_until(org, "PLAYER_JOINED", max_messages=10)
+
+        manager.rooms[room_code].state = "PODIUM"
+        org.send_json({"type": "RESET_ROOM", "game_type": "common_ground", "time_limit": 45})
+        org_reset = recv_until(org, "ROOM_RESET", max_messages=20)
+        p1_reset = recv_until(p1, "ROOM_RESET", max_messages=20)
+        p2_reset = recv_until(p2, "ROOM_RESET", max_messages=20)
+        p3_reset = recv_until(p3, "ROOM_RESET", max_messages=20)
+        p4_reset = recv_until(p4, "ROOM_RESET", max_messages=20)
+
+        for reset in (org_reset, p1_reset, p2_reset, p3_reset, p4_reset):
+            assert reset["room_code"] == room_code
+            assert reset["game_type"] == "common_ground"
+            assert reset["player_count"] == 4
+            assert {player["nickname"] for player in reset["players"]} == {"Ada", "Grace", "Hopper", "Maya"}
+
+        room = manager.rooms[room_code]
+        assert room.state == "LOBBY"
+        assert room.game_type == "common_ground"
+        assert room.connected_player_count() == 4
+
+        org.send_json({"type": "START_GAME"})
+        start = recv_until(org, "GAME_STARTING", max_messages=20)
+        assert start["game_type"] == "common_ground"
+        assert recv_until(p1, "GAME_STARTING", max_messages=20)["game_type"] == "common_ground"
+    finally:
+        p4_ctx.__exit__(None, None, None)
+        p3_ctx.__exit__(None, None, None)
+        p2_ctx.__exit__(None, None, None)
+        p1_ctx.__exit__(None, None, None)
+        org_ctx.__exit__(None, None, None)
+
+
 def test_room_code_is_stable_across_its_lifetime():
     """The QR a guest scanned must stay valid: the code is assigned once and never rotates, which is
     what makes the "QR stops working" report a non-bug. Pinned so a refactor cannot quietly change
