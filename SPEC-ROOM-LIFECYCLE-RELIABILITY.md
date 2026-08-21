@@ -58,6 +58,7 @@ Required gates:
   - ignored reset outside podium
   - podium-to-next-game `ROOM_RESET` moves existing players into next lobby
   - podium-to-default/config-driven game `ROOM_RESET` keeps live players startable without a new content id
+  - podium-to-Bingo-family saved content `ROOM_RESET` keeps live players startable and emits `BINGO_SYNC`
   - room-code uniqueness
   - `MAX_ROOMS` fails closed and host cancellation recovers capacity
 - Frontend unit tests:
@@ -74,6 +75,8 @@ Required gates:
 - Load smoke:
   - `scripts/load-room-smoke.py` creates disposable rooms, opens organizer/player WebSockets, holds briefly, cancels, and verifies cleanup by probing the room codes.
   - With `--reconnect-check`, the harness closes and reopens one lobby player per room using the issued session token and requires a `RECONNECTED` lobby sync before cleanup.
+- Revelry pre-prod live:
+  - `frontend/e2e/revelry-preprod-live.spec.ts` includes a host-app lobby-lull regression where a Revelry quick-started room accepts a player, preserves their seat across a socket drop, reconnects with the issued session token, and remains startable by the organizer.
 
 Gamma all-games is not the concurrency test. It intentionally runs with lower parallelism than local so failures stay attributable to deployed behavior. Concurrency is owned by the load smoke.
 
@@ -87,14 +90,13 @@ Before production deploys that touch room creation, WebSockets, lobby reconnect,
 4. Run local all-games Playwright.
 5. Run local load smoke.
 6. Deploy to gamma.
-7. Run gamma smoke, gamma load smoke, gamma all-games, and pre-prod live regression.
+7. Run gamma smoke, gamma load smoke, gamma all-games, and Revelry pre-prod live regression.
 8. Promote only after failures are either fixed or explicitly classified as a harness/deploy-environment issue with evidence.
 
 Prod load smoke requires explicit approval and must use modest room/player counts because it creates live disposable lobbies.
 
 ## 5. Open Hardening
 
-- Add a Revelry-aware mobile sleep/lobby-lull/reopen Playwright scenario.
+- Add a mobile OS sleep/reopen Playwright-or-device scenario on top of the existing Revelry pre-prod live lobby-lull socket regression.
 - Add runtime metrics for room create latency, socket join latency, reset delivery, cancellation cleanup time, and reconnect success/failure.
 - Add a bounded soak test that keeps rooms open across the lobby grace window using fake timers locally and a short-duration config in gamma.
-- Expand reset coverage to one Bingo/Housie-family game.

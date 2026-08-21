@@ -31,6 +31,7 @@ So the work is **consolidation and gap-filling**, not invention.
 | **L5 prod regression** | deployed prod | ~min | **Read-mostly**. Is prod healthy and correct *right now* |
 | **L6 visual** | local or gamma | ~min | Screenshot diffs; catches layout/theme regressions |
 | **L7 load smoke** | local, gamma, approved prod | min | Bounded many-room/many-socket cleanup probe |
+| **L8 Revelry pre-prod live** | gamma only | min | Host-app launch, lobby reconnect, and route contracts |
 
 **Rule: a failure must be attributable.** If L5 fails but L4 passes, the fault is prod
 configuration or data, not code. Keep the suites structurally identical so that inference holds.
@@ -151,7 +152,8 @@ Two things this suite had to learn the hard way, both worth knowing before touch
 - **Rooms can be reused across games.** `RESET_ROOM` deliberately keeps the same room code so guests
   who scanned a QR or joined through Revelry do not need a fresh link. A bounded socket scenario now
   pins that players sitting on the previous podium receive `ROOM_RESET`, move back to the lobby, and
-  count as connected players for the next `START_GAME`.
+  count as connected players for the next `START_GAME`, including the Bingo/Housie-family saved
+  content path that emits `BINGO_SYNC` after start.
 - **Local runs need their own `DB_DIR`.** With a shared `backend/data/`, a concurrent `pytest` run
   reset wallets mid-suite and four games failed with "insufficient balance" on wallets that had been
   created seconds earlier with the full signup bonus. Same symptom as a real economy bug, entirely
@@ -173,6 +175,13 @@ session-token reconnect; the harness then closes one player per room, reconnects
 session token, and requires a lobby `RECONNECTED` sync before cleanup. The product/runtime contract
 behind this harness lives in `SPEC-ROOM-LIFECYCLE-RELIABILITY.md`; update that spec whenever lobby
 seats, reset, reconnect grace, or cleanup semantics change.
+
+**L8 (Revelry pre-prod live)** — stateful gamma-only host-app contract checks in
+`frontend/e2e/revelry-preprod-live.spec.ts`. The suite verifies the searchable Revelry hub catalog,
+starts every launchable Revelry game through the integration API, resolves organizer/player/watch
+launches, and includes a lobby-lull regression where a Revelry-launched player joins, disconnects,
+reconnects with the issued session token, and the organizer can still start the same room. Run with
+`PREPROD_REVELRY=1` and a freshly minted gamma party-games URL; never point this suite at prod.
 
 ```bash
 # Local, with the isolated stack wrapper. The wrapper owns ports 9100/9200 and a temp DB.

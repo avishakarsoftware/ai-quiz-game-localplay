@@ -94,6 +94,21 @@ def _make_quiz_room(quiz_id: str) -> tuple[str, str]:
     return data["room_code"], data["organizer_token"]
 
 
+def _seed_housie(title: str = "Socket Scenario Housie") -> str:
+    res = client.post(
+        "/housie/create",
+        json={
+            "game_title": title,
+            "pattern_ids": ["quick_5", "first_line", "full_house"],
+            "play_mode": "beginner",
+            "caller_mode": "manual",
+        },
+        headers=HEADERS,
+    )
+    assert res.status_code == 200, res.text
+    return res.json()["housie_id"]
+
+
 def _join(code: str, client_id: str, nickname: str):
     ws = client.websocket_connect(f"/ws/{code}/{client_id}")
     sock = ws.__enter__()
@@ -346,6 +361,50 @@ def test_reset_after_podium_to_default_social_game_keeps_players_startable():
     finally:
         p4_ctx.__exit__(None, None, None)
         p3_ctx.__exit__(None, None, None)
+        p2_ctx.__exit__(None, None, None)
+        p1_ctx.__exit__(None, None, None)
+        org_ctx.__exit__(None, None, None)
+
+
+def test_reset_after_podium_to_housie_keeps_players_startable():
+    """Bingo-family games use saved content ids and a separate caller/ticket runtime. A finished
+    room can still reset into Housie without changing the QR or losing connected players."""
+    room_code, token = _make_room("two_truths")
+    org_ctx, org = _open_organizer(room_code, token)
+    p1_ctx, p1 = _join(room_code, "p1", "Ada")
+    p2_ctx, p2 = _join(room_code, "p2", "Grace")
+    try:
+        recv_until(org, "PLAYER_JOINED", max_messages=10)
+        recv_until(org, "PLAYER_JOINED", max_messages=10)
+
+        manager.rooms[room_code].state = "PODIUM"
+        housie_id = _seed_housie("Next Housie")
+        org.send_json({"type": "RESET_ROOM", "game_type": "housie", "content_id": housie_id, "time_limit": 30})
+        org_reset = recv_until(org, "ROOM_RESET", max_messages=20)
+        p1_reset = recv_until(p1, "ROOM_RESET", max_messages=20)
+        p2_reset = recv_until(p2, "ROOM_RESET", max_messages=20)
+
+        for reset in (org_reset, p1_reset, p2_reset):
+            assert reset["room_code"] == room_code
+            assert reset["game_type"] == "housie"
+            assert reset["player_count"] == 2
+            assert {player["nickname"] for player in reset["players"]} == {"Ada", "Grace"}
+
+        room = manager.rooms[room_code]
+        assert room.state == "LOBBY"
+        assert room.game_type == "housie"
+        assert room.content_id == housie_id
+        assert room.connected_player_count() == 2
+
+        org.send_json({"type": "START_GAME"})
+        assert recv_until(org, "GAME_STARTING", max_messages=20)["game_type"] == "housie"
+        assert recv_until(p1, "GAME_STARTING", max_messages=20)["game_type"] == "housie"
+        assert recv_until(p2, "GAME_STARTING", max_messages=20)["game_type"] == "housie"
+        org_sync = recv_until(org, "BINGO_SYNC", max_messages=20)
+        assert org_sync["game_type"] == "housie"
+        assert org_sync["player_count"] == 2
+        assert org_sync["bingo"]["layout"] == "housie_3x9_15"
+    finally:
         p2_ctx.__exit__(None, None, None)
         p1_ctx.__exit__(None, None, None)
         org_ctx.__exit__(None, None, None)

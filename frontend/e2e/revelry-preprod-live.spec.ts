@@ -227,6 +227,122 @@ async function assertOrganizerPageLoads(page: Page, launchUrl: string, title: st
   await expectNoHorizontalOverflow(page);
 }
 
+async function exerciseLobbyReconnect(page: Page, roomCode: string, organizerToken: string) {
+  await page.goto('/');
+  return page.evaluate(async ({ roomCode: code, organizerToken: token }) => {
+    type Message = Record<string, any>;
+
+    function connect(path: string, onOpen?: (ws: WebSocket) => void) {
+      const messages: Message[] = [];
+      const waiters: Array<{
+        type: string;
+        resolve: (message: Message) => void;
+        reject: (error: Error) => void;
+        timer: number;
+      }> = [];
+      const ws = new WebSocket(`${window.location.origin.replace(/^http/, 'ws')}${path}`);
+      ws.addEventListener('message', (event) => {
+        const message = JSON.parse(String(event.data));
+        messages.push(message);
+        if (message.type === 'ERROR') {
+          for (const waiter of waiters.splice(0)) {
+            window.clearTimeout(waiter.timer);
+            waiter.reject(new Error(`Unexpected ERROR while waiting for ${waiter.type}: ${JSON.stringify(message)}`));
+          }
+          return;
+        }
+        const index = waiters.findIndex((waiter) => waiter.type === message.type);
+        if (index >= 0) {
+          const [waiter] = waiters.splice(index, 1);
+          window.clearTimeout(waiter.timer);
+          waiter.resolve(message);
+        }
+      });
+      const opened = new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(() => reject(new Error(`Timed out opening ${path}`)), 10000);
+        ws.addEventListener('open', () => {
+          window.clearTimeout(timer);
+          onOpen?.(ws);
+          resolve();
+        }, { once: true });
+        ws.addEventListener('error', () => {
+          window.clearTimeout(timer);
+          reject(new Error(`WebSocket error opening ${path}`));
+        }, { once: true });
+      });
+      function waitFor(type: string, timeoutMs = 10000): Promise<Message> {
+        const existingIndex = messages.findIndex((message) => message.type === type);
+        if (existingIndex >= 0) {
+          const [message] = messages.splice(existingIndex, 1);
+          return Promise.resolve(message);
+        }
+        return new Promise((resolve, reject) => {
+          const timer = window.setTimeout(() => {
+            const index = waiters.findIndex((waiter) => waiter.type === type && waiter.reject === reject);
+            if (index >= 0) waiters.splice(index, 1);
+            reject(new Error(`Timed out waiting for ${type}; seen ${messages.map((message) => message.type).join(', ')}`));
+          }, timeoutMs);
+          waiters.push({ type, resolve, reject, timer });
+        });
+      }
+      return {
+        opened,
+        send(payload: Message) {
+          ws.send(JSON.stringify(payload));
+        },
+        waitFor,
+        close() {
+          ws.close();
+          for (const waiter of waiters.splice(0)) {
+            window.clearTimeout(waiter.timer);
+            waiter.reject(new Error('WebSocket closed'));
+          }
+        },
+      };
+    }
+
+    const stamp = Date.now();
+    const nickname = `Lull${String(stamp).slice(-6)}`;
+    const organizer = connect(`/ws/${code}/revelry-lull-org-${stamp}?organizer=true`, (ws) => {
+      ws.send(JSON.stringify({ type: 'AUTH', token }));
+    });
+    await organizer.opened;
+
+    let player = connect(`/ws/${code}/revelry-lull-p-${stamp}`);
+    await player.opened;
+
+    try {
+      await organizer.waitFor('ROOM_CREATED');
+      player.send({ type: 'JOIN', nickname, avatar: '🎮' });
+      const joined = await player.waitFor('JOINED_ROOM');
+      await organizer.waitFor('PLAYER_JOINED');
+
+      player.close();
+      await organizer.waitFor('PLAYER_DISCONNECTED');
+      await new Promise((resolve) => window.setTimeout(resolve, 300));
+
+      player = connect(`/ws/${code}/revelry-lull-p-${stamp}-reconnect`);
+      await player.opened;
+      player.send({
+        type: 'JOIN',
+        nickname,
+        avatar: '🎮',
+        session_token: joined.session_token,
+      });
+      const reconnected = await player.waitFor('RECONNECTED');
+      const roster = await organizer.waitFor('PLAYER_RECONNECTED');
+
+      organizer.send({ type: 'START_GAME' });
+      const starting = await organizer.waitFor('GAME_STARTING');
+      await player.waitFor('GAME_STARTING');
+      return { joined, reconnected, roster, starting };
+    } finally {
+      organizer.close();
+      player.close();
+    }
+  }, { roomCode, organizerToken });
+}
+
 test.describe('Revelry pre-prod live game matrix', () => {
   test.describe.configure({ mode: 'serial' });
 
@@ -296,5 +412,41 @@ test.describe('Revelry pre-prod live game matrix', () => {
     }
 
     expect(testedTypes.sort()).toEqual(expect.arrayContaining(REQUIRED_REVELRY_GAME_TYPES));
+  });
+
+  test('keeps a Revelry-launched lobby usable after a player drops and reconnects', async ({ page, request }, testInfo) => {
+    test.setTimeout(60000);
+    test.skip(process.env.PREPROD_REVELRY !== '1', 'Set PREPROD_REVELRY=1 to run the stateful Revelry pre-prod matrix.');
+    test.skip(testInfo.project.name !== 'chromium-desktop', 'Revelry pre-prod matrix uses one disposable party and runs desktop-only.');
+
+    const hubUrl = getGammaPartyGamesUrl();
+    const token = hubUrl.searchParams.get('party_games_token') || '';
+    const resolved = await resolveWorkspace(request, token);
+    const findSomeone: RevelryCatalogGame | undefined = (resolved.workspace.catalog || [])
+      .find((game: RevelryCatalogGame) => gameType(game) === 'find_someone' && game.launchable !== false);
+    expect(findSomeone, 'find_someone must be launchable for the Revelry lobby-lull regression').toBeTruthy();
+    expect(findSomeone?.can_quick_start, 'find_someone should quick-start from Revelry').toBe(true);
+
+    const started = await startGameFromRevelry(
+      request,
+      token,
+      findSomeone as RevelryCatalogGame,
+      '',
+      `Revelry Lobby Lull ${Date.now()}`,
+    );
+    const launchToken = new URL(started.launch_url).searchParams.get('launch_token') || '';
+    expect(launchToken).toBeTruthy();
+
+    const resolveLaunch = await request.get(`/integrations/revelry/launch-token/resolve?scope=organizer&launch_token=${encodeURIComponent(launchToken)}`);
+    await expect(resolveLaunch).toBeOK();
+    const organizerLaunch = await resolveLaunch.json();
+    expect(organizerLaunch.room_code).toBeTruthy();
+    expect(organizerLaunch.organizer_token).toBeTruthy();
+
+    const result = await exerciseLobbyReconnect(page, organizerLaunch.room_code, organizerLaunch.organizer_token);
+    expect(result.reconnected.state).toBe('LOBBY');
+    expect(result.reconnected.game_type).toBe('find_someone');
+    expect(result.roster.player_count).toBe(1);
+    expect(result.starting.game_type).toBe('find_someone');
   });
 });
