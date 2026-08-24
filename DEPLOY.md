@@ -17,6 +17,19 @@ Users → games.revelryapp.me (IONOS CDN) → static frontend
 
 The public production game is expected to run at `https://games.revelryapp.me/` from IONOS. The backend-served SPA gives us a same-origin deployment path for gamma, previews, and emergency/prod fallback at the API domains.
 
+## Cloud Run Instance Policy
+
+LocalPlay currently deploys to a GCP VM, not Cloud Run. If any LocalPlay service is moved to GCP
+Cloud Run later, keep the instance policy explicit:
+
+- **All Cloud Run services:** `min-instances=0`. Do not keep warm instances by default.
+- **Gamma Cloud Run services:** `max-instances=1`.
+- **Production Cloud Run services:** keep `max-instances=1` until live room state, WebSocket routing,
+  and reconnect semantics are externalized away from single-process memory.
+
+This is pinned by `backend/tests/test_deploy_policy.py` so future Cloud Run deploy commands added to
+this repo must carry the policy instead of relying on operator memory.
+
 ## Production URLs
 
 | Component | URL |

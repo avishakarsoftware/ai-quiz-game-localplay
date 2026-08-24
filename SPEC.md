@@ -1480,7 +1480,7 @@ Cloud Run notes for later:
 - WebSockets are treated as long-running HTTP requests and are subject to Cloud Run request timeouts.
 - Cloud Run can scale to multiple instances, but LocalPlay's current in-memory room model is not safe across instances.
 - Session affinity may reduce reconnect issues, but it should not be treated as a correctness guarantee.
-- A first Cloud Run deployment could work with `min-instances=1`, `max-instances=1`, and a long request timeout, but that would mostly reproduce the single-server model with different ops tradeoffs.
+- A first Cloud Run deployment could work only as a single-instance shape: `min-instances=0`, `max-instances=1`, and a long request timeout. Gamma must also stay `max-instances=1`. This mostly reproduces the single-server model with different ops tradeoffs, while avoiding idle warm-instance cost.
 
 Required work before multi-instance hosting:
 
