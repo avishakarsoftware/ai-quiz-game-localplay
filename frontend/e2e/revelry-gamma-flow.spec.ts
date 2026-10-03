@@ -25,6 +25,14 @@ type MirroredSession = {
   } | null;
 };
 
+type LocalPlaySession = {
+  session_id: string;
+  room_code: string;
+  game_type: string;
+  status: string;
+  joinable: boolean;
+};
+
 test.describe('Revelry gamma embedded flow', () => {
   test.describe.configure({ mode: 'serial' });
 
@@ -214,8 +222,9 @@ test.describe('Revelry gamma embedded flow', () => {
         await startLobbyGame(page, players.length);
         await players[0].page.getByRole('button', { name: /Correct callback/ }).click();
         await page.getByRole('button', { name: /Show Scores/ }).click();
-        await page.getByRole('button', { name: 'Show Results', exact: true }).click();
-        await expect(page.getByRole('heading', { name: 'Final Results', exact: true })).toBeVisible();
+        // The leaderboard advances after five seconds; after this single question,
+        // NEXT_QUESTION completes the quiz and broadcasts its podium.
+        await expect(page.getByRole('heading', { name: 'Final Results', exact: true })).toBeVisible({ timeout: 15000 });
         await expect(page.getByRole('button', { name: 'Start another Revelry game', exact: true })).toBeVisible();
       }, { timeout: 45000 });
     } finally {
@@ -246,9 +255,11 @@ test.describe('Revelry gamma embedded flow', () => {
     expect(results.players?.[0]?.score).toBeGreaterThan(0);
     expect(results.feed_card?.title).toMatch(/results/i);
 
+    // Revelry synchronizes each item in this party's historical QA library;
+    // that external workspace read measured 16 seconds. Bound only this read at 30s.
     const workspace = await test.step('Confirm the completed quiz leaves no active Revelry session', () => revelryGammaJson(
-      `/api/games/parties/${partyId}/workspace`, revelryAuth.token,
-    ), { timeout: 15000 });
+      `/api/games/parties/${partyId}/workspace`, revelryAuth.token, 30000,
+    ), { timeout: 35000 });
     expect(workspace.active_session).toBeFalsy();
 
     const refreshedSessions = await test.step('Capture the persisted quiz results before continuation', () => revelryGammaJson(
@@ -276,7 +287,7 @@ test.describe('Revelry gamma embedded flow', () => {
       return returnedToken;
     }, { timeout: 30000 });
 
-    const nextStarted = await test.step('Register a fresh Odd Question session from the hub', async () => {
+    await test.step('Register a fresh Odd Question session from the hub', async () => {
       await page.getByPlaceholder('Search games').fill('Odd Question');
       const oddQuestionCard = page.locator('article').filter({
         has: page.getByRole('heading', { name: 'Odd Question', exact: true }),
@@ -290,18 +301,29 @@ test.describe('Revelry gamma embedded flow', () => {
       await oddQuestionStart.click();
       const nextStart = await nextStartResponse;
       expect(nextStart.status()).toBe(200);
-      return nextStart.json();
     }, { timeout: 25000 });
-    const nextSessionId = nextStarted.session?.session_id;
+    await test.step('Follow the fresh organizer launch', () => expectOrganizerLaunch(page), { timeout: 20000 });
+    // The hub navigates as soon as Start succeeds. Chromium can discard that
+    // document's response body, so read the authoritative workspace after launch.
+    const nextSession = await test.step('Resolve the newly registered LocalPlay session', () => waitForCondition<LocalPlaySession>(
+      'the authoritative fresh LocalPlay session',
+      async () => {
+        const resolved = await resolveWorkspace(request, returnToken);
+        const active = resolved.workspace.active_session as LocalPlaySession | null;
+        return active?.session_id ? active : undefined;
+      },
+      10000,
+    ), { timeout: 15000 });
+    const nextSessionId = nextSession.session_id;
     expect(nextSessionId).toBeTruthy();
     expect(nextSessionId).not.toBe(localplaySessionId);
-    expect(nextStarted.session.game_type).toBe('odd_question');
-    expect(nextStarted.opened_existing).toBe(false);
+    expect(nextSession.game_type).toBe('odd_question');
+    expect(nextSession.status).toBe('lobby');
+    expect(nextSession.joinable).toBe(true);
 
     try {
       await test.step('Open the fresh Odd Question lobby', async () => {
-        await expectOrganizerLaunch(page);
-        await expect(page.locator('.room-code')).toHaveText(nextStarted.session.room_code, { timeout: 15000 });
+        await expect(page.locator('.room-code')).toHaveText(nextSession.room_code, { timeout: 15000 });
       }, { timeout: 20000 });
       const nextMirroredSession = await test.step('Wait for the fresh session callback in Revelry', () => waitForCondition<MirroredSession>(
         'Revelry mirrored the fresh podium continuation session',

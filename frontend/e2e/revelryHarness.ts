@@ -7,8 +7,8 @@ const REVELRY_GAMMA_HOST_PHONE = '+15550199000';
 const REVELRY_GAMMA_HOST_NAME = 'Gamma Test Host';
 const REVELRY_API_TIMEOUT_MS = 12000;
 
-async function revelryGammaRequest(path: string, options: RequestInit) {
-  const signal = AbortSignal.timeout(REVELRY_API_TIMEOUT_MS);
+async function revelryGammaRequest(path: string, options: RequestInit, timeoutMs = REVELRY_API_TIMEOUT_MS) {
+  const signal = AbortSignal.timeout(timeoutMs);
   try {
     const response = await fetch(`${REVELRY_GAMMA_ORIGIN}${path}`, { ...options, signal });
     const body = await response.text();
@@ -21,7 +21,7 @@ async function revelryGammaRequest(path: string, options: RequestInit) {
     }
   } catch (error) {
     if (signal.aborted) {
-      throw new Error(`Revelry gamma ${path.split('?')[0]} timed out after ${REVELRY_API_TIMEOUT_MS}ms`);
+      throw new Error(`Revelry gamma ${path.split('?')[0]} timed out after ${timeoutMs}ms`);
     }
     throw error;
   }
@@ -183,8 +183,8 @@ export async function driveQuizToCompletion(page: Page, roomCode: string, organi
   }, { roomCode, organizerToken });
 }
 
-export async function revelryGammaJson(path: string, token: string) {
+export async function revelryGammaJson(path: string, token: string, timeoutMs = REVELRY_API_TIMEOUT_MS) {
   return revelryGammaRequest(path, {
     headers: { Authorization: `Bearer ${token}` },
-  });
+  }, timeoutMs);
 }
