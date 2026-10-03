@@ -122,6 +122,8 @@ npm run test:e2e:all-games
 
 The disposable stack refuses occupied ports and pins local SQLite even if your shell or `backend/.env` contains deployed database settings. Override `E2E_BACKEND_PORT` / `E2E_FRONTEND_PORT` when needed. Visual checks use `npm run test:e2e:visual`, with `VISUAL_BACKEND_PORT` / `VISUAL_FRONTEND_PORT` overrides.
 
+Set `LOCALPLAY_PYTHON` to an absolute interpreter path if dependencies are installed outside the standard virtualenv directories (including CI's system Python).
+
 To exercise the deployed database adapter locally:
 
 ```bash

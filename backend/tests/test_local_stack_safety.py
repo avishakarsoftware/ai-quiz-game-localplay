@@ -20,7 +20,7 @@ def test_occupied_port_refuses_stack_without_touching_listener(script, prefix):
         listener.bind(("127.0.0.1", 0))
         listener.listen(1)
         port = listener.getsockname()[1]
-        env = {**os.environ, f"{prefix}_BACKEND_PORT": str(port)}
+        env = {**os.environ, f"{prefix}_BACKEND_PORT": str(port), "LOCALPLAY_PYTHON": sys.executable}
         argument = "start" if script == "dev-local.sh" else "true"
         result = subprocess.run(["bash", str(ROOT / "scripts" / script), argument],
                                 env=env, capture_output=True, text=True, timeout=10)

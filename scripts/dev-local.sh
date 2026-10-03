@@ -23,7 +23,7 @@ PID_DIR="${DEV_PID_DIR:-$ROOT/.dev-pids}"
 LAN_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "localhost")
 BACKEND_PORT="${DEV_BACKEND_PORT:-9100}"
 FRONTEND_PORT="${DEV_FRONTEND_PORT:-9200}"
-PY="$BACKEND_DIR/venv/bin/python3"
+PY="${LOCALPLAY_PYTHON:-$BACKEND_DIR/venv/bin/python3}"
 [ -x "$PY" ] || PY="$BACKEND_DIR/.venv/bin/python3"
 [ -x "$PY" ] || PY="$ROOT/.venv/bin/python3"
 source "$ROOT/scripts/local-stack-utils.sh"

@@ -27,7 +27,7 @@ if [[ $# -eq 0 ]]; then
     exit 1
 fi
 
-PY="$ROOT/backend/venv/bin/python3"
+PY="${LOCALPLAY_PYTHON:-$ROOT/backend/venv/bin/python3}"
 [ -x "$PY" ] || PY="$ROOT/backend/.venv/bin/python3"
 [ -x "$PY" ] || PY="$ROOT/.venv/bin/python3"
 if [ ! -x "$PY" ]; then

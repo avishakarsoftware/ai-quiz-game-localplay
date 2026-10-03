@@ -35,7 +35,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-PY="$ROOT/backend/venv/bin/python3"
+PY="${LOCALPLAY_PYTHON:-$ROOT/backend/venv/bin/python3}"
 [ -x "$PY" ] || PY="$ROOT/backend/.venv/bin/python3"
 [ -x "$PY" ] || PY="$ROOT/.venv/bin/python3"
 if [ ! -x "$PY" ]; then
