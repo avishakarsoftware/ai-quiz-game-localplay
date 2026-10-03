@@ -3,7 +3,6 @@ import { expectNoHorizontalOverflow } from './helpers';
 import {
   expectOrganizerLaunch,
   getGammaPartyGamesUrl,
-  resolveWorkspace,
 } from './revelryHarness';
 
 type RevelryCatalogGame = {
@@ -15,6 +14,11 @@ type RevelryCatalogGame = {
   can_quick_start?: boolean;
   config_schema?: { time_limit?: { default?: number } };
 };
+
+const API_REQUEST_TIMEOUT_MS = 10_000;
+const MATRIX_SETUP_BUDGET_MS = 30_000;
+const MATRIX_GAME_BUDGET_MS = 20_000;
+const MATRIX_GAME_TIMEOUT_MS = 30_000;
 
 const REQUIRED_REVELRY_GAME_TYPES = [
   'acronym',
@@ -42,6 +46,14 @@ function gameType(game: RevelryCatalogGame) {
 
 function sortedTitles(games: RevelryCatalogGame[]) {
   return games.map((game) => game.title).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+async function resolveWorkspace(request: APIRequestContext, token: string) {
+  const response = await request.get(`/integrations/revelry/party-games/resolve?party_games_token=${encodeURIComponent(token)}`, {
+    timeout: API_REQUEST_TIMEOUT_MS,
+  });
+  await expect(response).toBeOK();
+  return response.json();
 }
 
 function contentPayloadFor(game: RevelryCatalogGame, title: string) {
@@ -149,6 +161,7 @@ async function saveContentForGame(
   const type = gameType(game);
   if (!game.can_create_content) return '';
   const save = await request.post('/integrations/revelry/party-games/content', {
+    timeout: API_REQUEST_TIMEOUT_MS,
     data: {
       party_games_token: token,
       game_type: type,
@@ -173,6 +186,7 @@ async function startGameFromRevelry(
   const workspace = await resolveWorkspace(request, token);
   const activeSessionId = workspace.workspace.active_session?.session_id || '';
   const start = await request.post('/integrations/revelry/party-games/start', {
+    timeout: API_REQUEST_TIMEOUT_MS,
     data: {
       party_games_token: token,
       content_id: contentId || undefined,
@@ -201,6 +215,7 @@ async function expectLaunchRoutesForActiveSession(
     ['spectator', 'spectate'],
   ] as const) {
     const launch = await request.post('/integrations/revelry/party-games/launch-token', {
+      timeout: API_REQUEST_TIMEOUT_MS,
       data: {
         party_games_token: token,
         session_id: sessionId,
@@ -384,7 +399,7 @@ test.describe('Revelry pre-prod live game matrix', () => {
   });
 
   test('starts every Revelry-enabled game and resolves host/player/watch launches', async ({ page, request }, testInfo) => {
-    test.setTimeout(120000);
+    test.setTimeout(MATRIX_SETUP_BUDGET_MS);
     test.skip(process.env.PREPROD_REVELRY !== '1', 'Set PREPROD_REVELRY=1 to run the stateful Revelry pre-prod matrix.');
     test.skip(testInfo.project.name !== 'chromium-desktop', 'Revelry pre-prod matrix uses one disposable party and runs desktop-only.');
 
@@ -394,22 +409,26 @@ test.describe('Revelry pre-prod live game matrix', () => {
     const launchableGames: RevelryCatalogGame[] = (resolved.workspace.catalog || [])
       .filter((game: RevelryCatalogGame) => game.launchable !== false)
       .sort((a: RevelryCatalogGame, b: RevelryCatalogGame) => gameType(a).localeCompare(gameType(b)));
+    // The catalog grows; budget serial network/UI work per game without relaxing operation waits.
+    test.setTimeout(MATRIX_SETUP_BUDGET_MS + launchableGames.length * MATRIX_GAME_BUDGET_MS);
     const testedTypes: string[] = [];
 
     for (const game of launchableGames) {
-      if (!game.can_create_content && !game.can_quick_start) {
-        throw new Error(`${gameType(game)} is launchable in Revelry but has no tested create or quick-start path.`);
-      }
-      if (game.can_create_content && !['chit_pull', 'drawing', 'housie', 'party_quests', 'quiz', 'wmlt'].includes(gameType(game))) {
-        throw new Error(`${gameType(game)} is exposed in Revelry but the pre-prod harness has no content fixture.`);
-      }
+      await test.step(`start ${gameType(game)} and verify all launch routes`, async () => {
+        if (!game.can_create_content && !game.can_quick_start) {
+          throw new Error(`${gameType(game)} is launchable in Revelry but has no tested create or quick-start path.`);
+        }
+        if (game.can_create_content && !['chit_pull', 'drawing', 'housie', 'party_quests', 'quiz', 'wmlt'].includes(gameType(game))) {
+          throw new Error(`${gameType(game)} is exposed in Revelry but the pre-prod harness has no content fixture.`);
+        }
 
-      const title = `Revelry Matrix ${game.title} ${Date.now()}`;
-      const contentId = await saveContentForGame(request, token, game, title);
-      const started = await startGameFromRevelry(request, token, game, contentId, title);
-      await expectLaunchRoutesForActiveSession(request, token, started.session.session_id);
-      await assertOrganizerPageLoads(page, started.launch_url, title);
-      testedTypes.push(gameType(game));
+        const title = `Revelry Matrix ${game.title} ${Date.now()}`;
+        const contentId = await saveContentForGame(request, token, game, title);
+        const started = await startGameFromRevelry(request, token, game, contentId, title);
+        await expectLaunchRoutesForActiveSession(request, token, started.session.session_id);
+        await assertOrganizerPageLoads(page, started.launch_url, title);
+        testedTypes.push(gameType(game));
+      }, { timeout: MATRIX_GAME_TIMEOUT_MS });
     }
 
     expect(testedTypes.sort()).toEqual(expect.arrayContaining(REQUIRED_REVELRY_GAME_TYPES));
@@ -438,7 +457,9 @@ test.describe('Revelry pre-prod live game matrix', () => {
     const launchToken = new URL(started.launch_url).searchParams.get('launch_token') || '';
     expect(launchToken).toBeTruthy();
 
-    const resolveLaunch = await request.get(`/integrations/revelry/launch-token/resolve?scope=organizer&launch_token=${encodeURIComponent(launchToken)}`);
+    const resolveLaunch = await request.get(`/integrations/revelry/launch-token/resolve?scope=organizer&launch_token=${encodeURIComponent(launchToken)}`, {
+      timeout: API_REQUEST_TIMEOUT_MS,
+    });
     await expect(resolveLaunch).toBeOK();
     const organizerLaunch = await resolveLaunch.json();
     expect(organizerLaunch.room_code).toBeTruthy();

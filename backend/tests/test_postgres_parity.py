@@ -76,6 +76,16 @@ def _balance(conn, wallet_id: str) -> int:
         return row[0] if row else -1
 
 
+def _referral_code(conn, wallet_id: str, prefix: str) -> str:
+    # Rows live for the whole module (and across local runs). Two random hex
+    # digits gave gifting fixtures only 256 codes and could target an earlier
+    # recipient when set_referral_code returned a silently ignored collision.
+    code = prefix + uuid.uuid4().hex.upper()
+    result = _rpc(conn, "games_set_referral_code", wallet_id, code)
+    assert result == {"code": code, "collision": False}
+    return code
+
+
 def test_schema_applies_cleanly(conn):
     """The fixture already applied sql/games-schema.sql; assert the core objects exist."""
     with conn.cursor() as cur:
@@ -149,9 +159,7 @@ def test_daily_bonus_reward_caps_at_streak_max(conn):
 def test_referral_full_flow_parity(conn):
     referrer = _wallet(conn)
     referee = _wallet(conn)
-    code = "PARITY" + uuid.uuid4().hex[:2].upper()
-    set_result = _rpc(conn, "games_set_referral_code", referrer, code)
-    assert set_result.get("collision") in (False, None)
+    code = _referral_code(conn, referrer, "PARITY")
 
     reward, per_day, since = 20, 10, 0
     ok = _rpc(conn, "games_redeem_referral", referee, code, reward, MAX_BALANCE, per_day, since)
@@ -175,8 +183,7 @@ def test_referral_full_flow_parity(conn):
 
 def test_referral_daily_cap(conn):
     referrer = _wallet(conn)
-    code = "CAP" + uuid.uuid4().hex[:3].upper()
-    _rpc(conn, "games_set_referral_code", referrer, code)
+    code = _referral_code(conn, referrer, "CAP")
     cap = 2
     for _ in range(cap):
         r = _rpc(conn, "games_redeem_referral", _wallet(conn), code, 20, MAX_BALANCE, cap, 0)
@@ -295,8 +302,7 @@ def _gift(conn, sender: str, code: str, amount: int, key: str):
 
 def _recipient_with_code(conn) -> tuple[str, str]:
     recipient = _wallet(conn, signup_bonus=False)
-    code = "GIFT" + uuid.uuid4().hex[:2].upper()
-    _rpc(conn, "games_set_referral_code", recipient, code)
+    code = _referral_code(conn, recipient, "GIFT")
     return recipient, code
 
 
@@ -349,8 +355,7 @@ def test_gift_empty_code_without_prior_is_invalid(conn):
 def test_gift_self_gift_blocked(conn):
     sender = _wallet(conn, signup_bonus=False)
     _credit(conn, sender, 100)
-    code = "SELF" + uuid.uuid4().hex[:2].upper()
-    _rpc(conn, "games_set_referral_code", sender, code)
+    code = _referral_code(conn, sender, "SELF")
     assert _gift(conn, sender, code, 10, "k")["status"] == "self_gift"
     assert _balance(conn, sender) == 100
 
