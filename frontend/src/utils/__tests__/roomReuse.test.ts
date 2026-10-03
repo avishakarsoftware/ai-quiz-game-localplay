@@ -14,6 +14,7 @@ describe('canResetFinishedRoomWithGame', () => {
         expect(canResetFinishedRoomWithGame('bluff')).toBe(true);
         expect(canResetFinishedRoomWithGame('poker')).toBe(true);
         expect(canResetFinishedRoomWithGame('photo_clue')).toBe(true);
+        expect(canResetFinishedRoomWithGame('odd_question')).toBe(true);
     });
 
     it('allows in-place reset for generic-prompt party games without a content id', () => {

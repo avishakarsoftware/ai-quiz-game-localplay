@@ -1009,23 +1009,23 @@ export default function OrganizerPage() {
         }
         else if (type === 'bluff') {
             setBluffState(null);
-            void createRoom(undefined, 'bluff', defaultTimeLimitForGame('bluff'));
+            void createRoom('', 'bluff', defaultTimeLimitForGame('bluff'));
         }
         else if (type === 'two_truths') {
             setTwoTruthsState(null);
-            void createRoom(undefined, 'two_truths', defaultTimeLimitForGame('two_truths'));
+            void createRoom('', 'two_truths', defaultTimeLimitForGame('two_truths'));
         }
         else if (type === 'story_chain') {
             setStoryChainState(null);
-            void createRoom(undefined, 'story_chain', defaultTimeLimitForGame('story_chain'));
+            void createRoom('', 'story_chain', defaultTimeLimitForGame('story_chain'));
         }
         else if (type === 'common_ground') {
             setCommonGroundState(null);
-            void createRoom(undefined, 'common_ground', defaultTimeLimitForGame('common_ground'));
+            void createRoom('', 'common_ground', defaultTimeLimitForGame('common_ground'));
         }
         else if (type === 'find_someone') {
             setFindSomeoneState(null);
-            void createRoom(undefined, 'find_someone', defaultTimeLimitForGame('find_someone'));
+            void createRoom('', 'find_someone', defaultTimeLimitForGame('find_someone'));
         }
         else if (type === 'who_am_i') {
             setWhoAmIState(null);
@@ -1045,11 +1045,11 @@ export default function OrganizerPage() {
         }
         else if (type === 'mafia') {
             setMafiaState(null);
-            void createRoom(undefined, 'mafia', defaultTimeLimitForGame('mafia'));
+            void createRoom('', 'mafia', defaultTimeLimitForGame('mafia'));
         }
         else if (type === 'poker') {
             setPokerState(null);
-            void createRoom(undefined, 'poker', defaultTimeLimitForGame('poker'));
+            void createRoom('', 'poker', defaultTimeLimitForGame('poker'));
         }
         else if (type === 'party_quests') {
             const next = defaultPartyQuestsConfig();
@@ -1059,19 +1059,19 @@ export default function OrganizerPage() {
         }
         else if (type === 'survey_says') {
             setSurveySaysState(null);
-            void createRoom(undefined, 'survey_says', defaultTimeLimitForGame('survey_says'));
+            void createRoom('', 'survey_says', defaultTimeLimitForGame('survey_says'));
         }
         else if (isGenericPromptGame(type)) {
             setGenericPromptState(null);
-            void createRoom(undefined, type, defaultTimeLimitForGame(type));
+            void createRoom('', type, defaultTimeLimitForGame(type));
         }
         else if (type === 'would_you_rather' || type === 'never_have_i_ever' || type === 'word_association' || type === 'acronym' || type === 'odd_question') {
             setSimpleSocialState(null);
-            void createRoom(undefined, type, defaultTimeLimitForGame(type));
+            void createRoom('', type, defaultTimeLimitForGame(type));
         }
         else if (type === 'photo_clue') {
             setPhotoClueState(null);
-            void createRoom(undefined, 'photo_clue', defaultTimeLimitForGame('photo_clue'));
+            void createRoom('', 'photo_clue', defaultTimeLimitForGame('photo_clue'));
         }
         else if (type === 'quiz') {
             setPrompt(randomQuizTopic(prompt));
@@ -3134,7 +3134,7 @@ export default function OrganizerPage() {
                         // catalog belongs to the host app, not to us.
                         nextGameSuggestions={hostAppMode ? undefined : suggestNextGames(
                             gameTypeRef.current,
-                            players.length,
+                            playerCount,
                             filterGameModesForCatalog(catalog),
                         )}
                         onPickNextGame={hostAppMode ? undefined : (id) => {

@@ -30,6 +30,7 @@ export interface CatalogGameWithRules {
     description?: string;
     launchable?: boolean;
     supports_ai_generation?: boolean;
+    config_schema?: { players?: { min?: number; max?: number } };
     rules?: GameRules;
 }
 

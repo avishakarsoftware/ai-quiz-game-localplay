@@ -4,7 +4,7 @@ import {
     NEXT_GAME_SUGGESTION_COUNT,
     suggestNextGames,
 } from '../nextGameSuggestions';
-import { BINGO_FAMILY_IDS, GAME_MODE_CONFIGS, getMinPlayers, runtimeGameType } from '../../../gameModes';
+import { BINGO_FAMILY_IDS, GAME_MODE_CONFIGS, getMinPlayers, runtimeGameType, filterGameModesForCatalog } from '../../../gameModes';
 import type { GameType } from '../../../types';
 
 /**
@@ -108,5 +108,25 @@ describe('suggestNextGames', () => {
     it('tolerates an unknown game id instead of throwing', () => {
         expect(() => suggestNextGames('not_a_game' as GameType, 6)).not.toThrow();
         expect(suggestNextGames('not_a_game' as GameType, 6).length).toBeGreaterThan(0);
+    });
+
+    it('does not offer Poker to a group larger than its ten seats', () => {
+        const available = GAME_MODE_CONFIGS.filter((game) => game.id === 'poker');
+        expect(suggestNextGames('quiz', 11, available)).toEqual([]);
+        expect(suggestNextGames('quiz', 10, available).map((game) => game.id)).toEqual(['poker']);
+    });
+
+    it('uses deployed catalog player limits rather than stale local defaults', () => {
+        const available = filterGameModesForCatalog([
+            { id: 'two_truths', config_schema: { players: { min: 5, max: 8 } } },
+            { id: 'wmlt', rules: { player_count: { min: 4, max: 6 } } },
+        ]);
+        expect(suggestNextGames('quiz', 3, available)).toEqual([]);
+        expect(suggestNextGames('quiz', 9, available)).toEqual([]);
+        expect(suggestNextGames('quiz', 7, available).map((game) => game.id)).toEqual(['two_truths']);
+    });
+
+    it('returns no games when the caller requests zero suggestions', () => {
+        expect(suggestNextGames('quiz', 8, GAME_MODE_CONFIGS, 0)).toEqual([]);
     });
 });

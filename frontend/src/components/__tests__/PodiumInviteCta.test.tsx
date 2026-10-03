@@ -147,4 +147,28 @@ describe('PodiumInviteCta', () => {
         await screen.findByTestId('podium-invite-cta');
         expect(screen.queryByText(/both get/i)).toBeNull();
     });
+
+    it.each(['', 'NEXT42'])('clears the previous host invite when the room changes to %s', async (nextRoom) => {
+        const fetchMock = fetchReturning(INVITE);
+        vi.stubGlobal('fetch', fetchMock);
+        const { rerender } = render(<PodiumInviteCta roomCode="ABC123" />);
+        await screen.findByTestId('podium-invite-cta');
+        fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ available: false }) } as Response));
+        rerender(<PodiumInviteCta roomCode={nextRoom} />);
+        await act(async () => { await Promise.resolve(); });
+        expect(screen.queryByTestId('podium-invite-cta')).toBeNull();
+    });
+
+    it('resets copied feedback for the next host', async () => {
+        const fetchMock = fetchReturning(INVITE);
+        vi.stubGlobal('fetch', fetchMock);
+        const { rerender } = render(<PodiumInviteCta roomCode="ABC123" />);
+        await screen.findByTestId('podium-invite-cta');
+        await userEvent.click(screen.getByTestId('podium-invite-share'));
+        await screen.findByText('Copied!');
+        fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ ...INVITE, code: 'NEXT42' }) } as Response));
+        rerender(<PodiumInviteCta roomCode="NEXT42" />);
+        await screen.findByText('NEXT42');
+        expect(screen.queryByText('Copied!')).toBeNull();
+    });
 });

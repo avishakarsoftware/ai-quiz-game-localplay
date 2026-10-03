@@ -8,6 +8,7 @@ The contract that matters is that it NEVER breaks a podium: every failure path r
 available:false rather than an error the podium would have to handle.
 """
 import uuid
+from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -79,6 +80,15 @@ def test_room_without_a_host_wallet_is_unavailable():
     code = _room_with_host_wallet(str(uuid.uuid4()))
     socket_manager.rooms[code].wallet_id = None
     assert client.get(f"/room/{code}/invite").json()["available"] is False
+
+
+def test_host_app_room_with_wallet_never_exposes_localplay_referrals(monkeypatch):
+    code = _room_with_host_wallet(str(uuid.uuid4()))
+    socket_manager.rooms[code].billing_mode = "host_app_managed"
+    referral_lookup = Mock()
+    monkeypatch.setattr(db, "get_or_create_referral_code", referral_lookup)
+    assert client.get(f"/room/{code}/invite").json() == {"available": False}
+    referral_lookup.assert_not_called()
 
 
 def test_unavailable_when_referrals_are_disabled(monkeypatch):

@@ -6070,8 +6070,8 @@ async def room_invite(room_code: str):
     if not _REFERRALS_SUPPORTED:
         return {"available": False}
     room = socket_manager.rooms.get(room_code.upper())
-    if not room or not room.wallet_id:
-        # Unknown room, or a Revelry-hosted room with no organizer wallet to credit.
+    if not room or not room.wallet_id or room.billing_mode == "host_app_managed":
+        # Host-app rooms have a wallet identity, but their economy belongs to the host app.
         return {"available": False}
     try:
         code = db.get_or_create_referral_code(room.wallet_id)

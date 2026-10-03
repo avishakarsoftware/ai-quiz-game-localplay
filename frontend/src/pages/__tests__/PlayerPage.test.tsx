@@ -2,10 +2,15 @@ import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock react-router-dom before importing PlayerPage
+const routeState = vi.hoisted(() => ({ query: '' }));
 vi.mock('react-router-dom', async () => {
     const actual = await vi.importActual('react-router-dom');
-    return { ...actual, useSearchParams: () => [new URLSearchParams(), vi.fn()], useParams: () => ({}) };
+    return { ...actual, useSearchParams: () => [new URLSearchParams(routeState.query), vi.fn()], useParams: () => ({}) };
 });
+
+vi.mock('../../components/PodiumInviteCta', () => ({
+    default: () => <div data-testid="podium-invite" />,
+}));
 
 vi.mock('../../utils/sound', () => ({
     soundManager: {
@@ -84,6 +89,7 @@ function fillAndJoin(roomCode: string, nickname: string) {
 
 describe('PlayerPage', () => {
     beforeEach(() => {
+        routeState.query = '';
         vi.useFakeTimers();
         MockWebSocket.instances = [];
         sessionStorage.clear();
@@ -91,6 +97,17 @@ describe('PlayerPage', () => {
 
     afterEach(() => {
         vi.useRealTimers();
+    });
+
+    it.each([false, true])('shows the referral offer only on a standalone podium (embedded=%s)', (embedded) => {
+        routeState.query = embedded ? 'embed=1' : '';
+        render(<PlayerPage />);
+        fillAndJoin('ROOM42', 'Alice');
+        act(() => { getLatestWs().onopen?.(); });
+        simulateWsMessage({ type: 'JOINED_ROOM', session_token: 'session' });
+        simulateWsMessage({ type: 'PODIUM', leaderboard: [{ nickname: 'Alice', score: 10 }] });
+        if (embedded) expect(screen.queryByTestId('podium-invite')).toBeNull();
+        else expect(screen.getByTestId('podium-invite')).toBeInTheDocument();
     });
 
     // --- Session Token (Fix 1) ---

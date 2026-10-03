@@ -793,7 +793,8 @@ This section documents the **core quiz / WMLT / drawing** protocol plus the comm
 - `RESET_ROOM`
   - Allowed from `PODIUM`.
   - Validates new content id and ownership.
-  - Charges `COST_ROOM`.
+  - Stages the next lobby without charging `COST_ROOM` or consuming party grace. Each game is charged once at `START_GAME`, after its player gates pass.
+  - Pending generated content costs only `COST_GENERATE` when accepted into the reset, matching fresh room creation.
   - Resets room while keeping connected players.
 
 - `TOGGLE_LOCK`

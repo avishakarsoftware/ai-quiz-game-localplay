@@ -506,7 +506,7 @@ class Room:
         self.time_limit = new_time_limit
         if game_type:
             self.game_type = game_type
-        if content_id:
+        if content_id is not None:
             self.content_id = content_id
 
         self.state = "LOBBY"
@@ -2140,6 +2140,8 @@ class SocketManager:
                         new_game_data = validate_acronym_config({})
                     elif new_game_type == "photo_clue":
                         new_game_data = validate_photo_clue_config({})
+                    elif new_game_type == "odd_question":
+                        new_game_data = validate_odd_question_config({})
                     elif new_game_type == "poker":
                         new_game_data = validate_poker_config({})
                     else:
@@ -2179,11 +2181,11 @@ class SocketManager:
                         room.billing_mode != "host_app_managed"
                         and pending_generation_charges.get(new_content_id) == room.wallet_id
                     ):
-                        required = config.COST_GENERATE + config.COST_ROOM
+                        required = config.COST_GENERATE
                         if token_module.db.get_wallet_balance(room.wallet_id) < required:
                             await self._send_to_client(room, client_id, {
                                 "type": "INSUFFICIENT_SPARKS",
-                                "message": f"You need {required} sparks to use generated content and start a new game.",
+                                "message": f"You need {required} sparks to use generated content.",
                             })
                             return
                         generated_spent, _ = token_module.spend_generate(room.wallet_id)
@@ -2194,17 +2196,8 @@ class SocketManager:
                             })
                             return
                         pending_generation_charges.pop(new_content_id, None)
-                    if room.billing_mode == "host_app_managed":
-                        spent = True
-                    else:
-                        spent, _ = token_module.spend_room(room.wallet_id)
-                    if not spent:
-                        await self._send_to_client(room, client_id, {
-                            "type": "INSUFFICIENT_SPARKS",
-                            "message": f"You need {config.COST_ROOM} sparks to start a new game.",
-                        })
-                        return
-
+                    # Reset stages the next lobby, like /room/create. START_GAME is the
+                    # sole room charge (and grace-use) boundary, after player gates pass.
                     room.reset_for_new_game(new_game_data, new_time_limit,
                                             game_type=new_game_type,
                                             content_id=new_content_id)

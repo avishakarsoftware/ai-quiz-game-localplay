@@ -98,7 +98,7 @@ starts hosting with it pays both sides `REFERRAL_REWARD`.
   separate places** in `socket_manager.py` — threading a field through would be 19 edits and 19
   chances to miss one. The client asks once, when it reaches the podium.
 - Always **200** with a possibly-empty `{available: false}`. Referrals disabled, unknown room, a
-  Revelry-hosted room with no organizer wallet, or a DB failure all degrade to silence. A podium is a
+  host-app-managed room (even with a wallet), or a DB failure all degrade to silence. A podium is a
   celebration; it must never have to render an error.
 - Not sensitive: a referral code exists to be shared, the room code is already known to every guest,
   and a redemption *pays* the host. Redemption keeps its own guards (self-referral, one per wallet,
@@ -109,6 +109,11 @@ starts hosting with it pays both sides `REFERRAL_REWARD`.
 `podium_invite_shared` so the loop is measurable — the whole point is to find out whether guests
 convert into hosts.
 
-**Tests:** `backend/tests/test_room_invite.py` (7 — including case-insensitive room codes, no host
-wallet, flag off, and DB failure) and `PodiumInviteCta.test.tsx` (12 — every silence path plus the
-share text carrying the host's code).
+Host-app player pages do not mount this CTA. When the room code changes, the client clears the
+previous host's invite and copied feedback before resolving the new room, including if the new
+request fails or returns unavailable.
+
+**Tests:** `backend/tests/test_room_invite.py` covers case-insensitive room codes, no host wallet,
+host-app rooms with a wallet, flag off, and DB failure. `PodiumInviteCta.test.tsx` covers every
+silence path, room changes, and share text carrying the host's code; `PlayerPage.test.tsx` checks
+that embedded podiums never mount the offer.

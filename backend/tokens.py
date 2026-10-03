@@ -195,9 +195,9 @@ def _try_grace_room(wallet_id: str) -> bool:
 
 
 def spend_room(wallet_id: str) -> tuple[bool, int]:
-    """Debit tokens for game start/reset. Returns (success, new_balance).
+    """Debit tokens for game start. Returns (success, new_balance).
     The first-party grace window (PARTY_GRACE_HOURS) makes rooms free for a new host's first
-    evening — this seam covers BOTH socket-layer charge sites (start + reset)."""
+    evening. Staging a replay lobby does not spend sparks or consume grace."""
     if _try_grace_room(wallet_id):
         return True, db.get_wallet_balance(wallet_id)
     success, balance = db.debit_tokens(wallet_id, config.COST_ROOM, "spend_room")

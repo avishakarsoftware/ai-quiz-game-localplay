@@ -1591,7 +1591,7 @@ class TestSparkChargingStartGame:
 
 class TestSparkChargingResetRoom:
     @pytest.mark.asyncio
-    async def test_reset_room_charges_sparks(self):
+    async def test_reset_room_stages_lobby_without_charging_sparks(self):
         room = make_room()
         sm = SocketManager()
         org_ws = add_organizer(room, "org-1")
@@ -1602,32 +1602,37 @@ class TestSparkChargingResetRoom:
         from main import quizzes
         quizzes["spark-reset-quiz"] = new_quiz
         try:
-            with patch("socket_manager.token_module.spend_room", return_value=(True, 10)):
+            with patch("socket_manager.token_module.spend_room", return_value=(True, 10)) as spend:
                 await sm.handle_message(room, "org-1", {
                     "type": "RESET_ROOM", "content_id": "spark-reset-quiz", "time_limit": 20
                 }, is_organizer=True)
+                spend.assert_not_called()
             assert room.state == "LOBBY"
         finally:
             quizzes.pop("spark-reset-quiz", None)
 
     @pytest.mark.asyncio
-    async def test_reset_room_insufficient_sparks(self):
+    async def test_reset_room_defers_insufficient_sparks_until_start(self):
         room = make_room()
         sm = SocketManager()
         org_ws = add_organizer(room, "org-1")
         add_player(room, "p1", "Alice")
         room.state = "PODIUM"
         room.wallet_id = "test-wallet-id"
-        # Seed valid content so validation passes, then charge fails
+        # Staging succeeds even without a room budget; starting is the payment boundary.
         new_quiz = make_quiz(3)
         from main import quizzes
         quizzes["insuff-quiz"] = new_quiz
         try:
-            with patch("socket_manager.token_module.spend_room", return_value=(False, 0)):
+            with patch("socket_manager.token_module.spend_room", return_value=(False, 0)) as spend:
                 await sm.handle_message(room, "org-1", {
                     "type": "RESET_ROOM", "content_id": "insuff-quiz", "time_limit": 20
                 }, is_organizer=True)
-            assert room.state == "PODIUM"
+                spend.assert_not_called()
+                assert room.state == "LOBBY"
+                await sm.handle_message(room, "org-1", {"type": "START_GAME"}, is_organizer=True)
+                spend.assert_called_once_with("test-wallet-id")
+            assert room.state == "LOBBY"
             assert org_ws.last("INSUFFICIENT_SPARKS") is not None
         finally:
             quizzes.pop("insuff-quiz", None)

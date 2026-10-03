@@ -8,6 +8,8 @@ export interface GameModeConfig {
     description: string;
     /** Pass-and-play (SPEC-PASS-AND-PLAY): ONE shared device, host types the seats. */
     passAndPlay?: boolean;
+    minPlayers?: number;
+    maxPlayers?: number;
     promptTitle?: string;
     promptSubtitle?: string;
     promptPlaceholder?: string;
@@ -454,10 +456,23 @@ export function supportsLocalAiGeneration(gameType: GameType): boolean {
     return LOCAL_AI_GENERATION_GAME_IDS.has(gameType);
 }
 
-export function filterGameModesForCatalog(catalog: Array<{ id: string; launchable?: boolean }> | undefined): GameModeConfig[] {
+export function filterGameModesForCatalog(catalog: Array<{
+    id: string;
+    launchable?: boolean;
+    rules?: { player_count?: { min?: number; max?: number } };
+    config_schema?: { players?: { min?: number; max?: number } };
+}> | undefined): GameModeConfig[] {
     if (!catalog) return GAME_MODE_CONFIGS;
     const allowed = new Set(catalog.filter((item) => item.launchable !== false).map((item) => item.id));
-    return GAME_MODE_CONFIGS.filter((item) => allowed.has(item.id));
+    const entries = new Map(catalog.map((item) => [item.id, item]));
+    return GAME_MODE_CONFIGS.filter((item) => allowed.has(item.id)).map((item) => {
+        const entry = entries.get(item.id);
+        return {
+            ...item,
+            minPlayers: entry?.config_schema?.players?.min ?? entry?.rules?.player_count?.min ?? item.minPlayers,
+            maxPlayers: entry?.config_schema?.players?.max ?? entry?.rules?.player_count?.max ?? item.maxPlayers,
+        };
+    });
 }
 
 export function isQuizRuntimeGame(gameType: GameType): boolean {

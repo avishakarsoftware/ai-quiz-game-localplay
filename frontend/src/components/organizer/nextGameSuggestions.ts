@@ -49,7 +49,9 @@ function isEligible(config: GameModeConfig, playerCount: number, justPlayed: Gam
     if (config.id === justPlayed) return false;
     if (config.passAndPlay) return false;
     // A suggestion the group cannot start is a broken promise.
-    return playerCount >= getMinPlayers(config.id);
+    const minimum = config.minPlayers ?? getMinPlayers(config.id);
+    const maximum = config.maxPlayers ?? (config.id === 'poker' ? 10 : Infinity);
+    return playerCount >= minimum && playerCount <= maximum;
 }
 
 export function suggestNextGames(
@@ -58,6 +60,7 @@ export function suggestNextGames(
     available: GameModeConfig[] = GAME_MODE_CONFIGS,
     limit: number = NEXT_GAME_SUGGESTION_COUNT,
 ): NextGameSuggestion[] {
+    if (limit <= 0) return [];
     const previousRuntime = (() => {
         try {
             return runtimeGameType(justPlayed);

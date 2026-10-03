@@ -22,6 +22,7 @@ export const RESETTABLE_DEFAULT_GAME_TYPES = new Set<GameType>([
     'word_association',
     'acronym',
     'photo_clue',
+    'odd_question',
 ]);
 
 // Whether a finished room can be reused in place for the next game. Content-based

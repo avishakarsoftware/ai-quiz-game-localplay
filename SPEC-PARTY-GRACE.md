@@ -50,8 +50,10 @@ is a real degradation for a venue/dorm/office behind one NAT, so:
 - State lives in the ledger: each free room writes a zero-amount `grace_room` row;
   the window anchors on the oldest one. `db.party_grace_state / has_room_spend /
   has_signup_bonus / record_grace_room` on both backends (export-guard enforced).
-- The charge seam is `tokens.spend_room` — covers **both** socket-layer sites (game start +
-  room reset) without touching socket_manager.
+- The charge seam is `tokens.spend_room` at `START_GAME`, after the player gates pass.
+  `RESET_ROOM` stages a lobby for free; it must not consume a second grace use or charge a
+  second room fee for the same game. Pending generation still costs `COST_GENERATE` when
+  the content is accepted, including when the host has no room-fee budget during grace.
 - `/tokens/balance` now carries `party_grace: {state: available|active|expired|ineligible,
   until, rooms_used}`.
 - `PartyGraceBanner` on the game catalog: "Your first party's on us…" before the first room,

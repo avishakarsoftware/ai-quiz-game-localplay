@@ -2254,7 +2254,7 @@ export default function PlayerPage() {
                             on purpose: the guest is idle here, so the invite fills dead time instead of
                             competing with the celebration. Renders nothing unless the backend says an
                             invite is available. */}
-                        <PodiumInviteCta roomCode={roomCode} />
+                        {!hostAppMode && <PodiumInviteCta roomCode={roomCode} />}
                     </div>
                 )}
 

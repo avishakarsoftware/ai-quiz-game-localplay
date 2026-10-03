@@ -17,6 +17,16 @@ Users → games.revelryapp.me (IONOS CDN) → static frontend
 
 The public production game is expected to run at `https://games.revelryapp.me/` from IONOS. The backend-served SPA gives us a same-origin deployment path for gamma, previews, and emergency/prod fallback at the API domains.
 
+### Deploy failure handling
+
+`scripts/deploy-gcp.sh --with-frontend` runs the full `npm run build` gate (`tsc -b` plus Vite).
+The new image must pass an isolated preflight before the live container is stopped. After the
+swap, both a failed `docker run` and a failed/unreachable health probe enter the automatic rollback
+path using the captured previous image and the same volume, port, restart policy, and gamma resource
+limits. A rollback reports deployment failure even when the previous service is healthy again.
+`backend/tests/test_deploy_rollback.py` executes these branches against a fake CLI without cloud
+access, including preflight failure leaving the live service untouched.
+
 ## Cloud Run Instance Policy
 
 LocalPlay currently deploys to a GCP VM, not Cloud Run. If any LocalPlay service is moved to GCP

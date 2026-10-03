@@ -54,6 +54,7 @@ class RoomHandle:
     token: str
     organizer: Any
     players: list[PlayerHandle]
+    organizer_ready: bool = False
 
 
 def ws_base(api_base: str) -> str:
@@ -62,7 +63,7 @@ def ws_base(api_base: str) -> str:
     return urlunparse((scheme, parsed.netloc, "", "", "", ""))
 
 
-async def recv_until(ws: Any, msg_type: str, *, timeout: float = 8.0) -> dict[str, Any]:
+async def recv_until(ws: Any, msg_type: str | tuple[str, ...], *, timeout: float = 8.0) -> dict[str, Any]:
     deadline = time.monotonic() + timeout
     seen: list[str] = []
     while time.monotonic() < deadline:
@@ -70,8 +71,10 @@ async def recv_until(ws: Any, msg_type: str, *, timeout: float = 8.0) -> dict[st
         raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
         data = json.loads(raw)
         seen.append(str(data.get("type")))
-        if data.get("type") == msg_type:
+        if data.get("type") in ((msg_type,) if isinstance(msg_type, str) else msg_type):
             return data
+        if data.get("type") == "ERROR":
+            raise RuntimeError(f"waiting for {msg_type}: {data.get('message')}")
     raise TimeoutError(f"never received {msg_type}; seen={seen}")
 
 
@@ -113,39 +116,32 @@ async def create_room(client: httpx.AsyncClient, api: str, index: int) -> tuple[
     return data["room_code"], data["organizer_token"]
 
 
-async def open_room(api: str, origin: str, code: str, token: str, players: int, index: int) -> RoomHandle:
+async def authenticate_organizer(api: str, origin: str, room: RoomHandle, client_id: str) -> None:
+    room.organizer_ready = False
     base = ws_base(api)
-    organizer = await websockets.connect(f"{base}/ws/{code}/load-org-{index}?organizer=true", origin=origin)
-    await organizer.send(json.dumps({"type": "AUTH", "token": token}))
-    await recv_until(organizer, "ROOM_CREATED")
+    room.organizer = await websockets.connect(
+        f"{base}/ws/{room.code}/{client_id}?organizer=true", origin=origin,
+    )
+    await room.organizer.send(json.dumps({"type": "AUTH", "token": room.token}))
+    await recv_until(room.organizer, ("ROOM_CREATED", "ORGANIZER_RECONNECTED"))
+    room.organizer_ready = True
 
-    player_sockets = []
-    try:
-        for player_idx in range(players):
-            ws = await websockets.connect(f"{base}/ws/{code}/load-p{index}-{player_idx}", origin=origin)
-            await ws.send(json.dumps({
-                "type": "JOIN",
-                "nickname": f"QA-{index}-{player_idx}",
-                "avatar": "🙂",
-            }))
-            joined = await recv_until(ws, "JOINED_ROOM")
-            player_sockets.append(PlayerHandle(
-                nickname=f"QA-{index}-{player_idx}",
-                client_id=f"load-p{index}-{player_idx}",
-                session_token=str(joined.get("session_token", "")),
-                socket=ws,
-            ))
-        return RoomHandle(code=code, token=token, organizer=organizer, players=player_sockets)
-    except Exception:
-        try:
-            await organizer.send(json.dumps({"type": "CANCEL_GAME"}))
-            await recv_until(organizer, "ROOM_CLOSED", timeout=5.0)
-        except Exception as exc:  # noqa: BLE001 - preserve the original smoke failure
-            print(f"WARN cleanup cancel failed for partially opened room {code}: {exc}")
-        for player in player_sockets:
-            await player.socket.close()
-        await organizer.close()
-        raise
+
+async def open_room(api: str, origin: str, room: RoomHandle, players: int, index: int) -> RoomHandle:
+    base = ws_base(api)
+    await authenticate_organizer(api, origin, room, f"load-org-{index}")
+    for player_idx in range(players):
+        player = PlayerHandle(
+            nickname=f"QA-{index}-{player_idx}", client_id=f"load-p{index}-{player_idx}",
+            session_token="", socket=None,
+        )
+        player.socket = await websockets.connect(f"{base}/ws/{room.code}/{player.client_id}", origin=origin)
+        # Register before JOIN/ack: those are failure points too.
+        room.players.append(player)
+        await player.socket.send(json.dumps({"type": "JOIN", "nickname": player.nickname, "avatar": "🙂"}))
+        joined = await recv_until(player.socket, "JOINED_ROOM")
+        player.session_token = str(joined.get("session_token", ""))
+    return room
 
 
 async def reconnect_one_player(api: str, origin: str, room: RoomHandle, delay: float) -> bool:
@@ -162,6 +158,9 @@ async def reconnect_one_player(api: str, origin: str, room: RoomHandle, delay: f
     base = ws_base(api)
     reconnect_id = f"{player.client_id}-reconnect-{uuid.uuid4().hex[:6]}"
     ws = await websockets.connect(f"{base}/ws/{room.code}/{reconnect_id}", origin=origin)
+    # Track the replacement even when the server rejects JOIN or never acknowledges it.
+    player.socket = ws
+    player.client_id = reconnect_id
     await ws.send(json.dumps({
         "type": "JOIN",
         "nickname": player.nickname,
@@ -186,20 +185,30 @@ async def reconnect_one_player(api: str, origin: str, room: RoomHandle, delay: f
 async def cancel_room(api: str, origin: str, room: RoomHandle) -> bool:
     acked_or_closed = False
     try:
-        await room.organizer.send(json.dumps({"type": "CANCEL_GAME"}))
-        try:
-            await recv_until(room.organizer, "ROOM_CLOSED", timeout=5.0)
-            acked_or_closed = True
-        except ConnectionClosed:
-            acked_or_closed = True
-        except Exception as exc:  # noqa: BLE001 - followed by an explicit cleanup probe
-            print(f"WARN cancel ack failed for {room.code}: {exc!r}")
-    except Exception as exc:  # noqa: BLE001 - cleanup is best effort, reported by caller
-        print(f"WARN cancel send failed for {room.code}: {exc!r}")
+        for attempt in range(2):
+            try:
+                if not room.organizer_ready:
+                    if room.organizer is not None:
+                        await room.organizer.close()
+                    await authenticate_organizer(api, origin, room, f"load-cleanup-{uuid.uuid4().hex[:8]}")
+                await room.organizer.send(json.dumps({"type": "CANCEL_GAME"}))
+                try:
+                    await recv_until(room.organizer, "ROOM_CLOSED", timeout=5.0)
+                except ConnectionClosed:
+                    pass  # A server may close instead of acknowledging; the probe decides.
+                acked_or_closed = True
+                break
+            except Exception as exc:  # noqa: BLE001 - retry once by reclaiming the host
+                print(f"WARN cancel attempt {attempt + 1} failed for {room.code}: {exc!r}")
+                room.organizer_ready = False
     finally:
-        for player in room.players:
-            await player.socket.close()
-        await room.organizer.close()
+        sockets = [player.socket for player in room.players]
+        if room.organizer is not None:
+            sockets.append(room.organizer)
+        close_results = await asyncio.gather(*(ws.close() for ws in sockets), return_exceptions=True)
+        for result in close_results:
+            if isinstance(result, Exception):
+                print(f"WARN socket close failed for {room.code}: {result!r}")
 
     gone = await verify_room_gone(api, origin, room.code)
     if not gone:
@@ -221,28 +230,30 @@ async def run(
 ) -> int:
     started = time.monotonic()
     handles: list[RoomHandle] = []
+    failures: list[Any] = []
     sem = asyncio.Semaphore(concurrency)
 
     async with httpx.AsyncClient(timeout=20.0) as client:
         async def one(index: int) -> RoomHandle:
             async with sem:
                 code, token = await create_room(client, api, index)
-                return await open_room(api, origin, code, token, players, index)
+                # Every created room belongs to cleanup, including failed opens/authentication.
+                handle = RoomHandle(code, token, None, [])
+                handles.append(handle)
+                return await open_room(api, origin, handle, players, index)
 
         try:
             results = await asyncio.gather(*(one(i + 1) for i in range(rooms)), return_exceptions=True)
             failures = [result for result in results if isinstance(result, Exception)]
-            handles = [result for result in results if isinstance(result, RoomHandle)]
             if failures:
                 for failure in failures[:5]:
                     print(f"FAIL room open failed: {failure}")
                 if len(failures) > 5:
                     print(f"FAIL plus {len(failures) - 5} more room open failures")
-                return 1
-
-            total_clients = rooms * (players + 1)
-            print(f"PASS opened {rooms} rooms / {total_clients} sockets against {api} (origin {origin})")
-            if reconnect_check:
+            else:
+                total_clients = rooms * (players + 1)
+                print(f"PASS opened {rooms} rooms / {total_clients} sockets against {api} (origin {origin})")
+            if reconnect_check and not failures:
                 reconnect_results = await asyncio.gather(
                     *(reconnect_one_player(api, origin, handle, reconnect_delay) for handle in handles),
                     return_exceptions=True,
@@ -255,9 +266,11 @@ async def run(
                 if reconnect_failures:
                     for failure in reconnect_failures[:5]:
                         print(f"FAIL reconnect probe failed: {failure!r}")
-                    return 1
-                print(f"PASS reconnected one lobby player in each of {len(handles)} room(s)")
-            await asyncio.sleep(dwell)
+                    failures.extend(reconnect_failures)
+                else:
+                    print(f"PASS reconnected one lobby player in each of {len(handles)} room(s)")
+            if not failures:
+                await asyncio.sleep(dwell)
         finally:
             cleanup_results = await asyncio.gather(
                 *(cancel_room(api, origin, handle) for handle in handles),
@@ -272,7 +285,7 @@ async def run(
     ] if handles else []
     if len(handles) == rooms and not cleanup_failures:
         print(f"PASS cleaned up {len(handles)} rooms in {elapsed:.1f}s")
-        return 0
+        return 1 if failures else 0
 
     if cleanup_failures:
         print(f"FAIL {len(cleanup_failures)} room cleanup probe(s) failed in {elapsed:.1f}s")

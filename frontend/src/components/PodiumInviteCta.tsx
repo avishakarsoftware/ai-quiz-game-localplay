@@ -26,6 +26,8 @@ export default function PodiumInviteCta({ roomCode }: { roomCode: string }) {
     const [copied, setCopied] = useState(false);
 
     useEffect(() => {
+        setInvite(null);
+        setCopied(false);
         if (!roomCode) return;
         let cancelled = false;
         fetch(apiUrl(`/room/${encodeURIComponent(roomCode)}/invite`))

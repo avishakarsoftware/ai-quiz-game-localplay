@@ -327,7 +327,7 @@ if [[ "$SKIP_BUILD" != "true" ]]; then
                 VITE_GOOGLE_CLIENT_ID="${VITE_GOOGLE_CLIENT_ID:-$GOOGLE_WEB_CLIENT_ID}" \
                 VITE_APPLE_CLIENT_ID="${VITE_APPLE_CLIENT_ID:-$APPLE_WEB_CLIENT_ID}" \
                 VITE_APPLE_REDIRECT_URI= \
-                npx vite build
+                npm run build
         )
 
         TEMP_BUILD_CONTEXT="$(mktemp -d)"
@@ -466,20 +466,26 @@ info "Pre-flight passed."
 info "Capturing rollback point and swapping..."
 ssh_cmd "docker inspect --format '{{.Image}}' $CONTAINER_NAME > /tmp/${CONTAINER_NAME}.prev-image 2>/dev/null || echo '' > /tmp/${CONTAINER_NAME}.prev-image"
 ssh_cmd "docker stop $CONTAINER_NAME 2>/dev/null; docker rm $CONTAINER_NAME 2>/dev/null; true"
-ssh_cmd "docker run -d \
+CONTAINER_STARTED=true
+if ! ssh_cmd "docker run -d \
     --name $CONTAINER_NAME \
     --env-file $REMOTE_ENV_FILE \
     -p 127.0.0.1:$HOST_PORT:8000 \
     -v $REMOTE_DATA_DIR:/app/data \
     --restart unless-stopped \
     $RESOURCE_FLAGS \
-    $IMAGE_NAME:latest"
+    $IMAGE_NAME:latest"; then
+    # With set -e, a failed docker run previously exited before the rollback branch.
+    # Port/volume/resource failures can happen after a successful isolated preflight.
+    CONTAINER_STARTED=false
+fi
 
 # --- Step 7: Verify, and ROLL BACK automatically on failure ---
 # Pre-flight proves the image boots in isolation; this proves it boots in the real harness
 # (volume, port, restart policy). If it fails here, restart the previous image rather than
 # leaving the service down — image IDs are immutable, so the captured ID survives retagging.
 info "Waiting for container to start..."
+if [[ "$CONTAINER_STARTED" == "true" ]]; then
 HEALTH=$(ssh_cmd "
     for i in \$(seq 1 20); do
         CODE=\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:$HOST_PORT/health 2>/dev/null || echo 'fail')
@@ -490,7 +496,10 @@ HEALTH=$(ssh_cmd "
         sleep 1
     done
     echo \"\$CODE\"
-")
+") || HEALTH="health-probe-failed"
+else
+    HEALTH="container-start-failed"
+fi
 if [[ "$HEALTH" == "200" ]]; then
     info "Health check passed!"
 else
