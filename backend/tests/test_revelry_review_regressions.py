@@ -349,3 +349,47 @@ def test_browser_credentials_require_localplay_issuer_and_expiry(token_type, res
     with pytest.raises(HTTPException) as exc:
         resolver(token)
     assert exc.value.status_code == 401
+
+
+@pytest.mark.parametrize("game_type", sorted({
+    game.get("game_type") or game["id"] for game in main.GAME_CATALOG
+    if game.get("host_app_supported")
+    and "revelry" in (game.get("supported_host_apps") or [])
+    and game.get("launchable") and game.get("can_quick_start")
+}))
+def test_every_advertised_revelry_quick_start_type_creates_its_runtime(game_type):
+    response = _session(game_type)
+    assert response.status_code == 200, response.text
+    session = response.json()
+    room = socket_manager.rooms[session["room_code"]]
+    assert session["game_type"] == room.game_type == game_type
+    assert room.billing_mode == "host_app_managed"
+
+
+def test_odd_question_party_hub_launch_uses_its_starter_deck_and_scoped_launches():
+    link = client.post("/integrations/revelry/party-games-link", headers=HEADERS, json={
+        "external_context": _context(), "actor": _actor(),
+    })
+    assert link.status_code == 200
+    party_token = parse_qs(urlparse(link.json()["party_games_url"]).query)["party_games_token"][0]
+    started = client.post("/integrations/revelry/party-games/start", json={
+        "party_games_token": party_token, "game_type": "odd_question",
+    })
+    assert started.status_code == 200, started.text
+    session = started.json()["session"]
+    room = socket_manager.rooms[session["room_code"]]
+    assert room.game_type == session["game_type"] == "odd_question"
+    assert room.quiz["game_title"] == session["feed_card"]["title"] == "Review Party"
+    assert room.quiz["prompt_pairs"]
+    assert room.quiz["total_rounds"] == 5
+    assert "questions" not in room.quiz
+    for scope, route in (("organizer", "organizer"), ("player", "join"), ("spectator", "spectate")):
+        launch = client.post("/integrations/revelry/party-games/launch-token", json={
+            "party_games_token": party_token, "session_id": session["session_id"], "scope": scope, "route": route,
+        })
+        assert launch.status_code == 200
+        token = parse_qs(urlparse(launch.json()["launch_url"]).query)["launch_token"][0]
+        resolved = client.get("/integrations/revelry/launch-token/resolve", params={"launch_token": token, "scope": scope})
+        assert resolved.status_code == 200
+        assert resolved.json()["game_type"] == "odd_question"
+        assert ("organizer_token" in resolved.json()) == (scope == "organizer")

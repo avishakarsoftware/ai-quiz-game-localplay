@@ -26,6 +26,7 @@ const REQUIRED_REVELRY_GAME_TYPES = [
   'mafia',
   'musical_chairs',
   'never_have_i_ever',
+  'odd_question',
   'party_quests',
   'photo_clue',
   'poker',
@@ -230,7 +231,7 @@ async function assertOrganizerPageLoads(page: Page, launchUrl: string, title: st
 async function exerciseLobbyReconnect(page: Page, roomCode: string, organizerToken: string) {
   await page.goto('/');
   return page.evaluate(async ({ roomCode: code, organizerToken: token }) => {
-    type Message = Record<string, any>;
+    type Message = Record<string, unknown>;
 
     function connect(path: string, onOpen?: (ws: WebSocket) => void) {
       const messages: Message[] = [];

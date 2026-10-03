@@ -20,6 +20,8 @@ The bridge enforces the following contracts in code and regression coverage. Dep
 
 Regression coverage: `backend/tests/test_revelry_review_regressions.py`, the existing Revelry integration/catalog suites, `frontend/src/pages/__tests__/RevelryAuthoringPage.test.tsx`, and `frontend/src/__tests__/hostAppMode.test.tsx`.
 
+The live gamma matrix also exposed catalog/ingress drift for **Odd Question**: the catalog advertised a launchable quick-start game while the bridge request allowlist omitted `odd_question`. The bridge now accepts it for service session creation, party links, and hub starts, and materializes a dedicated Odd Question starter deck rather than the generic quiz fallback. Catalog-to-ingress invariant tests and session creation for every advertised quick-start type prevent this drift. The pre-prod matrix explicitly requires Odd Question among its gamma fixtures. Production exposure still requires its own explicit policy row and rollout approval.
+
 ## July 6, 2026 — Implementation-ready Revelry production expansion plan
 
 Production Revelry currently exposes a conservative LocalPlay set. The next LocalPlay-owned work is to make the production expansion repeatable, policy-driven, and testable before asking Revelry to surface more games.

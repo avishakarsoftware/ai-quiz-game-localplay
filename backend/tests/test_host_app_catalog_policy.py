@@ -32,12 +32,32 @@ def test_local_missing_policy_uses_static_host_app_catalog():
         "acronym",
         "photo_clue",
         "poker",
+        "odd_question",
     }.issubset(game_ids)
     assert all(game.get("rules", {}).get("sections") for game in games)
 
 
 def test_revelry_start_game_type_allowlist_has_no_duplicates():
     assert len(REVELRY_PARTY_GAME_START_TYPES) == len(set(REVELRY_PARTY_GAME_START_TYPES))
+
+
+def test_every_launchable_revelry_catalog_type_has_session_ingress():
+    # An allowlist-only validator test cannot catch a game advertised in the
+    # catalog but omitted from the bridge's create/start request models.
+    import main
+
+    exposed_types = {
+        game.get("game_type") or game["id"] for game in GAME_CATALOG
+        if game.get("host_app_supported")
+        and "revelry" in (game.get("supported_host_apps") or [])
+        and game.get("launchable")
+    }
+    assert exposed_types <= set(REVELRY_PARTY_GAME_START_TYPES)
+    for game_type in exposed_types:
+        context = {"host_app": "revelry", "external_container_id": "catalog-ingress-party"}
+        assert main.RevelrySessionCreateRequest(external_context=context, game_type=game_type).game_type == game_type
+        assert main.RevelryPartyGamesLinkRequest(external_context=context, game_type=game_type).game_type == game_type
+        assert main.RevelryPartyGameStartRequest(party_games_token="unused", game_type=game_type).game_type == game_type
 
 
 def test_static_launchable_games_have_rules_metadata():

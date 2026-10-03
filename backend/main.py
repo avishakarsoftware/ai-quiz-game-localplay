@@ -52,6 +52,7 @@ from acronym_engine import validate_config as validate_acronym_config
 from photo_clue_engine import validate_config as validate_photo_clue_config
 from poker_engine import validate_config as validate_poker_config
 from impostor_engine import validate_config as validate_impostor_config
+from odd_question_engine import validate_config as validate_odd_question_config
 from socket_manager import socket_manager
 from image_engine import image_engine
 from media_store import media_store
@@ -808,6 +809,8 @@ def _default_game_content(game_type: str, title: str) -> tuple[str, dict]:
         return str(uuid.uuid4()), validate_photo_clue_config({"game_title": title or "Photo Clue"})
     if game_type == "poker":
         return str(uuid.uuid4()), validate_poker_config({"game_title": title or "Party Poker"})
+    if game_type == "odd_question":
+        return str(uuid.uuid4()), {**validate_odd_question_config({}), "game_title": title or "Odd Question"}
     if game_type == "impostor":
         return str(uuid.uuid4()), validate_impostor_config({"game_title": title or "Impostor"})
     if game_type == "bingo":

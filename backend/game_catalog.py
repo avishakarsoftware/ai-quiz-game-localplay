@@ -26,6 +26,7 @@ REVELRY_PARTY_GAME_START_TYPES = (
     "acronym",
     "photo_clue",
     "poker",
+    "odd_question",
 )
 REVELRY_PARTY_GAME_START_TYPES_ERROR = (
     "game_type must be one of "
