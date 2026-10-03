@@ -126,6 +126,7 @@ export default function PlayerPage() {
     const [timeLimit, setTimeLimit] = useState(15);
     const [timeRemaining, setTimeRemaining] = useState(15);
     const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+    const [restoredAnswer, setRestoredAnswer] = useState(false);
     const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
     const [pointsEarned, setPointsEarned] = useState(0);
     const [streak, setStreak] = useState(0);
@@ -264,6 +265,9 @@ export default function PlayerPage() {
     const [simpleSocialState, setSimpleSocialState] = useState<SimpleSocialState | null>(null);
     const [photoClueState, setPhotoClueState] = useState<PhotoClueState | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
+    const stateRef = useRef(state);
+    stateRef.current = state;
+    const joinRoomRef = useRef<() => void>(() => {});
     const autoJoinedRef = useRef(false);
     const submittedRef = useRef(false);
     const kickedRef = useRef(false);
@@ -272,11 +276,15 @@ export default function PlayerPage() {
     // Counts retries of a "Nickname is taken" reply during our own reconnect, so
     // a transient stale-connection race doesn't permanently bounce us to JOIN.
     const nicknameReconnectRetriesRef = useRef(0);
-    useEffect(() => () => {
-        mountedRef.current = false;
-        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-        wsRef.current?.close();
-        wsRef.current = null;
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+            const ws = wsRef.current;
+            wsRef.current = null;
+            ws?.close();
+        };
     }, []);
 
     const applyBingoState = (bingo?: {
@@ -306,17 +314,27 @@ export default function PlayerPage() {
 
     // Auto-rejoin if we have a saved session (e.g. page refresh)
     useEffect(() => {
-        if (savedSession && !autoJoinedRef.current && !wsRef.current) {
+        if (savedSession?.roomCode === roomCode && !autoJoinedRef.current && !wsRef.current) {
             autoJoinedRef.current = true;
             // Small delay to let state settle
             const timer = setTimeout(() => joinRoom(), 100);
-            return () => clearTimeout(timer);
+            return () => {
+                clearTimeout(timer);
+                autoJoinedRef.current = false;
+            };
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const joinRoom = () => {
         if (!roomCode.trim() || !nickname.trim()) return;
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
+        const previous = wsRef.current;
+        wsRef.current = null;
+        previous?.close();
         setError('');
         setHostAppTerminalError(false);
         kickedRef.current = false;
@@ -326,12 +344,16 @@ export default function PlayerPage() {
         wsRef.current = ws;
 
         ws.onopen = () => {
+            if (!mountedRef.current || wsRef.current !== ws) return;
             track('player_joined', { room_code: roomCode, nickname, has_team: !!team });
             const savedSession = getSavedSession();
-            ws.send(JSON.stringify({ type: 'JOIN', nickname, team: team || undefined, avatar, session_token: savedSession?.sessionToken || '' }));
+            const sessionToken = savedSession?.roomCode === roomCode && savedSession.nickname === nickname
+                ? savedSession.sessionToken || '' : '';
+            ws.send(JSON.stringify({ type: 'JOIN', nickname, team: team || undefined, avatar, session_token: sessionToken }));
         };
 
         ws.onmessage = (event) => {
+            if (!mountedRef.current || wsRef.current !== ws) return;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let msg: any;
             try { msg = JSON.parse(event.data); } catch { return; }
@@ -350,10 +372,10 @@ export default function PlayerPage() {
                     const isOwnReconnect = Boolean(saved?.sessionToken) && saved?.nickname === nickname && saved?.roomCode === roomCode;
                     if (isOwnReconnect && nicknameReconnectRetriesRef.current < 2) {
                         nicknameReconnectRetriesRef.current += 1;
-                        wsRef.current?.close();
                         wsRef.current = null;
+                        ws.close();
                         setState('RECONNECTING');
-                        reconnectTimerRef.current = setTimeout(() => joinRoom(), 1500);
+                        reconnectTimerRef.current = setTimeout(() => joinRoomRef.current(), 1500);
                         return;
                     }
                 }
@@ -364,8 +386,9 @@ export default function PlayerPage() {
                         setHostAppTerminalError(true);
                     }
                     kickedRef.current = true;
-                    wsRef.current?.close();
                     wsRef.current = null;
+                    ws.close();
+                    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                     clearPlayerSession();
                     setState('JOIN');
                 }
@@ -385,6 +408,8 @@ export default function PlayerPage() {
                 // Another tab/device took over this nickname
                 kickedRef.current = true;
                 wsRef.current = null;
+                ws.close();
+                if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                 setState('JOIN');
                 setError('You joined from another device');
                 return;
@@ -456,6 +481,13 @@ export default function PlayerPage() {
                     setGameTypeKnown(true);
                 }
                 if (msg.power_ups) setPowerUps(msg.power_ups as PowerUps);
+                setRestoredAnswer(Boolean(msg.has_answered) || msg.state === 'LEADERBOARD');
+                if (msg.leaderboard) {
+                    setLeaderboard(msg.leaderboard as LeaderboardEntry[]);
+                    setMyRank((msg.leaderboard as LeaderboardEntry[]).findIndex((p) => p.nickname === nickname) + 1);
+                }
+                if (msg.team_leaderboard) setTeamLeaderboard(msg.team_leaderboard as TeamLeaderboardEntry[]);
+                if (msg.superlatives) setSuperlatives(msg.superlatives);
                 if (msg.state === 'LOBBY') {
                     setState('LOBBY');
                 } else if (msg.game_type === 'housie' || msg.game_type === 'bingo' || msg.state === 'BINGO_CALLING') {
@@ -549,8 +581,11 @@ export default function PlayerPage() {
                     setPointsEarned(0);
                     setCorrectAnswer(null);
                     setIsBonus(msg.is_bonus as boolean || false);
-                    setState('QUESTION');
+                    submittedRef.current = Boolean(msg.has_answered);
+                    setState(msg.has_answered && msg.game_type !== 'drawing' ? 'WAITING' : 'QUESTION');
                 } else if (msg.state === 'LEADERBOARD') {
+                    setCorrectAnswer(typeof msg.answer === 'number' ? msg.answer : null);
+                    setCorrectAnswerText(msg.answer_text || '');
                     setState('RESULT');
                 } else if (msg.state === 'PODIUM') {
                     setState('PODIUM');
@@ -820,10 +855,12 @@ export default function PlayerPage() {
                 setTimeRemaining(msg.time_limit as number);
                 setSelectedAnswer(null);
                 setSelectedVote(null);
+                setRestoredAnswer(false);
                 submittedRef.current = false;
                 setIsCorrect(null);
                 setPointsEarned(0);
                 setCorrectAnswer(null);
+                setCorrectAnswerText('');
                 setHiddenOptions([]);
                 setIsBonus(msg.is_bonus as boolean || false);
                 if (msg.is_bonus) setShowBonusSplash(true);
@@ -836,6 +873,7 @@ export default function PlayerPage() {
                 if (msg.remaining <= 5 && msg.remaining > 0) soundManager.play('timerTick');
             }
             if (msg.type === 'ANSWER_RESULT') {
+                setRestoredAnswer(false);
                 setIsCorrect(msg.correct);
                 setPointsEarned(msg.points);
                 setStreak(msg.streak || 0);
@@ -929,9 +967,10 @@ export default function PlayerPage() {
             }
             if (msg.type === 'ROOM_CLOSED') {
                 // Host didn't reconnect — room is gone
-                wsRef.current?.close();
                 wsRef.current = null;
+                ws.close();
                 kickedRef.current = true; // prevent auto-reconnect
+                if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
                 clearPlayerSession();
                 if (hostAppMode) setHostAppTerminalError(true);
                 setState('JOIN');
@@ -943,6 +982,7 @@ export default function PlayerPage() {
                 return;
             }
             if (msg.type === 'ROOM_RESET') {
+                setRestoredAnswer(false);
                 setCurrentQuestion(null);
                 setQuestionNumber(0);
                 setTotalQuestions(0);
@@ -952,6 +992,7 @@ export default function PlayerPage() {
                 setStreak(0);
                 setMultiplier(1.0);
                 setCorrectAnswer(null);
+                setCorrectAnswerText('');
                 setLeaderboard([]);
                 setTeamLeaderboard([]);
                 setMyRank(0);
@@ -963,6 +1004,7 @@ export default function PlayerPage() {
                 setVoteResult(null);
                 setCurrentStatement('');
                 setDrawingPrompt('');
+                setDrawingClue('');
                 setDrawingDrawer('');
                 setIsDrawer(false);
                 setDrawingOps([]);
@@ -975,11 +1017,24 @@ export default function PlayerPage() {
                 setTwoTruthsState(null);
                 setStoryChainState(null);
                 setCommonGroundState(null);
+                setFindSomeoneState(null);
                 setWhoAmIState(null);
                 setChitPullState(null);
                 setMafiaState(null);
                 setPartyQuestsState(null);
                 setSurveySaysState(null);
+                setGenericPromptState(null);
+                setSimpleSocialState(null);
+                setPhotoClueState(null);
+                setPokerState(null);
+                setHousieTicket(null);
+                setHousieCalled([]);
+                setHousieLatest(null);
+                setHousiePatterns([]);
+                setHousieWinners([]);
+                setMarkedNumbers(new Set());
+                setHousieCallFlash(null);
+                setHousieAnnouncement(null);
                 setMcGrabbed(false);
                 setMcEliminated(false);
                 setMcReactionMs(null);
@@ -990,23 +1045,25 @@ export default function PlayerPage() {
             }
         };
 
-        ws.onerror = () => setError('Connection failed');
+        ws.onerror = () => {
+            if (mountedRef.current && wsRef.current === ws) setError('Connection failed');
+        };
         ws.onclose = () => {
-            if (kickedRef.current) { kickedRef.current = false; return; }
-            if (!mountedRef.current) return;
-            setState((current) => {
-                // Reconnect from every in-game state, including PODIUM — a player
-                // whose phone sleeps during the final results should be able to
-                // return to the celebration (RECONNECTED restores the podium).
-                if (current !== 'JOIN') {
-                    reconnectTimerRef.current = setTimeout(() => joinRoom(), 2000);
-                    return 'RECONNECTING';
-                }
+            if (wsRef.current !== ws) return;
+            wsRef.current = null;
+            if (kickedRef.current || !mountedRef.current) return;
+            // Reconnect from every in-game state, including PODIUM — a player
+            // whose phone sleeps during the final results should be able to
+            // return to the celebration (RECONNECTED restores the podium).
+            if (stateRef.current !== 'JOIN') {
+                reconnectTimerRef.current = setTimeout(() => joinRoomRef.current(), 2000);
+                setState('RECONNECTING');
+            } else {
                 setError('Unable to connect. Check your internet and try again.');
-                return current;
-            });
+            }
         };
     };
+    joinRoomRef.current = joinRoom;
 
     useEffect(() => {
         const reconnectAfterWake = () => {
@@ -1949,6 +2006,11 @@ export default function PlayerPage() {
                                 <h2 className="hero-title mb-2">Vote Cast!</h2>
                                 <p className="text-[--text-secondary] text-lg">You voted for <strong>{selectedVote}</strong></p>
                             </>
+                        ) : restoredAnswer ? (
+                            <>
+                                <div className="result-icon result-icon-correct">✓</div>
+                                <h2 className="hero-title mb-4">Answer received</h2>
+                            </>
                         ) : isCorrect ? (
                             <div className="celebration-container">
                                 <div className="celebration-burst">
@@ -2079,7 +2141,9 @@ export default function PlayerPage() {
                                 </>
                             ) : (
                                 <>
-                                    {isCorrect ? (
+                                    {restoredAnswer ? (
+                                        <div className="result-icon result-icon-correct mb-2" style={{ width: 56, height: 56, fontSize: 28 }}>✓</div>
+                                    ) : isCorrect ? (
                                         <div className="result-icon result-icon-correct mb-2" style={{ width: 56, height: 56, fontSize: 28 }}>✓</div>
                                     ) : selectedAnswer === null && selectedVote === null ? (
                                         <div className="result-icon result-icon-wrong mb-2" style={{ width: 56, height: 56, fontSize: 28 }}>⏱</div>
@@ -2087,7 +2151,7 @@ export default function PlayerPage() {
                                         <div className="result-icon result-icon-wrong mb-2" style={{ width: 56, height: 56, fontSize: 28 }}>✗</div>
                                     )}
                                     <h2 className="text-2xl font-extrabold" style={{ color: isCorrect ? 'var(--accent-success)' : (selectedAnswer === null && selectedVote === null ? 'var(--accent-warning)' : 'var(--accent-danger)') }}>
-                                        {isCorrect ? 'Correct!' : (selectedAnswer === null && selectedVote === null ? "Time's up!" : 'Wrong')}
+                                        {restoredAnswer ? 'Round complete' : isCorrect ? 'Correct!' : (selectedAnswer === null && selectedVote === null ? "Time's up!" : 'Wrong')}
                                     </h2>
                                     {pointsEarned > 0 && (
                                         <p className="text-xl font-bold text-[--accent-success] mt-2">+{pointsEarned}</p>

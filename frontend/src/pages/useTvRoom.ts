@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { WS_URL } from '../config';
 import { apiFetch } from '../utils/api';
+import { publicWebUrl } from '../utils/webUrl';
 
 export interface TvRoomPlayer {
     nickname: string;
     avatar?: string;
+    status?: 'connected' | 'reconnecting' | 'offline';
 }
 
 export interface TvRoomState {
@@ -52,6 +54,9 @@ export function useTvRoom() {
     const roomRef = useRef<string>('');
     const reconnectDelayRef = useRef(RECONNECT_INITIAL_MS);
     const reconnectTimerRef = useRef<number | ReturnType<typeof setTimeout> | null>(null);
+    const generationRef = useRef(0);
+    const mountedRef = useRef(true);
+    const connectRef = useRef<(roomCode: string, organizerToken: string) => void>(() => {});
 
     const clearReconnectTimer = useCallback(() => {
         if (reconnectTimerRef.current) {
@@ -69,7 +74,14 @@ export function useTvRoom() {
         }
     }, [clearReconnectTimer]);
 
-    useEffect(() => closeSocket, [closeSocket]);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            generationRef.current += 1;
+            closeSocket();
+        };
+    }, [closeSocket]);
 
     const connect = useCallback((roomCode: string, organizerToken: string) => {
         clearReconnectTimer();
@@ -85,6 +97,7 @@ export function useTvRoom() {
         wsRef.current = ws;
 
         ws.onopen = () => {
+            if (!mountedRef.current || wsRef.current !== ws) return;
             reconnectDelayRef.current = RECONNECT_INITIAL_MS;
             setState((prev) => (prev.status === 'lobby' && prev.error === 'Reconnecting…'
                 ? { ...prev, error: '' }
@@ -93,11 +106,20 @@ export function useTvRoom() {
         };
 
         ws.onmessage = (event) => {
+            if (!mountedRef.current || wsRef.current !== ws) return;
             let msg: Record<string, unknown>;
             try {
                 msg = JSON.parse(event.data as string);
             } catch {
                 return;   // a malformed frame must never take the TV down mid-party
+            }
+            if (!msg || typeof msg !== 'object') return;
+            if (msg.type === 'ERROR' || msg.type === 'ROOM_CLOSED') {
+                closeSocket();
+                roomRef.current = '';
+                tokenRef.current = '';
+                setState({ ...EMPTY, status: 'error', error: String(msg.message || 'This room is no longer available. Open a new room.') });
+                return;
             }
             // Any message carrying a roster is authoritative for the phone count. Player-count
             // messages arrive under several types (joined, left, disconnected, sync), so key off
@@ -110,13 +132,13 @@ export function useTvRoom() {
                     players: players as TvRoomPlayer[],
                     connectedPhones: typeof msg.player_count === 'number'
                         ? (msg.player_count as number)
-                        : (players as TvRoomPlayer[]).length,
+                        : (players as TvRoomPlayer[]).filter((player) => !player.status || player.status === 'connected').length,
                 }));
             }
         };
 
         ws.onclose = () => {
-            if (wsRef.current !== ws) return;
+            if (!mountedRef.current || wsRef.current !== ws) return;
             wsRef.current = null;
             // Keep the room code on screen: guests may still be mid-join, and blanking the QR
             // because a socket blipped would be worse than a stale-but-correct code.
@@ -126,14 +148,16 @@ export function useTvRoom() {
             reconnectTimerRef.current = window.setTimeout(() => {
                 reconnectTimerRef.current = null;
                 if (roomRef.current && tokenRef.current) {
-                    connect(roomRef.current, tokenRef.current);
+                    connectRef.current(roomRef.current, tokenRef.current);
                 }
             }, delay);
         };
-    }, [clearReconnectTimer]);
+    }, [clearReconnectTimer, closeSocket]);
+    useEffect(() => { connectRef.current = connect; }, [connect]);
 
     /** Create a room owned by the TV and enter the lobby. */
     const host = useCallback(async (gameType: string, extra: Record<string, unknown> = {}) => {
+        const generation = ++generationRef.current;
         closeSocket();
         roomRef.current = '';
         tokenRef.current = '';
@@ -145,7 +169,8 @@ export function useTvRoom() {
                 body: JSON.stringify({ game_type: gameType, ...extra }),
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.room_code) {
+            if (!mountedRef.current || generationRef.current !== generation) return null;
+            if (!res.ok || !data.room_code || !data.organizer_token) {
                 roomRef.current = '';
                 tokenRef.current = '';
                 setState({
@@ -158,7 +183,7 @@ export function useTvRoom() {
                 return null;
             }
             tokenRef.current = data.organizer_token || '';
-            const joinUrl = `${window.location.origin}/join/${data.room_code}`;
+            const joinUrl = publicWebUrl(`join/${data.room_code}`);
             setState({
                 ...EMPTY,
                 roomCode: data.room_code,
@@ -168,14 +193,16 @@ export function useTvRoom() {
             connect(data.room_code, tokenRef.current);
             return data.room_code as string;
         } catch {
+            if (!mountedRef.current || generationRef.current !== generation) return null;
             roomRef.current = '';
             tokenRef.current = '';
             setState({ ...EMPTY, status: 'error', error: 'Network error — check the TV connection.' });
             return null;
         }
-    }, [connect]);
+    }, [connect, closeSocket]);
 
     const leave = useCallback(() => {
+        generationRef.current += 1;
         closeSocket();
         roomRef.current = '';
         tokenRef.current = '';

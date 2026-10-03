@@ -1,5 +1,6 @@
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { StrictMode } from 'react';
 
 // Mock react-router-dom before importing PlayerPage
 const routeState = vi.hoisted(() => ({ query: '' }));
@@ -48,6 +49,9 @@ vi.mock('../../components/LeaderboardBarChart', () => ({
 }));
 
 class MockWebSocket {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
     static instances: MockWebSocket[] = [];
     onopen: (() => void) | null = null;
     onclose: (() => void) | null = null;
@@ -93,6 +97,97 @@ describe('PlayerPage', () => {
         vi.useFakeTimers();
         MockWebSocket.instances = [];
         sessionStorage.clear();
+        localStorage.clear();
+    });
+
+    it('auto-rejoins a saved room under the application StrictMode wrapper', () => {
+        sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode: 'ROOM42', nickname: 'Alice', team: '', avatar: '🐶', sessionToken: 'token' }));
+        render(<StrictMode><PlayerPage /></StrictMode>);
+        act(() => { vi.advanceTimersByTime(100); });
+        expect(MockWebSocket.instances).toHaveLength(1);
+        act(() => { getLatestWs().onopen?.(); });
+        simulateWsMessage({ type: 'RECONNECTED', game_type: 'quiz', state: 'LOBBY', players: [] });
+        act(() => { getLatestWs().onclose?.(); vi.advanceTimersByTime(2000); });
+        expect(MockWebSocket.instances).toHaveLength(2);
+    });
+
+    it('wake reconnect cancels a scheduled retry and ignores callbacks from the replaced socket', () => {
+        render(<PlayerPage />);
+        fillAndJoin('ROOM42', 'Alice');
+        const first = getLatestWs();
+        act(() => { first.onopen?.(); });
+        simulateWsMessage({ type: 'JOINED_ROOM', session_token: 'token' });
+        act(() => { first.onclose?.(); });
+        act(() => { window.dispatchEvent(new Event('focus')); });
+        const replacement = getLatestWs();
+        act(() => { replacement.onopen?.(); });
+        simulateWsMessage({ type: 'RECONNECTED', game_type: 'quiz', state: 'LOBBY', players: [] });
+        act(() => {
+            first.onclose?.();
+            first.onmessage?.({ data: JSON.stringify({ type: 'KICKED' }) });
+            vi.advanceTimersByTime(2500);
+        });
+        expect(MockWebSocket.instances).toHaveLength(2);
+        expect(screen.queryByText('You joined from another device')).toBeNull();
+        expect(screen.queryByText('Reconnecting...')).toBeNull();
+    });
+
+    it('keeps a kicked tab from reclaiming the active tab on wake', () => {
+        render(<PlayerPage />);
+        fillAndJoin('ROOM42', 'Alice');
+        const ws = getLatestWs();
+        simulateWsMessage({ type: 'JOINED_ROOM', session_token: 'token' });
+        simulateWsMessage({ type: 'KICKED' });
+        act(() => { ws.onclose?.(); window.dispatchEvent(new Event('focus')); vi.advanceTimersByTime(3000); });
+        expect(MockWebSocket.instances).toHaveLength(1);
+        expect(screen.getByText('You joined from another device')).toBeInTheDocument();
+    });
+
+    it('does not autojoin a different room using an old room credential', () => {
+        sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode: 'OLD123', nickname: 'Alice', team: '', avatar: '🐶', sessionToken: 'old-token' }));
+        routeState.query = 'room=NEW123';
+        render(<PlayerPage />);
+        act(() => { vi.advanceTimersByTime(150); });
+        expect(MockWebSocket.instances).toHaveLength(0);
+        fireEvent.click(screen.getByRole('button', { name: 'Join' }));
+        act(() => { getLatestWs().onopen?.(); });
+        expect(JSON.parse(getLatestWs().send.mock.calls[0][0]).session_token).toBe('');
+    });
+
+    it('restores podium scores and rank after refreshing', () => {
+        render(<PlayerPage />);
+        fillAndJoin('ROOM42', 'Alice');
+        simulateWsMessage({ type: 'RECONNECTED', game_type: 'quiz', state: 'PODIUM', leaderboard: [{ nickname: 'Alice', score: 321 }, { nickname: 'Bob', score: 120 }], team_leaderboard: [] });
+        expect(screen.getByText('321')).toBeInTheDocument();
+        expect(screen.getByText('Bob')).toBeInTheDocument();
+    });
+
+    it('restores a closed round answer and ranking after refreshing', () => {
+        render(<PlayerPage />);
+        fillAndJoin('ROOM42', 'Alice');
+        simulateWsMessage({ type: 'RECONNECTED', game_type: 'quiz', state: 'LEADERBOARD', answer: 1, answer_text: 'Paris', leaderboard: [{ nickname: 'Alice', score: 321 }] });
+        expect(screen.getByText('Round complete')).toBeInTheDocument();
+        expect(screen.getByText('Paris')).toBeInTheDocument();
+        expect(screen.getByText('#1')).toBeInTheDocument();
+    });
+
+    it('does not offer a second answer after reconnecting an answered question', () => {
+        render(<PlayerPage />);
+        fillAndJoin('ROOM42', 'Alice');
+        simulateWsMessage({ type: 'RECONNECTED', game_type: 'quiz', state: 'QUESTION', has_answered: true, question: { id: 1, text: 'Capital?', options: ['Paris', 'Rome'] }, time_limit: 20, time_remaining: 10 });
+        expect(screen.getByText('Answer received')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Paris/ })).toBeNull();
+    });
+
+    it('clears old generic prompt content when replay starts before the new sync', () => {
+        render(<PlayerPage />);
+        fillAndJoin('ROOM42', 'Alice');
+        simulateWsMessage({ type: 'GENERIC_PROMPT_SYNC', game_type: 'hot_takes', generic_prompt: { phase: 'GENERIC_CHOICE', mode: 'choice_vote', round_count: 1, prompt: { prompt: 'Old private party prompt', options: ['Yes', 'No'] } } });
+        expect(screen.getByText('Old private party prompt')).toBeInTheDocument();
+        simulateWsMessage({ type: 'ROOM_RESET', game_type: 'hot_takes', players: [] });
+        simulateWsMessage({ type: 'GAME_STARTING', game_type: 'hot_takes' });
+        expect(screen.queryByText('Old private party prompt')).toBeNull();
+        expect(screen.getByText('Waiting for the room')).toBeInTheDocument();
     });
 
     afterEach(() => {

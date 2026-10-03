@@ -118,7 +118,9 @@ def get_token_status(wallet_id: str) -> dict:
     bonus_amount = 0
     if daily_granted:
         bonus_amount = new_balance - wallet["balance"]
-        wallet["balance"] = new_balance
+    # The atomic grant call returns the current balance even when another request
+    # already claimed today's bonus. Do not return the stale pre-grant wallet snapshot.
+    wallet["balance"] = new_balance
 
     # Calculate ads remaining
     ads_today = wallet["ads_watched_today"] if wallet["ads_watched_date"] == today else 0
@@ -127,7 +129,7 @@ def get_token_status(wallet_id: str) -> dict:
     return {
         "balance": wallet["balance"],
         "has_purchased": wallet["lifetime_purchased"] > 0,
-        "daily_bonus_available": not daily_granted and wallet["last_daily_bonus_date"] != today,
+        "daily_bonus_available": False,  # the bonus check above claims today atomically
         "daily_bonus_granted": daily_granted,
         "bonus_amount": bonus_amount,
         "bonus_streak": streak,

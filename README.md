@@ -28,9 +28,9 @@ Custom quiz question images use signed browser-to-IONOS uploads through `POST /m
 ## Quick Start
 
 ### Prerequisites
-- **Python** 3.11+
-- **Node.js** 18+
-- **Ollama** running locally with a model (default: `qwen2.5:14b-instruct`)
+- **Python** 3.14 (matches the deployed Docker runtime)
+- **Node.js** 20.19+ or 22.12+ (Vite 7 requirement)
+- An AI provider for generated content: Gemini by default, or local **Ollama** with `qwen2.5:14b-instruct`. Curated games and deterministic tests work without a provider.
 
 ### Install
 
@@ -59,7 +59,7 @@ Key settings in `backend/.env`:
 |----------|---------|-------------|
 | `OLLAMA_URL` | `http://localhost:11434/api/generate` | Ollama API endpoint |
 | `OLLAMA_MODEL` | `qwen2.5:14b-instruct` | Model for quiz generation |
-| `DEFAULT_PROVIDER` | `ollama` | AI provider (`ollama`, `gemini`, `anthropic`) |
+| `DEFAULT_PROVIDER` | `gemini` | AI provider (`ollama`, `gemini`, `anthropic`) |
 | `GEMINI_API_KEY` | | Google Gemini API key (if using Gemini) |
 | `ANTHROPIC_API_KEY` | | Anthropic API key (if using Claude) |
 
@@ -94,18 +94,18 @@ make dev-frontend
 make test
 ```
 
-Runs all backend tests except E2E (~150 tests, ~8 seconds). Covers:
+Runs the backend suite except the legacy synchronous E2E/WebSocket suites. Database parity tests need the disposable Postgres/PostgREST stack below. Covers:
 - API endpoint validation
 - Game logic (scoring, streaks, bonus rounds, team leaderboard)
 - WebSocket integration (full game flows, power-ups, reconnection)
 
-### E2E Tests (requires Ollama running)
+### Backend E2E Tests
 
 ```bash
 make test-e2e
 ```
 
-Runs end-to-end tests with live quiz generation via Ollama. Tests the full flow: generate quiz → create room → play game → podium.
+Runs the legacy synchronous game-flow suite separately with deterministic generation. The separate run avoids its known cross-suite WebSocket capture issue; see `BACKLOG.md`.
 
 ### Frontend UX E2E Tests
 
@@ -113,7 +113,26 @@ Runs end-to-end tests with live quiz generation via Ollama. Tests the full flow:
 make test-frontend-e2e
 ```
 
-Runs Playwright browser checks from `frontend/e2e/`. The current suite covers the DrawingGame organizer prompt screen on desktop and mobile, including layout alignment, no horizontal overflow, no overlap with fixed menu/spark controls, and visual snapshots.
+Runs Playwright checks from `frontend/e2e/`. For the complete playable-game and podium-continuation suite on a fresh SQLite stack:
+
+```bash
+cd frontend
+npm run test:e2e:all-games
+```
+
+The disposable stack refuses occupied ports and pins local SQLite even if your shell or `backend/.env` contains deployed database settings. Override `E2E_BACKEND_PORT` / `E2E_FRONTEND_PORT` when needed. Visual checks use `npm run test:e2e:visual`, with `VISUAL_BACKEND_PORT` / `VISUAL_FRONTEND_PORT` overrides.
+
+To exercise the deployed database adapter locally:
+
+```bash
+./scripts/parity-stack.sh up
+eval "$(./scripts/parity-stack.sh env)"
+cd backend
+venv/bin/pip install 'psycopg[binary]'
+venv/bin/python -m pytest tests/test_postgres_parity.py tests/test_supabase_content_layer.py tests/test_supabase_concurrency.py tests/test_supabase_economy_features.py tests/test_supabase_money_rails.py
+```
+
+Use your installed virtualenv path if different. Afterward, run `./scripts/parity-stack.sh down` from the repository root. These tests only accept loopback database addresses.
 
 For a deployed gamma frontend smoke:
 
@@ -152,7 +171,7 @@ make lint
 | `make dev-backend` | Start only the backend server |
 | `make dev-frontend` | Start only the frontend dev server |
 | `make test` | Run unit + integration tests |
-| `make test-e2e` | Run E2E tests (requires Ollama) |
+| `make test-e2e` | Run deterministic backend E2E tests separately |
 | `make test-frontend-e2e` | Run Playwright frontend UX checks |
 | `make test-all` | Run all tests |
 | `make test-remote-prod` | Run live production smoke checks |
@@ -182,7 +201,7 @@ Required deployed auth settings:
 
 Public production still uses IONOS for the web frontend:
 
-- `https://games.revelryapp.me/quiz/` serves the static Vite build.
+- `https://games.revelryapp.me/` serves the static Vite build.
 - `https://gamesapi.revelryapp.me` serves API and WebSockets.
 
 The backend can also serve the built SPA from `/app/static` for gamma and backend preview:
@@ -205,6 +224,8 @@ Local development still defaults to SQLite. The deployed production and gamma ru
 The original VM SQLite files are kept as rollback backups under `/home/revelry-games/revelry-backups*`, but deployed prod/gamma wallet, auth, transaction, webhook, and idempotency writes now go to Supabase. Supabase migration details are documented in [SPEC-SUPABASE-MIGRATION.md](SPEC-SUPABASE-MIGRATION.md).
 
 Gamma convention: `https://gamesapi-gamma.revelryapp.me`.
+
+The October review's production promotion checklist is [PROD-ROLLOUT-2026-10.md](PROD-ROLLOUT-2026-10.md).
 
 Backend-served prod/gamma SPA origins must also be registered in Google Cloud OAuth and Apple Developer for browser sign-in. See [DEPLOY.md](DEPLOY.md) for the exact origins and redirect roots.
 

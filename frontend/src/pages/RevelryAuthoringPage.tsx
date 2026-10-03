@@ -34,6 +34,7 @@ type AuthoringResolve = {
 export default function RevelryAuthoringPage() {
     const params = new URLSearchParams(window.location.search);
     const authoringToken = params.get('authoring_token') || '';
+    const [currentAuthoringToken, setCurrentAuthoringToken] = useState(authoringToken);
     const [resolved, setResolved] = useState<AuthoringResolve | null>(null);
     const [currentContentId, setCurrentContentId] = useState<string>('');
     const [generatedQuiz, setGeneratedQuiz] = useState<Quiz | null>(null);
@@ -70,7 +71,8 @@ export default function RevelryAuthoringPage() {
                 const data = await res.json();
                 if (!cancelled) {
                     setResolved(data);
-                    setCurrentContentId(data.localplay_content_id || '');
+                    setCurrentAuthoringToken(authoringToken);
+                    setCurrentContentId(data.mode === 'duplicate' ? '' : data.localplay_content_id || '');
                 }
             } catch {
                 if (!cancelled) setError('Open this from Revelry again.');
@@ -123,12 +125,12 @@ export default function RevelryAuthoringPage() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                Authorization: `Bearer ${authoringToken}`,
+                Authorization: `Bearer ${currentAuthoringToken}`,
             },
             body: JSON.stringify({
                 game_type: 'quiz',
                 title: quiz.quiz_title,
-                content_id: packId || currentContentId || resolved?.localplay_content_id || undefined,
+                content_id: packId || currentContentId || (resolved?.mode === 'duplicate' ? undefined : resolved?.localplay_content_id || undefined),
                 content_payload: { quiz },
                 status: 'ready',
             }),
@@ -136,6 +138,7 @@ export default function RevelryAuthoringPage() {
         if (!res.ok) throw new Error('save_failed');
         const data = await res.json();
         const contentId = data.localplay_content_id as string;
+        if (data.authoring_token) setCurrentAuthoringToken(data.authoring_token);
         setCurrentContentId(contentId);
         return contentId;
     }
@@ -166,7 +169,7 @@ export default function RevelryAuthoringPage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    party_games_token: authoringToken,
+                    party_games_token: currentAuthoringToken,
                     game_type: 'party_quests',
                     prompt: request.prompt,
                     difficulty,
@@ -202,12 +205,12 @@ export default function RevelryAuthoringPage() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    Authorization: `Bearer ${authoringToken}`,
+                    Authorization: `Bearer ${currentAuthoringToken}`,
                 },
                 body: JSON.stringify({
                     game_type: 'party_quests',
                     title: config.game_title,
-                    content_id: currentContentId || resolved?.localplay_content_id || undefined,
+                    content_id: currentContentId || (resolved?.mode === 'duplicate' ? undefined : resolved?.localplay_content_id || undefined),
                     content_payload: { game: config },
                     status: 'ready',
                 }),
@@ -215,6 +218,7 @@ export default function RevelryAuthoringPage() {
             if (!res.ok) throw new Error('save_failed');
             const data = await res.json();
             const contentId = data.localplay_content_id as string;
+            if (data.authoring_token) setCurrentAuthoringToken(data.authoring_token);
             setCurrentContentId(contentId);
             returnToRevelry(contentId);
         } catch {
@@ -231,7 +235,7 @@ export default function RevelryAuthoringPage() {
         setGenerationWarning('');
         setImageProgress(0);
         try {
-            const partyGamesToken = authoringToken;
+            const partyGamesToken = currentAuthoringToken;
             const res = await fetch(`${API_URL}/integrations/revelry/party-games/prompts/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -266,7 +270,7 @@ export default function RevelryAuthoringPage() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    Authorization: `Bearer ${authoringToken}`,
+                    Authorization: `Bearer ${currentAuthoringToken}`,
                 },
                 body: JSON.stringify({ quiz }),
             });
@@ -278,7 +282,7 @@ export default function RevelryAuthoringPage() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    Authorization: `Bearer ${authoringToken}`,
+                    Authorization: `Bearer ${currentAuthoringToken}`,
                 },
                 body: JSON.stringify({ quiz_id: quizId }),
             });
@@ -358,8 +362,9 @@ export default function RevelryAuthoringPage() {
         resolved.launch_context.external_container_type || 'container',
         resolved.launch_context.external_container_id || 'unknown',
     ].join(':');
-    const editorScope = resolved.localplay_content_id || `new:${authoringToken.slice(0, 16)}`;
-    const draftScope = currentContentId || resolved.localplay_content_id || editorScope;
+    const sourceContentId = resolved.mode === 'duplicate' ? undefined : resolved.localplay_content_id;
+    const editorScope = sourceContentId || `${resolved.mode}:${authoringToken.slice(-24)}`;
+    const draftScope = currentContentId || sourceContentId || editorScope;
     const hostAppImageGenerationAllowed = Boolean(
         resolved.launch_context.host_app !== 'revelry'
         || false
@@ -465,8 +470,8 @@ export default function RevelryAuthoringPage() {
                 <CustomQuizEditor
                     key={`${editorScope}:${generatedVersion}`}
                     initialQuiz={initialQuiz}
-                    packId={currentContentId || resolved.localplay_content_id || undefined}
-                    authToken={authoringToken}
+                    packId={currentContentId || sourceContentId || undefined}
+                    authToken={currentAuthoringToken}
                     draftStorageKey={`localplay_revelry_quiz_draft_v2:${containerScope}:${draftScope}:${generatedVersion}`}
                     contextLabel={containerLabel}
                     onBack={editorBack}

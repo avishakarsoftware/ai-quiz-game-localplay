@@ -210,4 +210,71 @@ describe('useTvRoom', () => {
         expect(result.current.roomCode).toBe('');
         expect(result.current.status).toBe('idle');
     });
+
+    it.each(['ERROR', 'ROOM_CLOSED'])('stops reconnecting on terminal %s messages', async (type) => {
+        vi.useFakeTimers();
+        mockCreateRoom({ room_code: 'ABC123', organizer_token: 'tok' });
+        const { result } = renderHook(() => useTvRoom());
+        await act(async () => { await result.current.host('housie'); });
+        const ws = FakeSocket.last!;
+        act(() => { ws.emit({ type, message: 'Room not found' }); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+        expect(FakeSocket.last).toBe(ws);
+        expect(ws.closed).toBe(true);
+        expect(result.current.roomCode).toBe('');
+        expect(result.current.status).toBe('error');
+        expect(result.current.error).toBe('Room not found');
+    });
+
+    it('counts connected phones rather than offline lobby seats in roster fallback', async () => {
+        mockCreateRoom({ room_code: 'ABC123', organizer_token: 'tok' });
+        const { result } = renderHook(() => useTvRoom());
+        await act(async () => { await result.current.host('housie'); });
+        act(() => { FakeSocket.last!.emit({ players: [{ nickname: 'Ada', status: 'connected' }, { nickname: 'Bo', status: 'offline' }, { nickname: 'Cy', status: 'reconnecting' }] }); });
+        expect(result.current.players).toHaveLength(3);
+        expect(result.current.connectedPhones).toBe(1);
+    });
+
+    it('ignores messages from the socket replaced by a new room', async () => {
+        mockCreateRoom({ room_code: 'ABC123', organizer_token: 'tok' });
+        const { result } = renderHook(() => useTvRoom());
+        await act(async () => { await result.current.host('housie'); });
+        const old = FakeSocket.last!;
+        await act(async () => { await result.current.host('bingo'); });
+        act(() => { old.emit({ type: 'ROOM_CLOSED', message: 'Old room closed' }); });
+        expect(result.current.status).toBe('lobby');
+    });
+
+    it('does not resurrect a pending room after leave', async () => {
+        let resolve!: (value: Response) => void;
+        globalThis.fetch = vi.fn(() => new Promise<Response>((done) => { resolve = done; }));
+        const { result } = renderHook(() => useTvRoom());
+        let pending!: Promise<string | null>;
+        act(() => { pending = result.current.host('housie'); });
+        act(() => { result.current.leave(); });
+        await act(async () => {
+            resolve({ ok: true, json: async () => ({ room_code: 'LATE12', organizer_token: 'tok' }) } as Response);
+            await pending;
+        });
+        expect(result.current.status).toBe('idle');
+        expect(result.current.roomCode).toBe('');
+        expect(FakeSocket.last).toBeNull();
+    });
+
+    it('latest room creation wins when responses arrive out of order', async () => {
+        const resolvers: Array<(value: Response) => void> = [];
+        globalThis.fetch = vi.fn(() => new Promise<Response>((resolve) => { resolvers.push(resolve); }));
+        const { result } = renderHook(() => useTvRoom());
+        let first!: Promise<string | null>;
+        let second!: Promise<string | null>;
+        act(() => { first = result.current.host('housie'); second = result.current.host('bingo'); });
+        await act(async () => {
+            resolvers[1]({ ok: true, json: async () => ({ room_code: 'NEW123', organizer_token: 'new' }) } as Response);
+            await second;
+            resolvers[0]({ ok: true, json: async () => ({ room_code: 'OLD123', organizer_token: 'old' }) } as Response);
+            await first;
+        });
+        expect(result.current.roomCode).toBe('NEW123');
+        expect(FakeSocket.last!.url).toContain('/ws/NEW123/');
+    });
 });

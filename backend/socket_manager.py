@@ -898,27 +898,28 @@ class Room:
             logger.info("Organizer disconnected from room %s", self.room_code)
 
     async def close_all_connections(self):
-        """Close all player, organizer, and spectator websockets."""
-        if self.housie_auto_task:
-            self.housie_auto_task.cancel()
-            self.housie_auto_task = None
-        if self.mc_auto_stop_task:
-            self.mc_auto_stop_task.cancel()
-            self.mc_auto_stop_task = None
-        if self.mc_grab_task:
-            self.mc_grab_task.cancel()
-            self.mc_grab_task = None
-        if self.mafia_timer_task:
-            self.mafia_timer_task.cancel()
-            self.mafia_timer_task = None
+        """Stop room-owned work and close player, organizer, and spectator websockets."""
+        current_task = asyncio.current_task()
+        for attr in (
+            "timer_task", "drawing_auto_task", "housie_auto_task", "mc_auto_stop_task",
+            "mc_grab_task", "mafia_timer_task", "_organizer_cleanup_task",
+        ):
+            task = getattr(self, attr)
+            setattr(self, attr, None)
+            # Organizer grace can close its own room: do not cancel the cleanup halfway
+            # through closing sockets and recording the final host-app session status.
+            if task and task is not current_task:
+                task.cancel()
         self.housie_auto_status = "stopped"
         self.housie_next_auto_call_at = None
-        for ws in list(self.connections.values()):
-            try:
-                await ws.close()
-            except Exception:
-                pass
-        for ws in list(self.spectators.values()):
+        self.state = "CLOSED"
+        sockets = list(self.connections.values()) + list(self.spectators.values())
+        self.connections.clear()
+        self.spectators.clear()
+        self.organizer = None
+        self.organizer_id = None
+        self._organizer_just_disconnected = False
+        for ws in sockets:
             try:
                 await ws.close()
             except Exception:
@@ -1309,6 +1310,9 @@ class SocketManager:
                     "room_code": room_code,
                     "player_count": 0,
                     "players": [],
+                    "time_limit": room.time_limit,
+                    "game_type": room.game_type,
+                    "quiz": room.quiz,
                 })
         else:
             # Don't send JOINED_ROOM yet — wait until JOIN validation succeeds
@@ -1479,6 +1483,27 @@ class SocketManager:
         if room.organizer:
             await room.organizer.send_json(sync)
         logger.info("Organizer reconnected to room %s (state: %s)", room.room_code, room.state)
+
+    def _add_player_reconnect_results(self, room: Room, client_id: str, payload: dict):
+        """Restore shared round/results views on either player seat-reclaim path."""
+        if room.state in ("QUESTION", "LEADERBOARD"):
+            payload["has_answered"] = client_id in room.answered_players
+        if room.state not in ("LEADERBOARD", "PODIUM"):
+            return
+        payload["leaderboard"] = self.get_leaderboard(room)
+        payload["team_leaderboard"] = self.get_team_leaderboard(room)
+        if room.state == "PODIUM" and room.game_type == "wmlt":
+            payload["superlatives"] = self._calculate_wmlt_superlatives(room)
+        if room.state == "LEADERBOARD" and room.game_type == "quiz":
+            question = room.current_round_data() or {}
+            answer_index = question.get("answer_index")
+            options = question.get("options") or []
+            payload["answer"] = answer_index
+            payload["answer_text"] = (
+                options[answer_index]
+                if isinstance(answer_index, int) and 0 <= answer_index < len(options)
+                else ""
+            )
 
     async def handle_message(self, room: Room, client_id: str, message: dict, is_organizer: bool):
         if not isinstance(message, dict):
@@ -2076,6 +2101,12 @@ class SocketManager:
 
             elif msg_type == "RESET_ROOM":
                 async with room.lock:
+                    if room.billing_mode == "host_app_managed":
+                        await self._send_to_client(room, client_id, {
+                            "type": "ERROR",
+                            "message": "Return to the party games hub to start a new game.",
+                        })
+                        return
                     if room.state != "PODIUM":
                         return
                     new_content_id = message.get("content_id", "")
@@ -2368,6 +2399,7 @@ class SocketManager:
                             elapsed = time.time() - room.question_start_time
                             state_info["time_remaining"] = max(0, room.time_limit - int(elapsed))
                             state_info["is_bonus"] = room.current_question_index in room.bonus_questions
+                        self._add_player_reconnect_results(room, client_id, state_info)
                         state_info["session_token"] = room.player_tokens.get(nickname, "")
                         state_info["power_ups"] = {
                             "double_points": room.power_ups.get(nickname, {}).get("double_points", False),
@@ -2487,6 +2519,7 @@ class SocketManager:
                             elapsed = time.time() - room.question_start_time
                             state_info["time_remaining"] = max(0, room.time_limit - int(elapsed))
                             state_info["is_bonus"] = room.current_question_index in room.bonus_questions
+                        self._add_player_reconnect_results(room, client_id, state_info)
                         state_info["session_token"] = room.player_tokens.get(nickname, "")
                         state_info["power_ups"] = {
                             "double_points": room.power_ups.get(nickname, {}).get("double_points", False),
@@ -6066,38 +6099,29 @@ class SocketManager:
     def _safe_result_summary(self, summary: Optional[dict]) -> Optional[dict]:
         if not isinstance(summary, dict):
             return None
-        if isinstance(summary.get("top_results"), list):
-            top_results = summary["top_results"][:5]
-            return {
-                "title": summary.get("title") or summary.get("game_title") or "LocalPlay results",
-                "game_type": summary.get("game_type"),
-                "total_rounds": summary.get("total_rounds") or summary.get("total_questions"),
-                "player_count": summary.get("player_count"),
-                "top_results": top_results,
-                "players": top_results,
-                "leaderboard": top_results,
-                "winner": summary.get("winner") if isinstance(summary.get("winner"), dict) else (top_results[0] if top_results else None),
-                "completed_at": summary.get("completed_at"),
-            }
-        leaderboard = summary.get("leaderboard") if isinstance(summary.get("leaderboard"), list) else []
-        top_results = []
-        for row in leaderboard[:5]:
+
+        def public_result(row):
             if not isinstance(row, dict):
-                continue
-            top_results.append({
-                "nickname": row.get("nickname"),
-                "avatar": row.get("avatar"),
-                "score": row.get("score"),
-            })
+                return None
+            return {key: row.get(key) for key in ("nickname", "avatar", "score")}
+
+        source = summary.get("top_results")
+        if not isinstance(source, list):
+            source = summary.get("leaderboard")
+        top_results = [
+            projected for row in (source[:5] if isinstance(source, list) else [])
+            if (projected := public_result(row)) is not None
+        ]
+        winner = public_result(summary.get("winner"))
         return {
             "title": summary.get("title") or summary.get("game_title") or "LocalPlay results",
             "game_type": summary.get("game_type"),
-            "total_rounds": summary.get("total_questions") or summary.get("total_rounds"),
+            "total_rounds": summary.get("total_rounds") or summary.get("total_questions"),
             "player_count": summary.get("player_count"),
             "top_results": top_results,
             "players": top_results,
             "leaderboard": top_results,
-            "winner": top_results[0] if top_results else None,
+            "winner": winner or (top_results[0] if top_results else None),
             "completed_at": summary.get("completed_at"),
         }
 
@@ -6169,6 +6193,14 @@ class SocketManager:
                 "room_code": session.get("room_code"),
                 "status": session.get("status"),
                 "actor": actor_payload,
+                # Revelry's current callback mirror reads these metadata aliases
+                # at payload level, alongside the nested session contract.
+                "content_id": session.get("game_id") or session.get("content_id"),
+                "joinable": bool(session.get("joinable", False)),
+                "expires_at": (
+                    datetime.fromtimestamp(session["expires_at"], timezone.utc).isoformat().replace("+00:00", "Z")
+                    if session.get("expires_at") is not None else None
+                ),
                 "game_type": session.get("game_type"),
                 "game_title": session.get("game_title"),
                 "result_summary": result_summary,
@@ -6420,7 +6452,8 @@ class SocketManager:
         room.state = "LEADERBOARD"
 
         if room.timer_task:
-            room.timer_task.cancel()
+            if room.timer_task is not asyncio.current_task():
+                room.timer_task.cancel()
             room.timer_task = None
 
         if room.game_type == "wmlt":

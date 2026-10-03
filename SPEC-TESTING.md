@@ -1,6 +1,6 @@
 # SPEC-TESTING — the test architecture, and what is safe to run against production
 
-Status: **Active test architecture (updated 2026-08-20).** Owner: Avi.
+Status: **Active test architecture (updated 2026-10-03).** Owner: Avi.
 Goal: Avi can run one command against **prod** at any time and get a trustworthy regression report.
 
 ## 0. What already exists (this is not greenfield)
@@ -14,11 +14,38 @@ Goal: Avi can run one command against **prod** at any time and get a trustworthy
 - **Remote smoke**: `scripts/smoke-remote.py` — already prod-safe, but narrow (one quiz + an
   idempotency check).
 
-Measured coverage gap (2026-07-28): **32 of 38 catalog games are referenced in some e2e spec.**
-The 6 with none are the newest: `baby_bingo`, `wedding_bingo`, `holiday_bingo`, `road_trip_bingo`,
-`odd_question`, `impostor`.
+The July 2026 catalog coverage gap is now covered by `all-games.spec.ts`, which enumerates the
+deployed catalog and drives every enabled game. `podium-continuation.spec.ts` additionally checks
+replay, game switching, and host-app behavior. Both suites run in the required CI browser job.
 
-So the work is **consolidation and gap-filling**, not invention.
+### Disposable local stack contract
+
+`e2e-local-stack.sh` and `visual-regression.sh` must explicitly pin `DB_BACKEND=sqlite`,
+`LOCALPLAY_ENV=local`, and empty Supabase credentials before importing backend configuration.
+An inherited shell or `backend/.env` must never redirect browser tests to deployed persistence.
+The database and room-snapshot directories are unique to each run and deleted on exit. An
+inherited `ROOM_SNAPSHOT_DIR` must never restore or mutate another local stack's rooms.
+
+Occupied ports cause startup to fail without stopping any existing process. Cleanup terminates
+only the two server PIDs created by that run. Vite is exec'd directly through Node so its recorded
+PID belongs to the server. Port overrides are `E2E_BACKEND_PORT` / `E2E_FRONTEND_PORT` and
+`VISUAL_BACKEND_PORT` / `VISUAL_FRONTEND_PORT`. `test_local_stack_safety.py` verifies that a real
+TCP listener remains usable after either script refuses an occupied port.
+
+Type checking must use `tsc -b` (the root tsconfig contains references and no files). Both
+`make lint` and the production build walk all referenced projects.
+
+Both raw Postgres parity and the PostgREST harness must validate the effective libpq target
+before connecting or applying SQL. Parse DSNs with psycopg's connection-info parser so URI
+query overrides, keyword DSNs, and multiple hosts cannot bypass the local-target check. Reject
+service-based routing, unsafe inherited host/hostaddr defaults, and missing hosts. The
+`test_postgres_target_safety.py` no-network suite runs in the Postgres CI job.
+
+Both Postgres parity entry points validate the DSN with psycopg's libpq parser before connecting.
+Every host/hostaddr, including URI query overrides, multi-host lists and inherited `PGHOST` /
+`PGHOSTADDR`, must be loopback or a supported disposable Docker service alias (`pg` / `postgres`).
+Service-based routing (`service` or `PGSERVICE`) and unspecified targets are refused before schema
+application or truncation. `test_postgres_target_safety.py` checks these cases without network access.
 
 ## 1. The layers
 

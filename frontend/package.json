@@ -18,7 +18,7 @@
     "test:gamma": "cd .. && .venv/bin/python scripts/regression.py --target gamma",
     "test:local": "cd .. && .venv/bin/python scripts/regression.py --target local",
     "test:e2e": "playwright test",
-    "test:e2e:all-games": "PLAYWRIGHT_BASE_URL=http://127.0.0.1:9200 LIVE_API_BASE_URL=http://127.0.0.1:9100 playwright test e2e/all-games.spec.ts e2e/podium-continuation.spec.ts --project chromium-desktop --workers=4",
+    "test:e2e:all-games": "../scripts/e2e-local-stack.sh npx playwright test e2e/all-games.spec.ts e2e/podium-continuation.spec.ts --project chromium-desktop --workers=4",
     "test:e2e:all-games:gamma": "PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me playwright test e2e/all-games.spec.ts e2e/podium-continuation.spec.ts --project chromium-desktop --workers=2",
     "test:e2e:gamma": "PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me playwright test e2e/gamma-smoke.spec.ts",
     "test:e2e:gamma:generic": "PLAYWRIGHT_BASE_URL=https://gamesapi-gamma.revelryapp.me playwright test e2e/generic-prompt-gamma-live.spec.ts --project chromium-desktop --workers=1",

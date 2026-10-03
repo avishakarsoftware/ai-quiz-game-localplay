@@ -20,4 +20,16 @@ describe('GameImage', () => {
 
         expect(screen.getByRole('img', { name: 'Missing game image' })).toHaveTextContent('Image unavailable');
     });
+
+    it('loads the next round image after a previous image failed', () => {
+        const { rerender, container } = render(<GameImage src="/media/missing" alt="Round one" />);
+        fireEvent.error(screen.getByAltText('Round one'));
+        rerender(<GameImage src="/media/next" alt="Round two" />);
+        const image = screen.getByAltText('Round two');
+        expect(image).toHaveAttribute('src', '/media/next');
+        expect(screen.queryByText('Image unavailable')).toBeNull();
+        expect(container.querySelector('.game-image-skeleton')).not.toBeNull();
+        fireEvent.load(image);
+        expect(container.querySelector('.game-image-skeleton')).toBeNull();
+    });
 });

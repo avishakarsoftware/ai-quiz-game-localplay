@@ -1586,7 +1586,22 @@ def merge_wallet(from_id: str, to_id: str):
             return
 
         from_row = conn.execute("SELECT * FROM wallets WHERE id = ?", (from_id,)).fetchone()
-        if not from_row or from_row["balance"] == 0:
+        from_purchased = from_row["lifetime_purchased"] if from_row else 0
+        # Legacy merges retained cumulative paid history on the device. Only purchases
+        # after its latest outgoing merge can belong to a later account. IDs distinguish
+        # same-second purchases from the earlier merge without relying on timestamps.
+        last_merge = conn.execute(
+            "SELECT MAX(id) AS last_id FROM token_transactions WHERE wallet_id = ? AND reason = 'merge_out'",
+            (from_id,),
+        ).fetchone()["last_id"]
+        if last_merge is not None:
+            fresh_paid = conn.execute(
+                "SELECT COALESCE(SUM(amount), 0) AS purchased FROM token_transactions "
+                "WHERE wallet_id = ? AND reason = 'purchase' AND id > ?",
+                (from_id, last_merge),
+            ).fetchone()["purchased"]
+            from_purchased = min(from_purchased, max(0, fresh_paid))
+        if not from_row or (from_row["balance"] == 0 and from_purchased == 0):
             conn.execute("ROLLBACK")
             return
 
@@ -1610,10 +1625,8 @@ def merge_wallet(from_id: str, to_id: str):
         if actual_transfer < transfer_amount:
             logger.warning("Wallet merge capped: %s lost %d tokens (cap %d)", from_id, transfer_amount - actual_transfer, config.MAX_TOKEN_BALANCE)
 
-        # Also merge lifetime_purchased
-        from_purchased = from_row["lifetime_purchased"]
 
-        conn.execute("UPDATE wallets SET balance = 0 WHERE id = ?", (from_id,))
+        conn.execute("UPDATE wallets SET balance = 0, lifetime_purchased = 0 WHERE id = ?", (from_id,))
         conn.execute(
             "UPDATE wallets SET balance = ?, lifetime_purchased = lifetime_purchased + ? WHERE id = ?",
             (new_to_balance, from_purchased, to_id),
@@ -1791,42 +1804,49 @@ def save_quiz_pack(owner_wallet_id: str, title: str, questions: list[dict], pack
     conn = _get_conn()
     now = int(time.time())
     pack_id = pack_id or os.urandom(16).hex()
-    existing = conn.execute(
-        "SELECT * FROM custom_quiz_packs WHERE id = ? AND owner_wallet_id = ? AND deleted_at IS NULL",
-        (pack_id, owner_wallet_id),
-    ).fetchone()
-    if existing:
-        created_at = existing["created_at"]
-    else:
-        created_at = now
-    conn.execute(
-        "INSERT INTO custom_quiz_packs (id, owner_wallet_id, title, status, question_count, created_at, updated_at, deleted_at) "
-        "VALUES (?, ?, ?, 'ready', ?, ?, ?, NULL) "
-        "ON CONFLICT(id) DO UPDATE SET title = excluded.title, status = 'ready', question_count = excluded.question_count, updated_at = excluded.updated_at, deleted_at = NULL "
-        "WHERE owner_wallet_id = excluded.owner_wallet_id",
-        (pack_id, owner_wallet_id, title, len(questions), created_at, now),
-    )
-    conn.execute("DELETE FROM custom_quiz_questions WHERE pack_id = ?", (pack_id,))
-    for index, q in enumerate(questions):
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        existing = conn.execute(
+            "SELECT * FROM custom_quiz_packs WHERE id = ?",
+            (pack_id,),
+        ).fetchone()
+        if existing and existing["owner_wallet_id"] != owner_wallet_id:
+            raise RuntimeError("Quiz pack belongs to another wallet")
+        if existing:
+            created_at = existing["created_at"]
+        else:
+            created_at = now
         conn.execute(
-            "INSERT INTO custom_quiz_questions (id, pack_id, position, question_type, text, options, answer_index, image_asset_id, image_url, image_alt, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                f"{pack_id}_{index}",
-                pack_id,
-                index,
-                "true_false" if len(q.get("options", [])) == 2 else "multiple_choice",
-                q.get("text", ""),
-                json.dumps(q.get("options", [])),
-                q.get("answer_index", 0),
-                q.get("image_asset_id"),
-                q.get("image_url"),
-                q.get("image_alt"),
-                now,
-                now,
-            ),
+            "INSERT INTO custom_quiz_packs (id, owner_wallet_id, title, status, question_count, created_at, updated_at, deleted_at) "
+            "VALUES (?, ?, ?, 'ready', ?, ?, ?, NULL) "
+            "ON CONFLICT(id) DO UPDATE SET title = excluded.title, status = 'ready', question_count = excluded.question_count, updated_at = excluded.updated_at, deleted_at = NULL "
+            "WHERE owner_wallet_id = excluded.owner_wallet_id",
+            (pack_id, owner_wallet_id, title, len(questions), created_at, now),
         )
-    conn.commit()
+        conn.execute("DELETE FROM custom_quiz_questions WHERE pack_id = ?", (pack_id,))
+        for index, q in enumerate(questions):
+            conn.execute(
+                "INSERT INTO custom_quiz_questions (id, pack_id, position, question_type, text, options, answer_index, image_asset_id, image_url, image_alt, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    f"{pack_id}_{index}",
+                    pack_id,
+                    index,
+                    "true_false" if len(q.get("options", [])) == 2 else "multiple_choice",
+                    q.get("text", ""),
+                    json.dumps(q.get("options", [])),
+                    q.get("answer_index", 0),
+                    q.get("image_asset_id"),
+                    q.get("image_url"),
+                    q.get("image_alt"),
+                    now,
+                    now,
+                ),
+            )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
     pack = get_quiz_pack(owner_wallet_id, pack_id)
     if not pack:
         raise RuntimeError("Failed to save quiz pack")

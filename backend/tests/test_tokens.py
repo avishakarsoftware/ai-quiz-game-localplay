@@ -290,6 +290,64 @@ class TestMergeWallet:
         db.merge_wallet(TEST_DEVICE, TEST_USER)
         assert db.has_ever_purchased(TEST_USER) is True
 
+    def test_drained_purchase_wallet_keeps_paid_entitlement_after_signin(self):
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        db.credit_purchase(TEST_DEVICE, 110, "spent-purchase")
+        db.debit_tokens(TEST_DEVICE, 110, "spend_generate")
+        db.merge_wallet(TEST_DEVICE, TEST_USER)
+        assert db.get_wallet_balance(TEST_USER) == 0
+        assert db.get_or_create_wallet(TEST_USER, signup_bonus=False)["lifetime_purchased"] == 110
+        assert db.has_ever_purchased(TEST_USER) is True
+        db.merge_wallet(TEST_DEVICE, TEST_USER)
+        assert db.get_or_create_wallet(TEST_USER, signup_bonus=False)["lifetime_purchased"] == 110
+
+    def test_drained_guest_cannot_clone_paid_entitlement_into_another_account(self):
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        db.credit_purchase(TEST_DEVICE, 110, "spent-purchase")
+        db.debit_tokens(TEST_DEVICE, 110, "spend_generate")
+        db.merge_wallet(TEST_DEVICE, TEST_USER)
+        other_user = "another-user"
+        db.merge_wallet(TEST_DEVICE, other_user)
+        assert db.has_ever_purchased(TEST_USER) is True
+        assert db.has_ever_purchased(TEST_DEVICE) is False
+        assert db.has_ever_purchased(other_user) is False
+        # Later free guest credits can still move to another account, but do not
+        # carry paid history that already belongs to the first account.
+        db.credit_tokens(TEST_DEVICE, 20, "daily_bonus")
+        db.merge_wallet(TEST_DEVICE, other_user)
+        assert db.get_wallet_balance(other_user) == 20
+        assert db.has_ever_purchased(other_user) is False
+
+    @pytest.mark.parametrize("fresh_purchase", [0, 50])
+    def test_legacy_merge_transfers_only_new_purchase_history(self, fresh_purchase):
+        db.get_or_create_wallet(TEST_DEVICE, signup_bonus=False)
+        db.credit_purchase(TEST_DEVICE, 110, "legacy-purchase")
+        db.merge_wallet(TEST_DEVICE, TEST_USER)
+        # Reproduce a wallet left by the old merger, which retained paid history.
+        conn = db._get_conn()
+        conn.execute("UPDATE wallets SET lifetime_purchased = 110 WHERE id = ?", (TEST_DEVICE,))
+        conn.commit()
+        if fresh_purchase:
+            db.credit_purchase(TEST_DEVICE, fresh_purchase, "new-purchase")
+            db.debit_tokens(TEST_DEVICE, fresh_purchase, "spend_generate")
+        # All events deliberately share a timestamp; only ledger ID order is reliable.
+        conn.execute("UPDATE token_transactions SET created_at = 123456 WHERE wallet_id = ?", (TEST_DEVICE,))
+        conn.commit()
+        other_user = "legacy-second-user"
+        db.merge_wallet(TEST_DEVICE, other_user)
+        assert db.has_ever_purchased(other_user) is bool(fresh_purchase)
+        assert db.get_wallet_balance(other_user) == 0
+        if fresh_purchase:
+            assert db.get_or_create_wallet(other_user, signup_bonus=False)["lifetime_purchased"] == fresh_purchase
+        else:
+            assert not db.wallet_exists(other_user)
+        # Free guest credits may still transfer, without legacy paid history.
+        if not fresh_purchase:
+            db.credit_tokens(TEST_DEVICE, 20, "daily_bonus")
+            db.merge_wallet(TEST_DEVICE, other_user)
+            assert db.get_wallet_balance(other_user) == 20
+            assert db.has_ever_purchased(other_user) is False
+
     def test_merge_creates_target_if_missing(self):
         db.get_or_create_wallet(TEST_DEVICE, signup_bonus=True)
         db.merge_wallet(TEST_DEVICE, TEST_USER)
@@ -361,6 +419,21 @@ class TestGetTokenStatus:
         assert status["cost_generate"] == config.COST_GENERATE
         assert status["cost_room"] == config.COST_ROOM
         assert status["has_purchased"] is False
+
+    def test_concurrent_bonus_claim_uses_atomic_balance_and_claim_status(self, monkeypatch):
+        db.get_or_create_wallet(TEST_DEVICE)
+        original = db.check_and_grant_daily_bonus
+
+        def another_request_claimed(wallet_id):
+            original(wallet_id)
+            return original(wallet_id)
+
+        monkeypatch.setattr(db, "check_and_grant_daily_bonus", another_request_claimed)
+        status = tokens_mod.get_token_status(TEST_DEVICE)
+        assert status["daily_bonus_granted"] is False
+        assert status["daily_bonus_available"] is False
+        assert status["balance"] == db.get_wallet_balance(TEST_DEVICE)
+        assert status["balance"] == config.SIGNUP_BONUS_TOKENS + config.STREAK_BASE
 
     def test_daily_bonus_auto_granted(self):
         db.get_or_create_wallet(TEST_DEVICE)

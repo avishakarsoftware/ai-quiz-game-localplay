@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 
 export interface TokenStatus {
@@ -43,18 +43,28 @@ function fetchTokenBalance(): Promise<TokenStatus> {
 export function useTokenBalance() {
     const [tokenStatus, setTokenStatus] = useState<TokenStatus>(DEFAULT);
     const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        let cancelled = false;
-        fetchTokenBalance()
-            .then(data => { if (!cancelled) setTokenStatus(data); })
-            .finally(() => { if (!cancelled) setLoading(false); });
-        return () => { cancelled = true; };
-    }, []);
+    const mountedRef = useRef(false);
+    const requestRef = useRef(0);
 
     const refresh = useCallback(() => {
-        fetchTokenBalance().then(setTokenStatus);
+        const request = ++requestRef.current;
+        fetchTokenBalance().then((data) => {
+            // Sign-in/sign-out changes the wallet. A slower previous response must
+            // never overwrite the balance requested for the new account.
+            if (!mountedRef.current || request !== requestRef.current) return;
+            setTokenStatus(data);
+            setLoading(false);
+        });
     }, []);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        refresh();
+        return () => {
+            mountedRef.current = false;
+            requestRef.current += 1;
+        };
+    }, [refresh]);
 
     // Listen for global refresh events (e.g. after spending sparks)
     useEffect(() => {

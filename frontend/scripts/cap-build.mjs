@@ -63,6 +63,6 @@ function run(cmd, args, env) {
 }
 
 console.log(`[cap-build] env=${envName} api=${cfg.api} cap=${capCmd} ${platform}`.trim());
-run('npx', ['vite', 'build'], buildEnv);
+run('npm', ['run', 'build'], buildEnv);
 run('npx', ['cap', capCmd, ...(platform ? [platform] : [])]);
 console.log('[cap-build] done');

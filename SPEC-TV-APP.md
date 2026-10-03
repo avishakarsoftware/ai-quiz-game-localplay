@@ -88,6 +88,10 @@ The public catalog shape should be:
 Availability remains computed live from connected devices; catalog metadata describes what the
 game needs, not whether it is playable in this particular room.
 
+**Frontend hardening (2026-10-03):** the TV grid uses the deployed catalog's `tv_capability`
+without guessing from a second local game list. Catalog failures expose Retry; an empty catalog
+does not revive hidden entries. This prevents outages from mislabelling typing games as "TV ready."
+
 Add this to every catalog entry via a backend derivation step. **Derived availability wherever
 possible, narrow override lists only for true capability exceptions** — three separate hardcoded
 lists shipped the occasion bingos broken (see BACKLOG), so hidden per-screen allowlists are banned.
@@ -348,6 +352,10 @@ across factory resets; requiring sign-in to host is safer but adds first-run fri
 - **Done:** A **`tv_capability.hostable: false`** game's sheet explains the phone-camera handoff.
 - **Done:** TV organizer socket lifecycle tests cover auth, roster updates, malformed frames,
   transient reconnect, deliberate leave, and replacing an existing TV room.
+- **Done (2026-10-03):** terminal room/auth errors clear the old join QR and stop retries;
+  superseded socket callbacks and late room-create responses cannot restore an abandoned room.
+  Roster fallback counts connected devices rather than preserved offline seats. Native TV join/setup
+  links use the configured public web URL, with deployed base paths preserved in browser builds.
 - **Next:** Replace the phone-host web QR with configured App Store / Google Play QR URLs and
   mention sparks carrying over once production store URLs are final.
 - **Next:** Full live browser WebSocket/device-count test once `TvRoomScreen` exists.

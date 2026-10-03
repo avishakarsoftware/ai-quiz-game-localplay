@@ -59,7 +59,7 @@ build:
 
 # Lint (if configured)
 lint:
-	cd frontend && npx tsc --noEmit
+	cd frontend && npx tsc -b --force
 
 # Clean
 clean:

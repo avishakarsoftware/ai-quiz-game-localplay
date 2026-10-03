@@ -27,19 +27,45 @@ Rooms are party infrastructure, not a single-game throwaway detail.
 - `START_GAME` prunes stale seats before checking the game minimum and then force-prunes any remaining offline seats before materializing gameplay state.
 - The host may explicitly remove offline seats before the grace expires. This is lobby-only and must broadcast the updated roster.
 
+### Active-Game Reconnect
+
+- Both player seat-reclaim paths (offline seat and replacement socket) restore the current view.
+- A quiz reconnect during `QUESTION` reports `has_answered` without exposing the answer. An
+  already-submitted answer returns to the waiting view rather than offering another answer.
+- `LEADERBOARD` reconnect includes current individual/team standings, `has_answered`, and the
+  revealed quiz answer/index. `PODIUM` reconnect includes standings and WMLT superlatives.
+- Question timers may end their own round without cancelling themselves before the results
+  broadcast finishes.
+
 ### Room Reset
 
-- `RESET_ROOM` may reuse a completed room when the target game type is resettable.
+- Standalone `RESET_ROOM` may reuse a completed room when the target game type is resettable. Managed host-app rooms return through the authenticated party games hub to create a fresh registered session; direct managed `RESET_ROOM` fails before mutation so host-app catalog rules and prior results remain consistent.
 - Reset preserves `room_code`, organizer socket, player sockets, and join URLs.
 - Reset clears prior runtime/game state and broadcasts `ROOM_RESET` to organizer, players, and spectators.
 - Reset stages a lobby for free. Only `START_GAME`, after its connected-player gates pass, charges a room fee or consumes a party-grace use. Accepting pending generated content into the reset still charges generation once, independently of the later room fee.
 - Switching to a default game clears the previous content id; Odd Question supports this continuation just like other default social games.
+- Standalone **Play Again** uses that in-place path for default/config-driven games as well as saved-content games. Recovered timer settings, Musical Chairs and Party Quests replay configuration come from organizer sync rather than fresh UI defaults, including `ROOM_CREATED` for an empty lobby.
 - Players on previous podium/final-results screens must render the new lobby and be counted as connected if their socket is live.
 - `RESET_ROOM` must not run from active gameplay or from a non-organizer client.
+- Clients clear every prior game payload, including generic prompts, photo clues, card hands, and Bingo tickets/marks, before entering the reset lobby. A new `GAME_STARTING` received before its runtime sync must show a waiting state rather than the previous game's content.
+
+### Client Reconnect And Recovery
+
+- An authenticated organizer receives authoritative `time_limit`, `game_type`, and full game content in `ROOM_CREATED`, including recovery of an empty lobby; unauthenticated sockets cannot receive organizer configuration.
+- Each mounted organizer/player/spectator/TV surface owns one current socket. Frames and close callbacks from superseded sockets are ignored; replacing a socket cancels its scheduled retry.
+- A player waking while a retry is pending reconnects once, without a second timer opening another socket and taking over their own nickname.
+- Saved organizer/player recovery works under the application's React StrictMode effect setup/cleanup cycle. A saved player token is attached only to its matching room and nickname; opening a different room link does not silently join using the old room credential.
+- `KICKED` is terminal until the player deliberately joins again. Focus/online events must not cause the displaced tab to steal its nickname back from the active tab.
+- A terminal room/auth error or `ROOM_CLOSED` cancels retries and closes the socket. Spectator answer-reveal timers must not overwrite that terminal screen or a newly joined room.
+- Quiz-runtime player `RECONNECTED` restores final/round leaderboards, team standings and the correct answer after round closure. `has_answered` restores a waiting state for an already submitted question so the client does not offer a second answer. A restored round displays neutral completion feedback when per-answer correctness is unavailable.
+- Shared game-image loading/error state is scoped to the image URL, so a failed image in one round cannot prevent the next round's image from loading.
+- Guest/TV links use the public web URL in native builds and preserve the deployed browser base path. Native WebView origins such as `capacitor://localhost` are never exposed as guest join links.
+- Spark balance refreshes accept only the latest request. An older anonymous/account response must not overwrite the balance after a sign-in or sign-out wallet change.
 
 ### Cleanup And Capacity
 
 - `MAX_ROOMS` is a hard process-local safety limit. Room creation must fail closed with a clear 429 when the cap is reached.
+- Closing a room stops all room-owned timers and auto-advance tasks, including drawing pauses and organizer grace. A grace cleanup may finish its own close/status recording without self-cancellation. Closed socket maps and organizer references are cleared.
 - Host cancellation must immediately remove the room from the process map and snapshot store so capacity is recovered without waiting for TTL cleanup.
 - Cleanup probes in live smoke tests must prove rooms are gone by reconnecting to the same room code and seeing `Room not found`.
 - Harnesses must cancel every room they create; leaked test rooms are a production risk because they consume the same room cap as real parties.
@@ -59,6 +85,8 @@ Required gates:
 
 - Backend socket scenarios:
   - organizer disconnect/reclaim
+  - player reconnect from question, leaderboard, and podium on both seat-reclaim paths
+  - closure cancels every room-owned task and timer-driven round completion publishes results
   - late join during running games where allowed
   - ignored reset outside podium
   - podium-to-next-game `ROOM_RESET` moves existing players into next lobby
@@ -73,6 +101,13 @@ Required gates:
   - missing game title does not show the old generic "Game Lobby" fallback
   - connected/offline seat display and explicit offline cleanup control
   - host-app lobby hides raw share URL and uses host-app join affordance
+  - organizer/player saved-room recovery under StrictMode
+  - player wake/retry reconciliation, scoped saved credentials, and kicked-tab suppression
+  - player quiz round/podium restoration and already-answered recovery
+  - reset clears stale runtime payload before the next sync
+  - spectator terminal reveal-timer cancellation and leave/join/reconnect across rooms
+  - TV terminal errors, pending/replaced room creation, and authoritative connected-device counts
+  - image recovery between rounds, public native/base-path links, and wallet response ordering
 - Local Playwright:
   - `npm run test:e2e:all-games` creates, gates, starts, and tears down every catalog game.
   - `frontend/e2e/podium-continuation.spec.ts` drives quiz podium suggestions into Odd Question and Would You Rather, checks that the reset sends no stale quiz content, and starts the same guests in the same room.

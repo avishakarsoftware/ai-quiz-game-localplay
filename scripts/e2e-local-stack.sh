@@ -35,23 +35,15 @@ if [ ! -x "$PY" ]; then
     exit 1
 fi
 
-WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/revelry-e2e.XXXXXX")"
+source "$ROOT/scripts/local-stack-utils.sh"
+assert_stack_ports_available || exit 1
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/revelry-e2e.XXXXXX")" || exit 1
 BACKEND_PID=""
 FRONTEND_PID=""
 
-cleanup() {
-    [ -n "$FRONTEND_PID" ] && kill "$FRONTEND_PID" 2>/dev/null
-    [ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null
-    # vite/uvicorn children can outlive the shell job on abrupt exits
-    lsof -ti:$FRONTEND_PORT 2>/dev/null | xargs kill 2>/dev/null
-    lsof -ti:$BACKEND_PORT 2>/dev/null | xargs kill 2>/dev/null
-    rm -rf "$WORK_DIR"
-}
-trap cleanup EXIT INT TERM
-
-# Clear leftovers from an interrupted previous run.
-lsof -ti:$BACKEND_PORT 2>/dev/null | xargs kill 2>/dev/null
-lsof -ti:$FRONTEND_PORT 2>/dev/null | xargs kill 2>/dev/null
+trap cleanup_stack EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 mkdir -p "$WORK_DIR/db"
 
@@ -67,6 +59,12 @@ echo "[stack] backend on :$BACKEND_PORT (db: $WORK_DIR/db)"
 (
     cd "$ROOT/backend" || exit 1
     DB_DIR="$WORK_DIR/db" \
+    ROOM_SNAPSHOT_DIR="$WORK_DIR/snapshots" \
+    DB_BACKEND=sqlite \
+    LOCALPLAY_ENV=local \
+    SUPABASE_URL= \
+    SUPABASE_SERVICE_KEY= \
+    ERROR_REPORTING_ENABLED=false \
     JWT_SECRET="e2e-local-stack-secret-32bytes!!" \
     ADMIN_API_KEY="e2e-local-stack-admin-key" \
     ALLOWED_ORIGINS="$BASE_URL,http://localhost:$FRONTEND_PORT" \
@@ -89,7 +87,7 @@ echo "[stack] frontend on :$FRONTEND_PORT"
 (
     cd "$ROOT/frontend" || exit 1
     VITE_API_URL="$API_URL" \
-    exec npx vite --host 127.0.0.1 --port "$FRONTEND_PORT" --strictPort
+    exec node "$ROOT/frontend/node_modules/vite/bin/vite.js" --host 127.0.0.1 --port "$FRONTEND_PORT" --strictPort
 ) > "$WORK_DIR/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 

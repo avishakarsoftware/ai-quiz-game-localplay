@@ -40,6 +40,7 @@ from typing import Optional
 from urllib.parse import urlparse
 
 import pytest
+from postgres_target_safety import assert_local_postgres_dsn
 
 DSN = os.getenv("PARITY_POSTGRES_DSN", "")
 POSTGREST_URL = os.getenv("PARITY_POSTGREST_URL", "")
@@ -60,7 +61,8 @@ def _assert_local_target() -> None:
     This suite truncates tables. A misconfigured env var must fail loudly, not quietly destroy
     gamma or production wallet data.
     """
-    for label, url in (("PARITY_POSTGREST_URL", POSTGREST_URL), ("PARITY_POSTGRES_DSN", DSN)):
+    assert_local_postgres_dsn(DSN)
+    for label, url in (("PARITY_POSTGREST_URL", POSTGREST_URL),):
         host = (urlparse(url).hostname or "").lower()
         if host not in _LOCAL_HOSTS:
             raise RuntimeError(

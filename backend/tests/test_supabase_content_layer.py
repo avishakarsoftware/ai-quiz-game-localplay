@@ -249,3 +249,43 @@ def test_admin_lookup_and_stats(sdb):
     assert stats.get("total_sparks") == 25, stats
     for key in ("paying_users", "purchase_count", "merge_count"):
         assert key in stats, f"{key} missing from admin stats: {stats}"
+
+
+def test_foreign_quiz_update_preserves_ownership_and_questions(sdb):
+    owner, stranger = _owner(sdb), _owner(sdb)
+    saved = sdb.save_quiz_pack(owner, "Private", QUESTIONS)
+    before = sdb.get_quiz_pack(owner, saved["id"])
+    with pytest.raises(RuntimeError, match="another wallet"):
+        sdb.save_quiz_pack(stranger, "Overwrite", [QUESTIONS[0]], pack_id=saved["id"])
+    assert sdb.get_quiz_pack(owner, saved["id"]) == before
+    assert sdb.get_quiz_pack(stranger, saved["id"]) is None
+
+
+def test_foreign_game_content_update_preserves_ownership_and_payload(sdb):
+    owner, stranger = _owner(sdb), _owner(sdb)
+    saved = sdb.save_game_content(owner, "drawing", "Private", {"prompts": ["cat"]})
+    with pytest.raises(RuntimeError, match="another wallet"):
+        sdb.save_game_content(stranger, "drawing", "Overwrite", {"prompts": ["dog"]}, content_id=saved["id"])
+    assert sdb.get_game_content(owner, saved["id"]) == saved
+    assert sdb.get_game_content(stranger, saved["id"]) is None
+
+
+def test_failed_quiz_update_rolls_back_old_questions_and_metadata(sdb):
+    owner = _owner(sdb)
+    saved = sdb.save_quiz_pack(owner, "Original", QUESTIONS)
+    before = sdb.get_quiz_pack(owner, saved["id"])
+    with pytest.raises(RuntimeError):
+        sdb.save_quiz_pack(owner, "Broken", [dict(QUESTIONS[0], answer_index=-1)], pack_id=saved["id"])
+    assert sdb.get_quiz_pack(owner, saved["id"]) == before
+
+
+def test_quiz_save_rpc_rejects_foreign_owner_without_adapter_preflight(sdb):
+    owner, stranger = _owner(sdb), _owner(sdb)
+    saved = sdb.save_quiz_pack(owner, "Original", QUESTIONS)
+    before = sdb.get_quiz_pack(owner, saved["id"])
+    with pytest.raises(RuntimeError, match="another wallet"):
+        sdb._sb().rpc("save_quiz_pack", {
+            "p_owner_wallet_id": stranger, "p_pack_id": saved["id"],
+            "p_title": "Overwrite", "p_questions": [QUESTIONS[0]],
+        })
+    assert sdb.get_quiz_pack(owner, saved["id"]) == before

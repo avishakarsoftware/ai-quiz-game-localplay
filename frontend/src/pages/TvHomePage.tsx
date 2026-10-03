@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Camera, Info, Search, Smartphone, Tv } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import GameRulesModal from '../components/GameRulesModal';
-import { GAME_MODE_CONFIGS, type GameModeConfig } from '../gameModes';
+import { GAME_MODE_CONFIGS } from '../gameModes';
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
 import { type GameType } from '../types';
 import { apiFetch } from '../utils/api';
+import { publicWebUrl } from '../utils/webUrl';
 import { useTvRoom } from './useTvRoom';
 import { ANDROID_APP_URL, IOS_APP_URL, hasAndroidApp, hasAnyAppStoreLink, hasIosApp } from '../storeLinks';
 
@@ -40,67 +41,6 @@ interface TvGameCard {
     catalog?: TvCatalogGame;
 }
 
-
-function fallbackCapability(mode: GameModeConfig): TvCapability {
-    if (mode.id === 'photo_clue') {
-        return {
-            hostable: false,
-            companion_mode: 'phone_host',
-            min_companion_devices: 0,
-            private_screen: false,
-            text_input_for_customization: true,
-            requirement_label: 'Start on phone',
-            reason_chip: 'Start from a phone',
-        };
-    }
-    if (mode.passAndPlay) {
-        return {
-            hostable: true,
-            companion_mode: 'shared_phone',
-            min_companion_devices: 1,
-            private_screen: true,
-            text_input_for_customization: false,
-            requirement_label: 'TV + 1 shared phone',
-            reason_chip: 'Needs 1 shared phone',
-        };
-    }
-    const tvReady = new Set([
-        'housie',
-        'bingo',
-        'musical_chairs',
-        'two_truths',
-        'story_chain',
-        'survey_says',
-        'would_you_rather',
-        'never_have_i_ever',
-        'word_association',
-        'hot_takes',
-        'this_or_that',
-        'rapid_fire',
-        'one_word_vibes',
-        'memory_lane',
-    ]);
-    if (tvReady.has(mode.runtimeType)) {
-        return {
-            hostable: true,
-            companion_mode: 'none',
-            min_companion_devices: 0,
-            private_screen: false,
-            text_input_for_customization: false,
-            requirement_label: 'TV only',
-            reason_chip: 'TV ready',
-        };
-    }
-    return {
-        hostable: true,
-        companion_mode: 'per_player_phone',
-        min_companion_devices: 2,
-        private_screen: false,
-        text_input_for_customization: false,
-        requirement_label: 'TV + player phones',
-        reason_chip: 'Needs phones',
-    };
-}
 
 function availability(game: TvGameCard, connectedPhones: number): 'ready' | 'locked' | 'phone-host' {
     if (!game.capability.hostable) return 'phone-host';
@@ -140,7 +80,7 @@ function TvGameSheet({
     // Only ever render a join QR once a room EXISTS. A bare `/join` sends the guest to a code
     // prompt with no code to type — a dead end that looks like a broken app.
     const joinUrl = liveJoinUrl;
-    const setupUrl = `${window.location.origin}/?tv=1&game=${encodeURIComponent(game.id)}`;
+    const setupUrl = publicWebUrl(`?tv=1&game=${encodeURIComponent(game.id)}`);
 
     return (
         <div className="tv-sheet-backdrop" role="dialog" aria-modal="true" aria-labelledby="tv-sheet-title" onClick={onClose}>
@@ -240,6 +180,8 @@ function TvGameSheet({
 
 export default function TvHomePage() {
     const [catalog, setCatalog] = useState<TvCatalogGame[] | null>(null);
+    const [catalogError, setCatalogError] = useState(false);
+    const [catalogAttempt, setCatalogAttempt] = useState(0);
     const [query, setQuery] = useState('');
     const [filter, setFilter] = useState<TvFilter>('play_now');
     // Live from the TV's own organizer socket, so locked tiles un-grey as guests arrive.
@@ -258,24 +200,25 @@ export default function TvHomePage() {
                 if (!cancelled) setCatalog(Array.isArray(data.games) ? data.games : []);
             })
             .catch(() => {
-                if (!cancelled) setCatalog([]);
+                if (!cancelled) { setCatalog([]); setCatalogError(true); }
             });
         return () => { cancelled = true; };
-    }, []);
+    }, [catalogAttempt]);
 
     const games = useMemo<TvGameCard[]>(() => {
         const byId = new Map((catalog || []).map((game) => [game.id, game]));
         return GAME_MODE_CONFIGS
             .map((mode) => {
                 const remote = byId.get(mode.id);
-                if (catalog && catalog.length > 0 && !remote) return null;
-                if (remote?.launchable === false) return null;
+                // Capability is backend policy. Guessing during an outage can advertise
+                // phone-only games as playable on a TV, or revive disabled catalog entries.
+                if (!remote?.tv_capability || remote.launchable === false) return null;
                 return {
                     id: mode.id,
                     title: remote?.title || mode.title,
                     description: remote?.description || mode.description,
                     icon: mode.icon,
-                    capability: remote?.tv_capability || fallbackCapability(mode),
+                    capability: remote.tv_capability,
                     catalog: remote,
                 };
             })
@@ -335,6 +278,12 @@ export default function TvHomePage() {
                 </div>
             </section>
 
+            {catalogError && (
+                <div role="alert">
+                    <p>Could not load games. Check your connection and try again.</p>
+                    <button type="button" className="btn btn-secondary" onClick={() => { setCatalogError(false); setCatalogAttempt((attempt) => attempt + 1); }}>Retry</button>
+                </div>
+            )}
             <section className="tv-home__grid" aria-label="TV game catalog">
                 {visibleGames.map((game) => {
                     const state = availability(game, connectedPhones);

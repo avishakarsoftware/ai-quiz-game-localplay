@@ -17,6 +17,7 @@ import pathlib
 import uuid
 
 import pytest
+from postgres_target_safety import connect_local_postgres
 
 DSN = os.getenv("PARITY_POSTGRES_DSN", "")
 
@@ -41,7 +42,7 @@ GIFT_TOKENS_PER_DAY = 200
 
 @pytest.fixture(scope="module")
 def conn():
-    connection = psycopg.connect(DSN, autocommit=True)
+    connection = connect_local_postgres(DSN, autocommit=True)
     with connection.cursor() as cur:
         # The rendered schema GRANTs to Supabase's built-in roles; create them
         # as no-login roles so the grants apply on vanilla Postgres.

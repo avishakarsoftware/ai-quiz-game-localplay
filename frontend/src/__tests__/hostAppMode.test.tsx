@@ -48,6 +48,40 @@ describe('host-app mode filtering', () => {
         expect(modes.map((mode) => mode.id)).toEqual(['quiz', 'wmlt', 'drawing']);
     });
 
+    it('does not apply a stale start-link game type to the next game selected in the hub', async () => {
+        window.history.pushState({}, '', '/revelry/games?party_games_token=party-token&start_content_id=missing&game_type=quiz');
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(Response.json({
+                launch_context: { capabilities: ['operate_game'] },
+                workspace: { prepared_content: [], catalog: [{ id: 'chit_pull', game_type: 'chit_pull', title: 'Random Chit', launchable: true, can_quick_start: true }] },
+            }))
+            .mockResolvedValueOnce(new Response('unavailable', { status: 503 }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(<PartyHubPage />);
+
+        await screen.findByText('That saved game was not found for this party.');
+        fireEvent.click(screen.getByRole('button', { name: 'Start now' }));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        const request = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+        expect(JSON.parse(String(request[1].body)).game_type).toBe('chit_pull');
+    });
+
+    it('rejects an auto-start link whose game type disagrees with its saved content', async () => {
+        window.history.pushState({}, '', '/revelry/games?party_games_token=party-token&start_content_id=saved-1&game_type=quiz');
+        const fetchMock = vi.fn().mockResolvedValue(Response.json({
+            launch_context: { capabilities: ['operate_game'] },
+            workspace: {
+                prepared_content: [{ localplay_content_id: 'saved-1', game_type: 'drawing', title: 'Saved Drawing', status: 'ready' }],
+                catalog: [{ id: 'drawing', game_type: 'drawing', title: 'Drawing', launchable: true }],
+            },
+        }));
+        vi.stubGlobal('fetch', fetchMock);
+        render(<PartyHubPage />);
+
+        await screen.findByText('That saved game does not match this start link. Choose a game below.');
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
     it('hides raw standalone share UX in host-app lobby mode', () => {
         render(
             <LobbyScreen

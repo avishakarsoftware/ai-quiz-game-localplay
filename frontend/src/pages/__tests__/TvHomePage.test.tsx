@@ -161,4 +161,24 @@ describe('TvHomePage', () => {
 
         await waitFor(() => expect(screen.getByRole('dialog', { name: 'Housie Rules' })).toBeInTheDocument());
     });
+
+    it('does not guess TV-only capabilities when the catalog fails and can retry', async () => {
+        mockApiFetch.mockRejectedValueOnce(new Error('offline'));
+        render(<TvHomePage />);
+        expect(await screen.findByRole('alert')).toHaveTextContent('Could not load games');
+        fireEvent.click(screen.getByRole('button', { name: 'All games' }));
+        expect(screen.queryByRole('button', { name: /Memory Lane/ })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        expect(await screen.findByRole('button', { name: /Housie/ })).toBeInTheDocument();
+        expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('treats an empty catalog as authoritative instead of reviving all local games', async () => {
+        mockApiFetch.mockResolvedValueOnce(Response.json({ games: [] }));
+        render(<TvHomePage />);
+        await waitFor(() => expect(mockApiFetch).toHaveBeenCalledWith('/catalog'));
+        fireEvent.click(screen.getByRole('button', { name: 'All games' }));
+        expect(screen.queryByRole('button', { name: /Housie/ })).toBeNull();
+        expect(screen.queryByRole('button', { name: /Memory Lane/ })).toBeNull();
+    });
 });

@@ -242,3 +242,56 @@ def test_game_result_feeds_wallet_stats(sdb):
     stats = sdb.get_wallet_stats(wallet)
     assert stats.get("games_hosted") == 1, stats
     assert sdb.get_recent_games(wallet, limit=5), "recent games must list the result"
+
+
+def test_drained_purchase_wallet_keeps_paid_entitlement_after_merge(sdb):
+    device, user = str(uuid.uuid4()), str(uuid.uuid4())
+    sdb.get_or_create_wallet(device, signup_bonus=False)
+    sdb.credit_purchase(device, 110, f"cs_drained_{uuid.uuid4().hex[:10]}")
+    sdb.debit_tokens(device, 110, "spend_generate")
+    sdb.merge_wallet(device, user)
+    assert sdb.get_wallet_balance(user) == 0
+    assert sdb.has_ever_purchased(user) is True
+    assert sdb.get_or_create_wallet(user, signup_bonus=False)["lifetime_purchased"] == 110
+    sdb.merge_wallet(device, user)
+    assert sdb.get_or_create_wallet(user, signup_bonus=False)["lifetime_purchased"] == 110
+
+
+def test_drained_guest_cannot_clone_paid_entitlement_into_another_account(sdb):
+    device, user, other = _wallet(), _wallet(), _wallet()
+    sdb.get_or_create_wallet(device, signup_bonus=False)
+    sdb.credit_purchase(device, 110, f"cs_drained_{uuid.uuid4().hex[:10]}")
+    sdb.debit_tokens(device, 110, "spend_generate")
+    sdb.merge_wallet(device, user)
+    sdb.merge_wallet(device, other)
+    assert sdb.has_ever_purchased(user) is True
+    assert sdb.has_ever_purchased(device) is False
+    assert sdb.has_ever_purchased(other) is False
+    sdb.credit_tokens(device, 20, "daily_bonus")
+    sdb.merge_wallet(device, other)
+    assert sdb.get_wallet_balance(other) == 20
+    assert sdb.has_ever_purchased(other) is False
+
+
+@pytest.mark.parametrize("fresh_purchase", [0, 50])
+def test_legacy_merge_transfers_only_new_purchase_history(sdb, fresh_purchase):
+    device, user, other = _wallet(), _wallet(), _wallet()
+    sdb.get_or_create_wallet(device, signup_bonus=False)
+    sdb.credit_purchase(device, 110, f"legacy_{uuid.uuid4().hex}")
+    sdb.merge_wallet(device, user)
+    sdb._sb().update("wallets", {"lifetime_purchased": 110}, filters={"id": f"eq.{device}"})
+    if fresh_purchase:
+        sdb.credit_purchase(device, fresh_purchase, f"fresh_{uuid.uuid4().hex}")
+        sdb.debit_tokens(device, fresh_purchase, "spend_generate")
+    sdb._sb().update("token_transactions", {"created_at": 123456}, filters={"wallet_id": f"eq.{device}"})
+    sdb.merge_wallet(device, other)
+    assert sdb.has_ever_purchased(other) is bool(fresh_purchase)
+    assert sdb.get_wallet_balance(other) == 0
+    if fresh_purchase:
+        assert sdb.get_or_create_wallet(other, signup_bonus=False)["lifetime_purchased"] == fresh_purchase
+    else:
+        assert not sdb.wallet_exists(other)
+        sdb.credit_tokens(device, 20, "daily_bonus")
+        sdb.merge_wallet(device, other)
+        assert sdb.get_wallet_balance(other) == 20
+        assert sdb.has_ever_purchased(other) is False

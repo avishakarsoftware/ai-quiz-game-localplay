@@ -30,7 +30,7 @@ const buildEnv = {
 };
 
 console.log(`[ionos-build] building IONOS web bundle (VITE_API_URL=${PROD_API})`);
-const r = spawnSync('npx', ['vite', 'build'], { stdio: 'inherit', env: buildEnv });
+const r = spawnSync('npm', ['run', 'build'], { stdio: 'inherit', env: buildEnv });
 if (r.status !== 0) process.exit(r.status ?? 1);
 
 // Verify the prod API host is actually baked into the JS — fail loudly if not (would be same-origin).

@@ -24,6 +24,9 @@ The new image must pass an isolated preflight before the live container is stopp
 swap, both a failed `docker run` and a failed/unreachable health probe enter the automatic rollback
 path using the captured previous image and the same volume, port, restart policy, and gamma resource
 limits. A rollback reports deployment failure even when the previous service is healthy again.
+New local and VM builds carry `org.opencontainers.image.revision` with the source commit; verify
+that label on the running container after deploy. The bundled build context excludes local `.env`
+files. Record the immutable previous image ID before promotion, since `:latest` is overwritten.
 `backend/tests/test_deploy_rollback.py` executes these branches against a fake CLI without cloud
 access, including preflight failure leaving the live service untouched.
 
@@ -84,16 +87,34 @@ Why this is not merely a style preference here:
   that way; linking is what makes an accidental `db push` possible.
 
 The correct flow, every time: render from the template → extract the targeted migration → apply to
-**gamma first** → verify the objects exist (`pg_proc` / `pg_tables`) → apply to prod → verify →
-update the ledger below in the same commit.
+**gamma first** → verify the objects and behavior → promote to prod when production deployment is
+authorized → verify → update the ledger. A gamma-only request must stop before production writes.
 
 ## Environment status ledger — the single source of truth for "what is live where"
 
 **Update this table in the same commit as any deploy, DB migration, or policy flip.** Specs must
 link here instead of restating environment status (stale spec headers were a recurring bug).
 
+October 3 repository review: gamma's wallet-identity and atomic quiz-save migrations are applied
+and the self-cleaning verification passed, including legacy purchase-history conservation,
+cross-owner refusal, and failed-save rollback. Production's merge definition is unchanged and the
+new production quiz-save RPC is absent. Production promotion is planned in
+[PROD-ROLLOUT-2026-10.md](PROD-ROLLOUT-2026-10.md).
+
+The review fixes party/content/capability boundaries and Revelry mirror metadata, atomic quiz
+ownership/saves, wallet identity conservation, timer cleanup, reconnect/result restoration,
+empty-lobby configuration recovery, native guest links, and default-game replay. Managed replay
+starts a new registered session through the authenticated hub. Local release validation passed:
+1,655 backend tests with real Postgres/PostgREST parity (one intentional skip), 20 separate backend
+E2E tests, 516 frontend tests, the complete TypeScript/Vite build, 78 browser game/replay tests
+(one intentional skip), and an eight-room/32-socket reconnect probe with full cleanup. Database
+test routing safety has additional focused checks. Gamma release verification is recorded after
+deployment below.
+
 | Capability / feature | Gamma | Prod | Notes |
 |---|---|---|---|
+| Wallet identity merge (October review) | ✅ applied + verified 2026-10-03 | pending | `20261003T000000_wallet_merge_identity{,_gamma}.sql`; preserves drained purchases, transfers paid history once, distinguishes genuine later purchases from legacy retained history, and serializes target eligibility. |
+| Atomic custom quiz save (October review) | ✅ applied + verified 2026-10-03 | pending | `20261003T010000_atomic_quiz_save{,_gamma}.sql`; service-role-only RPC, owner lock, transactional metadata/questions replacement. Required before the new adapter. Verification leaves zero synthetic rows. |
 | Deployed code (backend+SPA) | `1665cafc` (2026-08-09) | **`40b8dd09` (2026-08-09)** | **PROD DEPLOYED 2026-08-09** after 2 weeks on `b0c1fc03` — 74 commits / 17k lines: the whole REVIEW-2026-08 batch (S1 XFF, M1 cap-overflow guard, A3 spawn, S2 abuse guards, D1 export guard, M2 audit notes), July's undeployed restore-leak + prompt-fence fixes, pass-and-play + Impostor, TV pages, and the Python 3.14 container. Backend+SPA via pre-flight/rollback deploy; IONOS frontend uploaded to `~/revelryapp/games/` (root — **not** `/quiz/`, see below). **Grace ships OFF on prod by decision** (`PARTY_GRACE_HOURS=0`, verified live: fresh wallet reports `ineligible` and a room debits the full 10 sparks). Gamma keeps it enabled. **Verification:** `regression.py --target prod` **PASS 65/65, 0 failed**; grace-off + room cost + referral host + admin auth + ad-reward lock all probed individually. Prod scale at deploy: 858 wallets, 23,087 sparks circulating, 0 purchases, 2 signed-in accounts. |
 | Account deletion (migration + endpoint) | ✅ live + verified | ✅ live + verified | 2026-07-19: `sql/migrations/20260718T000000_account_deletion.sql` applied via Management API (gamma first, then prod): `*_deleted_accounts` denylist + `*_delete_account` RPC created, `*_token_transactions_wallet_id_fkey` **CASCADE dropped** (constraint names pre-verified against pg_constraint on both prefixes). Synthetic account cycle on each env: user+wallet(240)+ledger row → RPC delete → user/wallet gone, **ledger retained**, denylisted, re-delete `already_deleted`; live resurrection probe (`/tokens/balance` with the deleted id) returned 200/balance:0 and created **no wallet, no signup bonus**. All test rows cleaned (0 residue). |
 | Login-streak bonus (SQL RPC) | ✅ live | ✅ live | applied 2026-07-08, targeted migration |
@@ -863,7 +884,7 @@ The IONOS frontend remains the canonical public game surface:
 
 ```bash
 cd frontend
-VITE_BASE_PATH=/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_WEB_URL=https://games.revelryapp.me/ VITE_CAST_APP_ID=1BC9ACD8 npx vite build
+npm run ionos:build
 ssh u69414981@home420463025.1and1-data.host "mkdir -p ~/revelryapp/games"
 scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/
 rsync -avz dist/.htaccess u69414981@home420463025.1and1-data.host:~/revelryapp/games/.htaccess
@@ -1484,21 +1505,23 @@ Render after editing the template:
 
 ### Applying schema changes to Supabase
 
-This is always a manual human step — never automated by deploy scripts or CI.
+Schema changes are a separate, explicitly authorized deployment step; deploy scripts and CI must
+never apply them automatically. Use only the reviewed, environment-specific targeted fragments in
+`sql/migrations/`. Do not submit either whole rendered schema to a shared live project.
 
 ```bash
 # Get auth token from macOS Keychain (same pattern as VibePix)
 TOKEN=$(security find-generic-password -s "Supabase CLI" -w | sed 's/^go-keyring-base64://' | base64 -d)
 
-# Apply gamma schema
-body=$(jq -n --rawfile q sql/games-gamma-schema.sql '{query: $q}')
+# Apply the reviewed gamma migration (replace the example with the selected fragment)
+body=$(jq -n --rawfile q sql/migrations/20261003T000000_wallet_merge_identity_gamma.sql '{query: $q}')
 curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/database/query" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d "$body"
 
-# Apply prod schema
-body=$(jq -n --rawfile q sql/games-schema.sql '{query: $q}')
+# Apply the corresponding prod fragment only during an authorized production rollout
+body=$(jq -n --rawfile q sql/migrations/20261003T000000_wallet_merge_identity.sql '{query: $q}')
 curl -sS -X POST "https://api.supabase.com/v1/projects/hosbtyylacluziugwjfd/database/query" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
@@ -2060,7 +2083,7 @@ ssh u69414981@home420463025.1and1-data.host "du -sh ~/revelryapp/media/apps/loca
 
 # Public IONOS frontend
 cd frontend
-VITE_BASE_PATH=/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_WEB_URL=https://games.revelryapp.me/ VITE_CAST_APP_ID=1BC9ACD8 npx vite build
+npm run ionos:build
 ssh u69414981@home420463025.1and1-data.host "mkdir -p ~/revelryapp/games"
 scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/
 rsync -avz dist/.htaccess u69414981@home420463025.1and1-data.host:~/revelryapp/games/.htaccess

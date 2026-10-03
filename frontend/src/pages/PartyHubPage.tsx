@@ -487,7 +487,7 @@ export default function PartyHubPage() {
                 body: JSON.stringify({
                     party_games_token: partyGamesToken,
                     content_id: game.localplay_content_id || '',
-                    game_type: startGameType || game.game_type,
+                    game_type: game.game_type,
                     time_limit: Number.isFinite(parsedTimeLimit) ? parsedTimeLimit : undefined,
                     replacement_confirmed: replacement?.confirmed || false,
                     replace_session_id: replacement?.sessionId,
@@ -514,7 +514,7 @@ export default function PartyHubPage() {
         } finally {
             setStartingId('');
         }
-    }, [partyGamesToken, startGameType, startTimeLimit]);
+    }, [partyGamesToken, startTimeLimit]);
 
     const confirmReplacement = useCallback(() => {
         if (!replacementPrompt) return;
@@ -530,13 +530,18 @@ export default function PartyHubPage() {
             autoStartRef.current = startContentId;
             return;
         }
+        if (startGameType && startGameType !== content.game_type) {
+            setError('That saved game does not match this start link. Choose a game below.');
+            autoStartRef.current = startContentId;
+            return;
+        }
         autoStartRef.current = startContentId;
         void startGame({
             localplay_content_id: content.localplay_content_id,
             game_type: content.game_type,
             title: content.title,
         });
-    }, [canStart, loading, preparedContent, startContentId, startGame, workspace]);
+    }, [canStart, loading, preparedContent, startContentId, startGameType, startGame, workspace]);
 
     async function openAuthoring(mode: 'create' | 'edit', gameType: string, content?: PreparedContent) {
         setError('');
@@ -694,11 +699,11 @@ export default function PartyHubPage() {
     }
 
     function createFromCatalog(game: CatalogGame) {
-        if ((game.game_type || game.id) === 'party_quests' && (game.can_create_content || game.embedded_authoring_supported)) {
+        if ((game.game_type || game.id) === 'party_quests' && game.can_create_content) {
             openNewPartyQuestsSetup(game);
             return;
         }
-        if (game.can_create_content || game.embedded_authoring_supported) {
+        if (game.can_create_content) {
             if ((game.game_type || game.id) !== 'quiz') {
                 openSetup(game);
                 return;
@@ -1085,7 +1090,7 @@ export default function PartyHubPage() {
                         <div className="party-hub__grid party-hub__grid--catalog">
                             {filteredCatalogGames.map((game) => {
                                 const mode = getGameModeConfig(game.id as Parameters<typeof getGameModeConfig>[0]);
-                                const canCreate = Boolean(canEdit && (game.can_create_content || game.embedded_authoring_supported));
+                                const canCreate = Boolean(canEdit && game.can_create_content);
                                 const canQuickStart = Boolean(canStart && game.can_quick_start);
                                 const disabled = (!canCreate && !canQuickStart) || startingId === (game.game_type || game.id);
                                 return (
@@ -1263,7 +1268,7 @@ export default function PartyHubPage() {
                                             Preview
                                         </button>
                                     )}
-                                    {canEdit && (
+                                    {canEdit && catalogGames.find((game) => (game.game_type || game.id) === content.game_type)?.can_edit_content !== false && (
                                         <button onClick={() => void editSavedContent(content)}>Edit/Open</button>
                                     )}
                                     {canDelete && (

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { API_URL, WS_URL } from '../config';
+import { publicWebUrl } from '../utils/webUrl';
 import { type Quiz, type QuizPack, type MLTGame, type DrawingGame, type GameType, type GenericPromptGameType, type GenericPromptState, type LeaderboardEntry, type PlayerInfo, type TeamLeaderboardEntry, type Question, type HousiePattern, type HousieWinner, type BingoDeckItem, type MusicalChairsConfig, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type WhoAmIGameContent, type ChitPullCategory, type ChitPullGameContent, type ChitPullSafeLevel, type ChitPullState, type MafiaState, type PartyQuestsState, type SurveySaysState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState, type ImpostorState, type PassPlaySeat } from '../types';
 import { soundManager } from '../utils/sound';
 import { track } from '../utils/analytics';
@@ -482,6 +483,30 @@ export default function OrganizerPage() {
     const handleWsMessage = useCallback((event: MessageEvent) => {
         let msg: Record<string, unknown>;
         try { msg = JSON.parse(event.data); } catch { return; }
+        if (msg.type === 'ROOM_CREATED' || msg.type === 'ORGANIZER_RECONNECTED') {
+            // An empty lobby uses ROOM_CREATED even when the host is recovering
+            // a saved/API-created room. Restore the server's settings in both cases.
+            if (typeof msg.time_limit === 'number') setTimeLimit(msg.time_limit);
+            if (msg.game_type) setGameType(msg.game_type as GameType);
+            if (msg.quiz) {
+                const quizData = msg.quiz as Record<string, unknown>;
+                if (msg.game_type === 'musical_chairs') {
+                    setMusicalChairsConfig({ ...defaultMusicalChairsConfig, ...quizData } as MusicalChairsConfig);
+                } else if (msg.game_type === 'party_quests') {
+                    setPartyQuestsConfig({ ...defaultPartyQuestsConfig(), ...quizData } as PartyQuestSetupConfig);
+                }
+                if (quizData.questions) {
+                    setQuiz(quizData as unknown as Quiz);
+                    setTotalQuestions((quizData.questions as unknown[]).length);
+                } else if (quizData.statements) {
+                    setMltGame(quizData as unknown as MLTGame);
+                    setTotalQuestions((quizData.statements as unknown[]).length);
+                } else if (quizData.prompts) {
+                    setDrawingGame(quizData as unknown as DrawingGame);
+                    setTotalQuestions((quizData.prompts as unknown[]).length);
+                }
+            }
+        }
         if (msg.type === 'ROOM_CREATED') {
             finishedRoomCanResetRef.current = false;
             setReviewPeekOpen(false);
@@ -800,6 +825,9 @@ export default function OrganizerPage() {
                 reconnectTimerRef.current = null;
             }
             clearOrganizerSession();
+            const ws = wsRef.current;
+            wsRef.current = null;
+            ws?.close();
             roomCodeRef.current = '';
             stateRef.current = 'SELECT_GAME';
             setRoomCode('');
@@ -835,9 +863,7 @@ export default function OrganizerPage() {
             setTotalQuestions(msg.total_questions as number);
             setLeaderboard(msg.leaderboard as LeaderboardEntry[] || []);
             setTeamLeaderboard(msg.team_leaderboard as TeamLeaderboardEntry[] || []);
-            setTimeLimit(msg.time_limit as number);
             setRoomLocked(msg.locked as boolean ?? false);
-            if (msg.game_type) setGameType(msg.game_type as GameType);
             if (msg.musical_chairs) setMusicalChairsState(msg.musical_chairs as MusicalChairsState);
             if (msg.bluff) setBluffState(msg.bluff as BluffState);
             if (msg.poker) setPokerState(msg.poker as PokerState);
@@ -854,19 +880,6 @@ export default function OrganizerPage() {
             if (msg.photo_clue) setPhotoClueState(msg.photo_clue as PhotoClueState);
             if (msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) {
                 setSimpleSocialState((msg.would_you_rather || msg.never_have_i_ever || msg.word_association || msg.acronym) as SimpleSocialState);
-            }
-            if (msg.quiz) {
-                const quizData = msg.quiz as Record<string, unknown>;
-                if (quizData.questions) {
-                    setQuiz(quizData as unknown as Quiz);
-                    setTotalQuestions((quizData.questions as unknown[]).length);
-                } else if (quizData.statements) {
-                    setMltGame(quizData as unknown as MLTGame);
-                    setTotalQuestions((quizData.statements as unknown[]).length);
-                } else if (quizData.prompts) {
-                    setDrawingGame(quizData as unknown as DrawingGame);
-                    setTotalQuestions((quizData.prompts as unknown[]).length);
-                }
             }
             if (msg.state === 'LOBBY' || msg.state === 'INTRO') {
                 finishedRoomCanResetRef.current = false;
@@ -952,6 +965,15 @@ export default function OrganizerPage() {
                 setErrorModal({ title: 'Not enough players', message });
             } else {
                 clearOrganizerSession();
+                if (reconnectTimerRef.current) {
+                    clearTimeout(reconnectTimerRef.current);
+                    reconnectTimerRef.current = null;
+                }
+                const ws = wsRef.current;
+                wsRef.current = null;
+                ws?.close();
+                roomCodeRef.current = '';
+                stateRef.current = 'SELECT_GAME';
                 if (hostAppMode) {
                     setErrorModal({
                         title: 'Game Unavailable',
@@ -1606,6 +1628,10 @@ export default function OrganizerPage() {
     };
 
     const connectWs = useCallback((code: string) => {
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
         if (wsRef.current) {
             wsRef.current.onclose = null;
             wsRef.current.close();
@@ -1614,10 +1640,13 @@ export default function OrganizerPage() {
         const ws = new WebSocket(`${WS_URL}/ws/${code}/${clientId}?organizer=true`);
         wsRef.current = ws;
         ws.onopen = () => {
+            if (!mountedRef.current || wsRef.current !== ws) return;
             // First-frame auth: send token as first message instead of query string
             ws.send(JSON.stringify({ type: 'AUTH', token: organizerTokenRef.current }));
         };
-        ws.onmessage = handleWsMessage;
+        ws.onmessage = (event) => {
+            if (mountedRef.current && wsRef.current === ws) handleWsMessage(event);
+        };
         ws.onclose = () => {
             if (wsRef.current !== ws) return;
             wsRef.current = null;
@@ -1693,6 +1722,7 @@ export default function OrganizerPage() {
     }, []);
 
     useEffect(() => {
+        mountedRef.current = true;
         return () => {
             mountedRef.current = false;
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
@@ -2130,6 +2160,13 @@ export default function OrganizerPage() {
     };
 
     const playAgain = () => {
+        if (hostAppMode) {
+            // Revelry tracks a registered session and its lifecycle/results. Replay
+            // must create a fresh session through its authenticated party hub.
+            clearOrganizerSession();
+            returnToHostApp();
+            return;
+        }
         setCurrentQuestion(0);
         setLeaderboard([]);
         setTeamLeaderboard([]);
@@ -2149,8 +2186,8 @@ export default function OrganizerPage() {
         setMafiaState(null);
         setPartyQuestsState(null);
         setSurveySaysState(null);
-        if (contentId && roomCode && wsRef.current?.readyState === WebSocket.OPEN) {
-            createRoom(contentId);
+        if (roomCode && wsRef.current?.readyState === WebSocket.OPEN && canResetFinishedRoomWithGame(gameType, contentId)) {
+            createRoom(contentId || '');
             return;
         }
         chooseAnotherGame();
@@ -2283,12 +2320,7 @@ export default function OrganizerPage() {
         returnToHostApp();
     };
 
-    // In Capacitor, window.location.origin is capacitor://localhost — use the web URL instead
-    const isCapacitor = window.location.protocol === 'capacitor:' || window.location.hostname === 'localhost' && !window.location.port;
-    const baseUrl = isCapacitor
-        ? (import.meta.env.VITE_WEB_URL || 'https://games.revelryapp.me/')
-        : `${window.location.origin}${import.meta.env.BASE_URL}`;
-    const joinUrl = `${baseUrl}join/${roomCode}`;
+    const joinUrl = publicWebUrl(`join/${roomCode}`);
     const currentQ = liveQuestion || quiz?.questions[currentQuestion - 1];
     const currentImageUrl = currentQ?.image_url ? mediaUrl(currentQ.image_url) : (currentQ ? questionImages[currentQ.id] : undefined);
 
@@ -3126,9 +3158,9 @@ export default function OrganizerPage() {
                         teamLeaderboard={teamLeaderboard}
                         superlatives={superlatives}
                         onPlayAgain={playAgain}
-                        onChooseAnotherGame={chooseAnotherGame}
+                        onChooseAnotherGame={hostAppMode ? undefined : chooseAnotherGame}
                         onShareResults={hostAppMode ? undefined : () => shareGameResult(gameTypeRef.current, leaderboard)}
-                        playAgainLabel="Play Again"
+                        playAgainLabel={hostAppMode ? 'Start another Revelry game' : 'Play Again'}
                         chooseAnotherLabel={hostAppMode ? 'Back to Revelry Games' : 'Choose Another Game'}
                         // P4. Hidden in hostAppMode: there the exit is "Back to Revelry", and the
                         // catalog belongs to the host app, not to us.

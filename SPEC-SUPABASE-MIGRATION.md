@@ -601,9 +601,10 @@ Behavior must match current `merge_wallet`:
 - Reject if target wallet already has a `merge_in`.
 - Reject if the same `from_id -> to_id` merge already has a `merge_out`.
 - Transfer balance up to max.
-- Set source balance to 0.
+- Set source balance and `lifetime_purchased` to 0; paid history transfers to the target once, so a drained source cannot clone premium entitlement into other accounts.
 - Add `merge_out` and `merge_in` transactions.
-- Merge `lifetime_purchased`.
+- Merge `lifetime_purchased`, including when the source has spent its entire balance. For previously merged sources, transfer only purchase credits after the latest source `merge_out` transaction ID, capped by stored paid history. This prevents old retained history from cloning an entitlement while preserving fresh paid top-ups; same-second timestamps do not determine ordering.
+- Serialize the target eligibility check before counting prior merges, including when the target wallet does not yet exist; concurrent devices must not bypass the one-merge cap.
 
 The current "max one merge per user wallet" behavior is product-sensitive and should be reviewed separately, but the migration should preserve it first.
 
@@ -1161,3 +1162,27 @@ Cloud Run readiness is not achieved until:
 - Phase 1 and Phase 2 are complete.
 - Live room state strategy is explicitly designed.
 - WebSocket reconnect behavior is tested under process restart and, if applicable, multi-instance routing.
+
+
+### 2026-10-03 persistence hardening rollout
+
+Apply `sql/migrations/20261003T000000_wallet_merge_identity_gamma.sql` and
+`sql/migrations/20261003T010000_atomic_quiz_save_gamma.sql` before deploying the backend to gamma.
+Both are idempotent and touch only RPC definitions/permissions. The atomic quiz-save migration
+also reloads the PostgREST schema cache. Production uses the corresponding files without `_gamma`.
+
+`save_quiz_pack(owner_wallet_id, pack_id, title, questions)` is a service-role-only RPC. It locks
+the pack, refuses cross-wallet ID reuse, and commits metadata plus replacement questions together.
+A failed question write leaves the previously saved pack intact. Concurrent same-owner saves
+produce one complete version rather than mixed questions. The Python adapter keeps its existing
+public signature; it requires the RPC migration before rollout.
+
+Run `sql/verification/20261003_persistence_review_gamma.sql` after the gamma migrations. It checks
+RPC permissions, drained purchase history and repeated-merge behavior, cross-wallet quiz writes,
+and failed-save rollback using uniquely named synthetic data, then removes its rows in the same
+transaction. The non-gamma verification file is for the production promotion plan. Neither file
+truncates tables or touches existing user records.
+
+The real PostgREST regressions live in `test_supabase_content_layer.py`,
+`test_supabase_concurrency.py`, and `test_supabase_economy_features.py`; they require the disposable
+local parity stack and must never be pointed at hosted gamma or production.

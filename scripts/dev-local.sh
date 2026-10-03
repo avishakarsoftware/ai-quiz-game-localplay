@@ -12,17 +12,21 @@
 #   ./scripts/dev-local.sh status   # check what's running
 # =============================================================================
 
-set -e
+set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BACKEND_DIR="$ROOT/backend"
 FRONTEND_DIR="$ROOT/frontend"
-PID_DIR="$ROOT/.dev-pids"
+PID_DIR="${DEV_PID_DIR:-$ROOT/.dev-pids}"
 
 # Auto-detect LAN IP
 LAN_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "localhost")
-BACKEND_PORT=9100
-FRONTEND_PORT=9200
+BACKEND_PORT="${DEV_BACKEND_PORT:-9100}"
+FRONTEND_PORT="${DEV_FRONTEND_PORT:-9200}"
+PY="$BACKEND_DIR/venv/bin/python3"
+[ -x "$PY" ] || PY="$BACKEND_DIR/.venv/bin/python3"
+[ -x "$PY" ] || PY="$ROOT/.venv/bin/python3"
+source "$ROOT/scripts/local-stack-utils.sh"
 
 # Colors
 GREEN='\033[0;32m'
@@ -32,17 +36,28 @@ NC='\033[0m'
 
 stop_servers() {
     echo -e "${YELLOW}Stopping servers...${NC}"
-    if [ -f "$PID_DIR/backend.pid" ]; then
-        kill "$(cat "$PID_DIR/backend.pid")" 2>/dev/null && echo "  Backend stopped" || echo "  Backend was not running"
-        rm -f "$PID_DIR/backend.pid"
-    fi
-    if [ -f "$PID_DIR/frontend.pid" ]; then
-        kill "$(cat "$PID_DIR/frontend.pid")" 2>/dev/null && echo "  Frontend stopped" || echo "  Frontend was not running"
-        rm -f "$PID_DIR/frontend.pid"
-    fi
-    # Also kill by port in case PIDs are stale
-    lsof -ti:$BACKEND_PORT 2>/dev/null | xargs kill 2>/dev/null || true
-    lsof -ti:$FRONTEND_PORT 2>/dev/null | xargs kill 2>/dev/null || true
+    for name in backend frontend; do
+        if [[ -f "$PID_DIR/$name.pid" ]]; then
+            pid="$(cat "$PID_DIR/$name.pid")"
+            expected="$(cat "$PID_DIR/$name.started" 2>/dev/null || true)"
+            actual="$(ps -p "$pid" -o lstart= 2>/dev/null || true)"
+            if [[ -n "$expected" && "$expected" == "$actual" ]]; then
+                kill "$pid" 2>/dev/null || true
+                for _ in {1..100}; do
+                    [[ "$(ps -p "$pid" -o lstart= 2>/dev/null || true)" == "$expected" ]] || break
+                    sleep 0.1
+                done
+                if [[ "$(ps -p "$pid" -o lstart= 2>/dev/null || true)" == "$expected" ]]; then
+                    echo "  $name is still shutting down" >&2
+                    continue
+                fi
+                echo "  $name stopped"
+            else
+                echo "  $name PID is stale or unverified; no process stopped"
+            fi
+            rm -f "$PID_DIR/$name.pid" "$PID_DIR/$name.started"
+        fi
+    done
     echo -e "${GREEN}All servers stopped.${NC}"
 }
 
@@ -61,12 +76,9 @@ check_status() {
 }
 
 start_servers() {
+    [[ -x "$PY" ]] || { echo "No backend virtualenv found; run make install" >&2; return 1; }
+    assert_stack_ports_available || return 1
     mkdir -p "$PID_DIR"
-
-    # Stop any existing servers first
-    lsof -ti:$BACKEND_PORT 2>/dev/null | xargs kill 2>/dev/null || true
-    lsof -ti:$FRONTEND_PORT 2>/dev/null | xargs kill 2>/dev/null || true
-    sleep 1
 
     echo -e "${YELLOW}Starting local dev environment...${NC}"
     echo -e "  LAN IP: ${GREEN}$LAN_IP${NC}"
@@ -79,27 +91,43 @@ start_servers() {
     ADMIN_API_KEY="test-admin-key" \
     FREE_TIER_LIMIT=3 \
     DB_DIR="$BACKEND_DIR/data" \
-    python -m uvicorn main:app --host 0.0.0.0 --port $BACKEND_PORT \
+    DB_BACKEND=sqlite LOCALPLAY_ENV=local SUPABASE_URL= SUPABASE_SERVICE_KEY= \
+    "$PY" -m uvicorn main:app --host 0.0.0.0 --port "$BACKEND_PORT" \
         > "$PID_DIR/backend.log" 2>&1 &
     echo $! > "$PID_DIR/backend.pid"
+    ps -p "$(cat "$PID_DIR/backend.pid")" -o lstart= > "$PID_DIR/backend.started" || true
 
     # Wait for backend to be ready
     for i in {1..10}; do
-        if curl -s "http://127.0.0.1:$BACKEND_PORT/health" >/dev/null 2>&1; then
+        if curl -sf "http://127.0.0.1:$BACKEND_PORT/health" >/dev/null 2>&1; then
             echo -e "  Backend: ${GREEN}ready${NC}"
             break
         fi
         sleep 1
     done
+    if ! curl -sf "http://127.0.0.1:$BACKEND_PORT/health" >/dev/null 2>&1; then
+        tail -30 "$PID_DIR/backend.log" >&2
+        stop_servers
+        return 1
+    fi
 
     # --- Frontend dev server ---
     echo -e "${YELLOW}Starting frontend on :$FRONTEND_PORT ...${NC}"
     cd "$FRONTEND_DIR"
     VITE_API_URL="http://$LAN_IP:$BACKEND_PORT" \
-    npx vite --host 0.0.0.0 --port $FRONTEND_PORT \
+    node "$FRONTEND_DIR/node_modules/vite/bin/vite.js" --host 0.0.0.0 --port "$FRONTEND_PORT" --strictPort \
         > "$PID_DIR/frontend.log" 2>&1 &
     echo $! > "$PID_DIR/frontend.pid"
-    sleep 2
+    ps -p "$(cat "$PID_DIR/frontend.pid")" -o lstart= > "$PID_DIR/frontend.started" || true
+    for _ in {1..20}; do
+        curl -sf "http://127.0.0.1:$FRONTEND_PORT/" >/dev/null 2>&1 && break
+        sleep 0.5
+    done
+    if ! curl -sf "http://127.0.0.1:$FRONTEND_PORT/" >/dev/null 2>&1; then
+        tail -30 "$PID_DIR/frontend.log" >&2
+        stop_servers
+        return 1
+    fi
     echo -e "  Frontend: ${GREEN}ready${NC}"
 
     echo ""
@@ -127,13 +155,13 @@ build_ios() {
     # Build frontend with local URLs
     VITE_API_URL="http://$LAN_IP:$BACKEND_PORT" \
     VITE_WEB_URL="http://$LAN_IP:$FRONTEND_PORT/" \
-    npx vite build 2>&1 | tail -2
+    npm run build 2>&1 | tail -2
 
     # Sync to Capacitor
     npx cap sync ios 2>&1 | tail -3
 
     # Find simulator
-    SIM_ID=$(xcrun simctl list devices available | grep -i "iphone" | grep "Booted" | grep -oE '[A-F0-9-]{36}' | head -1)
+    SIM_ID=$(xcrun simctl list devices available | grep -i "iphone" | grep "Booted" | grep -oE '[A-F0-9-]{36}' | head -1 || true)
     if [ -z "$SIM_ID" ]; then
         echo -e "${YELLOW}No booted simulator found. Boot one first via Xcode or:${NC}"
         echo "  xcrun simctl boot 'iPhone 16 Pro'"
@@ -149,7 +177,7 @@ build_ios() {
     # Install and launch
     xcrun simctl terminate "$SIM_ID" me.revelryapp.quiz 2>/dev/null || true
     xcrun simctl uninstall "$SIM_ID" me.revelryapp.quiz 2>/dev/null || true
-    APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData/App-*/Build/Products/Debug-iphonesimulator/App.app -maxdepth 0 2>/dev/null | head -1)
+    APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData/App-*/Build/Products/Debug-iphonesimulator/App.app -maxdepth 0 2>/dev/null | head -1 || true)
     xcrun simctl install "$SIM_ID" "$APP_PATH"
     xcrun simctl launch "$SIM_ID" me.revelryapp.quiz
 
@@ -165,7 +193,7 @@ build_android() {
     # Build frontend with local URLs
     VITE_API_URL="http://$LAN_IP:$BACKEND_PORT" \
     VITE_WEB_URL="http://$LAN_IP:$FRONTEND_PORT/" \
-    npx vite build 2>&1 | tail -2
+    npm run build 2>&1 | tail -2
 
     # Sync to Capacitor
     npx cap sync android 2>&1 | tail -3
@@ -176,7 +204,7 @@ build_android() {
 
     # Check for connected device/emulator
     ADB="$HOME/Library/Android/sdk/platform-tools/adb"
-    DEVICE=$($ADB devices 2>/dev/null | grep -w "device" | head -1 | awk '{print $1}')
+    DEVICE=$("$ADB" devices 2>/dev/null | grep -w "device" | head -1 | awk '{print $1}' || true)
     if [ -z "$DEVICE" ]; then
         echo -e "${YELLOW}No connected device/emulator found.${NC}"
         echo "  Start one with: \$HOME/Library/Android/sdk/emulator/emulator -avd Pixel_8 &"

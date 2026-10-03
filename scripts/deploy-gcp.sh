@@ -315,6 +315,7 @@ trap cleanup_build_context EXIT
 
 # --- Step 1: Build Docker image (unless --skip-build) ---
 if [[ "$SKIP_BUILD" != "true" ]]; then
+    SOURCE_REVISION="$(git -C "$ROOT_DIR" rev-parse HEAD)"
     if [[ "$INCLUDE_FRONTEND" == "true" ]]; then
         info "Building frontend for backend-served deployment..."
         (
@@ -337,6 +338,7 @@ if [[ "$SKIP_BUILD" != "true" ]]; then
             --exclude 'data' \
             --exclude '__pycache__' \
             --exclude '*.pyc' \
+            --exclude '.env*' \
             "$BACKEND_DIR/" "$TEMP_BUILD_CONTEXT/"
         rm -rf "$TEMP_BUILD_CONTEXT/static"
         mkdir -p "$TEMP_BUILD_CONTEXT/static"
@@ -361,10 +363,10 @@ if [[ "$SKIP_BUILD" != "true" ]]; then
         rm "$CTX_TARBALL"
 
         info "Building Docker image on VM..."
-        ssh_cmd "cd $REMOTE_CTX && docker build -t $IMAGE_NAME:latest . && rm -rf $REMOTE_CTX"
+        ssh_cmd "cd $REMOTE_CTX && docker build --label org.opencontainers.image.revision=$SOURCE_REVISION -t $IMAGE_NAME:latest . && rm -rf $REMOTE_CTX"
     else
         info "Building Docker image from $build_context..."
-        docker build --platform linux/amd64 -t "$IMAGE_NAME:latest" "$build_context"
+        docker build --platform linux/amd64 --label "org.opencontainers.image.revision=$SOURCE_REVISION" -t "$IMAGE_NAME:latest" "$build_context"
 
         info "Saving image to tarball..."
         IMAGE_TARBALL="/tmp/${IMAGE_NAME}.tar.gz"

@@ -188,6 +188,17 @@ describe('SpectatorPage', () => {
             expect(screen.getByText('Quiz Incoming')).toBeInTheDocument();
         });
 
+        it('host reconnect does not replace a freshly synced active screen with a default lobby', () => {
+            renderSpectator('ROOM42');
+            simulateWsMessage({ type: 'SPECTATOR_SYNC', state: 'INTRO', players: [], player_count: 0, leaderboard: [] });
+            simulateWsMessage({ type: 'HOST_RECONNECTED' });
+            expect(screen.getByText('Quiz Incoming')).toBeInTheDocument();
+            simulateWsMessage({ type: 'ORGANIZER_DISCONNECTED' });
+            simulateWsMessage({ type: 'ORGANIZER_DISCONNECTED' });
+            simulateWsMessage({ type: 'HOST_RECONNECTED' });
+            expect(screen.getByText('Quiz Incoming')).toBeInTheDocument();
+        });
+
         it('shows server errors without retrying forever', () => {
             renderSpectator('BAD1');
             simulateWsOpen();
@@ -201,6 +212,37 @@ describe('SpectatorPage', () => {
             act(() => { vi.advanceTimersByTime(5000); });
 
             expect(MockWebSocket.instances).toHaveLength(1);
+        });
+
+        it('a pending answer reveal cannot overwrite a terminal room closure', () => {
+            renderSpectator('ROOM42');
+            simulateWsMessage({ type: 'QUESTION', question: { id: 1, text: 'Capital?', options: ['Paris', 'Rome'] }, question_number: 1, total_questions: 2, time_limit: 20 });
+            simulateWsMessage({ type: 'QUESTION_OVER', answer: 0, leaderboard: [], is_final: false });
+            simulateWsMessage({ type: 'ROOM_CLOSED', message: 'The host ended this room.' });
+            act(() => { vi.advanceTimersByTime(6000); });
+            expect(screen.getByText('Disconnected')).toBeInTheDocument();
+            expect(screen.getByText('The host ended this room.')).toBeInTheDocument();
+        });
+
+        it('can leave one room and reconnect another without old callbacks taking over', () => {
+            renderSpectator('FIRST1');
+            const first = getLatestWs();
+            simulateWsMessage({ type: 'ROOM_CLOSED' });
+            fireEvent.click(screen.getByRole('button', { name: 'Try Another Room' }));
+            fireEvent.change(screen.getByPlaceholderText('ROOM CODE'), { target: { value: 'SECOND' } });
+            fireEvent.keyDown(screen.getByPlaceholderText('ROOM CODE'), { key: 'Enter' });
+            const second = getLatestWs();
+            expect(second.url).toContain('/ws/SECOND/');
+            act(() => {
+                first.onclose?.();
+                first.onmessage?.({ data: JSON.stringify({ type: 'ROOM_CLOSED', message: 'Stale first room' }) });
+            });
+            simulateWsMessage({ type: 'SPECTATOR_SYNC', state: 'INTRO', players: [], player_count: 0, leaderboard: [] });
+            expect(screen.getByText('Quiz Incoming')).toBeInTheDocument();
+            act(() => { second.onclose?.(); vi.advanceTimersByTime(2000); });
+            expect(getLatestWs()).not.toBe(second);
+            expect(getLatestWs().url).toContain('/ws/SECOND/');
+            expect(MockWebSocket.instances).toHaveLength(3);
         });
     });
 

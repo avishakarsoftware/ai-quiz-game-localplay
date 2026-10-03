@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { WS_URL } from '../config';
+import { publicWebUrl } from '../utils/webUrl';
 import { type LeaderboardEntry, type TeamLeaderboardEntry, type PlayerInfo, type GameType, type GenericPromptGameType, type GenericPromptState, type DrawOperation, type HousieWinner, type MusicalChairsState, type BluffState, type PokerState, type TwoTruthsState, type StoryChainState, type CommonGroundState, type FindSomeoneState, type WhoAmIState, type ChitPullState, type MafiaState, type PartyQuestsState, type SurveySaysState, type SimpleSocialGameType, type SimpleSocialState, type PhotoClueState, ANSWER_STYLES } from '../types';
 import AnimatedNumber from '../components/AnimatedNumber';
 import Fireworks from '../components/Fireworks';
@@ -190,16 +191,11 @@ export default function SpectatorPage() {
         };
     }, []);
 
-    // In Capacitor, window.location.origin is capacitor://localhost — use the web URL
-    const isCapacitor = window.location.protocol === 'capacitor:' || (window.location.hostname === 'localhost' && !window.location.port);
-    const baseUrl = isCapacitor
-        ? (import.meta.env.VITE_WEB_URL || 'https://games.revelryapp.me/')
-        : `${window.location.origin}${import.meta.env.BASE_URL}`;
-    const joinUrl = `${baseUrl}join?room=${roomCode}`;
+    const joinUrl = publicWebUrl(`join?room=${roomCode}`);
     const displayUrl = `${new URL(joinUrl).host}${new URL(joinUrl).pathname}`;
 
     const handleJoinRoom = () => {
-        const code = roomInput.trim().toUpperCase();
+        const code = normalizeRoomCode(roomInput);
         if (code.length < 4) return;
         setRoomCode(code);
         setJoined(true);
@@ -261,6 +257,13 @@ export default function SpectatorPage() {
     const connectWs = useRef<() => void>(() => {});
     const connectWsImpl = () => {
         if (!joined || !roomCode) return;
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
+        const previous = wsRef.current;
+        wsRef.current = null;
+        previous?.close();
         setConnectionError('');
         terminalConnectionErrorRef.current = false;
         const clientId = `spectator-${Date.now()}`;
@@ -268,10 +271,12 @@ export default function SpectatorPage() {
         wsRef.current = ws;
 
         ws.onopen = () => {
+            if (!mountedRef.current || wsRef.current !== ws) return;
             reconnectDelayRef.current = 2000; // Reset backoff on success
         };
 
         ws.onmessage = (event) => {
+            if (!mountedRef.current || wsRef.current !== ws) return;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let msg: any;
             try { msg = JSON.parse(event.data); } catch { return; }
@@ -282,11 +287,15 @@ export default function SpectatorPage() {
             if (msg.type === 'PING') return; // heartbeat — no action needed
             if (msg.type === 'ERROR') {
                 terminalConnectionErrorRef.current = true;
+                if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+                wsRef.current = null;
+                ws.close();
                 setConnectionError(String(msg.message || 'Unable to connect to this room.'));
                 setGameState('ERROR');
                 return;
             }
             if (msg.type === 'SPECTATOR_SYNC') {
+                if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
                 setPlayers(msg.players || []);
                 setPlayerCount(msg.player_count);
                 setQuestionNumber(msg.question_number);
@@ -681,17 +690,23 @@ export default function SpectatorPage() {
                 soundManager.play('fanfare');
             }
             else if (msg.type === 'ORGANIZER_DISCONNECTED') {
-                preDisconnectRef.current = gameStateRef.current;
+                if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+                if (gameStateRef.current !== 'DISCONNECTED') preDisconnectRef.current = gameStateRef.current;
                 setGameState('DISCONNECTED');
             }
             else if (msg.type === 'HOST_RECONNECTED') {
-                setGameState(preDisconnectRef.current || 'LOBBY');
+                if (gameStateRef.current === 'DISCONNECTED' && !roomClosedRef.current) {
+                    setGameState(preDisconnectRef.current || 'LOBBY');
+                }
             }
             else if (msg.type === 'ROOM_CLOSED') {
                 roomClosedRef.current = true;
                 setRoomClosed(true);
                 setConnectionError(msg.message || 'The host ended this game session.');
                 if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+                if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+                wsRef.current = null;
+                ws.close();
                 setGameState('DISCONNECTED');
             }
             else if (msg.type === 'ROOM_RESET') {
@@ -730,12 +745,15 @@ export default function SpectatorPage() {
         };
 
         ws.onerror = () => {
+            if (!mountedRef.current || wsRef.current !== ws) return;
             setConnectionError('Unable to connect to the room.');
             setGameState('ERROR');
         };
         ws.onclose = () => {
+            if (wsRef.current !== ws) return;
             wsRef.current = null;
             if (roomClosedRef.current || !mountedRef.current || terminalConnectionErrorRef.current) return;
+            if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
             setGameState('DISCONNECTED');
             // Exponential backoff: 2s, 4s, 8s, 16s, capped at 30s
             const delay = reconnectDelayRef.current;
@@ -754,8 +772,10 @@ export default function SpectatorPage() {
         connectWs.current();
         return () => {
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-            wsRef.current?.close();
+            if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+            const ws = wsRef.current;
             wsRef.current = null;
+            ws?.close();
         };
     }, [joined, roomCode]);
 

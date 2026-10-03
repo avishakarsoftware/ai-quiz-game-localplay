@@ -46,7 +46,7 @@ jobs:
       - name: Run e2e WebSocket tests (serial)
         run: |
           cd backend
-          python -m pytest tests/test_e2e.py -q
+          python -m pytest tests/test_e2e.py -q -s
 
   backend-postgres-parity:
     runs-on: ubuntu-latest
@@ -85,7 +85,7 @@ jobs:
           PARITY_POSTGRES_DSN: postgresql://parity:parity@localhost:5432/parity
         run: |
           cd backend
-          python -m pytest tests/test_postgres_parity.py -q
+          python -m pytest tests/test_postgres_parity.py tests/test_postgres_target_safety.py -q
 
   frontend-build:
     runs-on: ubuntu-latest

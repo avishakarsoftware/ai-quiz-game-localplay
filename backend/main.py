@@ -919,7 +919,10 @@ def _resolve_revelry_runtime_content(
     title: str = "",
 ) -> tuple[str, dict]:
     wallet_id = _revelry_party_wallet_id(context.external_container_id)
-    if game_type == "quiz" and content_id and content_id not in quizzes:
+    # Saved party content is authoritative in storage. A process-wide cache is
+    # neither an ownership check nor a version check: another party may already
+    # have loaded this id, and an unused setup may have been edited or deleted.
+    if game_type == "quiz" and content_id:
         pack = db.get_quiz_pack(wallet_id, content_id)
         if not pack:
             raise HTTPException(status_code=404, detail="Quiz content not found for this party")
@@ -931,16 +934,6 @@ def _resolve_revelry_runtime_content(
         content_owners[content_id] = wallet_id
         return content_id, quiz_data
     if game_type in ("wmlt", "drawing", "housie", "bingo", "chit_pull", "party_quests") and content_id:
-        if game_type == "wmlt" and content_id in mlt_scenarios:
-            return content_id, mlt_scenarios[content_id]
-        if game_type == "drawing" and content_id in drawing_games:
-            return content_id, drawing_games[content_id]
-        if game_type == "housie" and content_id in housie_games:
-            return content_id, housie_games[content_id]
-        if game_type == "bingo" and content_id in bingo_games:
-            return content_id, bingo_games[content_id]
-        if game_type == "chit_pull" and content_id in chit_pull_games:
-            return content_id, chit_pull_games[content_id]
         content = db.get_game_content(wallet_id, content_id)
         if not content or content.get("game_type") != game_type:
             raise HTTPException(status_code=404, detail="Game content not found for this party")
@@ -982,6 +975,8 @@ def _resolve_revelry_runtime_content(
             chit_pull_timestamps[content_id] = time.time()
         content_owners[content_id] = wallet_id
         return content_id, game_data
+    if content_id:
+        raise HTTPException(status_code=404, detail="Game content not found for this party")
     return _resolve_runtime_content(game_type, content_id, title)
 
 
@@ -1720,6 +1715,13 @@ class RevelryPartyGamesAuthoringLinkRequest(BaseModel):
             raise ValueError(REVELRY_PARTY_GAME_TYPES_ERROR)
         return value
 
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, value: str) -> str:
+        if value not in ("create", "edit", "duplicate"):
+            raise ValueError("mode must be create, edit, or duplicate")
+        return value
+
 
 class RevelryPartyGamesContentDeleteRequest(BaseModel):
     party_games_token: str
@@ -1897,7 +1899,31 @@ def _require_revelry_auth(req: Request, handoff_token: str = "") -> dict:
         raise HTTPException(status_code=401, detail="Invalid integration issuer")
     if claims.get("typ") != "localplay_launch":
         raise HTTPException(status_code=401, detail="Invalid integration token type")
+    return {**claims, "type": "handoff"}
+
+
+def _require_revelry_service_auth(req: Request) -> dict:
+    claims = _require_revelry_auth(req)
+    if claims.get("type") != "service":
+        raise HTTPException(status_code=403, detail="Service integration credential required")
     return claims
+
+
+def _revelry_handoff_context(claims: dict, scope: str, game_type: str = "") -> tuple[RevelryExternalContext, RevelryActor]:
+    required = {"jti", "host_app", "external_container_type", "external_container_id", "display_name", "role", "scope", "capabilities", "iat"}
+    if not required.issubset(claims) or not claims.get("external_container_id") or claims.get("host_app") != "revelry":
+        raise HTTPException(status_code=401, detail="Invalid integration context")
+    if claims.get("scope") != scope:
+        raise HTTPException(status_code=403, detail="Handoff token scope mismatch")
+    if game_type and claims.get("game_type") and claims["game_type"] != game_type:
+        raise HTTPException(status_code=403, detail="Handoff token game mismatch")
+    if not isinstance(claims.get("capabilities"), list):
+        raise HTTPException(status_code=401, detail="Invalid integration capabilities")
+    context = _external_context_from_launch_context(claims)
+    actor = _actor_from_launch_context(claims)
+    if scope == "organizer" and not _author_can_operate(actor):
+        raise HTTPException(status_code=403, detail="Missing capability to operate games")
+    return context, actor
 
 
 def _session_launch_routes(base_url: str, session_id: str) -> dict:
@@ -2060,7 +2086,10 @@ def _resolve_party_games_token(token: str) -> dict:
     if not config.REVELRY_INTEGRATION_SECRET:
         raise HTTPException(status_code=503, detail="Revelry integration is not configured")
     try:
-        claims = jwt.decode(token, config.REVELRY_INTEGRATION_SECRET, algorithms=["HS256"])
+        claims = jwt.decode(
+            token, config.REVELRY_INTEGRATION_SECRET, algorithms=["HS256"],
+            issuer="localplay", options={"require": ["exp", "iat", "jti"]},
+        )
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid or expired party games token")
     if claims.get("type") != "revelry_party_games":
@@ -2104,7 +2133,10 @@ def _resolve_authoring_token(token: str) -> dict:
     if not config.REVELRY_INTEGRATION_SECRET:
         raise HTTPException(status_code=503, detail="Revelry integration is not configured")
     try:
-        claims = jwt.decode(token, config.REVELRY_INTEGRATION_SECRET, algorithms=["HS256"])
+        claims = jwt.decode(
+            token, config.REVELRY_INTEGRATION_SECRET, algorithms=["HS256"],
+            issuer="localplay", options={"require": ["exp", "iat", "jti"]},
+        )
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid or expired authoring token")
     if claims.get("type") != "revelry_authoring":
@@ -2126,11 +2158,16 @@ def _authoring_claims_from_request(req: Request) -> Optional[dict]:
 
 
 def _require_authoring_or_service(req: Request, request_context: Optional[RevelryExternalContext] = None) -> tuple[RevelryExternalContext, RevelryActor, Optional[dict]]:
-    claims = _authoring_claims_from_request(req)
+    bearer = (req.headers.get("authorization") or "").strip()
+    bearer_token = bearer[7:].strip() if bearer.lower().startswith("bearer ") else ""
+    # The content endpoints deliberately accept both credential types. Do not
+    # try to decode the raw service secret as an authoring JWT.
+    is_service = bool(config.REVELRY_INTEGRATION_SECRET and bearer_token and hmac.compare_digest(bearer_token, config.REVELRY_INTEGRATION_SECRET))
+    claims = None if is_service else _authoring_claims_from_request(req)
     if claims:
         launch_context = claims["launch_context"]
         return _external_context_from_launch_context(launch_context), _actor_from_launch_context(launch_context), claims
-    _require_revelry_auth(req)
+    _require_revelry_service_auth(req)
     if not request_context:
         raise HTTPException(status_code=422, detail="external_context is required for service calls")
     return request_context, RevelryActor(), None
@@ -2149,7 +2186,11 @@ def _author_can_operate(actor: RevelryActor) -> bool:
 def _validate_revelry_return_url(return_url: str) -> str:
     if not return_url:
         return ""
-    parsed = urlparse(return_url)
+    try:
+        parsed = urlparse(return_url)
+        return_port = parsed.port
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid return_url")
     if parsed.scheme in ("revelry", "revelryapp"):
         if parsed.netloc and parsed.netloc not in ("party", "games", "open"):
             raise HTTPException(status_code=422, detail="return_url is not allowed")
@@ -2179,7 +2220,7 @@ def _validate_revelry_return_url(return_url: str) -> str:
         _origin_key("http", "localhost", 5173),
         _origin_key("http", "127.0.0.1", 5173),
     })
-    if _origin_key(parsed.scheme, parsed.hostname, parsed.port) not in allowed:
+    if _origin_key(parsed.scheme, parsed.hostname, return_port) not in allowed:
         raise HTTPException(status_code=422, detail="return_url is not allowed")
     return return_url
 
@@ -2237,8 +2278,15 @@ def _safe_result_summary(result: Optional[dict[str, Any]]) -> Optional[dict[str,
     if not isinstance(result, dict):
         return None
     if isinstance(result.get("top_results"), list):
-        top_results = result["top_results"][:5]
-        winner = result.get("winner") if isinstance(result.get("winner"), dict) else (top_results[0] if top_results else None)
+        top_results = [
+            {key: row.get(key) for key in ("nickname", "avatar", "score")}
+            for row in result["top_results"][:5] if isinstance(row, dict)
+        ]
+        winner = (
+            {key: result["winner"].get(key) for key in ("nickname", "avatar", "score")}
+            if isinstance(result.get("winner"), dict)
+            else (top_results[0] if top_results else None)
+        )
         return {
             "title": result.get("title") or result.get("game_title") or "LocalPlay results",
             "game_type": result.get("game_type"),
@@ -2284,8 +2332,14 @@ async def _send_revelry_callback(event_type: str, payload: dict[str, Any]) -> No
     session_id = payload.get("session_id") or session.get("session_id") or session.get("id")
     content_id = payload.get("content_id") or payload.get("localplay_content_id")
     actor_payload = payload.get("actor") if isinstance(payload.get("actor"), dict) else _safe_actor_payload(session=session)
+    event_id = f"lp_evt_{uuid.uuid4().hex}"
+    event_resource = session_id or content_id or uuid.uuid4().hex
+    if event_type == "content.updated":
+        # An unused saved setup can change repeatedly without changing id.
+        # Deduping only by content id would discard every update after the first.
+        event_resource = f"{event_resource}:{event_id}"
     body = {
-        "event_id": f"lp_evt_{uuid.uuid4().hex}",
+        "event_id": event_id,
         "event_type": event_type,
         "occurred_at": _iso(_now_ts()),
         "host_app": payload.get("host_app") or session.get("host_app") or "revelry",
@@ -2294,8 +2348,16 @@ async def _send_revelry_callback(event_type: str, payload: dict[str, Any]) -> No
         "session_id": session_id,
         "content_id": content_id,
         "previous_content_id": payload.get("previous_content_id") or payload.get("versioned_from_content_id"),
-        "idempotency_key": f"{event_type}:{session_id or content_id or uuid.uuid4().hex}:v1",
+        "idempotency_key": f"{event_type}:{event_resource}:v1",
         "payload": {
+            # Current Revelry consumers also read these safe compatibility
+            # fields directly when mirroring a hub-created session.
+            **{
+                key: session[key] for key in (
+                    "room_code", "game_type", "content_id", "joinable", "launch_routes",
+                    "created_at", "started_at", "completed_at", "expires_at", "last_activity_at",
+                ) if key in session
+            },
             "status": payload.get("status") or session.get("status"),
             "session": session or None,
             "actor": actor_payload,
@@ -2588,7 +2650,10 @@ def _resolve_launch_token(token: str, expected_session_id: str = "", expected_sc
     if not config.REVELRY_INTEGRATION_SECRET:
         raise HTTPException(status_code=503, detail="Revelry integration is not configured")
     try:
-        claims = jwt.decode(token, config.REVELRY_INTEGRATION_SECRET, algorithms=["HS256"])
+        claims = jwt.decode(
+            token, config.REVELRY_INTEGRATION_SECRET, algorithms=["HS256"],
+            issuer="localplay", options={"require": ["exp", "iat", "jti"]},
+        )
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid or expired launch token")
     if claims.get("type") != "revelry_launch":
@@ -2729,6 +2794,8 @@ def _create_revelry_session_from_context(
                 },
             )
 
+    if not requested_content_id:
+        _require_host_app_game_allowed(context, game_type, actor, "can_quick_start")
     title = context.external_container_title or next((g["title"] for g in GAME_CATALOG if g["game_type"] == game_type), "LocalPlay Game")
     content_started = time.perf_counter()
     content_id, game_data = _resolve_revelry_runtime_content(context, game_type, str(settings.get("content_id") or ""), title)
@@ -2773,7 +2840,7 @@ def _create_revelry_session_from_context(
         "external_container_id": context.external_container_id,
         "external_container_type": context.external_container_type,
         "external_container_title": context.external_container_title,
-        "external_host_user_id": context.host_user_id,
+        "external_host_user_id": context.host_user_id or actor.external_user_id,
         "external_host_display_name": actor.display_name,
         "game_type": game_type,
         "game_id": content_id,
@@ -2895,7 +2962,7 @@ async def _cancel_revelry_session(
 
 @app.post("/integrations/revelry/party-games-link")
 async def create_revelry_party_games_link(request: RevelryPartyGamesLinkRequest, req: Request):
-    _require_revelry_auth(req)
+    _require_revelry_service_auth(req)
     context = request.external_context
     if context.host_app != "revelry":
         raise HTTPException(status_code=422, detail="Unsupported host_app")
@@ -2935,7 +3002,7 @@ async def create_revelry_party_games_link(request: RevelryPartyGamesLinkRequest,
 
 @app.post("/integrations/revelry/content/authoring-link")
 async def create_revelry_content_authoring_link(request: RevelryContentAuthoringLinkRequest, req: Request):
-    _require_revelry_auth(req)
+    _require_revelry_service_auth(req)
     if request.external_context.host_app != "revelry":
         raise HTTPException(status_code=422, detail="Unsupported host_app")
     if not _author_can_author(request.actor):
@@ -3114,13 +3181,13 @@ def _content_game_from_payload(game_type: str, title: str, payload: dict[str, An
     raise HTTPException(status_code=422, detail="Unsupported game_type")
 
 
-def _content_response(context: RevelryExternalContext, content: dict) -> dict:
+def _content_response(context: RevelryExternalContext, content: dict, actor: Optional[RevelryActor] = None) -> dict:
     summary = _prepared_content_summary(content)
     return {
         **summary,
         "content": summary,
         "localplay_content_id": content["id"],
-        "workspace": _workspace_payload(context),
+        "workspace": _workspace_payload(context, actor),
     }
 
 
@@ -3219,6 +3286,14 @@ async def _generate_party_prompt_content(context: RevelryExternalContext, reques
 def _content_save_id_for_request(context: RevelryExternalContext, request: RevelryContentSaveRequest) -> tuple[Optional[str], Optional[str]]:
     if not request.content_id:
         return None, None
+    wallet_id = _revelry_party_wallet_id(context.external_container_id)
+    pack = db.get_quiz_pack(wallet_id, request.content_id)
+    content = pack or db.get_game_content(wallet_id, request.content_id)
+    if not content:
+        raise HTTPException(status_code=404, detail="Content not found")
+    content_game_type = "quiz" if pack else content.get("game_type")
+    if content_game_type != request.game_type:
+        raise HTTPException(status_code=422, detail="content_id does not match game_type")
     if db.game_content_has_sessions(context.host_app, context.external_container_id, request.content_id):
         return None, request.content_id
     return request.content_id, None
@@ -3249,13 +3324,18 @@ async def create_revelry_content(request: RevelryContentSaveRequest, req: Reques
         token_content_id = claims.get("content_id") or ""
         if token_content_id and request.content_id and request.content_id != token_content_id:
             raise HTTPException(status_code=403, detail="content_id does not match authoring token")
-        if token_content_id and not request.content_id:
+        if claims.get("mode") == "duplicate":
+            # The token's content_id names the read-only source. Never pass it
+            # into an upsert or report a duplicate as a versioned edit.
+            request.content_id = None
+        elif token_content_id and not request.content_id:
             request.content_id = token_content_id
     elif request.actor:
         actor = request.actor
     if not _author_can_author(actor):
         raise HTTPException(status_code=403, detail="Missing capability to author content")
-    _require_host_app_game_allowed(context, request.game_type, actor, "can_create_content")
+    required_capability = "can_edit_content" if request.content_id else "can_create_content"
+    _require_host_app_game_allowed(context, request.game_type, actor, required_capability)
     content, event_type, previous_content_id = _save_revelry_content(context, request)
     await _send_revelry_callback(event_type, {
         "host_app": context.host_app,
@@ -3267,7 +3347,14 @@ async def create_revelry_content(request: RevelryContentSaveRequest, req: Reques
         "versioned_from_content_id": previous_content_id,
         "content": _prepared_content_summary(content),
     })
-    response = _content_response(context, content)
+    response = _content_response(context, content, actor)
+    if claims and claims.get("content_id") != content["id"]:
+        # Used content versions and duplicates receive a new id. Preserve the
+        # original credential expiry while moving its edit scope to the saved
+        # copy, so Save followed by Save and return remains authorized.
+        next_claims = {**claims, "content_id": content["id"], "mode": "edit", "jti": uuid.uuid4().hex}
+        response["authoring_token"] = jwt.encode(next_claims, config.REVELRY_INTEGRATION_SECRET, algorithm="HS256")
+        response["authoring_token_expires_at"] = _iso(claims.get("exp"))
     if previous_content_id:
         response["previous_content_id"] = previous_content_id
         response["versioned_from_content_id"] = previous_content_id
@@ -3295,7 +3382,8 @@ async def get_revelry_content(
     content = pack or db.get_game_content(wallet_id, content_id)
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
-    response = {"content": _prepared_content_summary(content), "localplay_content_id": content["id"]}
+    summary = _prepared_content_summary(content)
+    response = {**summary, "content": summary, "localplay_content_id": content["id"]}
     if include_payload:
         if pack:
             response["quiz"] = _pack_to_quiz(pack)
@@ -3326,7 +3414,7 @@ async def delete_revelry_content(
         raise HTTPException(status_code=403, detail="content_id does not match authoring token")
     if claims:
         actor = _actor_from_launch_context(claims["launch_context"])
-    if not _author_can_author(actor):
+    if claims and not _author_can_author(actor):
         raise HTTPException(status_code=403, detail="Missing capability to delete content")
     wallet_id = _revelry_party_wallet_id(context.external_container_id)
     pack = db.get_quiz_pack(wallet_id, content_id)
@@ -3398,7 +3486,7 @@ async def get_revelry_party_workspace(
     external_user_id: str = "",
     role: str = "host",
 ):
-    _require_revelry_auth(req)
+    _require_revelry_service_auth(req)
     context = RevelryExternalContext(
         external_container_id=external_container_id,
         external_container_type=external_container_type,
@@ -3526,6 +3614,17 @@ async def create_revelry_party_game_launch_token(request: RevelryPartyGameLaunch
     if not formatted["joinable"] and request.scope != "spectator":
         raise HTTPException(status_code=409, detail="Session is not joinable")
 
+    if request.scope == "organizer":
+        hub_token, hub_expires, _hub_context = _create_party_games_token(
+            context, _actor_from_launch_context(launch_context),
+            launch_context.get("return_url", ""), launch_context.get("display") or {},
+            ttl_seconds=config.REVELRY_PARTY_HUB_RETURN_TOKEN_TTL_SECONDS,
+        )
+        launch_context = {
+            **launch_context,
+            "party_hub_url": f"{_public_base_url(req)}/revelry/games?{urlencode({'party_games_token': hub_token})}",
+            "party_hub_token_expires_at": _iso(hub_expires),
+        }
     token, expires = _create_launch_token(
         session["id"],
         request.scope,
@@ -3567,7 +3666,8 @@ async def save_revelry_party_game_content(request: RevelryPartyGamesContentSaveR
     if not _author_can_author(actor):
         raise HTTPException(status_code=403, detail="Missing capability to author content")
     context = _external_context_from_launch_context(launch_context)
-    _require_host_app_game_allowed(context, request.game_type, actor, "can_create_content")
+    required_capability = "can_edit_content" if request.content_id else "can_create_content"
+    _require_host_app_game_allowed(context, request.game_type, actor, required_capability)
     save_request = RevelryContentSaveRequest(
         external_context=context,
         actor=actor,
@@ -3588,7 +3688,7 @@ async def save_revelry_party_game_content(request: RevelryPartyGamesContentSaveR
         "versioned_from_content_id": previous_content_id,
         "content": _prepared_content_summary(content),
     })
-    response = _content_response(context, content)
+    response = _content_response(context, content, actor)
     if previous_content_id:
         response["previous_content_id"] = previous_content_id
         response["versioned_from_content_id"] = previous_content_id
@@ -3670,12 +3770,17 @@ async def delete_revelry_party_game_content(content_id: str, request: RevelryPar
 @app.post("/integrations/revelry/sessions")
 async def create_revelry_session(request: RevelrySessionCreateRequest, req: Request):
     endpoint_started = time.perf_counter()
-    _require_revelry_auth(req, request.handoff_token)
+    claims = _require_revelry_auth(req, request.handoff_token)
     context = request.external_context
+    actor = request.actor
+    if claims.get("type") != "service":
+        context, actor = _revelry_handoff_context(claims, "organizer", request.game_type)
+        if context.external_container_id != request.external_context.external_container_id:
+            raise HTTPException(status_code=403, detail="Handoff token party mismatch")
     create_started = time.perf_counter()
     session = _create_revelry_session_from_context(
         context,
-        request.actor,
+        actor,
         request.game_type,
         request.settings,
         req,
@@ -3707,7 +3812,7 @@ async def create_revelry_session(request: RevelrySessionCreateRequest, req: Requ
             "external_container_type": context.external_container_type,
             "external_container_id": context.external_container_id,
             "session": _format_session(session),
-            "actor": _safe_actor_payload(request.actor),
+            "actor": _safe_actor_payload(actor),
         })
         created_callback_ms = _elapsed_ms(created_callback_started)
     logger.info(
@@ -3730,13 +3835,25 @@ async def create_revelry_session(request: RevelrySessionCreateRequest, req: Requ
 
 @app.post("/integrations/revelry/sessions/{session_id}/launch-token")
 async def create_revelry_launch_token(session_id: str, request: RevelryLaunchTokenRequest, req: Request):
-    _require_revelry_auth(req)
+    claims = _require_revelry_auth(req)
     route_by_scope = {"organizer": "organizer", "player": "join", "spectator": "spectate"}
     if request.route != route_by_scope[request.scope]:
         raise HTTPException(status_code=422, detail="route must match scope")
     session = db.get_game_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    handoff_context = None
+    handoff_actor = None
+    if claims.get("type") != "service":
+        handoff_context, handoff_actor = _revelry_handoff_context(claims, request.scope, session.get("game_type") or "")
+        if session.get("host_app") != handoff_context.host_app or session.get("external_container_id") != handoff_context.external_container_id:
+            raise HTTPException(status_code=403, detail="Handoff token party mismatch")
+    if request.external_context and (
+        request.external_context.host_app != session.get("host_app")
+        or request.external_context.external_container_id != session.get("external_container_id")
+    ):
+        raise HTTPException(status_code=403, detail="Session does not belong to this Revelry party")
+    session = _sync_session_runtime_availability(session) or session
     formatted = _format_session(session)
     if not formatted["joinable"] and request.scope != "spectator":
         raise HTTPException(status_code=409, detail="Session is not joinable")
@@ -3755,7 +3872,11 @@ async def create_revelry_launch_token(session_id: str, request: RevelryLaunchTok
                 "guest_join_label": guest_join_label,
             },
         }
-    token, expires = _create_launch_token(session_id, request.scope, request.route, request.return_url, launch_context)
+    return_url = _validate_revelry_return_url(request.return_url)
+    if handoff_context and handoff_actor:
+        return_url = _validate_revelry_return_url(handoff_context.return_url)
+        launch_context = _revelry_launch_context(handoff_context, handoff_actor, request.scope, return_url, request.display)
+    token, expires = _create_launch_token(session_id, request.scope, request.route, return_url, launch_context)
     base_url = _public_base_url(req)
     query = f"session_id={session_id}&launch_token={token}"
     if request.embed:
@@ -3769,7 +3890,7 @@ async def create_revelry_launch_token(session_id: str, request: RevelryLaunchTok
 
 @app.post("/integrations/revelry/sessions/{session_id}/cancel")
 async def cancel_revelry_session(session_id: str, request: RevelrySessionCancelRequest, req: Request):
-    _require_revelry_auth(req)
+    _require_revelry_service_auth(req)
     session = db.get_game_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -3812,7 +3933,7 @@ async def resolve_revelry_launch_token(launch_token: str, scope: str = ""):
 
 @app.get("/integrations/revelry/sessions/{session_id}")
 async def get_revelry_session_status(session_id: str, req: Request):
-    _require_revelry_auth(req)
+    _require_revelry_service_auth(req)
     session = db.get_game_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -3822,7 +3943,7 @@ async def get_revelry_session_status(session_id: str, req: Request):
 
 @app.get("/integrations/revelry/sessions/{session_id}/results")
 async def get_revelry_session_results(session_id: str, req: Request):
-    _require_revelry_auth(req)
+    _require_revelry_service_auth(req)
     session = db.get_game_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -3862,6 +3983,9 @@ async def launch_session_route(session_id: str, route: str, launch_token: str = 
 
     if route == "organizer":
         path = f"/organizer?session_id={session_id}&launch_token={launch_token}"
+    elif launch_token:
+        target = "spectator" if route == "spectate" else "join"
+        path = f"/{target}?{urlencode({'session_id': session_id, 'launch_token': launch_token})}"
     elif route == "spectate":
         path = f"/spectator?room={session['room_code']}"
     else:

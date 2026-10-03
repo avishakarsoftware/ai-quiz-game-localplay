@@ -1,17 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
+import { publicWebUrl } from '../utils/webUrl';
 
 interface CastButtonProps {
   roomCode: string;
 }
 
 function buildTvUrl(roomCode: string): string {
-  const isCapacitor =
-    window.location.protocol === 'capacitor:' ||
-    (window.location.hostname === 'localhost' && !window.location.port);
-  const baseUrl = isCapacitor
-    ? (import.meta.env.VITE_WEB_URL || 'https://games.revelryapp.me/')
-    : `${window.location.origin}${import.meta.env.BASE_URL}`;
-  return `${baseUrl.replace(/\/?$/, '/')}tv/${encodeURIComponent(roomCode)}`;
+  return publicWebUrl(`tv/${encodeURIComponent(roomCode)}`);
 }
 
 function displayUrl(url: string): string {

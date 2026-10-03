@@ -204,3 +204,33 @@ def test_concurrent_migrate_grace_proofs_is_idempotent(sdb):
 
     _, rooms = sdb.party_grace_state(user)
     assert rooms == 1, f"concurrent migration duplicated the grace window ({rooms} markers)"
+
+
+def test_concurrent_distinct_devices_cannot_bypass_one_merge_per_user(sdb):
+    user = _wallet()
+    devices = [_wallet() for _ in range(WORKERS)]
+    for device in devices:
+        sdb.get_or_create_wallet(device, signup_bonus=False)
+        sdb.credit_tokens(device, 10, "test_fund")
+    _, errors = _race(lambda i: sdb.merge_wallet(devices[i], user))
+    assert not errors, f"unexpected errors: {errors[:2]}"
+    assert sdb.get_wallet_balance(user) == 10
+    assert sum(sdb.get_wallet_balance(device) for device in devices) == 10 * (WORKERS - 1)
+
+
+def test_concurrent_quiz_saves_never_mix_question_sets(sdb):
+    owner = _wallet()
+    saved = sdb.save_quiz_pack(owner, "Initial", [{"text": "Initial", "options": ["A", "B"], "answer_index": 0}])
+
+    def save(index):
+        text = f"Version {index}"
+        return sdb.save_quiz_pack(owner, text, [
+            {"text": text, "options": ["A", "B"], "answer_index": 0},
+            {"text": text, "options": ["A", "B"], "answer_index": 1},
+        ], pack_id=saved["id"])
+
+    _, errors = _race(save)
+    assert not errors, f"unexpected errors: {errors[:2]}"
+    final = sdb.get_quiz_pack(owner, saved["id"])
+    assert len(final["questions"]) == final["question_count"] == 2
+    assert {q["text"] for q in final["questions"]} == {final["title"]}

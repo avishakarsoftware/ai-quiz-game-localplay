@@ -34,7 +34,7 @@ die() { echo "[parity] ERROR: $*" >&2; exit 1; }
 # PyJWT lives in backend/venv locally, but CI installs requirements into the system python.
 # Resolve whichever has it, so the same script works in both places.
 resolve_python() {
-    for candidate in "$ROOT/backend/venv/bin/python" "$ROOT/backend/.venv/bin/python" python3 python; do
+    for candidate in "$ROOT/backend/venv/bin/python" "$ROOT/backend/.venv/bin/python" "$ROOT/.venv/bin/python" python3 python; do
         if command -v "$candidate" >/dev/null 2>&1 || [ -x "$candidate" ]; then
             if "$candidate" -c "import jwt" >/dev/null 2>&1; then
                 echo "$candidate"; return 0

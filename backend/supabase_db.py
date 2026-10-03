@@ -849,40 +849,20 @@ def _question_from_row(row: dict) -> dict:
 
 
 def save_quiz_pack(owner_wallet_id: str, title: str, questions: list[dict], pack_id: Optional[str] = None) -> dict:
-    now = _now()
     pack_id = pack_id or uuid.uuid4().hex
     existing = _first(_sb().select(
-        "quiz_packs",
-        filters={"id": f"eq.{pack_id}", "owner_wallet_id": f"eq.{owner_wallet_id}", "deleted_at": "is.null"},
-        limit=1,
+        "quiz_packs", filters={"id": f"eq.{pack_id}"}, limit=1,
     ))
-    created_at = existing["created_at"] if existing else now
-    _sb().upsert("quiz_packs", {
-        "id": pack_id,
-        "owner_wallet_id": owner_wallet_id,
-        "title": title,
-        "status": "ready",
-        "question_count": len(questions),
-        "created_at": created_at,
-        "updated_at": now,
-        "deleted_at": None,
-    }, on_conflict="id")
-    _sb().delete("quiz_questions", filters={"pack_id": f"eq.{pack_id}"})
-    for index, q in enumerate(questions):
-        _sb().insert("quiz_questions", {
-            "id": f"{pack_id}_{index}",
-            "pack_id": pack_id,
-            "position": index,
-            "question_type": "true_false" if len(q.get("options", [])) == 2 else "multiple_choice",
-            "text": q.get("text", ""),
-            "options": q.get("options", []),
-            "answer_index": q.get("answer_index", 0),
-            "image_asset_id": q.get("image_asset_id"),
-            "image_url": q.get("image_url"),
-            "image_alt": q.get("image_alt"),
-            "created_at": now,
-            "updated_at": now,
-        })
+    if existing and existing["owner_wallet_id"] != owner_wallet_id:
+        raise SupabaseDBError("Quiz pack belongs to another wallet")
+    # Metadata and replacement questions commit together. The RPC also checks ownership
+    # under a row lock, so two creators racing on one ID cannot reassign the pack.
+    _sb().rpc("save_quiz_pack", {
+        "p_owner_wallet_id": owner_wallet_id,
+        "p_pack_id": pack_id,
+        "p_title": title,
+        "p_questions": questions,
+    })
     pack = get_quiz_pack(owner_wallet_id, pack_id)
     if not pack:
         raise SupabaseDBError("Failed to save quiz pack")
@@ -941,11 +921,13 @@ def save_game_content(owner_wallet_id: str, game_type: str, title: str, payload:
     content_type = _content_type_for_game(game_type)
     existing = _first(_sb().select(
         "generated_content",
-        filters={"id": f"eq.{content_id}", "wallet_id": f"eq.{owner_wallet_id}"},
+        filters={"id": f"eq.{content_id}"},
         limit=1,
     ))
+    if existing and existing["wallet_id"] != owner_wallet_id:
+        raise SupabaseDBError("Game content belongs to another wallet")
     created_at = existing["created_at"] if existing else now
-    rows = _sb().upsert("generated_content", {
+    content_row = {
         "id": content_id,
         "wallet_id": owner_wallet_id,
         "content_type": content_type,
@@ -956,7 +938,13 @@ def save_game_content(owner_wallet_id: str, game_type: str, title: str, payload:
         "provider": None,
         "created_at": created_at,
         "updated_at": now,
-    }, on_conflict="id")
+    }
+    if existing:
+        rows = _sb().update("generated_content", content_row, filters={
+            "id": f"eq.{content_id}", "wallet_id": f"eq.{owner_wallet_id}",
+        })
+    else:
+        rows = _sb().insert("generated_content", content_row)
     content = _game_content_from_row(rows[0]) if rows else get_game_content(owner_wallet_id, content_id)
     if not content:
         raise SupabaseDBError("Failed to save game content")

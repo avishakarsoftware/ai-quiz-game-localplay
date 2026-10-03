@@ -1110,3 +1110,19 @@ custom_quiz_ai_assist_enabled=false
 - Shareable read-only pack links.
 - Event templates for birthday, baby shower, wedding, holiday, team building.
 - Bingo/Housie content templates that can reuse custom pack authoring concepts: number boards, phrase banks, baby bingo gift/activity lists, and saved caller decks. Runtime rules belong in `SPEC-PLATFORM.md` because Bingo/Housie needs board and claim validation instead of quiz scoring.
+
+
+## Persistence guarantees (2026-10-03 review)
+
+Saved pack IDs remain owned by their original wallet, including soft-deleted packs. A write using
+another wallet's ID must fail before changing its metadata or questions. Generic saved game
+content uses the same ownership rule; creating a new ID never upserts ownership over an existing ID.
+
+Quiz metadata and replacement questions commit together. A failed save preserves the last usable
+pack, and concurrent saves cannot leave a mixture of question sets. SQLite uses one transaction;
+Supabase uses the service-role-only `save_quiz_pack` RPC introduced by the atomic quiz-save
+migration. Apply that migration before deploying an adapter that calls the new RPC.
+
+Backend review regressions cover cross-wallet writes and failed-save rollback in SQLite and real
+PostgREST, and concurrent complete-version saves in PostgREST. API ownership validation remains
+required in addition to these database guarantees.

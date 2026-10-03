@@ -2,10 +2,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { type Quiz } from '../../types';
 
 vi.mock('../../components/organizer/CustomQuizEditor', () => ({
-    default: ({ initialQuiz, onBack }: { initialQuiz: Quiz | null; onBack?: () => void }) => (
+    default: ({ initialQuiz, onBack, onSave, packId }: { initialQuiz: Quiz | null; onBack?: () => void; onSave?: (quiz: Quiz, packId?: string) => Promise<unknown>; packId?: string }) => (
         <div>
             <div>Mock editor</div>
             {onBack && <button type="button" onClick={onBack}>Mock editor back</button>}
+            {onSave && initialQuiz && <button type="button" onClick={() => { void onSave(initialQuiz, packId); }}>Mock save</button>}
             {initialQuiz?.questions.map((question) => (
                 <div key={question.id}>
                     <span>{question.text}</span>
@@ -81,6 +82,34 @@ describe('RevelryAuthoringPage', () => {
         render(<RevelryAuthoringPage />);
         expect(await screen.findByText('Saved question')).toBeInTheDocument();
         expect(screen.queryByRole('heading', { name: 'Create a quiz' })).toBeNull();
+    });
+
+    it('duplicates into a fresh id and uses the returned edit credential for later saves', async () => {
+        const saves: RequestInit[] = [];
+        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            if (url.includes('/authoring-token/resolve')) return Response.json({
+                launch_context: { host_app: 'revelry', external_container_id: 'party-1' },
+                game_type: 'quiz', mode: 'duplicate', localplay_content_id: 'source-id',
+                content: { quiz: { quiz_title: 'Source Quiz', questions: [{ id: 1, text: 'Source question', options: ['A', 'B'], answer_index: 0 }] } },
+            });
+            if (url.includes('/sd/status')) return Response.json({ available: false });
+            if (url.endsWith('/integrations/revelry/content')) {
+                saves.push(init || {});
+                return Response.json({ localplay_content_id: 'copy-id', authoring_token: 'copy-edit-token' });
+            }
+            return new Response('not found', { status: 404 });
+        }));
+        render(<RevelryAuthoringPage />);
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Mock save' }));
+        await waitFor(() => expect(saves).toHaveLength(1));
+        expect(JSON.parse(String(saves[0].body)).content_id).toBeUndefined();
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Mock save' })).toBeInTheDocument());
+        fireEvent.click(screen.getByRole('button', { name: 'Mock save' }));
+        await waitFor(() => expect(saves).toHaveLength(2));
+        expect(JSON.parse(String(saves[1].body)).content_id).toBe('copy-id');
+        expect(saves[1].headers).toMatchObject({ Authorization: 'Bearer copy-edit-token' });
     });
 
     it('opens the Party Quests setup instead of the quiz chooser for a Party Quests token', async () => {

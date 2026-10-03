@@ -1638,26 +1638,39 @@ class TestSparkChargingResetRoom:
             quizzes.pop("insuff-quiz", None)
 
     @pytest.mark.asyncio
-    async def test_reset_room_skips_sparks_for_host_app_managed_rooms(self):
+    async def test_reset_room_rejects_host_app_managed_rooms_without_mutation(self):
         room = make_room()
         sm = SocketManager()
-        add_organizer(room, "org-1")
+        organizer = add_organizer(room, "org-1")
         add_player(room, "p1", "Alice")
         room.state = "PODIUM"
         room.wallet_id = "revelry:party:test"
         room.billing_mode = "host_app_managed"
-        new_quiz = make_quiz(3)
-        from main import quizzes
-        quizzes["host-app-reset-quiz"] = new_quiz
-        try:
-            with patch("socket_manager.token_module.spend_room") as spend_room:
-                await sm.handle_message(room, "org-1", {
-                    "type": "RESET_ROOM", "content_id": "host-app-reset-quiz", "time_limit": 20
-                }, is_organizer=True)
-            spend_room.assert_not_called()
-            assert room.state == "LOBBY"
-        finally:
-            quizzes.pop("host-app-reset-quiz", None)
+        original_quiz = room.quiz
+        original_content_id = room.content_id
+        original_time_limit = room.time_limit
+        original_players = {cid: dict(player) for cid, player in room.players.items()}
+        original_connections = dict(room.connections)
+        with patch("socket_manager.token_module.spend_room") as spend_room, \
+             patch("socket_manager.token_module.spend_generate") as spend_generate, \
+             patch("socket_manager.token_module.db.debit_tokens") as debit:
+            await sm.handle_message(room, "org-1", {
+                "type": "RESET_ROOM", "content_id": "different-content", "time_limit": 20,
+                "game_type": "poker",
+            }, is_organizer=True)
+        spend_room.assert_not_called()
+        spend_generate.assert_not_called()
+        debit.assert_not_called()
+        assert room.state == "PODIUM"
+        assert room.quiz is original_quiz
+        assert room.content_id == original_content_id
+        assert room.time_limit == original_time_limit
+        assert room.game_type == "quiz"
+        assert room.players == original_players
+        assert room.connections == original_connections
+        assert organizer.last("ROOM_RESET") is None
+        assert "party games hub" in organizer.last("ERROR")["message"]
+
 
 
 # ---------------------------------------------------------------------------
