@@ -66,6 +66,7 @@ Rooms are party infrastructure, not a single-game throwaway detail.
 
 - `MAX_ROOMS` is a hard process-local safety limit. Room creation must fail closed with a clear 429 when the cap is reached.
 - Closing a room stops all room-owned timers and auto-advance tasks, including drawing pauses and organizer grace. A grace cleanup may finish its own close/status recording without self-cancellation. Closed socket maps and organizer references are cleared.
+- Server-initiated room/socket closure exits the receive loop normally through connection cleanup. Host cancellation and rejected joins must not log errors from receiving again after a server close; unexpected handler failures must still be logged.
 - Host cancellation must immediately remove the room from the process map and snapshot store so capacity is recovered without waiting for TTL cleanup.
 - Cleanup probes in live smoke tests must prove rooms are gone by reconnecting to the same room code and seeing `Room not found`.
 - Harnesses must cancel every room they create; leaked test rooms are a production risk because they consume the same room cap as real parties.
@@ -87,6 +88,7 @@ Required gates:
   - organizer disconnect/reclaim
   - player reconnect from question, leaderboard, and podium on both seat-reclaim paths
   - closure cancels every room-owned task and timer-driven round completion publishes results
+  - host cancellation closes real ASGI organizer/player/spectator sockets without error logs or remaining room tasks; rejected joins also end normally, while unexpected handler failures retain error reporting
   - late join during running games where allowed
   - ignored reset outside podium
   - podium-to-next-game `ROOM_RESET` moves existing players into next lobby

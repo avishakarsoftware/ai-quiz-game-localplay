@@ -1,6 +1,7 @@
 """Repository-review regressions for persistence ownership and room lifecycle contracts."""
 import asyncio
 import json
+import logging
 import time
 
 import config
@@ -8,6 +9,7 @@ import httpx
 
 import pytest
 from fastapi import WebSocketDisconnect
+from starlette.websockets import WebSocket, WebSocketState
 
 import db
 import supabase_db
@@ -128,6 +130,116 @@ async def test_closing_room_stops_every_timer_and_clears_connections():
     assert all(ws.closed for ws in (organizer, player, spectator))
     assert room.connections == room.spectators == {}
     assert room.organizer is None and room.organizer_id is None
+
+
+def _asgi_socket():
+    """Use Starlette's real socket state machine without a network listener."""
+    incoming, outgoing = asyncio.Queue(), asyncio.Queue()
+    incoming.put_nowait({"type": "websocket.connect"})
+
+    async def send(message):
+        await outgoing.put(message)
+        if message["type"] == "websocket.close":
+            # A browser acknowledges the server close so pending player/TV reads finish.
+            await incoming.put({"type": "websocket.disconnect", "code": message.get("code", 1000)})
+
+    ws = WebSocket({"type": "websocket", "headers": []}, receive=incoming.get, send=send)
+    return ws, incoming, outgoing
+
+
+async def _asgi_payload(outgoing, message_type):
+    while True:
+        frame = await asyncio.wait_for(outgoing.get(), timeout=1)
+        if frame["type"] == "websocket.send":
+            payload = json.loads(frame["text"])
+            if payload["type"] == message_type:
+                return payload
+
+
+@pytest.mark.asyncio
+async def test_host_cancel_closes_real_asgi_sockets_without_error_or_remaining_tasks(caplog):
+    room = quiz_room()
+    room.organizer_token = "host-secret"
+    manager = SocketManager()
+    manager.rooms[room.room_code] = room
+    organizer, player, spectator = [_asgi_socket() for _ in range(3)]
+    organizer[1].put_nowait({"type": "websocket.receive", "text": json.dumps({"type": "AUTH", "token": "host-secret"})})
+    player[1].put_nowait({"type": "websocket.receive", "text": json.dumps({"type": "JOIN", "nickname": "Ada"})})
+    connections = []
+    owned_tasks = []
+    attrs = ("timer_task", "drawing_auto_task", "housie_auto_task", "mc_auto_stop_task",
+             "mc_grab_task", "mafia_timer_task", "_organizer_cleanup_task")
+    with caplog.at_level(logging.ERROR, logger="socket_manager"):
+        try:
+            connections.append(asyncio.create_task(manager.connect(organizer[0], room.room_code, "org", is_organizer=True)))
+            await _asgi_payload(organizer[2], "ROOM_CREATED")
+            connections.append(asyncio.create_task(manager.connect(player[0], room.room_code, "player")))
+            await _asgi_payload(player[2], "JOINED_ROOM")
+            connections.append(asyncio.create_task(manager.connect(spectator[0], room.room_code, "tv", is_spectator=True)))
+            await _asgi_payload(spectator[2], "SPECTATOR_SYNC")
+            for attr in attrs:
+                task = spawn(asyncio.sleep(60), name=f"cancel-review-{attr}")
+                owned_tasks.append(task)
+                setattr(room, attr, task)
+            await asyncio.sleep(0)
+            organizer[1].put_nowait({"type": "websocket.receive", "text": json.dumps({"type": "CANCEL_GAME"})})
+            for _, _, outgoing in (organizer, player, spectator):
+                assert (await _asgi_payload(outgoing, "ROOM_CLOSED"))["reason"] == "host_cancelled"
+            await asyncio.wait_for(asyncio.gather(*connections), timeout=1)
+            await asyncio.gather(*owned_tasks, return_exceptions=True)
+            assert room.room_code not in manager.rooms
+            assert room.state == "CLOSED"
+            assert room.connections == room.spectators == {}
+            assert room.organizer is None and room.organizer_id is None
+            assert all(ws.application_state == WebSocketState.DISCONNECTED for ws, _, _ in (organizer, player, spectator))
+            assert all(task.cancelled() for task in owned_tasks)
+            assert all(getattr(room, attr) is None for attr in attrs)
+        finally:
+            await room.close_all_connections()
+            for task in connections + owned_tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*connections, *owned_tasks, return_exceptions=True)
+    assert not [record for record in caplog.records if record.name == "socket_manager" and record.levelno >= logging.ERROR]
+
+
+@pytest.mark.asyncio
+async def test_rejected_join_closes_only_its_asgi_socket_without_logging_error(caplog):
+    room = quiz_room()
+    room.locked = True
+    manager = SocketManager()
+    manager.rooms[room.room_code] = room
+    ws, incoming, outgoing = _asgi_socket()
+    incoming.put_nowait({"type": "websocket.receive", "text": json.dumps({"type": "JOIN", "nickname": "Ada"})})
+    with caplog.at_level(logging.ERROR, logger="socket_manager"):
+        await asyncio.wait_for(manager.connect(ws, room.room_code, "rejected"), timeout=1)
+    assert (await _asgi_payload(outgoing, "ERROR"))["message"] == "Room is locked by the host"
+    assert ws.application_state == WebSocketState.DISCONNECTED
+    assert manager.rooms[room.room_code] is room
+    assert room.connections == room.players == {}
+    assert not [record for record in caplog.records if record.name == "socket_manager" and record.levelno >= logging.ERROR]
+
+
+@pytest.mark.asyncio
+async def test_unexpected_handler_runtime_error_is_still_logged(monkeypatch, caplog):
+    room = quiz_room()
+    manager = SocketManager()
+    manager.rooms[room.room_code] = room
+    ws, incoming, _ = _asgi_socket()
+    incoming.put_nowait({"type": "websocket.receive", "text": json.dumps({"type": "PING"})})
+
+    async def broken_handler(*args):
+        raise RuntimeError("Unexpected handler failure")
+
+    monkeypatch.setattr(manager, "handle_message", broken_handler)
+    with caplog.at_level(logging.ERROR, logger="socket_manager"):
+        await asyncio.wait_for(manager.connect(ws, room.room_code, "broken"), timeout=1)
+    errors = [record for record in caplog.records if record.name == "socket_manager" and record.levelno >= logging.ERROR]
+    assert len(errors) == 1
+    assert isinstance(errors[0].exc_info[1], RuntimeError)
+    assert str(errors[0].exc_info[1]) == "Unexpected handler failure"
+    assert room.connections == {}
+    await room.close_all_connections()
 
 
 @pytest.mark.asyncio

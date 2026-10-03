@@ -5,6 +5,27 @@ export const GAMMA_ORIGIN = 'https://gamesapi-gamma.revelryapp.me';
 const REVELRY_GAMMA_ORIGIN = 'https://api-gamma.revelryapp.me';
 const REVELRY_GAMMA_HOST_PHONE = '+15550199000';
 const REVELRY_GAMMA_HOST_NAME = 'Gamma Test Host';
+const REVELRY_API_TIMEOUT_MS = 12000;
+
+async function revelryGammaRequest(path: string, options: RequestInit) {
+  const signal = AbortSignal.timeout(REVELRY_API_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${REVELRY_GAMMA_ORIGIN}${path}`, { ...options, signal });
+    const body = await response.text();
+    // Do not include authentication response bodies or bearer credentials in errors.
+    if (!response.ok) throw new Error(`Revelry gamma ${path.split('?')[0]} returned ${response.status}`);
+    try {
+      return JSON.parse(body);
+    } catch {
+      throw new Error(`Revelry gamma ${path.split('?')[0]} returned invalid JSON`);
+    }
+  } catch (error) {
+    if (signal.aborted) {
+      throw new Error(`Revelry gamma ${path.split('?')[0]} timed out after ${REVELRY_API_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  }
+}
 
 export function getGammaPartyGamesUrl(): URL {
   const rawUrl = process.env.REVELRY_GAMMA_PARTY_GAMES_URL
@@ -20,14 +41,16 @@ export function getGammaPartyGamesUrl(): URL {
   return url;
 }
 
-export function decodeJwtPayload(token: string): Record<string, any> {
+export function decodeJwtPayload(token: string): { launch_context: { external_container_id: string } } {
   const payload = token.split('.')[1] || '';
   const padded = `${payload}${'='.repeat((4 - (payload.length % 4)) % 4)}`;
   return JSON.parse(Buffer.from(padded, 'base64url').toString('utf8'));
 }
 
 export async function resolveWorkspace(request: APIRequestContext, token: string) {
-  const resolve = await request.get(`/integrations/revelry/party-games/resolve?party_games_token=${encodeURIComponent(token)}`);
+  const resolve = await request.get(`/integrations/revelry/party-games/resolve?party_games_token=${encodeURIComponent(token)}`, {
+    timeout: 15000,
+  });
   await expect(resolve).toBeOK();
   return resolve.json();
 }
@@ -56,20 +79,17 @@ export async function expectOrganizerLaunch(page: Page) {
 }
 
 export async function revelryGammaLogin(): Promise<{ token: string; user: { id: string; name: string } }> {
-  const response = await fetch(`${REVELRY_GAMMA_ORIGIN}/auth/dev/login`, {
+  return revelryGammaRequest('/auth/dev/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone: REVELRY_GAMMA_HOST_PHONE, name: REVELRY_GAMMA_HOST_NAME }),
   });
-  const body = await response.text();
-  expect(response.ok, body).toBeTruthy();
-  return JSON.parse(body);
 }
 
 export async function driveQuizToCompletion(page: Page, roomCode: string, organizerToken: string) {
   await page.goto('/');
   return page.evaluate(async ({ roomCode: code, organizerToken: token }) => {
-    type Message = Record<string, any>;
+    type Message = Record<string, unknown>;
 
     function connect(path: string, onOpen?: (ws: WebSocket) => void) {
       const messages: Message[] = [];
@@ -164,10 +184,7 @@ export async function driveQuizToCompletion(page: Page, roomCode: string, organi
 }
 
 export async function revelryGammaJson(path: string, token: string) {
-  const response = await fetch(`${REVELRY_GAMMA_ORIGIN}${path}`, {
+  return revelryGammaRequest(path, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  const body = await response.text();
-  expect(response.ok, body).toBeTruthy();
-  return JSON.parse(body);
 }

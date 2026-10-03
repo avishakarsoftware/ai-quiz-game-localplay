@@ -1,4 +1,5 @@
 from fastapi import WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 from typing import Dict, List, Optional
 from datetime import datetime, timezone
 import copy
@@ -1264,7 +1265,11 @@ class SocketManager:
                 if room.game_type == "poker" and room.poker_state:
                     sync["poker"] = self._poker_public_state(room)
                 await websocket.send_json(sync)
-                while True:
+                while (
+                    self.rooms.get(room_code) is room
+                    and room.state != "CLOSED"
+                    and getattr(websocket, "application_state", WebSocketState.CONNECTED) == WebSocketState.CONNECTED
+                ):
                     try:
                         await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
                     except asyncio.TimeoutError:
@@ -1320,8 +1325,16 @@ class SocketManager:
             pass
 
         try:
-            while True:
+            # CANCEL_GAME and rejected joins can close the socket inside the handler.
+            # End normally through finally instead of receiving from a closed socket.
+            while (
+                self.rooms.get(room_code) is room
+                and room.state != "CLOSED"
+                and getattr(websocket, "application_state", WebSocketState.CONNECTED) == WebSocketState.CONNECTED
+            ):
                 data = await websocket.receive_text()
+                if self.rooms.get(room_code) is not room or room.state == "CLOSED":
+                    break
 
                 # Enforce message size limit
                 if len(data) > config.MAX_WS_MESSAGE_SIZE:
