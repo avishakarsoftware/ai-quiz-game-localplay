@@ -125,7 +125,7 @@ deployment below.
 |---|---|---|---|
 | Wallet identity merge (October review) | ✅ applied + verified 2026-10-03 | pending | `20261003T000000_wallet_merge_identity{,_gamma}.sql`; preserves drained purchases, transfers paid history once, distinguishes genuine later purchases from legacy retained history, and serializes target eligibility. |
 | Atomic custom quiz save (October review) | ✅ applied + verified 2026-10-03 | pending | `20261003T010000_atomic_quiz_save{,_gamma}.sql`; service-role-only RPC, owner lock, transactional metadata/questions replacement. Required before the new adapter. Verification leaves zero synthetic rows. |
-| Deployed code (backend+SPA) | **`0bf94209` (2026-10-03)** | `40b8dd09` (last recorded 2026-08-09) | Gamma running OCI revision label verified as `0bf942094a2e9e6bc6680b4a49b430834cf0cb84`, image `sha256:394e8061a2923cb295bc02566a4884facdcadfcefc4fb17a287cb3be90e57051`. Preflight and health passed, Supabase prefix `games_gamma_`. Production was not deployed; its running image remains `sha256:7b328e823c246c5d75627d21c5e67cc2ea8536190f8d933f6c0ffa7960ac7e5e` (older image has no revision label). Preserve production grace OFF (`PARTY_GRACE_HOURS=0`) and ads OFF. See October release verification below and the August history for the prior production rollout. |
+| Deployed code (backend+SPA) | **`dfcb266e` (2026-10-03 PDT / October 4 UTC)** | unlabeled mixed artifact (last recorded 2026-08-09) | Gamma running OCI revision label verified as `dfcb266e5b6a93bad344d7e0c7c0975363844c42`, image `sha256:e318edd8cd2b812370b665b42ada8afdf4cbfdc600ff510d700501277ae6b275` (maintenance layer on retained `0bf94209` base). Preflight and health passed, Supabase prefix `games_gamma_`. Production was not deployed; its running image remains `sha256:7b328e823c246c5d75627d21c5e67cc2ea8536190f8d933f6c0ffa7960ac7e5e` (older image has no revision label). Preserve production grace OFF (`PARTY_GRACE_HOURS=0`) and ads OFF. See October release verification below and the August history for the prior production rollout. |
 | Account deletion (migration + endpoint) | ✅ live + verified | ✅ live + verified | 2026-07-19: `sql/migrations/20260718T000000_account_deletion.sql` applied via Management API (gamma first, then prod): `*_deleted_accounts` denylist + `*_delete_account` RPC created, `*_token_transactions_wallet_id_fkey` **CASCADE dropped** (constraint names pre-verified against pg_constraint on both prefixes). Synthetic account cycle on each env: user+wallet(240)+ledger row → RPC delete → user/wallet gone, **ledger retained**, denylisted, re-delete `already_deleted`; live resurrection probe (`/tokens/balance` with the deleted id) returned 200/balance:0 and created **no wallet, no signup bonus**. All test rows cleaned (0 residue). |
 | Login-streak bonus (SQL RPC) | ✅ live | ✅ live | applied 2026-07-08, targeted migration |
 | Check-in games policy (`party_quests`, `find_someone`) | ✅ enabled | ✅ enabled | policy rows 2026-07-08; prod Party Quests upgraded from quick-start-only on 2026-07-14 |
@@ -161,8 +161,11 @@ lobby/answered-quiz token, score, answer and no-extra-charge checks; both owned 
 
 A later narrow API follow-up maps only typed quiz-pack ownership refusals to 404; integrity was
 already enforced, but the unhandled exception returned 500. Forty focused regressions pass and
-independent review is clear. This supersedes the original backend RC for final promotion; a new
-immutable backend layer, exact-source CI and gamma qualification are required. The public
+independent review is clear. This supersedes the original backend RC for final promotion; the new
+immutable backend layer and all five exact-source CI jobs passed. Gamma now runs `dfcb266e`,
+image `sha256:e318edd8cd2b812370b665b42ada8afdf4cbfdc600ff510d700501277ae6b275`; its env, mount and caps are unchanged.
+Fresh live quiz ownership/save/two-edit checks, 64 API checks and actual image-swap lobby/answered-
+quiz recovery passed with no extra billing and owned-room/pack cleanup verified. The public
 website artifact is unchanged. Production SQL and runtime still have not been changed.
 
 Separate exact-baseline Revelry maintenance commits pass 2,904 gamma / 2,700 production tests,
@@ -173,9 +176,10 @@ SQL, runtime/frontend publication and production acceptance remain pending. See
 [dated release evidence](RELEASE-EVIDENCE-2026-10.md) and
 [promotion plan](PROD-ROLLOUT-2026-10.md); preparation does not change deployed status.
 
-### Gamma repository review release — October 3, 2026
+### Original gamma repository review release — October 3, 2026
 
-The final backend/SPA image runs source `0bf942094a2e9e6bc6680b4a49b430834cf0cb84`.
+This historical base is superseded in gamma by the `dfcb266e` maintenance image above.
+The originally reviewed backend/SPA image ran source `0bf942094a2e9e6bc6680b4a49b430834cf0cb84`.
 Its immutable image ID is
 `sha256:394e8061a2923cb295bc02566a4884facdcadfcefc4fb17a287cb3be90e57051`.
 The deploy script passed frontend type/build checks, remote database-prefix validation,

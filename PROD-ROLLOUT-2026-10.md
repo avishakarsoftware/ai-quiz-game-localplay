@@ -1,6 +1,6 @@
 # October 2026 release candidate promotion plan
 
-Saved 2026-10-03. **Status: rollout authorized 2026-10-03; qualification and recovery preparation in progress; separate Revelry publication approval pending. Production has not yet been changed.**
+Saved 2026-10-03. **Status: rollout authorized 2026-10-03; LocalPlay maintenance candidate qualified in gamma; separate Revelry publication approval pending. Production has not yet been changed.**
 This runbook covers qualification and later promotion of LocalPlay's reviewed backend, bundled
 SPA, two persistence migrations, public IONOS web bundle, and Revelry integration. The human release owner authorized review, necessary fixes, commit/push and deployment through
 production, with rollback readiness and protection of the shared databases. The two
@@ -14,9 +14,9 @@ Revelry work is included. Actual environment state remains in [DEPLOY.md](DEPLOY
 
 | Item | Proposed candidate / recorded evidence |
 |---|---|
-| Runtime source | New ownership-404 maintenance source pending commit/CI; qualified base `0bf942094a2e9e6bc6680b4a49b430834cf0cb84` |
-| Qualified base gamma Docker image ID | `sha256:394e8061a2923cb295bc02566a4884facdcadfcefc4fb17a287cb3be90e57051` |
-| Source CI | [37160187919](https://github.com/avishakarsoftware/ai-quiz-game-localplay/actions/runs/37160187919), all five required jobs passed |
+| Runtime source | `dfcb266e5b6a93bad344d7e0c7c0975363844c42`, ownership-404 maintenance layer on qualified `0bf94209` base |
+| Validated gamma Docker image ID | `sha256:e318edd8cd2b812370b665b42ada8afdf4cbfdc600ff510d700501277ae6b275`; parent `sha256:394e8061a2923cb295bc02566a4884facdcadfcefc4fb17a287cb3be90e57051` retained |
+| Source CI | [37178586787](https://github.com/avishakarsoftware/ai-quiz-game-localplay/actions/runs/37178586787), all five required jobs passed for `dfcb266e` |
 | Gamma | `https://gamesapi-gamma.revelryapp.me/`; `games-backend-gamma`, loopback port `8004`, Supabase `games_gamma_` |
 | Production backend | `https://gamesapi.revelryapp.me/`; `games-backend`, loopback port `8000`, Supabase `games_` |
 | Production web | `https://games.revelryapp.me/`; IONOS `~/revelryapp/games/` |
@@ -25,7 +25,7 @@ Revelry work is included. Actual environment state remains in [DEPLOY.md](DEPLOY
 | Last observed production image | `sha256:7b328e823c246c5d75627d21c5e67cc2ea8536190f8d933f6c0ffa7960ac7e5e`, created August 9; re-capture at rollout |
 | Production source provenance | Unlabeled mixed artifact: live `main.py` matches `1179b530`; `socket_manager.py` matches `40b8dd09`. Recover by captured image, not inferred source |
 | Documentation revision | Later docs/test-only commits, including `a555fed5`, do not change deployed runtime; record final plan/evidence commit separately |
-| IONOS artifact | Built from `0bf94209`, production OAuth/analytics inputs and original live config preserved; SHA-256 `cb53d7d7f1a67e2b67dd0c9e4c21c88d8e62ce67e020c6a67bc55cdfd96c846b`; mixed-client checks pending |
+| IONOS artifact | Built from `0bf94209`, production OAuth/analytics inputs and original live config preserved; SHA-256 `cb53d7d7f1a67e2b67dd0c9e4c21c88d8e62ce67e020c6a67bc55cdfd96c846b`; 16 mixed-browser / four deployed-schema checks passed with intercepted writes/sockets; actual production acceptance pending |
 | Revelry backend/client pair | Separate maintenance patch on gamma `06df3136` and production `e8b97eca`; original frontend/dependencies/config retained; staged/live qualification pending |
 
 The Docker value is an immutable local **image ID**, not a registry manifest digest or pullable
@@ -82,14 +82,14 @@ production checks as pending, with abort/recovery actions; it does not mark them
 
 | Gate | Current evidence | Remaining exit criterion |
 |---|---|---|
-| G1 — Local and CI | 1,655 backend + 20 separate legacy E2E; 516 frontend; TypeScript/Vite; real Postgres/PostgREST; five CI jobs green for `0bf94209` | Confirm source and required CI unchanged; later focused counts overlap and must not be summed |
-| G2 — Gameplay | 78 gamma all-games/replay passes on `25301590`, one Photo Clue camera waiver; final runtime delta is only closed-socket receive guard, with 205 focused passes and exact-source CI | Record narrow-delta acceptance; rerun affected broad suites for runtime/config/build changes and integration after consumer remediation |
-| G3 — Final artifact | 64 API checks passed; eight rooms/32 sockets/reconnect/full cleanup on final image | Repeat health/config/guards and bounded gamma reconnect after dependent changes |
+| G1 — Local and CI | Prior base: 1,655 backend + 20 legacy E2E, 516 frontend. New `dfcb266e`: 1,617 isolated unit/API passes, 73 local DB skips, 40 focused passes and all five exact-source CI jobs green, including Postgres/PostgREST and browser suites | Confirm frozen source/CI unchanged; counts overlap and must not be summed |
+| G2 — Gameplay | 78 gamma all-games/replay passes on `25301590`, one Photo Clue camera waiver; current narrow delta adds ownership-specific HTTP 404, with 40 focused passes, full unit/API and exact-source CI | Maintainer accepts the unchanged-gameplay delta based on focused/full/exact-source CI and gamma API/recovery; repeat integration after consumer remediation |
+| G3 — Final artifact | Current image: 64 API checks, live owner/save/refusal checks and actual image-swap recovery passed. Prior qualified base: eight rooms/32 sockets/reconnect/full cleanup | New candidate: 64 fresh API checks, live owner create/two edits/stranger POST/GET/DELETE 404 + unchanged data + cleanup, and image-swap lobby/answered-quiz recovery passed; repeat after consumer remediation |
 | G4 — Real Revelry | Three embedded workflows + four launch/staging/reconnect matrix tests; mirrored completion, fresh Odd Question continuation, image save | Repeat with fixed consumer pair; player/watch browser and deployed-client return evidence beyond token minting |
 | G5 — Workspace scale | Previous defect: 16.22s for 86 items. Reviewed fix passes 2,904 gamma / 2,700 prod baseline tests; unchanged 86-item fixture makes one read, zero writes | External fix and large-library deadline/identity/idempotency checks in section 4 pass |
 | G6 — Persistence | Fresh full/focused backups and isolated restores passed; exact two fragments + verification passed offline, with all 465 table contents unchanged; live production SQL pending | Backups; authorized targeted production fragments; verification, ACL, schema-cache and API checks before swap |
-| G7 — Artifacts/config | Exact gamma identity/CI rechecked; frozen IONOS bundle preserves production OAuth, analytics and original config | Hash/freeze bundle; verify baked clients/origins/config layers; preserve production policy/flags |
-| G8 — Recovery | Immutable old image/env/volume and IONOS backups captured, backend rollback check passed, both DB restores passed; current gamma owned-lobby/answered-quiz restart drill passed, zero extra debit and cleanup verified | Current gamma restart/reconnect and timed-state recovery; rollback image/env/frontend package and compatibility ready |
+| G7 — Artifacts/config | Exact gamma identity/CI rechecked; frozen IONOS bundle preserves production OAuth, analytics and original config | Frozen bundle/30 hashes and 16 mixed-browser/four schema checks passed; production candidate CORS and canonical publication checks remain |
+| G8 — Recovery | Immutable old image/env/volume and IONOS backups captured, backend rollback check passed, both DB restores passed; current gamma owned-lobby/answered-quiz restart drill passed, zero extra debit and cleanup verified | Actual old-to-new gamma recovery passed; refreshed rollback check and private candidate export passed. Production-only smoke/observation still pending |
 | G9 — Enabled-path gaps | Camera automated waiver; gamma Stripe unset; native return/real paid checkout not established | Manual enabled-path evidence or explicit scope exclusion; invalid-input guards do not prove successful payment/refund |
 | G10 — Decision | Human rollout authorization recorded; production checks still pending | Named owners, gates/exceptions, QA scope/budgets, baseline/thresholds, window and recovery signed |
 
@@ -144,10 +144,11 @@ does not roll back Revelry, and old/new combinations must not be assumed compati
 1. Use a clean checkout at the runtime revision. Verify gamma image ID, OCI revision label,
    `linux/amd64`, bundled `/app/static` and baked frontend values. Freeze concurrent build/tag/
    deploy/policy operations while preparing the manifest. `:latest` is not release identity.
-2. The ownership-404 follow-up requires a new backend-only layer on the validated image, copying
-   main.py, db.py, supabase_db.py and persistence_errors.py and labelling the exact committed source.
-   Preserve its dependencies and SPA, requalify exact-source CI and gamma HTTP/recovery before
-   promotion, and replace the image ID in section 8 with the newly verified immutable ID.
+2. The ownership-404 follow-up is qualified as a backend-only layer on the validated base,
+   copying main.py, db.py, supabase_db.py and persistence_errors.py with exact committed-source
+   labels. Dependencies and SPA are preserved; all five exact-source CI jobs, gamma HTTP and
+   actual image-swap recovery passed. Section 8 uses the verified new immutable image. A further
+   runtime change requires repeat qualification and a new identity.
    Its SPA uses same-origin API and `/config/public`; compare
    baked Google/Apple web clients, Cast/build flags and URLs with production. No gamma origin may
    be baked in. If incompatible, build/requalify a new image in gamma. Backend requirements and
@@ -172,7 +173,7 @@ does not roll back Revelry, and old/new combinations must not be assumed compati
 Read-only identity check for the future operator:
 
 ```bash
-gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --command='docker inspect games-backend-gamma --format "{{.Image}}"; docker image inspect sha256:394e8061a2923cb295bc02566a4884facdcadfcefc4fb17a287cb3be90e57051 --format "{{.Id}} {{.Architecture}} {{index .Config.Labels \"org.opencontainers.image.revision\"}}"'
+gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --command='docker inspect games-backend-gamma --format "{{.Image}}"; docker image inspect sha256:e318edd8cd2b812370b665b42ada8afdf4cbfdc600ff510d700501277ae6b275 --format "{{.Id}} {{.Architecture}} {{index .Config.Labels \"org.opencontainers.image.revision\"}}"'
 ```
 
 ## 6. Recovery package and pre-window baseline
@@ -258,12 +259,12 @@ existing production values for `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_IOS_CLIENT_ID`,
 `APPLE_ALLOWED_CLIENT_IDS`; defaults are not proof of live settings. Compare resulting env diff
 and restore the private original if a failed deploy changed it. Do not use `--bootstrap-vm`.
 
-The commands below show the original qualified base identity and must be updated with the new
-ownership-corrected image before execution. Do not deploy the superseded base as the final RC.
+Confirm the commands below still match the verified ownership-corrected image before execution.
+The identity is updated to `dfcb266e`; do not deploy the superseded base as the final RC.
 Only in the authorized window, from the selected release checkout with those variables exported:
 
 ```bash
-gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --command='docker image inspect sha256:394e8061a2923cb295bc02566a4884facdcadfcefc4fb17a287cb3be90e57051 >/dev/null && docker tag sha256:394e8061a2923cb295bc02566a4884facdcadfcefc4fb17a287cb3be90e57051 revelry-backend:latest'
+gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --command='docker image inspect sha256:e318edd8cd2b812370b665b42ada8afdf4cbfdc600ff510d700501277ae6b275 >/dev/null && docker tag sha256:e318edd8cd2b812370b665b42ada8afdf4cbfdc600ff510d700501277ae6b275 revelry-backend:latest'
 CLOUDSDK_CORE_PROJECT=revelryapp ./scripts/deploy-gcp.sh --skip-build --with-frontend
 ```
 

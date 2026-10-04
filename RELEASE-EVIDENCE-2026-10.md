@@ -1,6 +1,6 @@
 # October 2026 production rollout evidence
 
-Updated 2026-10-04 UTC (2026-10-03 PDT). **Preparation; production unchanged.**
+Updated 2026-10-04 UTC (2026-10-03 PDT). **LocalPlay gamma qualified; production unchanged, awaiting separate Revelry approval.**
 
 Avi authorized plan review, fixes, commit/push and rollout through production, with rollback
 readiness and protection of the shared database. Codex operates and reviews the release, with
@@ -12,9 +12,9 @@ consumer rollout is pending. See [promotion plan](PROD-ROLLOUT-2026-10.md).
 
 | Component | Identity |
 |---|---|
-| Qualified LocalPlay base | `0bf942094a2e9e6bc6680b4a49b430834cf0cb84`; ownership-404 follow-up source commit/CI pending |
-| Current gamma base image, superseded for final RC | `sha256:394e8061a2923cb295bc02566a4884facdcadfcefc4fb17a287cb3be90e57051` |
-| Required CI | [37160187919](https://github.com/avishakarsoftware/ai-quiz-game-localplay/actions/runs/37160187919), all five jobs rechecked green |
+| LocalPlay runtime | `dfcb266e5b6a93bad344d7e0c7c0975363844c42`; maintenance layer on qualified `0bf94209` base |
+| Exact qualified gamma / proposed production image | `sha256:e318edd8cd2b812370b665b42ada8afdf4cbfdc600ff510d700501277ae6b275`; qualified base `sha256:394e8061a2923cb295bc02566a4884facdcadfcefc4fb17a287cb3be90e57051` retained |
+| Required CI | [37178586787](https://github.com/avishakarsoftware/ai-quiz-game-localplay/actions/runs/37178586787), all five jobs green for `dfcb266e`, including real Postgres/PostgREST and browser tests |
 | Frozen IONOS archive | SHA-256 `cb53d7d7f1a67e2b67dd0c9e4c21c88d8e62ce67e020c6a67bc55cdfd96c846b` |
 | Website JS entry | `index-BxJjwpMz.js`, SHA-256 `6c91763235dd6afb5e73612e5e5244a3e81f221131ca1ee8c96e6ec4a7ebb1af` |
 | Original live config retained | SHA-256 `7dc9a682d90e2f01e68e6e5975ec1d75e1432cb88662e348366a734b18cda700` |
@@ -42,7 +42,8 @@ read back. Temporary local working files are not the only recovery copies.
 | Backup | SHA-256 / verification |
 |---|---|
 | Previous LocalPlay image | `sha256:7b328e823c246c5d75627d21c5e67cc2ea8536190f8d933f6c0ffa7960ac7e5e`; retained tag + export |
-| Image export | `235e614fbf23bc2ff62f210aa0c48ba927f646a8824a3c65817246010d3bc13b` |
+| Qualified candidate export | `b168eb78081961701496f9554f3c13e4e75c1fd701e991ec9eda5c4bfb920a0a` |
+| Previous image export | `235e614fbf23bc2ff62f210aa0c48ba927f646a8824a3c65817246010d3bc13b` |
 | Private production env | `c41b64b8d1a9f6f5096532338539a771e9e9cfc0b891e6599ee3f6913ff788c7` |
 | Mounted-volume snapshot | `0bed8c4211a56e8371fbfd45690ca5f0fedbed5c3fcdd4795de48fe9b1ecddc9` |
 | Previous public site | `d47665f9342755b97e9bdc09efea58cde53e39ea31b65621db09081ef67bf983`; index/config/referenced assets verified |
@@ -65,7 +66,10 @@ tables retained identical contents, including gamma and other applications. Both
 execute only to service_role, with anon/authenticated refused. Verification rows cleaned up;
 ledger sequence allocation advanced. Live targeted SQL remains pending.
 
-Backend rollback check passed. Execute rollback with the captured immutable old image, current
+Backend rollback check passed again with the corrected candidate identity. On the VM, use
+`set -a; . /home/revelry-games/release-backups/20261004T0350Z/rollback-settings.env; set +a`
+then `/home/revelry-games/release-backups/20261004T0350Z/rollback-backend.sh --execute`.
+The settings are private and pin the previous and expected current immutable images. Execute rollback with the captured immutable old image, current
 volume and existing env; never rewind room snapshots or the shared database. Compatible RPC
 hardening stays applied by default. Private old-definition/owner/ACL recovery SQL exists for a
 demonstrated function regression. IONOS recovery restores stable files and publishes the old
@@ -77,7 +81,7 @@ socket_manager.py matches `40b8dd09`. Its captured image is the recovery authori
 
 ## Qualification so far
 
-- LocalPlay exact-source CI: all five jobs green; fresh gamma API regression: 64 passed, zero failed.
+- LocalPlay exact-source `dfcb266e` CI: all five jobs green; fresh gamma API regression: 64 passed, zero failed (21s); 40 focused ownership cases and 1,617 local unit/API cases pass.
 - Revelry final exact-baseline full no-network suites: gamma 2,904 passed / one skipped;
   production 2,700 passed / three skipped; 241 deselected integration tests in each. Independent
   final focused review: 111 passed on each baseline. Counts overlap and must not be summed.
@@ -103,23 +107,36 @@ pre-window hour. VM containers remained below 1% CPU and approximately 101/40 Mi
 Mixed-version browser preparation passed 16/16 cases: archived old web with captured candidate
 read responses, and candidate web with actual captured old-production read responses. It covers
 root/catalog, normalized join PIN, spectator/TV routes, embedded/mobile launch parsing, import/
-room payloads and media JSON. There were no JS/CORS/HTML-as-JSON errors; mutations and sockets
+room payloads and media JSON. Four emitted import/room request schemas match both captured
+deployed OpenAPI contracts. There were no JS/CORS/HTML-as-JSON errors; mutations and sockets
 were intercepted, so these passes do not claim live mixed-version gameplay. Production-origin
 CORS is confirmed on the old backend and must be checked on candidate preflight. Gamma and
 old production web share the same public analytics project; current tours/surveys are empty.
 
 A narrow LocalPlay API follow-up was discovered during acceptance preparation: atomic ownership
-refusal protects quiz content but the HTTP save route returns 500. Typed ownership-to-404 mapping
-is implemented, independently reviewed and passes 40 focused tests. Full backend and exact CI
-qualification are pending; promote only a newly labelled backend candidate after those gates pass. The
-frozen website bytes are unaffected; the prior candidate image remains the current gamma image
-until a newly labelled backend layer passes qualification.
+refusal protected quiz content but the HTTP save route returned 500 before the correction. Typed ownership-to-404 mapping
+is implemented, independently reviewed and passes 40 focused tests. Full isolated backend qualification passed (1,617 tests / 73 database-dependent skips), and all
+five exact-source CI jobs passed, including the real PostgREST missed-preflight collision test. The
+frozen website bytes are unaffected; the four exact committed backend files were layered on the prior qualified image, with
+dependencies, frontend and runtime config unchanged. Gamma now runs the new immutable image.
+Fresh live create/two-edit/read and stranger POST/GET/DELETE 404 checks passed, preserving owner
+content and cleaning the owned pack. The new image also passed 64 API checks and the actual
+old-to-new image-swap recovery drill: roster, tokens, score 999, answered flags and no extra
+debit/grace use all recovered; both owned rooms closed. Readback proves exact source/image,
+unchanged gamma/prod env bytes, original gamma mount/caps, and unchanged old production image.
 
 ## Pending production acceptance
 
-The baseline, exact consumer images/live scale gate, targeted live functions, image swap,
+The baseline and LocalPlay gamma maintenance qualification are complete. The exact consumer
+images/live scale gate, targeted live functions, production image swap,
 publication, owned QA acceptance and attended observation are not complete. Record each actual
-result here before marking production deployed. Keep existing feature policy and identities;
+result here before marking production deployed. Production QA harness is prepared and passed offline guards: one recipient-free owned QA party,
+one standalone START plus replay RESET without another START, one managed START plus completion
+mirror and fresh advertised-game lobby, no third START, no notifications/auth-send/invites or
+customer-card charges. Use the existing synthetic shared QA user; re-inventory ownership and zero
+recipients before mutation. Do not enable an unadvertised production game for testing.
+
+Keep existing feature policy and identities;
 no customer-card charges, native/store rollout, broad load or unbudgeted LLM generation.
 Successful actual OAuth sign-in, camera/Cast, installed native return, and real payment/refund
 remain manual provider/device checks; synthetic guards do not establish those outcomes.

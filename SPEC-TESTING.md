@@ -58,7 +58,9 @@ PostgREST tests cover the same boundary; hosted production tests use owned QA pa
 ### October production preparation evidence
 
 The dated [release evidence](RELEASE-EVIDENCE-2026-10.md) separates source qualification from
-actual live deployment. Fresh exact-source CI and 64 gamma API checks passed. Full and focused
+actual live deployment. Fresh exact-source `dfcb266e` CI (all five jobs) and 64 gamma API checks passed. The narrow
+ownership follow-up also passes 40 focused and 1,617 isolated unit/API cases; 73 database-dependent
+local skips are exercised by the separate real Postgres/PostgREST CI jobs. Full and focused
 backups of both shared projects passed offline restore; the exact LocalPlay production fragments
 and verification preserve all 465 restored tables' contents and change only two RPCs. The current
 candidate's real gamma restart drill verifies lobby seats, answered flags, exact score, organizer/
