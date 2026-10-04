@@ -9,6 +9,7 @@ import secrets
 from typing import Optional
 
 import config
+from persistence_errors import QuizPackOwnershipError
 
 logger = logging.getLogger(__name__)
 
@@ -1811,7 +1812,7 @@ def save_quiz_pack(owner_wallet_id: str, title: str, questions: list[dict], pack
             (pack_id,),
         ).fetchone()
         if existing and existing["owner_wallet_id"] != owner_wallet_id:
-            raise RuntimeError("Quiz pack belongs to another wallet")
+            raise QuizPackOwnershipError()
         if existing:
             created_at = existing["created_at"]
         else:

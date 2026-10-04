@@ -12,8 +12,8 @@ consumer rollout is pending. See [promotion plan](PROD-ROLLOUT-2026-10.md).
 
 | Component | Identity |
 |---|---|
-| LocalPlay runtime | `0bf942094a2e9e6bc6680b4a49b430834cf0cb84` |
-| Exact gamma / proposed production image | `sha256:394e8061a2923cb295bc02566a4884facdcadfcefc4fb17a287cb3be90e57051` |
+| Qualified LocalPlay base | `0bf942094a2e9e6bc6680b4a49b430834cf0cb84`; ownership-404 follow-up source commit/CI pending |
+| Current gamma base image, superseded for final RC | `sha256:394e8061a2923cb295bc02566a4884facdcadfcefc4fb17a287cb3be90e57051` |
 | Required CI | [37160187919](https://github.com/avishakarsoftware/ai-quiz-game-localplay/actions/runs/37160187919), all five jobs rechecked green |
 | Frozen IONOS archive | SHA-256 `cb53d7d7f1a67e2b67dd0c9e4c21c88d8e62ce67e020c6a67bc55cdfd96c846b` |
 | Website JS entry | `index-BxJjwpMz.js`, SHA-256 `6c91763235dd6afb5e73612e5e5244a3e81f221131ca1ee8c96e6ec4a7ebb1af` |
@@ -21,6 +21,8 @@ consumer rollout is pending. See [promotion plan](PROD-ROLLOUT-2026-10.md).
 | Revelry gamma maintenance commit | `ada6f6e92170c87c3c3b1865409d21dd79c58531`, based on live `06df3136`; not yet pushed |
 | Revelry production maintenance commit | `f4497edb1bf42837c5fb9e82a0bd4a1a451a1079`, based on live `e8b97eca`; not yet pushed |
 | Consumer maintenance patch | SHA-256 `91c6dc94789c017db4bec996965b31dc4395d389ba2a6d4d675261f579befd18` |
+
+The matching offline restore image is `public.ecr.aws/supabase/postgres@sha256:178f0976b54a39237096bfa310c1a352dbc82fb1b08dda45cdb8acb5d40c1426`.
 
 The IONOS build uses a clean runtime archive, explicit existing production Google/Apple and
 Cast inputs, Bingo build support, the existing public analytics project key, and the exact
@@ -97,6 +99,21 @@ The 15-minute pre-window monitor recorded 112 checks. Two isolated timeouts occu
 Revelry production probe at the 10-second client timeout, and one gamma probe during the planned
 restart. Neither repeated consecutively; no Cloud Run ERROR events were found in the captured
 pre-window hour. VM containers remained below 1% CPU and approximately 101/40 MiB RAM.
+
+Mixed-version browser preparation passed 16/16 cases: archived old web with captured candidate
+read responses, and candidate web with actual captured old-production read responses. It covers
+root/catalog, normalized join PIN, spectator/TV routes, embedded/mobile launch parsing, import/
+room payloads and media JSON. There were no JS/CORS/HTML-as-JSON errors; mutations and sockets
+were intercepted, so these passes do not claim live mixed-version gameplay. Production-origin
+CORS is confirmed on the old backend and must be checked on candidate preflight. Gamma and
+old production web share the same public analytics project; current tours/surveys are empty.
+
+A narrow LocalPlay API follow-up was discovered during acceptance preparation: atomic ownership
+refusal protects quiz content but the HTTP save route returns 500. Typed ownership-to-404 mapping
+is implemented, independently reviewed and passes 40 focused tests. Full backend and exact CI
+qualification are pending; promote only a newly labelled backend candidate after those gates pass. The
+frozen website bytes are unaffected; the prior candidate image remains the current gamma image
+until a newly labelled backend layer passes qualification.
 
 ## Pending production acceptance
 

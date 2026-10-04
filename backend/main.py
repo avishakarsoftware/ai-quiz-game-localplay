@@ -1237,7 +1237,10 @@ async def save_custom_quiz_pack(request: QuizPackSaveRequest, req: Request):
     quiz_data = _sanitize_quiz(request.quiz)
     if not _validate_quiz(quiz_data, attempt=0):
         raise HTTPException(status_code=422, detail="Invalid quiz data")
-    pack = db.save_quiz_pack(wallet_id, quiz_data.get("quiz_title", "Custom Quiz"), quiz_data["questions"], request.pack_id)
+    try:
+        pack = db.save_quiz_pack(wallet_id, quiz_data.get("quiz_title", "Custom Quiz"), quiz_data["questions"], request.pack_id)
+    except db.QuizPackOwnershipError:
+        raise HTTPException(status_code=404, detail="Quiz pack not found") from None
     return {"pack": pack}
 
 

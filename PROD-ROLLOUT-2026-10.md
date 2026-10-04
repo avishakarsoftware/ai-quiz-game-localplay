@@ -14,8 +14,8 @@ Revelry work is included. Actual environment state remains in [DEPLOY.md](DEPLOY
 
 | Item | Proposed candidate / recorded evidence |
 |---|---|
-| Runtime source | `0bf942094a2e9e6bc6680b4a49b430834cf0cb84` |
-| Validated gamma Docker image ID | `sha256:394e8061a2923cb295bc02566a4884facdcadfcefc4fb17a287cb3be90e57051` |
+| Runtime source | New ownership-404 maintenance source pending commit/CI; qualified base `0bf942094a2e9e6bc6680b4a49b430834cf0cb84` |
+| Qualified base gamma Docker image ID | `sha256:394e8061a2923cb295bc02566a4884facdcadfcefc4fb17a287cb3be90e57051` |
 | Source CI | [37160187919](https://github.com/avishakarsoftware/ai-quiz-game-localplay/actions/runs/37160187919), all five required jobs passed |
 | Gamma | `https://gamesapi-gamma.revelryapp.me/`; `games-backend-gamma`, loopback port `8004`, Supabase `games_gamma_` |
 | Production backend | `https://gamesapi.revelryapp.me/`; `games-backend`, loopback port `8000`, Supabase `games_` |
@@ -144,7 +144,11 @@ does not roll back Revelry, and old/new combinations must not be assumed compati
 1. Use a clean checkout at the runtime revision. Verify gamma image ID, OCI revision label,
    `linux/amd64`, bundled `/app/static` and baked frontend values. Freeze concurrent build/tag/
    deploy/policy operations while preparing the manifest. `:latest` is not release identity.
-2. Prefer the validated existing image. Its SPA uses same-origin API and `/config/public`; compare
+2. The ownership-404 follow-up requires a new backend-only layer on the validated image, copying
+   main.py, db.py, supabase_db.py and persistence_errors.py and labelling the exact committed source.
+   Preserve its dependencies and SPA, requalify exact-source CI and gamma HTTP/recovery before
+   promotion, and replace the image ID in section 8 with the newly verified immutable ID.
+   Its SPA uses same-origin API and `/config/public`; compare
    baked Google/Apple web clients, Cast/build flags and URLs with production. No gamma origin may
    be baked in. If incompatible, build/requalify a new image in gamma. Backend requirements and
    Docker base tags are unpinned: even the same-source rebuild may resolve different dependencies.
@@ -254,6 +258,8 @@ existing production values for `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_IOS_CLIENT_ID`,
 `APPLE_ALLOWED_CLIENT_IDS`; defaults are not proof of live settings. Compare resulting env diff
 and restore the private original if a failed deploy changed it. Do not use `--bootstrap-vm`.
 
+The commands below show the original qualified base identity and must be updated with the new
+ownership-corrected image before execution. Do not deploy the superseded base as the final RC.
 Only in the authorized window, from the selected release checkout with those variables exported:
 
 ```bash

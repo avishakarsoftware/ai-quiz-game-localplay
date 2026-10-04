@@ -544,6 +544,7 @@ Validation requires:
   - Must not include host-app/party-scoped packs unless the request is made through a valid host-app context.
 
 - `POST /quiz-packs`
+  - Cross-wallet ID reuse returns 404 and preserves the owner's complete saved pack; genuine database failures remain 500.
   - Saves a custom quiz pack for the current wallet/session.
 
 - `GET /quiz-packs/{pack_id}`

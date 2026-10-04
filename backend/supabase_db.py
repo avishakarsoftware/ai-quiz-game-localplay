@@ -11,6 +11,7 @@ from typing import Optional
 import httpx
 
 import config
+from persistence_errors import QuizPackOwnershipError
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,10 @@ _PENDING_TOKEN_TTL = 3600
 
 
 class SupabaseDBError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, code: Optional[str] = None, database_message: Optional[str] = None):
+        super().__init__(message)
+        self.code = code
+        self.database_message = database_message
 
 
 class SupabaseClient:
@@ -55,7 +59,15 @@ class SupabaseClient:
                 headers=self._headers(prefer),
             )
         if response.status_code >= 400:
-            raise SupabaseDBError(f"{method} {path} failed: {response.status_code} {response.text}")
+            try:
+                error = response.json()
+            except ValueError:
+                error = None
+            raise SupabaseDBError(
+                f"{method} {path} failed: {response.status_code} {response.text}",
+                code=error.get("code") if isinstance(error, dict) else None,
+                database_message=error.get("message") if isinstance(error, dict) else None,
+            )
         if not response.content:
             return None
         return response.json()
@@ -854,15 +866,22 @@ def save_quiz_pack(owner_wallet_id: str, title: str, questions: list[dict], pack
         "quiz_packs", filters={"id": f"eq.{pack_id}"}, limit=1,
     ))
     if existing and existing["owner_wallet_id"] != owner_wallet_id:
-        raise SupabaseDBError("Quiz pack belongs to another wallet")
+        raise QuizPackOwnershipError()
     # Metadata and replacement questions commit together. The RPC also checks ownership
     # under a row lock, so two creators racing on one ID cannot reassign the pack.
-    _sb().rpc("save_quiz_pack", {
-        "p_owner_wallet_id": owner_wallet_id,
-        "p_pack_id": pack_id,
-        "p_title": title,
-        "p_questions": questions,
-    })
+    try:
+        _sb().rpc("save_quiz_pack", {
+            "p_owner_wallet_id": owner_wallet_id,
+            "p_pack_id": pack_id,
+            "p_title": title,
+            "p_questions": questions,
+        })
+    except SupabaseDBError as exc:
+        # This exact SQL rejection also covers an ID collision after the preflight.
+        # Other 42501 errors (such as missing RPC grants) remain database failures.
+        if exc.code == "42501" and exc.database_message == "Quiz pack belongs to another wallet":
+            raise QuizPackOwnershipError() from exc
+        raise
     pack = get_quiz_pack(owner_wallet_id, pack_id)
     if not pack:
         raise SupabaseDBError("Failed to save quiz pack")

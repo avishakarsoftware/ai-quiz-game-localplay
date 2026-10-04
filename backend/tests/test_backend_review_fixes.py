@@ -21,7 +21,7 @@ QUESTIONS = [{"text": "Original?", "options": ["A", "B"], "answer_index": 0}]
 
 def test_foreign_quiz_update_preserves_owner_questions():
     saved = db.save_quiz_pack("owner", "Original", QUESTIONS, pack_id="private-pack")
-    with pytest.raises(RuntimeError, match="another wallet"):
+    with pytest.raises(db.QuizPackOwnershipError, match="another wallet"):
         db.save_quiz_pack("stranger", "Overwrite", [dict(QUESTIONS[0], text="Replaced?")], pack_id=saved["id"])
     assert db.get_quiz_pack("owner", saved["id"]) == saved
     assert db.get_quiz_pack("stranger", saved["id"]) is None
@@ -45,7 +45,8 @@ def test_supabase_foreign_content_update_performs_no_mutation(monkeypatch, kind)
             raise AssertionError(f"foreign content attempted mutation: {name}")
 
     monkeypatch.setattr(supabase_db, "_sb", lambda: ForeignContentClient())
-    with pytest.raises(supabase_db.SupabaseDBError, match="another wallet"):
+    expected_error = db.QuizPackOwnershipError if kind == "quiz" else supabase_db.SupabaseDBError
+    with pytest.raises(expected_error, match="another wallet"):
         if kind == "quiz":
             supabase_db.save_quiz_pack("stranger", "Overwrite", QUESTIONS, pack_id="private")
         else:

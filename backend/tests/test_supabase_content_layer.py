@@ -12,6 +12,11 @@ here is therefore tested with a *second, unrelated owner* present, not just a ha
 import uuid
 
 import pytest
+from fastapi.testclient import TestClient
+
+import db
+import main
+from persistence_errors import QuizPackOwnershipError
 
 from postgrest_harness import (  # noqa: F401
     HARNESS_READY,
@@ -251,12 +256,34 @@ def test_admin_lookup_and_stats(sdb):
         assert key in stats, f"{key} missing from admin stats: {stats}"
 
 
-def test_foreign_quiz_update_preserves_ownership_and_questions(sdb):
+@pytest.mark.parametrize("miss_preflight", [False, True])
+def test_foreign_quiz_update_preserves_ownership_and_questions(sdb, monkeypatch, miss_preflight):
     owner, stranger = _owner(sdb), _owner(sdb)
     saved = sdb.save_quiz_pack(owner, "Private", QUESTIONS)
     before = sdb.get_quiz_pack(owner, saved["id"])
-    with pytest.raises(RuntimeError, match="another wallet"):
+    if miss_preflight:
+        client = sdb._sb()
+        select = client.select
+
+        def stale_preflight(table, **kwargs):
+            if table == "quiz_packs" and kwargs.get("filters") == {"id": f"eq.{saved['id']}"}:
+                return []
+            return select(table, **kwargs)
+
+        monkeypatch.setattr(client, "select", stale_preflight)
+    with pytest.raises(QuizPackOwnershipError, match="another wallet"):
         sdb.save_quiz_pack(stranger, "Overwrite", [QUESTIONS[0]], pack_id=saved["id"])
+    monkeypatch.setattr(db, "save_quiz_pack", sdb.save_quiz_pack)
+    monkeypatch.setattr(main.tokens, "get_wallet_id", lambda req: stranger)
+    client = TestClient(main.app)
+    try:
+        response = client.post("/quiz-packs", json={
+            "pack_id": saved["id"], "quiz": {"quiz_title": "Overwrite", "questions": [QUESTIONS[0]]},
+        })
+    finally:
+        client.close()
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Quiz pack not found"}
     assert sdb.get_quiz_pack(owner, saved["id"]) == before
     assert sdb.get_quiz_pack(stranger, saved["id"]) is None
 

@@ -159,6 +159,12 @@ kept identical contents, with only the intended RPC metadata changed. The frozen
 preserves production OAuth, analytics and live config. Current gamma restart/reconnect passed
 lobby/answered-quiz token, score, answer and no-extra-charge checks; both owned rooms cleaned.
 
+A later narrow API follow-up maps only typed quiz-pack ownership refusals to 404; integrity was
+already enforced, but the unhandled exception returned 500. Forty focused regressions pass and
+independent review is clear. This supersedes the original backend RC for final promotion; a new
+immutable backend layer, exact-source CI and gamma qualification are required. The public
+website artifact is unchanged. Production SQL and runtime still have not been changed.
+
 Separate exact-baseline Revelry maintenance commits pass 2,904 gamma / 2,700 production tests,
 with 111 independent focused passes on each. Automatic approval review rejected publishing them
 to the separate Revelry repository as outside the interpreted LocalPlay authorization; explicit

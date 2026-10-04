@@ -47,6 +47,14 @@ Every host/hostaddr, including URI query overrides, multi-host lists and inherit
 Service-based routing (`service` or `PGSERVICE`) and unspecified targets are refused before schema
 application or truncation. `test_postgres_target_safety.py` checks these cases without network access.
 
+### Ownership refusal regression contract
+
+Quiz-pack save tests cover both adapter preflight refusal and a missed-preflight atomic RPC
+collision, with owner content unchanged and HTTP 404. Missing grants, outages, malformed database
+errors and generic errors must remain server failures. Explicit-ID creation and same-owner
+deleted-pack restoration remain supported. The HTTP MockTransport and real disposable
+PostgREST tests cover the same boundary; hosted production tests use owned QA pack IDs only.
+
 ### October production preparation evidence
 
 The dated [release evidence](RELEASE-EVIDENCE-2026-10.md) separates source qualification from

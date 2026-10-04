@@ -1176,6 +1176,12 @@ the pack, refuses cross-wallet ID reuse, and commits metadata plus replacement q
 A failed question write leaves the previously saved pack intact. Concurrent same-owner saves
 produce one complete version rather than mixed questions. The Python adapter keeps its existing
 public signature; it requires the RPC migration before rollout.
+Ownership refusal raises the shared `QuizPackOwnershipError` in both Python adapters.
+`POST /quiz-packs` maps only that error to 404 without exposing whether a foreign pack exists.
+The Supabase adapter also recognizes the exact atomic RPC SQLSTATE 42501 ownership rejection
+after a missed/stale preflight. Missing grants, outages, malformed responses and generic database
+errors remain server failures; do not translate all permission errors or error strings to 404.
+Explicit-ID creation and same-owner restoration of a deleted pack retain their existing behavior.
 
 Run `sql/verification/20261003_persistence_review_gamma.sql` after the gamma migrations. It checks
 RPC permissions, drained purchase history and repeated-merge behavior, cross-wallet quiz writes,
