@@ -169,9 +169,11 @@ quiz recovery passed with no extra billing and owned-room/pack cleanup verified.
 website artifact is unchanged. Production SQL and runtime still have not been changed.
 
 Separate exact-baseline Revelry maintenance commits pass 2,904 gamma / 2,700 production tests,
-with 111 independent focused passes on each. Automatic approval review rejected publishing them
-to the separate Revelry repository as outside the interpreted LocalPlay authorization; explicit
-publication/deployment approval is pending. Live consumer scale qualification, targeted production
+with 111 independent focused passes on each. Following the initial automatic approval rejection,
+Avi explicitly authorized commit/push on October 4. Both commits are published in the separate
+Revelry repository: `ada6f6e9` on `codex/localplay-workspace-sync-gamma-20261003` and `f4497edb`
+on `codex/localplay-workspace-sync-prod-20261003`; exact remote commit identities were verified.
+Consumer deployment approval and live scale qualification, targeted production
 SQL, runtime/frontend publication and production acceptance remain pending. See
 [dated release evidence](RELEASE-EVIDENCE-2026-10.md) and
 [promotion plan](PROD-ROLLOUT-2026-10.md); preparation does not change deployed status.

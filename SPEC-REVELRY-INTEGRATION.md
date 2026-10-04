@@ -31,7 +31,9 @@ both live baselines, with isolated commits `ada6f6e9` (gamma `06df3136`) and `f4
 (production `e8b97eca`). Unchanged refresh uses one paginated party read and zero writes; changed
 rows use scoped identity/revision guards, new items use bounded batches, and concurrent callback,
 version and deletion handling preserve authoritative state. No schema, dependency or frontend
-changes are included. Publication approval and live latency/embedded qualification remain pending;
+changes are included. Both commits were published to their scoped gamma/production maintenance
+branches on October 4 with Avi's explicit commit/push authorization, and their remote identities
+were verified. Consumer deployment approval and live latency/embedded qualification remain pending;
 source tests alone do not close the scaling gate. See [release evidence](RELEASE-EVIDENCE-2026-10.md).
 
 The executable promotion order, current open gates, recovery actions, and evidence checklist live in [PROD-ROLLOUT-2026-10.md](PROD-ROLLOUT-2026-10.md). The [environment status ledger](DEPLOY.md) remains authoritative for deployed state. The following are durable integration requirements for each candidate:

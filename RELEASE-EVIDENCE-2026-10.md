@@ -1,12 +1,13 @@
 # October 2026 production rollout evidence
 
-Updated 2026-10-04 UTC (2026-10-03 PDT). **LocalPlay gamma qualified; production unchanged, awaiting separate Revelry approval.**
+Updated 2026-10-04. **LocalPlay gamma qualified; both scoped Revelry maintenance branches published; production unchanged, awaiting separate Revelry deployment approval and live qualification.**
 
 Avi authorized plan review, fixes, commit/push and rollout through production, with rollback
 readiness and protection of the shared database. Codex operates and reviews the release, with
-independent reviewers. The separate Revelry repository push was rejected by automatic approval
-review as outside the interpreted scope; explicit approval for that narrow publication and
-consumer rollout is pending. See [promotion plan](PROD-ROLLOUT-2026-10.md).
+independent reviewers. Automatic approval review initially rejected the separate Revelry repository
+push as outside the interpreted scope. Avi subsequently replied "great. commit and push" to the
+approval request; both scoped branches were published and their exact remote commits verified.
+Consumer deployment and live qualification remain pending. See [promotion plan](PROD-ROLLOUT-2026-10.md).
 
 ## Frozen artifacts
 
@@ -18,8 +19,8 @@ consumer rollout is pending. See [promotion plan](PROD-ROLLOUT-2026-10.md).
 | Frozen IONOS archive | SHA-256 `cb53d7d7f1a67e2b67dd0c9e4c21c88d8e62ce67e020c6a67bc55cdfd96c846b` |
 | Website JS entry | `index-BxJjwpMz.js`, SHA-256 `6c91763235dd6afb5e73612e5e5244a3e81f221131ca1ee8c96e6ec4a7ebb1af` |
 | Original live config retained | SHA-256 `7dc9a682d90e2f01e68e6e5975ec1d75e1432cb88662e348366a734b18cda700` |
-| Revelry gamma maintenance commit | `ada6f6e92170c87c3c3b1865409d21dd79c58531`, based on live `06df3136`; not yet pushed |
-| Revelry production maintenance commit | `f4497edb1bf42837c5fb9e82a0bd4a1a451a1079`, based on live `e8b97eca`; not yet pushed |
+| Revelry gamma maintenance commit | [`ada6f6e92170c87c3c3b1865409d21dd79c58531`](https://github.com/avishakarsoftware/revelryapp/commit/ada6f6e92170c87c3c3b1865409d21dd79c58531), based on live `06df3136`; pushed to `codex/localplay-workspace-sync-gamma-20261003`, remote identity verified |
+| Revelry production maintenance commit | [`f4497edb1bf42837c5fb9e82a0bd4a1a451a1079`](https://github.com/avishakarsoftware/revelryapp/commit/f4497edb1bf42837c5fb9e82a0bd4a1a451a1079), based on live `e8b97eca`; pushed to `codex/localplay-workspace-sync-prod-20261003`, remote identity verified |
 | Consumer maintenance patch | SHA-256 `91c6dc94789c017db4bec996965b31dc4395d389ba2a6d4d675261f579befd18` |
 
 The matching offline restore image is `public.ecr.aws/supabase/postgres@sha256:178f0976b54a39237096bfa310c1a352dbc82fb1b08dda45cdb8acb5d40c1426`.

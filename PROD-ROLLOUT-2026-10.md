@@ -1,12 +1,14 @@
 # October 2026 release candidate promotion plan
 
-Saved 2026-10-03. **Status: rollout authorized 2026-10-03; LocalPlay maintenance candidate qualified in gamma; separate Revelry publication approval pending. Production has not yet been changed.**
+Saved 2026-10-03; publication record updated 2026-10-04. **Status: LocalPlay maintenance candidate qualified in gamma; both scoped Revelry maintenance branches published. Separate Revelry deployment approval and live qualification remain pending. Production has not yet been changed.**
 This runbook covers qualification and later promotion of LocalPlay's reviewed backend, bundled
 SPA, two persistence migrations, public IONOS web bundle, and Revelry integration. The human release owner authorized review, necessary fixes, commit/push and deployment through
 production, with rollback readiness and protection of the shared databases. The two
-reviewed LocalPlay RPC fragments are in scope. Automatic approval review rejected publishing
-the fix to the separate Revelry repository as outside that authorization; an explicit question
-for the two maintenance branches and their gamma/production images is pending. Preserve
+reviewed LocalPlay RPC fragments are in scope. After automatic approval review initially rejected
+publication to the separate Revelry repository, Avi explicitly replied "great. commit and push"
+to the approval request. Both reviewed maintenance branches are now published and their remote
+commit identities verified; that follow-up authorizes publication, with consumer image deployment
+still pending. Preserve
 existing production feature policy; no customer charges, native store submission or unrelated
 Revelry work is included. Actual environment state remains in [DEPLOY.md](DEPLOY.md).
 
@@ -26,7 +28,7 @@ Revelry work is included. Actual environment state remains in [DEPLOY.md](DEPLOY
 | Production source provenance | Unlabeled mixed artifact: live `main.py` matches `1179b530`; `socket_manager.py` matches `40b8dd09`. Recover by captured image, not inferred source |
 | Documentation revision | Later docs/test-only commits, including `a555fed5`, do not change deployed runtime; record final plan/evidence commit separately |
 | IONOS artifact | Built from `0bf94209`, production OAuth/analytics inputs and original live config preserved; SHA-256 `cb53d7d7f1a67e2b67dd0c9e4c21c88d8e62ce67e020c6a67bc55cdfd96c846b`; 16 mixed-browser / four deployed-schema checks passed with intercepted writes/sockets; actual production acceptance pending |
-| Revelry backend/client pair | Separate maintenance patch on gamma `06df3136` and production `e8b97eca`; original frontend/dependencies/config retained; staged/live qualification pending |
+| Revelry backend/client pair | Published maintenance commits `ada6f6e9` on gamma `06df3136` and `f4497edb` on production `e8b97eca`; original frontend/dependencies/config retained; deployment and staged/live qualification pending |
 
 The Docker value is an immutable local **image ID**, not a registry manifest digest or pullable
 registry reference. Confirm it exists on the VM; retain/export it and the previous production image.
