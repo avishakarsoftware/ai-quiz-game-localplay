@@ -60,8 +60,11 @@ application or truncation. `test_postgres_target_safety.py` checks these cases w
 | **L7 load smoke** | local, gamma, approved prod | min | Bounded many-room/many-socket cleanup probe |
 | **L8 Revelry pre-prod live** | gamma only | min | Host-app launch, lobby reconnect, and route contracts |
 
-**Rule: a failure must be attributable.** If L5 fails but L4 passes, the fault is prod
-configuration or data, not code. Keep the suites structurally identical so that inference holds.
+**Rule: a failure must be attributable.** Compare the deployed source/image, frontend bundle,
+configuration, database prefix, and external Revelry version before attributing an L5/L4
+difference. A gamma pass alone does not distinguish production configuration, data, an older
+runtime, or a production-only code path. Keep shared assertions structurally identical and
+document environment-specific expectations.
 
 ## 2. The production-safety contract — read this before writing any L5 test
 
@@ -73,6 +76,9 @@ breaks one is a defect regardless of what it verifies.
 - Creating a **fresh synthetic wallet** per run via a random UUID device id.
 - Creating rooms and playing games **as that synthetic wallet only**.
 - Unauthenticated probes of protected endpoints to assert they *reject* (401/403/400).
+- During an explicitly authorized promotion smoke, operating a designated QA Revelry party as
+  its authorized synthetic host and guests. Record the party and session IDs before mutation;
+  a shared customer party is never a test fixture.
 
 **Forbidden on prod**
 - Any real purchase. Never drive Stripe checkout to completion, never call an IAP flow.
@@ -81,7 +87,9 @@ breaks one is a defect regardless of what it verifies.
 - Touching any wallet, room, or user not created by this run.
 - `DELETE /account` on anything but a wallet the run just created.
 - Admin endpoints, config mutation, migrations.
-- Leaving a room running. Every created room must be ended or abandoned to its TTL.
+- Leaving a room running. Cancel or end every run-owned room and verify it is gone. A cleanup
+  failure must be reported with its room/session IDs and assigned for recovery; TTL is a fallback,
+  not a passing cleanup assertion.
 
 **Budget awareness.** Rooms cost `COST_ROOM` (10) sparks and a fresh wallet gets
 `SIGNUP_BONUS_TOKENS` (20–30). So **a synthetic wallet funds ~2–3 rooms**. An L5 suite that
@@ -176,8 +184,10 @@ Two things this suite had to learn the hard way, both worth knowing before touch
 - **Rooms must be handed back.** `MAX_ROOMS` is 50 and `ROOM_TTL_SECONDS` is 1800, so a 38-game run
   leaves 38 rooms squatting and the next run reports 429 for two thirds of the catalog. There is no
   REST endpoint for it, so teardown speaks the organizer socket: `AUTH` then `CANCEL_GAME`.
-- **Rooms can be reused across games.** `RESET_ROOM` deliberately keeps the same room code so guests
-  who scanned a QR or joined through Revelry do not need a fresh link. A bounded socket scenario now
+- **Standalone rooms can be reused across games.** `RESET_ROOM` deliberately keeps the same room
+  code so standalone guests do not need a fresh link. Revelry-managed rooms reject this operation
+  before mutation: their authenticated hub creates a fresh LocalPlay/Revelry session, preserving
+  the completed session's results. A bounded standalone socket scenario now
   pins that players sitting on the previous podium receive `ROOM_RESET`, move back to the lobby, and
   count as connected players for the next `START_GAME`, including the Bingo/Housie-family saved
   content path that emits `BINGO_SYNC` after start.
@@ -205,10 +215,14 @@ seats, reset, reconnect grace, or cleanup semantics change.
 
 **L8 (Revelry pre-prod live)** — stateful gamma-only host-app contract checks in
 `frontend/e2e/revelry-preprod-live.spec.ts`. The suite verifies the searchable Revelry hub catalog,
-starts every launchable Revelry game through the integration API, resolves organizer/player/watch
-launches, and includes a lobby-lull regression where a Revelry-launched player joins, disconnects,
+starts every launchable Revelry game through the integration API, mints organizer/player/watch
+launch tokens, opens organizer pages, and includes a lobby-lull regression where a Revelry-launched player joins, disconnects,
 reconnects with the issued session token, and the organizer can still start the same room. Run with
 `PREPROD_REVELRY=1` and a freshly minted gamma party-games URL; never point this suite at prod.
+Token issuance is not browser verification of every player/watch role for every game. The real
+embedded workflows in `revelry-gamma-flow.spec.ts` supply separate completion, callback, results,
+authenticated hub-return, fresh-session continuation, and media-upload evidence. The matrix creates
+prepared content and replaces active sessions; its pass alone does not establish full fixture cleanup.
 
 ```bash
 # Local, with the isolated stack wrapper. The wrapper owns ports 9100/9200 and a temp DB.
@@ -507,3 +521,121 @@ these sample sizes, could be timing perturbation; the failure signature was iden
 that mistake has already produced a confidently wrong conclusion once here. Note also that 10
 consecutive passes looked like a fix during this very session, and run 20 then failed; 25 runs was
 what it took to see it.
+
+## 9. Release-candidate qualification and promotion evidence
+
+The operational sequence and current gate decisions live in
+[PROD-ROLLOUT-2026-10.md](PROD-ROLLOUT-2026-10.md). Deployed versions and dated results live in
+[DEPLOY.md](DEPLOY.md). This section defines the repeatable qualification contract; a checked
+runbook item must point to evidence rather than inherit a previous release's pass.
+
+### Candidate identity and evidence
+
+Each candidate must record its runtime commit, immutable Docker image ID (or registry digest),
+OCI revision label, backend-served SPA bundle, separately built IONOS bundle/source/build settings,
+database prefix and migration checksums, and effective configuration without secret values.
+Record the Revelry consumer source/deployment identity as well: callbacks and workspace behavior
+depend on both services. A source label alone does not prove the running container's identity.
+Each test result must include UTC time, target, candidate identity, command or scenario, pass/fail/
+skip counts, fixture IDs, cleanup outcome, and a durable report location or CI URL. Reports that
+print the tester's local `repo commit` must not be treated as proof of the remote runtime commit.
+Copy release evidence out of temporary directories before relying on it for later promotion.
+Remove bearer tokens, signed launch URLs, credentials, and private gameplay payloads from shared
+reports; retain access-controlled recovery material separately.
+
+| Qualification | Required evidence | Promotion gate |
+|---|---|---|
+| Exact-source CI | All five jobs in `.github/workflows/ci.yml`: `backend-test`, `backend-postgres-parity`, `backend-supabase-rest`, `frontend-build`, `frontend-e2e` | Required jobs pass on the selected runtime source; real Postgres/PostgREST tests must execute rather than silently skip |
+| Browser behavior | Catalog-driven all-games and podium continuation against the qualified gamma runtime; mobile/desktop checks for changed UI | Required; explicitly reasoned coverage exceptions remain visible |
+| Persistence | Raw Postgres and actual `supabase_db`/PostgREST money, identity, atomic save, ownership, failure rollback and concurrency checks; prefix-specific live migration verification | Required; concurrency evidence follows the repeated CI race checks |
+| Runtime and lifecycle | Gamma API regression, bounded load/reconnect for room/socket changes, intentional cancellation without receive-after-close errors, zero run-owned active rooms after cleanup | Required for affected runtime paths |
+| Revelry integration | Actual consumer save/edit/start/re-entry, completion/results callback, authenticated hub return, fresh managed session, staging/cancellation/reconnect, advertised launchability and permission boundaries | Required; distinguish actual browser role coverage from minted launch tokens |
+| Production configuration | Reviewed policy/flags, catalog enablement, auth audiences, origin/redirect/callback/media routing and both frontend surfaces | Required before swap; gamma values are not the production baseline |
+| Visual snapshots | Reviewed diffs on a platform with committed baselines; changed surfaces checked on desktop/mobile | CI visual step is currently advisory (`continue-on-error`); green CI does not establish a strict visual pass |
+| Coverage reports | Backend/frontend/Supabase coverage artifacts | Visibility only; no configured percentage floor currently gates CI |
+| Real payment / camera / native | Separate evidence or explicitly scoped release decision as described below | Never inferred from invalid-input API probes or browser-only tests |
+
+Do not add overlapping focused-test counts to broad-suite counts. A final runtime delta can use
+previous broad gamma evidence only when its exact diff is reviewed, unaffected engines/frontend
+are demonstrated unchanged, exact-source CI passes, and focused tests plus live probes cover the
+changed behavior. Record both source revisions and the rationale. A narrow final probe must never
+be described as a rerun of the entire live suite. New game behavior, persistence contracts, shared
+room state or unexplained live failures require broader requalification.
+
+### Revelry performance and data-integrity gate
+
+Qualify the actual Revelry workspace endpoint and LocalPlay resolve independently with the same
+authorized party and comparable content. Include a representative large prepared-content library
+(at least the 86-item case observed in October 2026), initial synchronization, repeated unchanged
+reads, and concurrent completion/edit activity. Record item count, response size, per-request
+timings, consumer version, and the production client deadline obtained from that client's deployed
+configuration. Every measured accepted request must complete within that deadline, and the
+release decision must document the remaining timing margin. An unknown deadline leaves the gate
+open. Preserve prepared IDs, party ownership, content-version mapping, and locked/used status;
+repeated unchanged refreshes must not require a serial read/update for each prepared item.
+
+The October consumer workspace measurement (16.22 seconds for 86 items versus 0.69 seconds for
+LocalPlay resolve) is an unresolved release gate, not a LocalPlay qualification failure by itself.
+The embedded gamma harness allows 30 seconds for that specific diagnostic workspace read; its
+other Revelry requests remain bounded separately. That allowance does not establish compliance
+with a production client deadline. Do not close this gate by deleting historical QA content,
+reducing the production library limit, or increasing the diagnostic timeout. Re-run paired
+integration/performance scenarios after the external consumer fix and record both deployed
+service versions. Contract changes require affected LocalPlay requalification as well.
+
+### Production smoke scope and fixture ownership
+
+The default `scripts/regression.py --target prod` is read-mostly: it creates a fresh synthetic
+wallet and, when enabled, a referral code. It rejects deliberately invalid payment inputs; it
+does not create gameplay rooms without `--deep`. Its production web target still includes legacy
+`/quiz/` paths, so separately check the current IONOS root, its actual entry bundle, legal pages,
+and effective configuration. Classify legacy-path warnings using the current routing ledger;
+do not equate that legacy host check with verification of the current root frontend.
+
+Use a bounded, authorized QA smoke during promotion: one disposable standalone room and one
+designated Revelry QA party, synthetic host/guests only, serial operation, explicit spark/room
+budget, and cancellation verified in both services. Exercise reconnect, one start debit,
+standalone replay charged only on the next successful start, completion mirrored into Revelry,
+and fresh managed-session continuation with the old results unchanged. Check wrong-party/scope
+rejection and absence of private answers, role secrets, or credentials in public callbacks/results.
+`--deep` sweeps the catalog and also invokes generation unless `--skip-generate` is set;
+`--games` scopes the sweep, and `--no-play` omits its deliberate start. Review those flags and
+budget before selecting a targeted deep probe. Whole-catalog gamma/Playwright/Revelry matrices
+and many-room load runs must not be repointed to production. Production load smoke requires
+explicit authorization and a separately reviewed capacity budget.
+
+Every stateful run needs a manifest of created device/wallet IDs, party/session/room IDs,
+content IDs and upload paths, with creation time and run identifier. Teardown operates only on
+objects positively identified as created by that run. Verify zero remaining run-owned active
+sessions/rooms and report failed cleanup as a gate failure. Remove run-owned prepared content or
+uploads only through supported authorized operations; otherwise record retained fixtures and
+their owner instead of deleting historical data. Protect useful results evidence before cleanup.
+The existing seeded gamma party contains retained historical fixtures, so prefixes such as
+`Gamma E2E` or `Revelry Matrix` alone are insufficient proof of current-run ownership.
+
+### Gaps, waivers, and rerun policy
+
+- **Photo Clue:** its camera play-through waiver does not waive catalog, creation or launch checks.
+  A release affecting camera behavior needs real-device evidence before approving that surface.
+- **Payments:** gamma's expected missing-key Stripe rejection and production invalid-signature
+  rejection establish guards only. They do not establish paid checkout, IAP fulfillment, refunds
+  or retry behavior with real providers. Record separate controlled provider/test-environment
+  evidence and a release-owner decision for affected money paths; ordinary production smoke
+  never completes a purchase.
+- **Native:** browser hub return does not prove installed iOS/Android app return navigation,
+  signed handoffs, cached configuration, or a store binary update. Require simulator/device and
+  signed-build evidence for native changes; record the deployed binary/version separately.
+- **Advisory results and skips:** every exception has a reason, affected surface, accountable
+  reviewer, revisit condition, and scope. An unresolved correctness, ownership, money or security
+  failure is a no-go; it cannot be waived by relabeling it as flaky or advisory.
+
+Documentation-only commits require diff/link/command validation and evidence consistency checks;
+they do not invalidate an otherwise unchanged qualified runtime image. Test-only changes require
+the affected harness/type checks and review of whether previous evidence still proves the intended
+assertion. Runtime, dependency, image-build or frontend-bundle changes create a new candidate:
+rerun exact-source CI, affected local/gamma layers and the shared all-games/continuation gates.
+Migration/configuration changes require prefix/configuration verification and affected persistence,
+auth, billing, routing and callback scenarios even if the image is unchanged. An external Revelry
+deployment invalidates the paired integration/performance evidence until that service pair is
+retested. Preserve failures and their cause analysis; rerun only after a fix or a documented
+diagnostic reason, and do not accept an unexplained isolated pass as release qualification.

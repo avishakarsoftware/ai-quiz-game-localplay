@@ -137,9 +137,17 @@ Before production deploys that touch room creation, WebSockets, lobby reconnect,
 5. Run local load smoke.
 6. Deploy to gamma.
 7. Run gamma smoke, gamma load smoke, gamma all-games, and Revelry pre-prod live regression.
-8. Promote only after failures are either fixed or explicitly classified as a harness/deploy-environment issue with evidence.
+8. Promote only after failures are fixed or classified with evidence and the candidate gates in [PROD-ROLLOUT-2026-10.md](PROD-ROLLOUT-2026-10.md) pass. An increased harness timeout does not waive the external Revelry workspace gate.
 
 Prod load smoke requires explicit approval and must use modest room/player counts because it creates live disposable lobbies.
+
+### Release swap and recovery contract
+
+- Bind qualification to the selected source/image, config and consumer version pair. A live all-games run on an earlier candidate plus focused final-delta evidence needs a recorded scope/rerun rationale; docs-only later commits do not change the runtime candidate.
+- Before a swap, verify snapshots are enabled, recent and writable; privately back up the current volume and credentials-bearing snapshots. Defaults save every ten seconds and on graceful shutdown. Prefer no customer rooms; the current single-process architecture does not support a rolling or percentage-canary release.
+- Qualify the current candidate's actual restart/reconnect using owned QA rooms, including an answered quiz, score/seat preservation and managed session continuity. Reclaimed sockets recover state, while quiz question countdown restarts with its original scoring timestamp. Housie caller resumes through the host; Musical Chairs/Mafia timed substates may require host recovery. Record these edges if an active-room window is accepted.
+- Verify previous-image snapshot compatibility before accepting rollback readiness. Gracefully stop and restore the captured immutable image with the current env/volume; do not blindly replace current snapshots or durable ledger state with a pre-window copy. Reconcile unknown in-flight start/financial outcomes before retries.
+- Production acceptance is bounded to designated QA parties/rooms and recorded budgets. Verify closure and consumer active-session cleanup by owned IDs, and retain historical content. Image health alone does not prove callback, reconnect, billing or cancellation recovery.
 
 ## 5. Open Hardening
 

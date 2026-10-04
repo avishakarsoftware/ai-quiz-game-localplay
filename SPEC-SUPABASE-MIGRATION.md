@@ -1186,3 +1186,23 @@ truncates tables or touches existing user records.
 The real PostgREST regressions live in `test_supabase_content_layer.py`,
 `test_supabase_concurrency.py`, and `test_supabase_economy_features.py`; they require the disposable
 local parity stack and must never be pointed at hosted gamma or production.
+
+### Release candidate persistence gate
+
+The [October promotion runbook](PROD-ROLLOUT-2026-10.md) specifies ordered production fragments,
+reviewed SHA-256 hashes and recovery. [DEPLOY.md](DEPLOY.md) records what has actually been applied;
+the presence of migration files or this plan does not establish production RPC readiness.
+
+Before runtime promotion, capture each targeted production function's definition, existence,
+ownership and execution ACLs, plus gamma definitions for comparison. Apply only the reviewed
+`games_` fragments through the Management API after production authorization. Run
+`sql/verification/20261003_persistence_review.sql`, check zero fixture residue, both RPC grants,
+schema-cache visibility and a bounded deployed-credential API/RPC round-trip. A shallow health
+probe or printed `DB_BACKEND` value cannot establish these contracts.
+
+Function changes are compatible with the previous runtime and should remain applied during
+routine image rollback. Restore a captured function/ACL only when that function is demonstrated
+to cause the regression. Do not rewind accepted wallet, purchase, webhook-idempotency or content
+writes, and do not restore the whole shared project for an isolated LocalPlay failure. The VM's
+legacy SQLite backup does not back up Supabase; record a separate database recovery point and
+scoped reconciliation procedure.

@@ -27,6 +27,11 @@ limits. A rollback reports deployment failure even when the previous service is 
 New local and VM builds carry `org.opencontainers.image.revision` with the source commit; verify
 that label on the running container after deploy. The bundled build context excludes local `.env`
 files. Record the immutable previous image ID before promotion, since `:latest` is overwritten.
+Even `--skip-build` upserts Google/Apple audience env before preflight. Save the private original
+env and supply reviewed existing production audience values; automatic image rollback uses the
+current env and does not restore that file, database functions, IONOS files or Revelry. Health and
+the script's printed DB settings do not establish database/RPC or callback readiness. Follow the
+[release candidate promotion runbook](PROD-ROLLOUT-2026-10.md) for those gates and recovery.
 `backend/tests/test_deploy_rollback.py` executes these branches against a fake CLI without cloud
 access, including preflight failure leaving the live service untouched.
 
@@ -100,6 +105,11 @@ and the self-cleaning verification passed, including legacy purchase-history con
 cross-owner refusal, and failed-save rollback. Production's merge definition is unchanged and the
 new production quiz-save RPC is absent. Production promotion is planned in
 [PROD-ROLLOUT-2026-10.md](PROD-ROLLOUT-2026-10.md).
+
+The saved plan now includes candidate identity, gate owners, cross-app workspace remediation,
+artifact/config freeze, migration hashes, recovery backups, ordered IONOS publication, bounded
+production QA, observation thresholds and rollback. This documentation update does not deploy
+production, apply its pending migrations or close the Revelry performance gate.
 
 The review fixes party/content/capability boundaries and Revelry mirror metadata, atomic quiz
 ownership/saves, wallet identity conservation, timer cleanup, reconnect/result restoration,
@@ -994,19 +1004,29 @@ npm run ionos:build   # builds + verifies the bundle points at gamesapi.revelrya
 
 This produces `frontend/dist/` with all static assets, verified safe to upload to IONOS.
 
+For a release candidate, build at the selected source with explicit reviewed production OAuth
+client IDs and frozen build inputs. Preserve reviewed live `config.json` settings, privately back
+up the current site, and hash the final artifact before uploading. The wrapper's API-host check
+does not establish auth configuration or mixed-version compatibility; follow the saved RC plan.
+
 ### Step 2: Prepare the IONOS target directory
 
 ```bash
 ssh u69414981@home420463025.1and1-data.host "mkdir -p ~/revelryapp/games"
 ```
 
-Old JS/CSS bundles have hashed filenames that accumulate. Clean `~/revelryapp/games/assets` before deploying when you want to remove stale root bundles; keep `~/revelryapp/games/quiz` unless intentionally removing the legacy path.
+Old hashed JS/CSS assets must remain available through rollback and open-tab overlap. Upload
+additively; do not clear `~/revelryapp/games/assets` during promotion. Later unused-asset cleanup
+is separate from release publication. Keep the legacy `quiz/` path unless separately retired.
 
 ### Step 3: Upload to IONOS
 
 ```bash
-scp -r frontend/dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/
-rsync -avz frontend/dist/.htaccess u69414981@home420463025.1and1-data.host:~/revelryapp/games/.htaccess
+# From frontend/, using the frozen artifact with reviewed config and a private site backup:
+rsync -avz dist/assets/ u69414981@home420463025.1and1-data.host:~/revelryapp/games/assets/
+rsync -avz --exclude assets/ --exclude index.html dist/ u69414981@home420463025.1and1-data.host:~/revelryapp/games/
+scp dist/index.html u69414981@home420463025.1and1-data.host:~/revelryapp/games/index.html.rc-new
+ssh u69414981@home420463025.1and1-data.host "mv ~/revelryapp/games/index.html.rc-new ~/revelryapp/games/index.html"
 ```
 
 ### Step 4: Verify
@@ -2120,22 +2140,21 @@ ssh u69414981@home420463025.1and1-data.host "du -sh ~/revelryapp/media/apps/loca
 # Gamma backend + bundled SPA
 ./scripts/deploy-gcp.sh --gamma --with-frontend
 
-# Public IONOS frontend
+# Prepare the separate public IONOS artifact with reviewed production OAuth/build variables.
 cd frontend
+npm ci
 npm run ionos:build
-ssh u69414981@home420463025.1and1-data.host "mkdir -p ~/revelryapp/games"
-scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/
-rsync -avz dist/.htaccess u69414981@home420463025.1and1-data.host:~/revelryapp/games/.htaccess
+# Preserve live config, freeze/hash and publish in the ordered Frontend Deployment procedure.
 ```
 
 ### Public IONOS frontend only
 
 ```bash
 cd frontend
-VITE_BASE_PATH=/ VITE_API_URL=https://gamesapi.revelryapp.me VITE_WEB_URL=https://games.revelryapp.me/ VITE_CAST_APP_ID=1BC9ACD8 npx vite build
-ssh u69414981@home420463025.1and1-data.host "mkdir -p ~/revelryapp/games"
-scp -r dist/* u69414981@home420463025.1and1-data.host:~/revelryapp/games/
-rsync -avz dist/.htaccess u69414981@home420463025.1and1-data.host:~/revelryapp/games/.htaccess
+npm ci
+# Supply reviewed production VITE_GOOGLE_CLIENT_ID / VITE_APPLE_CLIENT_ID and other build inputs.
+npm run ionos:build
+# Preserve live config, freeze/hash and publish in the ordered Frontend Deployment procedure.
 ```
 
 ### Backend containers only
@@ -2471,7 +2490,7 @@ The e2-micro VM + 30GB disk in us-central1 is covered by GCP's Always Free tier,
 | CORS errors | `ALLOWED_ORIGINS` in backend `.env` doesn't include frontend domain |
 | Docker won't start | `docker logs games-backend --tail 80` or `docker logs games-backend-gamma --tail 80` |
 | SSL cert expired | `sudo certbot renew && sudo systemctl reload nginx` |
-| Old JS bundles cached | Clear `assets/` dir before deploying, hard-refresh browser |
+| Old JS bundles cached | Publish the reviewed entry point after new hashed assets, retain old assets through rollback/open-tab overlap, and verify the PWA update flow between rounds; do not clear `assets/` during promotion |
 | API suddenly unreachable | Home IP probably changed — update firewall rules (see section above) |
 | VM stopped unexpectedly | Billing cap may have triggered — re-link billing (see billing cap section) |
 | `gamesapi.revelryapp.me` returns 502 | Check `games-backend` is running and bound to `127.0.0.1:8000` |

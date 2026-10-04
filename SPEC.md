@@ -111,7 +111,9 @@ Key files:
 
 ### Production Topology
 
-Production deployment is documented in `DEPLOY.md`.
+Production deployment is documented in [DEPLOY.md](DEPLOY.md). Release candidate qualification
+and the October promotion sequence are defined in
+[PROD-ROLLOUT-2026-10.md](PROD-ROLLOUT-2026-10.md); saving a plan does not change live status.
 
 Current production shape:
 
@@ -1559,8 +1561,17 @@ Product rules:
 Operational follow-up:
 
 - Keep IONOS as the public production frontend unless a later product/deployment decision changes the URL strategy.
-- For every backend deploy, use `./scripts/deploy-gcp.sh --with-frontend` for production and `./scripts/deploy-gcp.sh --gamma --with-frontend` for gamma unless intentionally testing API-only mode.
-- After deploys, run `make test-remote-prod` or `make test-remote-gamma`. These cover `/health`, provider/config, SPA root, auth guards, iOS checkout guard, live generation, idempotent retry, and token balance. Manually smoke Google/Apple browser sign-in and Stripe checkout as described in `DEPLOY.md`.
+- Backend releases include the qualified SPA. New builds use `./scripts/deploy-gcp.sh --with-frontend` (add `--gamma` for gamma); exact-image promotion uses `--skip-build --with-frontend` only after the existing image's identity, bundled SPA and production build-value compatibility are verified. Pin the GCP project and follow the promotion runbook rather than rebuilding a validated artifact during the window.
+- After deployment, run the approved environment smoke and canonical frontend checks. `make test-remote-prod` and `make test-remote-gamma` include live generation, so their spark/LLM budget must be deliberate; `scripts/smoke-remote.py --skip-generate` omits it. Real Google/Apple sign-in and successful payment/refund evidence are separate from invalid-input guard checks.
+
+### Release Candidate Requirements
+
+- A candidate identifies immutable runtime source/image, separate IONOS artifact/hash/build inputs, targeted migrations, sanitized config/catalog diff, and the tested Revelry backend/client version pair. Later docs-only HEAD changes do not change runtime identity.
+- Required CI, persistence/concurrency, gamma gameplay/replay/reconnect and actual cross-app lifecycle evidence must be attributable to that candidate. Narrow runtime deltas need explicit rerun rationale; advisory screenshots, camera skips and device/payment gaps must be recorded without claiming full coverage.
+- Production promotion requires the external Revelry workspace scale/identity/idempotency gate, production RPC readiness, compatible frontend/auth settings, preserved production flags, private recoverable backups, named operators and a go/no-go decision. Capture effective request deadlines; increasing a test timeout does not close a consumer performance defect.
+- This singleton deployment uses a quiet swap with tested snapshot recovery. It does not provide a percentage canary or zero-downtime rolling rollout. Preserve current durable state during image rollback, qualify timed-state recovery, and retain previous frontend assets for open tabs.
+- Qualify the overlap pairings: currently published web/installed clients with candidate backend, and candidate web with the previous backend. An incompatible pairing needs a coordinated maintenance/recovery sequence before promotion.
+- Production verification uses owned QA fixtures and recorded budgets; no customer content/rooms/cards or broad gamma sweep. Acceptance includes both canonical IONOS and backend-served surfaces, callbacks, cleanup, monitoring and next-day review. Native artifacts and store submission remain a separate release.
 
 ### Product Boundary
 
@@ -1579,6 +1590,7 @@ The repository contains several Markdown files with different freshness levels:
 - `SPEC.md`: current baseline spec for the codebase as inspected.
 - `README.md`: broadly useful for quick start, feature list, project structure, and test commands; branding and provider defaults may be older.
 - `DEPLOY.md`: useful production deployment reference. It is operationally specific and should be verified before executing commands.
+- `PROD-ROLLOUT-2026-10.md`: saved October release candidate qualification, promotion, observation and rollback plan; DEPLOY.md remains the live-status ledger.
 - Historical `REVIEW_STATUS_TABLE_2026-03-21.md`: reviewed and consolidated into `SPEC.md`; the standalone scratch file is not required.
 - `rollback_economy.md`: emergency rollback note from token economy back to entitlement economy. Not current product behavior.
 - `docs/monetization_plan.md`: historical monetization architecture for an entitlement/party-pass model. Useful for rationale, but not the current economy.
