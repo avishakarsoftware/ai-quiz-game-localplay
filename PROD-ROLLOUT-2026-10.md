@@ -1,11 +1,14 @@
 # October 2026 release candidate promotion plan
 
-Saved 2026-10-03. **Status: candidate identified; production promotion blocked and not executed.**
+Saved 2026-10-03. **Status: rollout authorized 2026-10-03; qualification and recovery preparation in progress; separate Revelry publication approval pending. Production has not yet been changed.**
 This runbook covers qualification and later promotion of LocalPlay's reviewed backend, bundled
-SPA, two persistence migrations, public IONOS web bundle, and Revelry integration. Saving or
-pushing this plan does not authorize production deployment, SQL writes, feature-policy changes,
-paid transactions, or store submission. Present the concrete candidate and evidence for rollout
-authorization after preparation. Actual environment state remains in [DEPLOY.md](DEPLOY.md).
+SPA, two persistence migrations, public IONOS web bundle, and Revelry integration. The human release owner authorized review, necessary fixes, commit/push and deployment through
+production, with rollback readiness and protection of the shared databases. The two
+reviewed LocalPlay RPC fragments are in scope. Automatic approval review rejected publishing
+the fix to the separate Revelry repository as outside that authorization; an explicit question
+for the two maintenance branches and their gamma/production images is pending. Preserve
+existing production feature policy; no customer charges, native store submission or unrelated
+Revelry work is included. Actual environment state remains in [DEPLOY.md](DEPLOY.md).
 
 ## 1. Candidate identity and scope
 
@@ -20,10 +23,10 @@ authorization after preparation. Actual environment state remains in [DEPLOY.md]
 | Shared VM | Project `revelryapp`, VM `revelry-backend`, zone `us-central1-a` |
 | Shared Supabase project | `hosbtyylacluziugwjfd`; contains both environments and unrelated applications |
 | Last observed production image | `sha256:7b328e823c246c5d75627d21c5e67cc2ea8536190f8d933f6c0ffa7960ac7e5e`, created August 9; re-capture at rollout |
-| Production source provenance | `40b8dd09` is last recorded, not newly proven: the old image has no revision label |
+| Production source provenance | Unlabeled mixed artifact: live `main.py` matches `1179b530`; `socket_manager.py` matches `40b8dd09`. Recover by captured image, not inferred source |
 | Documentation revision | Later docs/test-only commits, including `a555fed5`, do not change deployed runtime; record final plan/evidence commit separately |
-| IONOS artifact | Pending build, compatibility checks, file manifest and SHA-256 archive hash from selected source |
-| Revelry backend/client pair | Pending version/config capture and qualification after the external workspace fix |
+| IONOS artifact | Built from `0bf94209`, production OAuth/analytics inputs and original live config preserved; SHA-256 `cb53d7d7f1a67e2b67dd0c9e4c21c88d8e62ce67e020c6a67bc55cdfd96c846b`; mixed-client checks pending |
+| Revelry backend/client pair | Separate maintenance patch on gamma `06df3136` and production `e8b97eca`; original frontend/dependencies/config retained; staged/live qualification pending |
 
 The Docker value is an immutable local **image ID**, not a registry manifest digest or pullable
 registry reference. Confirm it exists on the VM; retain/export it and the previous production image.
@@ -38,7 +41,8 @@ still needs evidence for affected paths.
 
 ## 2. Owners, evidence and decision
 
-Assign named people before scheduling the window; roles may share an operator. Record who
+Release owner: Avi; implementation, QA, deploy and rollback operator: Codex, with independent
+agent reviews. Authorization is the latest direct production-rollout request. Record who
 accepted each gate, who executes deployment, and who is available to execute rollback.
 
 | Role | Responsibility |
@@ -82,12 +86,12 @@ production checks as pending, with abort/recovery actions; it does not mark them
 | G2 — Gameplay | 78 gamma all-games/replay passes on `25301590`, one Photo Clue camera waiver; final runtime delta is only closed-socket receive guard, with 205 focused passes and exact-source CI | Record narrow-delta acceptance; rerun affected broad suites for runtime/config/build changes and integration after consumer remediation |
 | G3 — Final artifact | 64 API checks passed; eight rooms/32 sockets/reconnect/full cleanup on final image | Repeat health/config/guards and bounded gamma reconnect after dependent changes |
 | G4 — Real Revelry | Three embedded workflows + four launch/staging/reconnect matrix tests; mirrored completion, fresh Odd Question continuation, image save | Repeat with fixed consumer pair; player/watch browser and deployed-client return evidence beyond token minting |
-| G5 — Workspace scale | **BLOCKED:** Revelry consumer 16.22s for 86 ready items vs LocalPlay resolve 0.69s | External fix and large-library deadline/identity/idempotency checks in section 4 pass |
-| G6 — Persistence | Gamma fragments verified; production merge unchanged and atomic-save RPC absent | Backups; authorized targeted production fragments; verification, ACL, schema-cache and API checks before swap |
-| G7 — Artifacts/config | Gamma identity proven; production IONOS artifact not yet built | Hash/freeze bundle; verify baked clients/origins/config layers; preserve production policy/flags |
-| G8 — Recovery | Historical gamma restart evidence; current candidate/old unlabeled image need qualification | Current gamma restart/reconnect and timed-state recovery; rollback image/env/frontend package and compatibility ready |
+| G5 — Workspace scale | Previous defect: 16.22s for 86 items. Reviewed fix passes 2,904 gamma / 2,700 prod baseline tests; unchanged 86-item fixture makes one read, zero writes | External fix and large-library deadline/identity/idempotency checks in section 4 pass |
+| G6 — Persistence | Fresh full/focused backups and isolated restores passed; exact two fragments + verification passed offline, with all 465 table contents unchanged; live production SQL pending | Backups; authorized targeted production fragments; verification, ACL, schema-cache and API checks before swap |
+| G7 — Artifacts/config | Exact gamma identity/CI rechecked; frozen IONOS bundle preserves production OAuth, analytics and original config | Hash/freeze bundle; verify baked clients/origins/config layers; preserve production policy/flags |
+| G8 — Recovery | Immutable old image/env/volume and IONOS backups captured, backend rollback check passed, both DB restores passed; current gamma owned-lobby/answered-quiz restart drill passed, zero extra debit and cleanup verified | Current gamma restart/reconnect and timed-state recovery; rollback image/env/frontend package and compatibility ready |
 | G9 — Enabled-path gaps | Camera automated waiver; gamma Stripe unset; native return/real paid checkout not established | Manual enabled-path evidence or explicit scope exclusion; invalid-input guards do not prove successful payment/refund |
-| G10 — Decision | Production unchanged; rollout not authorized by this plan | Named owners, gates/exceptions, QA scope/budgets, baseline/thresholds, window and recovery signed |
+| G10 — Decision | Human rollout authorization recorded; production checks still pending | Named owners, gates/exceptions, QA scope/budgets, baseline/thresholds, window and recovery signed |
 
 Visual screenshots remain advisory until reviewed Linux baselines exist; required functional CI
 remains blocking. If an untested path stays disabled in production, record the exclusion and
@@ -169,8 +173,9 @@ gcloud compute ssh revelry-backend --project=revelryapp --zone=us-central1-a --c
 
 ## 6. Recovery package and pre-window baseline
 
-After qualification/artifact preparation, present the candidate, remaining production checks,
-exceptions and commands for rollout authorization. Before any production write:
+The human has authorized this rollout. Qualification and rollback preparation remain prerequisites
+to executing production changes; do not treat authorization as evidence of successful checks.
+Before any production write:
 
 - Re-capture production image/container settings, health, canonical IONOS entry hash, callback,
   public config, enabled games and policy. Abort unexplained drift.
@@ -194,7 +199,7 @@ exceptions and commands for rollout authorization. Before any production write:
 
 Restart is a brief socket interruption with recovery, not zero downtime. Qualify current gamma
 restart with owned lobby/answered-quiz/score state, completion and managed reconnect; review
-old-image snapshot compatibility in isolation. Production's old source is unproven by image label.
+old-image snapshot compatibility in isolation. Production's old image has mixed source provenance; the captured immutable artifact is the rollback authority.
 Quiz countdown restarts while scoring keeps original start time; Housie needs host resume and
 Musical Chairs/Mafia timed substates may need host recovery. If customer rooms cannot drain,
 disclose/accept these edges with the release owner. Avoid swapping during game-start/payment

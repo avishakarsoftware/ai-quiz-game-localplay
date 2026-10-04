@@ -47,6 +47,22 @@ Every host/hostaddr, including URI query overrides, multi-host lists and inherit
 Service-based routing (`service` or `PGSERVICE`) and unspecified targets are refused before schema
 application or truncation. `test_postgres_target_safety.py` checks these cases without network access.
 
+### October production preparation evidence
+
+The dated [release evidence](RELEASE-EVIDENCE-2026-10.md) separates source qualification from
+actual live deployment. Fresh exact-source CI and 64 gamma API checks passed. Full and focused
+backups of both shared projects passed offline restore; the exact LocalPlay production fragments
+and verification preserve all 465 restored tables' contents and change only two RPCs. The current
+candidate's real gamma restart drill verifies lobby seats, answered flags, exact score, organizer/
+player token recovery, invalid-token refusal, unchanged pre/post balance and grace usage, and
+owned-room cleanup. First-party grace makes a nominal cost comparison insufficient; capture the
+actual balance immediately before and after restart instead. One transient external handshake
+failure is retained in evidence; retries must not conceal persistent service errors.
+
+Revelry's isolated gamma/prod baseline suites pass 2,904/2,700 tests with one/three skips and 241
+deselected integration tests respectively; independent focused 111-test suites overlap those
+counts. These do not replace live large-library timing, callback and mixed-client qualification.
+
 ## 1. The layers
 
 | Layer | Runs where | Speed | Owns |

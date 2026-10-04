@@ -149,6 +149,24 @@ deployment below.
 | Analytics (PostHog keys) | ❌ unset | ❌ unset | code no-ops until keys set |
 | Ads (`ADS_ENABLED` / `ads_enabled`) | ❌ off (locked) | ❌ off (locked) | Rewarded-AdMob SSV (SPEC-ADS) still unbuilt (no ad SDK). The legacy trust-the-client `/tokens/ad-reward` stub was farmable (any caller rotating device ids could mint the daily cap). Gated behind `ADS_ENABLED` (default false → 403) in commit `672b7fb0`; **deployed 2026-07-26 — `/tokens/ad-reward` now returns 403 on gamma AND prod**, verified live. The hole was open on prod from 2026-07-21 until this deploy. Do NOT set `ADS_ENABLED=true` until SSV replaces the stub. |
 
+### Production promotion preparation — October 3 PDT / October 4 UTC, 2026
+
+Avi authorized review, commit/push and rollout through production with rollback readiness and
+shared-database protection. **Production is still unchanged.** Full/focused consistent backups
+and isolated restore rehearsals passed for both Supabase projects. The exact two LocalPlay
+production functions and their self-cleaning verification passed offline; all 465 restored tables
+kept identical contents, with only the intended RPC metadata changed. The frozen public bundle
+preserves production OAuth, analytics and live config. Current gamma restart/reconnect passed
+lobby/answered-quiz token, score, answer and no-extra-charge checks; both owned rooms cleaned.
+
+Separate exact-baseline Revelry maintenance commits pass 2,904 gamma / 2,700 production tests,
+with 111 independent focused passes on each. Automatic approval review rejected publishing them
+to the separate Revelry repository as outside the interpreted LocalPlay authorization; explicit
+publication/deployment approval is pending. Live consumer scale qualification, targeted production
+SQL, runtime/frontend publication and production acceptance remain pending. See
+[dated release evidence](RELEASE-EVIDENCE-2026-10.md) and
+[promotion plan](PROD-ROLLOUT-2026-10.md); preparation does not change deployed status.
+
 ### Gamma repository review release — October 3, 2026
 
 The final backend/SPA image runs source `0bf942094a2e9e6bc6680b4a49b430834cf0cb84`.

@@ -26,6 +26,14 @@ The live gamma matrix also exposed catalog/ingress drift for **Odd Question**: t
 
 ### Release candidate integration qualification
 
+**Current remediation preparation:** The narrow consumer patch is independently reviewed on
+both live baselines, with isolated commits `ada6f6e9` (gamma `06df3136`) and `f4497edb`
+(production `e8b97eca`). Unchanged refresh uses one paginated party read and zero writes; changed
+rows use scoped identity/revision guards, new items use bounded batches, and concurrent callback,
+version and deletion handling preserve authoritative state. No schema, dependency or frontend
+changes are included. Publication approval and live latency/embedded qualification remain pending;
+source tests alone do not close the scaling gate. See [release evidence](RELEASE-EVIDENCE-2026-10.md).
+
 The executable promotion order, current open gates, recovery actions, and evidence checklist live in [PROD-ROLLOUT-2026-10.md](PROD-ROLLOUT-2026-10.md). The [environment status ledger](DEPLOY.md) remains authoritative for deployed state. The following are durable integration requirements for each candidate:
 
 1. **Identify both sides of the integration.** Record the LocalPlay runtime source revision and immutable image ID, frontend artifact identity, Revelry consumer/backend and client revisions, environment, production policy/configuration snapshot, test time, and owned QA party/session/content IDs. Successful tests on an earlier consumer or a different image do not qualify an untested version pair. A later documentation-only commit may preserve runtime qualification when its lack of runtime changes is recorded; a changed runtime, policy contract, or consumer requires the affected gamma qualification again.
