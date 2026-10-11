@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from drawing_engine import clue_for_prompt, is_correct_guess, normalize_guess, _sanitize_drawing_game, _validate_drawing_game
 import main
+import config
 from main import app
 from socket_manager import Room, SocketManager
 
@@ -208,3 +209,42 @@ async def test_drawing_auto_mode_schedules_inter_round_pause():
     assert room.drawing_auto_task is not None
     room.drawing_auto_task.cancel()
     await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_correct_guess_text_stays_hidden_from_live_and_reconnect_feeds():
+    manager = SocketManager()
+    room = Room("DRAW06", make_drawing_game(), time_limit=30, game_type="drawing")
+    add_player(room, "p1", "Alice")
+    bob = add_player(room, "p2", "Bob")
+    cara = add_player(room, "p3", "Cara")
+    spectator = MockWebSocket()
+    room.spectators["tv"] = spectator
+    room.current_question_index = 0
+    room.current_drawer = "Alice"
+    room.state = "QUESTION"
+
+    await manager._handle_drawing_guess(room, "p2", {"type": "GUESS", "guess": "robot cook"})
+    assert room.state == "QUESTION"
+    assert any(message.get("type") == "GUESS_RESULT" and message.get("correct") for message in bob.sent_messages)
+    for ws in (cara, spectator):
+        accepted = next(message for message in ws.sent_messages if message.get("type") == "GUESS_ACCEPTED")
+        assert accepted["nickname"] == "Bob"
+        assert "guess" not in accepted
+
+    await manager._handle_drawing_guess(room, "p3", {"type": "GUESS", "guess": "chef hat"})
+    for ws in (cara, spectator):
+        feed = next(message for message in ws.sent_messages if message.get("type") == "GUESS_LOG")
+        assert feed["guess_log"] == [{"nickname": "Cara", "guess": "chef hat", "correct": False}]
+    reconnect = manager._drawing_player_state(room, "Cara", room.current_round_data())
+    assert reconnect["guess_log"] == [{"nickname": "Cara", "guess": "chef hat", "correct": False}]
+    assert manager._drawing_public_guess_log(room) == reconnect["guess_log"]
+    assert room.guess_log[0]["guess"] == "robot cook"
+
+
+@pytest.mark.parametrize("provider", ["gemini", "stable_diffusion"])
+def test_generated_quiz_asset_records_selected_image_provider(monkeypatch, provider):
+    monkeypatch.setattr(config, "IMAGE_GENERATION_PROVIDER", provider)
+    question = {"id": 1, "text": "Party cake", "image_prompt": "A birthday cake"}
+    asset = main._store_quiz_image_asset("image-provider-test", question, "aGVsbG8=", "test-wallet")
+    assert asset.provider == provider

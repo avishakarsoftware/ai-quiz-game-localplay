@@ -1,5 +1,11 @@
 # LocalPlay Party Quests Game Spec
 
+## Current repository contract (reviewed 2026-10-10)
+
+`party_quests_config` configures standalone rooms; host-app sessions also accept prepared saved content and settings. Technical minimum is 1 real player. `QUESTS_SYNC.party_quests` carries public progress or viewer-private board/incoming/outgoing requests; final results use the shared `PODIUM` event. Host `QUESTS_FINAL_CALL` changes the stored end time to 60 seconds later, `QUESTS_REVEAL` freezes new completions, and `END_QUIZ` completes. The socket runtime has no automatic deadline/expiry progression or extend-duration event.
+
+Tap-confirm retries replace the previous request for the same quest. Only the current selected partner can resolve it, within ten minutes and during active/final-call phases. Partner limits are rechecked at acceptance so parallel pending requests cannot exceed the limit. Honor mode confirms immediately. Public results expose aggregate counts, rankings, and awards, without the person-to-person completion graph. The implemented awards are Quest Champion, Social Butterfly, and Completionist; a separate Speed Starter/runner-up award is roadmap. Host-app capability and deployment history below are distinct from this repository review.
+
 Status: **Implemented + live on gamma and prod** (reviewed 2026-07-21). Base ambient game, curated/AI quest decks, per-player boards, tap-confirm/honor completions, late join, reveal/podium, and result summaries are shipped. The staged Revelry check-in contract (embedded setup/save/edit authoring, Host/Player/TV preview, strict `requires_prepared_content_for_checkin`, first-real-guest auto-start, host lobby/live cancellation via `POST /integrations/revelry/party-games/cancel`) was flipped on gamma 2026-07-09 and **on production 2026-07-14** (prod upgraded from quick-start-only). Authoritative per-environment status: DEPLOY.md's ledger. Full integration contract + rollout sequence: `SPEC-REVELRY-INTEGRATION.md`. Follow-up: pair-code confirmation.
 
 ## Overview
@@ -35,7 +41,7 @@ Status: LocalPlay MVP implemented on June 18, 2026; AI quest-block authoring and
 - Host can edit, add, remove, and reorder numbered quest cards before room creation.
 - Host can choose duration, quests per player, confirmation mode, and late-join support.
 - Revelry/host-app catalog support is implemented as quick-start/default-content capable (`host_app_supported=true`, `can_quick_start=true`).
-- Embedded Revelry custom authoring is deferred; LocalPlay exposes a safe quick-start path first.
+- Embedded Revelry saved setup/edit/AI authoring is implemented and exposed when the host-app policy enables the opt-in capabilities; prepared content is required for check-in mode.
 - Every player receives a personal quest board/list.
 - Quests are completed by selecting another player and requesting confirmation.
 - Confirmation modes:
@@ -46,7 +52,7 @@ Status: LocalPlay MVP implemented on June 18, 2026; AI quest-block authoring and
 - Re-scans/rejoins should preserve a player when the same browser/device player token is present. Nickname alone is not enough to merge identity.
 - Players can continue normal party activity while quests run.
 - Spectator/TV can show ambient progress or stay quiet until reveal.
-- Host ends the game manually or after a timer.
+- Host ends/reveals manually. The engine stores `ends_at`; automatic timer-driven transitions remain future work.
 - Final reveal shows winner, runner up, top connectors, quest highlights, and aggregate stats.
 
 ## July 6, 2026 Implementation-Ready Check-In / Default-Game Integration
@@ -83,14 +89,14 @@ Host setup:
   - `default_for_checkin`: whether check-in surfaces should point guests to Party Quests.
   - `auto_start_on_first_checkin`: default on for check-in mode.
   - `allow_late_join`: default on.
-- Host can still manually start the room before any guest checks in.
+- Host can prepare the lobby before guests arrive; starting gameplay requires at least one real player.
 
 Guest behavior:
 
 - First guest check-in can create/start the LocalPlay Party Quests session if `auto_start_on_first_checkin=true`.
 - Later guests join the same active session and receive a quest board immediately.
 - A guest who scans/checks in again from the same browser/device token should resume the same player seat and board.
-- A guest who scans from a new device but has a stable Revelry guest id should also resume the same seat when the launch token includes that guest id.
+- Target integration behavior: a stable Revelry guest id could restore a seat across devices. Current socket reconnects use the room-scoped player token; cross-device guest-id reconciliation is future work.
 - A different guest trying to reuse an active nickname without a matching token/guest id should be asked to choose a different name.
 
 Host/restart behavior:
@@ -144,7 +150,7 @@ Backend behavior:
 - Late join assignment must be idempotent by stable player identity.
 - Result summary must remain aggregate and must not expose a per-person social graph.
 
-### Identity and Duplicate Join Rules
+### Target Identity and Duplicate Join Rules (cross-device host-app identity is roadmap)
 
 Identity precedence:
 
@@ -289,7 +295,7 @@ Defaults:
 - `reveal_mode`: `host_paced`.
 - `theme`: `party`.
 - `allow_late_join`: true.
-- `auto_start_on_first_checkin`: schema-supported for future check-in/default-game host-app flows; false for normal standalone rooms until the host presses Start.
+- `auto_start_on_first_checkin`: engine default true. Automatic startup is restricted to host-app check-in/default rooms; standalone still waits for the host to press Start.
 
 Validation:
 
@@ -298,7 +304,7 @@ Validation:
 - Quest count: 5-120.
 - Quests per player: 3-25.
 - Duration: 10-240 minutes.
-- Confirmation mode: `tap_confirm`, `pair_code`, or `honor`.
+- Confirmation mode: `tap_confirm` or `honor` in the UI. `pair_code` is schema-reserved and currently follows the tap-confirm engine path; no pair-code generation/verification exists.
 - Late join: boolean.
 
 ## Quest Model
@@ -354,7 +360,7 @@ Room state:
 
 Phases:
 
-- `QUESTS_LOBBY`
+- `LOBBY` (shared room state before engine start)
 - `QUESTS_ACTIVE`
 - `QUESTS_FINAL_CALL`
 - `QUESTS_REVEAL`
@@ -411,7 +417,7 @@ Server to clients:
 ```
 ```
 
-## Completion Flow: Pair Code / QR
+## Future Completion Flow: Pair Code / QR
 
 Pair-code mode reduces notification dependence and works well for crowded parties.
 
@@ -436,7 +442,7 @@ Default:
 
 - Standard quest: 100 points.
 - Hard/specific quest: 150 points.
-- First 3 completions bonus: +50 each.
+- First 3 confirmed completions in the entire room: +50 each (not the first three per player).
 - Unique partner bonus: +25 per distinct confirmed partner.
 - Complete entire board: +300.
 
@@ -579,12 +585,13 @@ Implemented:
 5. Organizer/spectator UI: ambient progress, final call, reveal, and end controls.
 6. Backend tests for config, confirmation, denial, late join, private/public sync, and reveal phases.
 
-Deferred:
+Follow-ups:
 
-1. Multi-tab Playwright happy path with host + two players.
-2. Revelry gamma policy enablement and embedded party-hub smoke once product approves exposure.
-3. AI generation and prompt sanitizer UI.
-4. Pair-code/QR mode if tap confirmation proves too interruptive.
+1. Broader multi-tab and long-session browser coverage.
+2. Pair-code/QR confirmation.
+3. Automatic timer progression and richer countdown/extend controls.
+
+AI generation, review UI, and policy-gated embedded authoring are implemented. Deployment/policy flips recorded at the top of this document are historical.
 
 MVP can ship with only `tap_confirm` and `honor` if pair-code QR scanning would delay the first playable version. Keep the setup schema compatible with `pair_code` so it can be enabled later without reshaping saved content.
 
@@ -644,9 +651,9 @@ Host must review/edit generated quests before starting.
 
 - Reconnected players receive their quest board, score, pending outgoing confirmations, and incoming requests.
 - If a player disconnects, they remain on the roster unless host removes them or room ends.
-- Pending confirmations can expire after a configurable period, default 10 minutes.
+- Pending requests expire after 10 minutes; expired requests cannot be accepted. Re-requesting a quest replaces its old request, so another selected partner cannot resolve a stale copy.
 - A player who joins late can receive a board if host allows late join; default allow during active phase.
-- If host's organizer connection drops, game continues until timer end; another host control path is future work.
+- If the organizer disconnects, players can continue while the room remains active. Timer expiry alone does not transition phases; another host control path is future work.
 
 ## Revelry / Host-App Fit
 
@@ -722,10 +729,10 @@ Playwright:
 
 - Host can start Party Quests with 4+ players.
 - Players receive quest boards.
-- Players can complete quests through tap confirmation or pair code.
+- Players can complete quests through tap confirmation or honor mode; pair code remains roadmap.
 - Scores update only after confirmation.
 - Partner duplicate limits prevent trivial farming.
-- Game can run until host ends it or timer expires.
+- Game runs until the host reveals/ends it; automatic expiry is future work.
 - Final reveal shows winners and aggregate party stats.
 - Public/spectator sync avoids exposing private per-person match details.
 

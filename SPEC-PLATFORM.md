@@ -1,9 +1,18 @@
 # LocalPlay Platform Spec
 
-Status: **Forward-looking vision, partially implemented** (reviewed 2026-07-21). For what's actually built
+Status: **Forward-looking vision with implemented foundations** (reconciled 2026-10-10). For what's actually built
 see `SPEC.md`; for per-environment live status see DEPLOY.md's ledger.
 
 This document describes the intended platform direction for LocalPlay. It is forward-looking. For the current implemented system, see `SPEC.md`. For the detailed LocalPlay-side Revelry bridge contract, see `SPEC-REVELRY-INTEGRATION.md`.
+
+## Implemented Boundary (2026-10-10)
+
+The current repo has a code-backed `/catalog`, many game engines and phone/organizer/spectator views, optional accounts and wallet history, persistent custom quiz packs and host-app content, durable Revelry `game_sessions`, signed launch tokens, result retrieval, and callback delivery. SQLite is the local/test default; deployed environments must select Supabase with isolated table prefixes. Rooms still run on one process, with best-effort filesystem snapshots; this is not a distributed realtime system.
+
+The public IONOS app is at `https://games.revelryapp.me/`, built with `VITE_BASE_PATH=/` and an explicit production API URL. `/quiz/` is a legacy deployment directory, not the canonical web base. Backend-served gamma/preview builds use same-origin API/WebSockets.
+
+The game backlog and proposed schemas below preserve the original platform vision. Word Association, Two Truths, Drawing, Story Chain, Mafia, Musical Chairs, Bingo/Housie, Bluff, Party Poker's stay/fold MVP, and the quiz variants already have runtime implementations. Chinese Whispers and Taboo remain proposals. Rebus/Emoji quiz cards currently use multiple-choice answers; the typed-guess loop below is a future variation. Native TV packaging and full remote-only gameplay remain future work despite the browser `/tv` catalog/room shell. See each game spec and `SPEC-TV-APP.md` for the current contract. Host-app availability is separate catalog policy, so standalone implementation does not imply Revelry enablement.
+
 
 ## Vision
 
@@ -89,7 +98,7 @@ The bridge should not leak LocalPlay internals into Revelry.
    - The Supabase migration should reuse the shared VibePix Supabase project, but LocalPlay objects must be namespaced.
    - Production database objects use the `games_` prefix.
    - Gamma database objects use the `games_gamma_` prefix.
-   - SQLite remains the default runtime backend until gamma has proven the Supabase path.
+   - SQLite remains the local/test default. Named gamma/production deployments require Supabase; `config.validate_runtime_db_config()` refuses deployed SQLite fallbacks. `TABLE_PREFIX` isolates `games_gamma_` and `games_` tables.
 
 ## Core Concepts
 
@@ -119,7 +128,7 @@ A game has:
 
 The catalog is the list of available games and their display/runtime metadata.
 
-Example shape:
+Illustrative target shape (actual fields are defined by `backend/game_catalog.py`; Drawing is implemented, not planned):
 
 ```json
 {
@@ -138,7 +147,7 @@ Example shape:
 }
 ```
 
-Catalog status values:
+Proposed broader catalog status vocabulary (current eligibility comes from `status`, `launchable`, and effective host-app policy):
 
 - `live`
 - `beta`
@@ -190,7 +199,7 @@ Suggested fields:
 }
 ```
 
-Session statuses:
+Proposed standalone session statuses (the current persisted Revelry bridge uses `lobby`, `active`, `paused`, `completed`, `cancelled`, `expired`, and `superseded`):
 
 - `draft`: setup exists but room is not live.
 - `lobby`: room exists and players can join.
@@ -213,7 +222,7 @@ It owns:
 - Timers.
 - Per-round state.
 
-Current code stores rooms in memory. That is acceptable for the current server deployment. Long-term, `Room` should remain the runtime object, while `GameSession` becomes the durable object.
+Current rooms are in memory with optional best-effort filesystem snapshots. Persisted host-app sessions wrap those rooms; standalone rooms are still created directly. Distributed recovery and a uniform standalone `GameSession` lifecycle remain future work.
 
 ### Player
 
@@ -274,10 +283,10 @@ External context should also drive LocalPlay chrome. Standalone launches show no
 
 Current system:
 
-- `Room` is the main concept.
-- Generated content is stored in memory by content id.
-- `/room/create` creates a room directly from content.
-- Quiz and WMLT are hardcoded through `game_type` branches.
+- `Room` owns the live single-process runtime and game-specific state.
+- `/room/create` creates standalone rooms directly; transient generated quiz/WMLT content is held in memory, while saved quiz packs and host-app content use the DB adapter.
+- A code-backed catalog derives allowed game types and metadata; many per-game engine modules share `socket_manager.py` transport/lifecycle wiring.
+- Revelry launches already create durable `game_sessions` that reference rooms, external context, settings, and completed summaries. Standalone sessions are not yet uniform with this bridge.
 
 Target system:
 
@@ -286,7 +295,7 @@ Target system:
 - A room is created/resumed for that session.
 - External apps interact with sessions, not raw rooms.
 
-Suggested migration path:
+Original migration path (catalog, host-app session persistence, results, and external launch APIs are implemented; general standalone sessions/content persistence remain work):
 
 1. Keep existing `/quiz/*`, `/mlt/*`, and `/room/create` working.
 2. Add a catalog endpoint.
@@ -326,7 +335,7 @@ backend/
     word_association.py
 ```
 
-The current code keeps game logic in `socket_manager.py`. That is acceptable for the first few games, but the long-term direction should move game-specific helpers into game modules while keeping shared WebSocket infrastructure centralized.
+Current rule/state logic already lives in modules such as `drawing_engine.py`, `mafia_engine.py`, `poker_engine.py`, and `generic_prompt_engine.py`; `socket_manager.py` still dispatches messages, timers, and shared lifecycle. The proposed `backend/games/` directory is an organization direction, not the current file layout.
 
 ### Per-Game Frontend Shape
 
@@ -499,7 +508,7 @@ LocalPlay should not:
 
 ### Launch Flow
 
-Recommended future flow:
+Implemented host-app flow (the exact authorization, callback and expiry contract is in `SPEC-REVELRY-INTEGRATION.md`):
 
 ```text
 Revelry host opens Games tab
@@ -545,7 +554,9 @@ Security requirements:
 
 ### Integration APIs
 
-Potential LocalPlay APIs:
+Current bridge APIs include `POST /integrations/revelry/sessions`, `POST /integrations/revelry/party-games/start`, scoped launch-token/cancel routes, and `GET /integrations/revelry/sessions/{session_id}` and `/results`. Browser entry routes are `/sessions/{session_id}/{organizer|join|spectate}`. Signed callbacks are already implemented. There is no generic REST `POST /sessions` or `GET /sessions/{id}/results` endpoint.
+
+The following unprefixed API sketch is the original proposed platform surface; it must not be used as the current route contract:
 
 ```http
 GET /catalog
@@ -589,7 +600,7 @@ POST /integrations/revelry/results-callback
 
 Optional callback from LocalPlay to Revelry if pull-based result retrieval is not enough.
 
-The first version should prefer pull-based results. Callbacks add retry/signature complexity.
+Both pull-based result retrieval and signed host-app callbacks are implemented. A generic platform callback API remains a design option.
 
 ## Results Model
 
@@ -658,7 +669,9 @@ Default rule: new games should use the shared cost model. That keeps pricing sim
 
 If generated content is abandoned before room creation, no generation spark is taken. If a game has no AI generation step, such as a player-authored game, only the game-start cost applies. Future exceptions are possible for premium games, sponsored/free games, unusually expensive generation modes, or games that use additional paid media services, but exceptions should be deliberate product decisions rather than per-game drift.
 
-## Game Backlog
+## Game Backlog — Original Design and Future Variations
+
+This section is an ideation archive. The implemented-boundary section above and per-game specs identify shipped slices; “Needs”, complexity estimates, and build-order advice here are not evidence that those games are absent.
 
 ### Word Association
 
@@ -1075,7 +1088,7 @@ The event-specific value comes from themed AI prompts, not new game mechanics. T
 Classic bingo, housie/tambola, and baby bingo are adjacent to quiz authoring but need a different room model. The implementation-ready spec is `SPEC-GAME-BINGO-HOUSIE.md`, with standalone Housie, configurable Bingo, and Baby Bingo implemented on a reusable Bingo-family engine:
 
 - Host creates or selects a board template: numbers, words, images, or event-specific phrases.
-- Server generates unique player boards when players join.
+- Server generates player boards when players join. Independent random sampling does not guarantee room-wide uniqueness; a hash/retry policy remains future work.
 - Host/caller advances draws one at a time, with optional auto-caller mode.
 - Players mark called cells locally; server validates claims against the draw history.
 - Housie claim validation must require the prize to have become true on the latest called number; stale claims after later calls are rejected.
@@ -1084,7 +1097,7 @@ Classic bingo, housie/tambola, and baby bingo are adjacent to quiz authoring but
 - Winning patterns should be configurable: one line, two lines, four corners, early five, full house, baby-gift row, etc.
 - Spectator view should show the latest call, call history, current claims, winners, large latest-call animation, and winner/confetti announcements.
 
-Complexity: medium. Standalone Housie now covers the new board/claim state: server-generated tickets, manual caller, claim validation, winners, and spectator sync. The next platform slice is Beginner/Pro setup, auto-caller controls, latest-call/winner visual polish, last-called-number claim validation, and durable templates, then host-app/Revelry enablement once party-scoped setup and safe result callbacks are ready.
+Complexity: medium. Standalone Housie now covers the new board/claim state: server-generated tickets, manual caller, claim validation, winners, and spectator sync. Beginner/Pro setup, auto-caller controls, latest-call validation, and same-call terminal claim windows are implemented. Durable general templates, additional board layouts/patterns, and image generation remain follow-up work; Revelry eligibility is environment/catalog policy.
 
 ### Card Games Runtime
 
@@ -1187,10 +1200,10 @@ Backend-served mode is required for gamma/staging, production smoke tests, and f
 ### Environment Shape
 
 **Production user-facing path**:
-- Frontend: IONOS CDN/shared hosting at `games.revelryapp.me/quiz/`
+- Frontend: IONOS CDN/shared hosting at `games.revelryapp.me/`
 - Backend: GCP VM at `gamesapi.revelryapp.me`
 - API mode: cross-origin from IONOS frontend to backend API/WebSockets
-- Build mode: `VITE_BASE_PATH=/quiz/`, `VITE_API_URL=https://gamesapi.revelryapp.me`
+- Build mode: `VITE_BASE_PATH=/`, `VITE_API_URL=https://gamesapi.revelryapp.me`
 
 **Gamma/staging path**:
 - Frontend + backend: one FastAPI container origin, e.g. `gamesapi-gamma.revelryapp.me`
@@ -1204,7 +1217,9 @@ Backend-served mode is required for gamma/staging, production smoke tests, and f
 - This should not be treated as the canonical customer URL unless a later deployment decision explicitly changes it.
 - Build mode: no API base, root base path
 
-### Required Code Changes
+### Dual-Serving Implementation Blueprint (Implemented)
+
+The items below describe the original implementation; the repo now satisfies the dual-serving path. Treat `backend/main.py` and deployment scripts as the executable contract and `DEPLOY.md` as operational truth.
 
 Implementation should be small and reversible. It should not change the room model, WebSocket protocol, game rules, or IONOS production URL.
 
@@ -1342,13 +1357,13 @@ Use separate build commands for each serving mode.
 
 ```bash
 cd frontend
-VITE_BASE_PATH=/quiz/ \
+VITE_BASE_PATH=/ \
 VITE_API_URL=https://gamesapi.revelryapp.me \
 VITE_CAST_APP_ID=1BC9ACD8 \
 npx vite build
 ```
 
-Deploy `frontend/dist/*` to `~/revelryapp/games/quiz/` on IONOS as described in `DEPLOY.md`.
+Deploy `frontend/dist/*` to `~/revelryapp/games/` on IONOS as described in `DEPLOY.md`.
 
 **Backend-served gamma/preview build**:
 
@@ -1403,7 +1418,7 @@ The current implementation keeps `backend/Dockerfile` as the build file. For bac
 
 ```text
 Production user-facing:
-  games.revelryapp.me/quiz/ (IONOS) → static frontend
+  games.revelryapp.me/ (IONOS) → static frontend
                                     → gamesapi.revelryapp.me (GCP) API + WebSockets
 
 Gamma:
@@ -1485,7 +1500,7 @@ Production env should include both user-facing and backend-preview origins:
 - `TRUST_PROXY_HEADERS=true`
 - `GEMINI_MODEL=gemini-2.5-flash-lite`
 - `GEMINI_PREMIUM_MODEL=gemini-2.5-flash-lite`
-- `REMOTE_CONFIG_URL=https://games.revelryapp.me/quiz/config.json`
+- `REMOTE_CONFIG_URL=https://games.revelryapp.me/config.json`
 - `GOOGLE_CLIENT_ID=458966837298-9hjencou1ag2o17ln06iuuj86j5p8igj.apps.googleusercontent.com`
 - `APPLE_CLIENT_ID=me.revelryapp.quiz.web`
 - `APPLE_CLIENT_IDS=me.revelryapp.quiz.web,me.revelryapp.quiz`
@@ -1505,7 +1520,7 @@ OAuth provider consoles must also trust every SPA origin:
 - Apple Sign in with Apple Service ID `me.revelryapp.quiz.web` domains: `games.revelryapp.me`, `gamesapi.revelryapp.me`, `gamesapi-gamma.revelryapp.me`
 - Apple return URLs: `https://games.revelryapp.me`, `https://gamesapi.revelryapp.me`, `https://gamesapi-gamma.revelryapp.me`
 
-Backend-served builds leave `VITE_APPLE_REDIRECT_URI` blank so the Apple JS SDK uses the current origin. IONOS `/quiz/` builds may keep `VITE_APPLE_REDIRECT_URI=https://games.revelryapp.me`.
+Backend-served builds leave `VITE_APPLE_REDIRECT_URI` blank so the Apple JS SDK uses the current origin. IONOS root builds may keep `VITE_APPLE_REDIRECT_URI=https://games.revelryapp.me`.
 
 `JWT_SECRET` is required after provider token verification. Without it, Google/Apple can succeed but `/auth/signin` still fails because the backend cannot create the app session token.
 
@@ -1529,7 +1544,7 @@ Before calling the implementation done:
 - Browser refresh works on `/join`, `/spectator`, and organizer routes.
 - WebSocket join works from the backend-served gamma page.
 - Unknown API paths such as `/quiz/not-real/export` return JSON 404, not `index.html`.
-- IONOS production still loads from `https://games.revelryapp.me/quiz/`.
+- IONOS production still loads from `https://games.revelryapp.me/`.
 - IONOS production still calls `https://gamesapi.revelryapp.me` for API/WebSockets.
 - Existing backend tests pass with no frontend build present.
 - The deployed production container can still run API-only if `/app/static/index.html` is missing.
@@ -1546,7 +1561,7 @@ Done in repo:
 - `DEPLOY.md` documents the operational flow.
 - Backend tests cover the SPA serving edge cases.
 
-Deployed outside the repo:
+Recorded deployment evidence (from `DEPLOY.md`; not freshly verified by this reconciliation):
 
 1. DNS and SSL exist for `gamesapi.revelryapp.me` and `gamesapi-gamma.revelryapp.me`.
 2. Nginx routes production to `127.0.0.1:8000` and gamma to `127.0.0.1:8004`.
@@ -1555,6 +1570,8 @@ Deployed outside the repo:
 5. Production and gamma `/health`, root SPA HTML, client-route fallback, assets, and `/providers` API JSON have been smoke-tested.
 
 ## Infrastructure Roadmap
+
+Phases 1–3 are partially implemented: persisted host-app sessions/content/results, catalog/bridge APIs, and per-game engine extraction exist. Broader standalone persistence and further socket modularization remain; Phase 4 remains future work.
 
 ### Current Phase: Single Server
 
@@ -1652,7 +1669,7 @@ These need: turn queue, active-player tracking, per-player private prompts, and 
 ### Card / Hidden-Information Turn Games
 
 - Bluff (one active player acts, others may challenge)
-- Party Poker (future)
+- Party Poker (implemented stay/fold MVP; betting/side pots remain future work)
 
 These need: server-owned deck/dealer, per-player private sync, public redacted sync, active-player turn gating, challenge/betting/action windows, reconnect-safe private hand restoration, and spectator-safe reveal rules.
 
@@ -1663,7 +1680,7 @@ These need: server-owned deck/dealer, per-player private sync, public redacted s
 
 These need: role assignment, private role prompts, simultaneous actions from other players, and role rotation. They are not fully sequential because non-active players still act during the turn.
 
-The socket_manager currently mainly handles simultaneous games. Sequential and role-based games will need:
+The following generic turn/role API remains a design sketch. Current engines already implement their own sequential and role-based state for Drawing, Story Chain, Bluff, Mafia, Impostor, and other games; these exact shared fields/messages are not required for them:
 - `room.turn_order: list[str]` — player order for the current round.
 - `room.active_player: str` — whose private turn or special role is active.
 - `room.player_roles: dict[str, str]` — current role assignment where needed.
@@ -1671,7 +1688,7 @@ The socket_manager currently mainly handles simultaneous games. Sequential and r
 - `ROLE_ASSIGNED` messages for role-led games.
 - `WAITING_FOR_TURN` state on the player frontend.
 
-This is the main infrastructure investment needed before Chinese Whispers or DrawingGame.
+Chinese Whispers can reuse the established private-turn patterns. DrawingGame already has drawer rotation, private prompts, stroke sync, guesses, and spectator views.
 
 ## Open Design Questions
 
@@ -1699,11 +1716,13 @@ This is the main infrastructure investment needed before Chinese Whispers or Dra
 - How should native app deep links route between Revelry and LocalPlay?
   - **Recommendation**: Stable LocalPlay universal/app links for authoring, organizer, player, and spectator launch. Links should support app-open when installed and browser fallback when not. Existing `/quiz/join` style links are legacy-compatible examples, not the final platform shape. Return URLs from LocalPlay back to Revelry must support universal links and explicitly allowlisted custom schemes.
 - Public IONOS surface cleanup:
-  - **Backlog**: Move the canonical public LocalPlay web surface off `https://games.revelryapp.me/quiz/` because LocalPlay is now a multi-game app, not just quiz. Prefer `https://games.revelryapp.me/` as the eventual canonical surface, with `/quiz/` retained as a compatibility redirect or alias. This should be handled separately from the Revelry bridge, whose current gamma path uses the backend-served LocalPlay host for API/WebSocket simplicity.
+  - **Implemented**: the canonical surface is `https://games.revelryapp.me/`. The old `/quiz/` directory remains a compatibility/cleanup concern; current builds must use the root base and production API/config URLs.
 - **New: How should we handle games that need a canvas/drawing?**
-  - Build a shared `<DrawingCanvas>` component that handles touch/mouse input, undo, color picker, and exports strokes as compact events. Reuse across Chinese Whispers (drawing variant) and DrawingGame. Don't build it until the first drawing game is in scope. See `SPEC-GAME-DRAWING.md`.
+  - `<DrawingCanvas>` and DrawingGame are implemented with touch/mouse drawing, undo, color/width controls, and compact stroke messages. Reuse them for future Chinese Whispers drawing mode. See `SPEC-GAME-DRAWING.md`.
 
-## Near-Term Recommended Work
+## Near-Term Recommended Work — Historical Build Sequence
+
+This original sequence is retained as planning history: dual serving, deployed gamma, Supabase adapters/isolation, catalog, Word Association, Two Truths, host-app sessions/results, and DrawingGame already exist. Remaining work is broader standalone persistence, Chinese Whispers and other unimplemented backlog games, and distributed scaling only when justified. Do not rerun deployment/migration steps from this historical list; use current `DEPLOY.md`.
 
 1. ~~Add `SPEC-PLATFORM.md` as the forward-looking design document.~~ Done.
 2. Keep `SPEC.md` as current-state truth.

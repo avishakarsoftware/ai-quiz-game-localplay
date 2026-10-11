@@ -240,7 +240,9 @@ def submit_vote(state: dict, player_id: str, submission_id: str) -> dict:
 
 
 def score_round(state: dict, now: float | None = None) -> dict:
-    if state.get("phase") not in {PHASE_REVEAL, PHASE_VOTING, PHASE_ROUND_RESULT}:
+    if state.get("phase") == PHASE_ROUND_RESULT:
+        return state
+    if state.get("phase") not in {PHASE_REVEAL, PHASE_VOTING}:
         raise ValueError("Cannot score this phase")
     scores = dict(state.get("scores", {}))
     submissions = state.get("submissions", {})

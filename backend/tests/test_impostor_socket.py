@@ -15,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import config
+import impostor_engine as imp
 import socket_manager as sm
 from main import app
 from ws_test_utils import recv_until as _recv_until
@@ -78,6 +79,49 @@ class _Organizer:
 
 def _organizer(room_code, token):
     return _Organizer(room_code, token)
+
+
+class TestPrivateOrganizerAndSharedDisplay:
+    def test_live_reveal_roles_go_only_to_the_passed_organizer_phone(self):
+        code, token = _create_room()
+        with _organizer(code, token) as host:
+            with client.websocket_connect(f"/ws/{code}/display?spectator=true") as display:
+                _recv_until(display, "SPECTATOR_SYNC")
+                host.send_json({"type": "START_GAME"})
+                private = _recv_until(host, "IMPOSTOR_SYNC")["impostor"]
+                public = _recv_until(display, "IMPOSTOR_SYNC")["impostor"]
+                assert len(private["roles"]) == 3
+                assert public["roles"] == {}
+                assert public["secret_word"] == "" and public["impostor_id"] == ""
+                room = sm.socket_manager.rooms[code]
+                assert room.current_round_data()["roles"] == {}
+                # Ordinary NEXT_ROUND must not skip private reveals.
+                host.send_json({"type": "IMPOSTOR_NEXT_ROUND"})
+                state = _recv_until(host, "IMPOSTOR_SYNC")["impostor"]
+                assert state["phase"] == imp.PHASE_REVEAL_ROLES and state["round_number"] == 1
+
+    @pytest.mark.parametrize("phase", [imp.PHASE_REVEAL_ROLES, imp.PHASE_CLUES, imp.PHASE_VOTING,
+                                       imp.PHASE_ACCUSED_GUESS, imp.PHASE_REVEAL, imp.PHASE_PODIUM])
+    def test_spectator_reconnect_never_restores_private_roles(self, phase):
+        code, token = _create_room()
+        room = sm.socket_manager.rooms[code]
+        sm.socket_manager._start_impostor_game(room)
+        room.impostor_state["phase"] = phase
+        room.state = phase
+        with client.websocket_connect(f"/ws/{code}/reconnected-display?spectator=true") as display:
+            state = _recv_until(display, "SPECTATOR_SYNC")["impostor"]
+            assert state["roles"] == {}
+            if phase not in (imp.PHASE_REVEAL, imp.PHASE_PODIUM):
+                assert state["secret_word"] == "" and state["impostor_id"] == ""
+
+    def test_organizer_reconnect_restores_the_private_gate_payload(self):
+        code, token = _create_room()
+        room = sm.socket_manager.rooms[code]
+        sm.socket_manager._start_impostor_game(room)
+        with client.websocket_connect(f"/ws/{code}/reconnected-host?organizer=true") as host:
+            host.send_json({"type": "AUTH", "token": token})
+            state = _recv_until(host, "ORGANIZER_RECONNECTED")["impostor"]
+            assert len(state["roles"]) == 3
 
 
 class TestSeatSetup:
@@ -182,6 +226,7 @@ class TestFullRoundOverTheWire:
             room = sm.socket_manager.rooms[code]
             # Jump to the last round so NEXT_ROUND ends the game.
             room.impostor_state["round_number"] = room.impostor_state["config"]["total_rounds"]
+            room.impostor_state["phase"] = imp.PHASE_REVEAL
             ws.send_json({"type": "IMPOSTOR_NEXT_ROUND"})
             _recv_until(ws, "PODIUM")
         assert main.game_history, "podium did not record a game"
@@ -194,6 +239,7 @@ class TestFullRoundOverTheWire:
             _recv_until(ws, "IMPOSTOR_SYNC")
             room = sm.socket_manager.rooms[code]
             room.impostor_state["round_number"] = room.impostor_state["config"]["total_rounds"]
+            room.impostor_state["phase"] = imp.PHASE_REVEAL
             ws.send_json({"type": "IMPOSTOR_NEXT_ROUND"})
             podium = _recv_until(ws, "PODIUM")
         names = {row["nickname"] for row in podium["leaderboard"]}

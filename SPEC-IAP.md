@@ -1,12 +1,14 @@
 # SPEC-IAP — Native In-App Purchases (Apple StoreKit + Google Play Billing)
 
-Status: **Implemented — prod payments fully configured (RevenueCat + Stripe live) and the paywall price fix deployed to all 3 web surfaces; native rebuilt as v3.1.2(7). Remaining work is store submission + device purchase smokes** (2026-07-17)
+Status: **Web/native purchase code implemented**, source reconciled 2026-10-10. Historical setup evidence follows; current store versions, activation and unproven device/payment acceptance belong in `DEPLOY.md`. This review does not deploy or run a real purchase.
 Owner: Avi
 Related: `SPEC.md` (spark economy), `SPEC-ADS.md` (free Sparks via rewarded ads — the non-paid sibling to this spec), `DEPLOY.md` (§3c IAP runbook, §3d native sign-in, build contexts), `token_economy_migration.md`, VibePix `SPEC.md`/`server.js` (reference implementation)
 
 ---
 
-## 0. Status (as-built, updated 2026-07-17)
+## 0. Historical setup evidence (2026-07-17)
+
+The observations and native build numbers in this section are dated evidence, not current release status.
 
 **Prod payments are configured on both rails** (re-verified by probing the live
 endpoints, not from memory):
@@ -474,6 +476,21 @@ is why its spark packs never appear in the Stripe product catalog.)
 **Frontend web buy UI** shows the same three tiers and sends `sku` in the `/checkout/create` body
 (`OrganizerPage.tsx:2969`).
 
+### Payment settlement and asynchronous fulfillment (2026-10-10 source fix)
+
+`/webhook/stripe` verifies the raw-body signature before business logic. A completed checkout
+may still be unpaid. Only a signed session with `payment_status` equal to `paid` or
+`no_payment_required` and a nonempty session ID is eligible for credit. Unpaid/missing-status
+completion is acknowledged without credit; the later `checkout.session.async_payment_succeeded`
+event uses the same session ID as the atomic purchase reference, so distinct delivery event IDs
+cannot credit it twice. Credit failures remain retryable and are not marked processed.
+
+Before enabling delayed payment methods, register `checkout.session.async_payment_succeeded`
+on the relevant Stripe webhook destination as well as `checkout.session.completed`. This is an
+operator rollout requirement; this local review does not change provider configuration.
+These semantics follow [Stripe's Checkout fulfillment guidance](https://docs.stripe.com/checkout/fulfillment).
+`test_money_rails.py` covers unpaid, missing-status, delayed-success and distinct-event retry cases.
+
 ### 5.7 Backend tests (`backend/tests/`)
 
 Add `test_iap_webhook.py` mirroring the Stripe webhook tests:
@@ -485,7 +502,7 @@ Add `test_iap_webhook.py` mirroring the Stripe webhook tests:
 - amount is taken from the server catalog, not from a tampered `price`/amount field in the body.
 - `app_user_id` missing → 400, no credit.
 - `/checkout/create` blocks both `X-Platform: ios` and `X-Platform: android`, while `X-Platform: web` remains allowed.
-- `/checkout/create` accepts `sku`, chooses the matching Stripe price id, and writes `sku` + tier amount into metadata.
+- `/checkout/create` accepts `sku`, builds matching inline catalog `price_data`, and writes `sku` + tier amount into metadata.
 - Stripe webhook caps metadata grants to `max(p["sparks"] for p in SPARK_PRODUCTS.values())`.
 
 ---
@@ -820,7 +837,7 @@ Docs/config:
 - [x] `SPEC.md` — cross-links this spec from the monetization section.
 - [x] `.env.gamma` (GCP VM) — `REVENUECAT_WEBHOOK_SECRET`.
 - [x] `.env` (prod GCP VM) — `REVENUECAT_WEBHOOK_SECRET` set and deployed 2026-07-14.
-- [ ] `.env`/`.env.gamma` (GCP VM) — `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (per env). **Pending — needs Stripe live/test values and webhook endpoints.**
+- [x] Production Stripe keys configured in the dated July evidence; gamma web checkout remained unconfigured in the October release record. Reverify per-environment activation in `DEPLOY.md` rather than treating both as pending.
 
 ---
 

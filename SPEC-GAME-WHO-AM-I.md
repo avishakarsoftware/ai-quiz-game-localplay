@@ -1,5 +1,9 @@
 # LocalPlay Who Am I Game Spec
 
+## Current repository contract (reviewed 2026-10-10)
+
+Room creation accepts `who_am_i_id` or `who_am_i_config`; minimum is 2 players. AI generation uses `num_rounds` (3-25), not `round_count`, and returns `who_am_i_id` plus `game`. Import/update routes sanitize and validate the deck. Runtime updates use `WHOAMI_SYNC.who_am_i`; `WHOAMI_GUESS_RESULT` is private. Before reveal, successful guessers expose only identity, clue index, points, and timestamp: accepted guess text is redacted because it contains the answer. Each viewer still sees their own `my_guesses` and solved state. The engine enforces one guess per clue when `allow_multiple_guesses_per_clue=false` and advertises that effective limit to the UI. Matching accepts exact normalized answers/aliases and, when enabled, one edit or adjacent transposition for strings of at least five characters. Automatic clue timers, case-sensitive matching, and host-app exposure remain future work.
+
 ## Overview
 
 Add **Who Am I?** as a clue-ladder guessing game. Each round has one hidden answer, the host/TV reveals clues one at a time, and players submit free-text guesses from their phones. Earlier correct guesses score more, so the game rewards both knowledge and nerve.
@@ -47,7 +51,7 @@ Current exposure is standalone LocalPlay first. Revelry catalog exposure should 
 - Server normalizes guesses and matches against answer/aliases.
 - Earlier clue guesses score more.
 - Spectator/TV shows clue ladder, correct guessers, and final reveal.
-- Host can advance clues manually; optional auto clue reveal is allowed but manual is the default.
+- Host advances clues and reveals answers manually. Auto reveal is future work; validation forces `clue_reveal_mode="manual"`.
 - Final podium ranks players by score.
 
 ## Goals
@@ -76,8 +80,8 @@ Default MVP mode.
 1. Round answer is hidden.
 2. Clue 1 is revealed.
 3. Players guess.
-4. Host reveals next clue or auto timer reveals it.
-5. Round ends when host reveals answer, all active players have guessed correctly, or max clues are exhausted.
+4. Host reveals the next clue.
+5. The host reveals the answer, or presses Next Clue after the last clue. All-solved and timer expiry do not automatically end the round.
 
 ### Team Guess
 
@@ -129,7 +133,7 @@ Future mode. Players see an answer and write clues; other players guess.
 Defaults:
 
 - `game_title`: `Who Am I?`.
-- `round_count`: 10.
+- `round_count`: min(10, available valid rounds); the curated deck defaults to 5.
 - `clues_per_round`: 5.
 - `guess_time_seconds`: 25.
 - `clue_reveal_mode`: `manual`.
@@ -149,8 +153,8 @@ Validation:
 - Answer text: 2-80 chars.
 - Aliases: 0-8, each 1-80 chars.
 - Guess time: 10-90 seconds.
-- `points_by_clue.length` must be at least `clues_per_round`.
-- Points must descend or stay flat; no later clue should be worth more than an earlier clue.
+- Short `points_by_clue` arrays are padded with defaults.
+- Increasing values are clamped to the preceding value, so no later clue is worth more.
 
 ## AI Generation in MVP
 
@@ -173,7 +177,7 @@ Host flow:
 {
   "prompt": "Indian movie stars and cricket icons",
   "difficulty": "medium",
-  "round_count": 10,
+  "num_rounds": 10,
   "clues_per_round": 5,
   "provider": "gemini"
 }
@@ -242,7 +246,7 @@ Accepted when:
 Do not accept:
 
 - empty guesses
-- guesses shorter than 2 chars, unless matching an explicit alias
+- guesses shorter than 2 normalized characters, including one-character aliases
 - substring-only guesses for long answers unless the substring is an alias
 
 Examples:
@@ -322,11 +326,8 @@ Public state must never include the current round answer until reveal. Player pr
 6. Players submit guesses.
 7. Server validates guesses and sends private result to each guesser.
 8. Correct guessers are locked for the current round and score points based on clue index.
-9. Host reveals next clue or auto timer reveals it.
-10. Round ends when:
-    - host taps reveal answer,
-    - all active players guessed correctly,
-    - or final clue timer expires.
+9. Host reveals the next clue.
+10. Round ends when the host reveals the answer or presses Next Clue after the final clue. Stored deadlines do not reject late guesses or trigger automatic advancement.
 11. Spectator/TV reveals answer, aliases, correct guessers, and clue-by-clue score.
 12. Host advances to next round.
 13. After all rounds, server enters `PODIUM`.
@@ -340,15 +341,15 @@ Client to server:
 { "type": "WHOAMI_NEXT_CLUE" }
 { "type": "WHOAMI_REVEAL_ANSWER" }
 { "type": "WHOAMI_NEXT_ROUND" }
-{ "type": "WHOAMI_SET_AUTO_REVEAL", "enabled": true }
 ```
 
 Server to clients:
 
 ```json
 {
-  "type": "WHOAMI_STATE",
-  "state": {
+  "type": "WHOAMI_SYNC",
+  "game_type": "who_am_i",
+  "who_am_i": {
     "phase": "WHOAMI_ROUND",
     "current_round_index": 0,
     "current_clue_index": 1,
@@ -370,11 +371,10 @@ Private guess response:
 }
 ```
 
-Reveal payload:
+Reveal uses the same `WHOAMI_SYNC.who_am_i` payload, with `phase="WHOAMI_REVEAL"`, `answer`, `aliases`, and `correct_guessers`. There is no separate answer-revealed event. Conceptual reveal fields:
 
 ```json
 {
-  "type": "WHOAMI_ANSWER_REVEALED",
   "answer": "Shah Rukh Khan",
   "aliases": ["SRK", "King Khan"],
   "correct_guessers": [
@@ -383,7 +383,7 @@ Reveal payload:
 }
 ```
 
-## Backend Implementation
+## Original Backend Integration Plan (historical; helpers now live in `who_am_i_engine.py`)
 
 Add `backend/who_am_i_engine.py` with pure helpers:
 
@@ -413,7 +413,7 @@ Backend integration:
 
 State should stay in memory for MVP, matching current standalone room runtime style.
 
-## Frontend Implementation
+## Frontend Implementation and UX Goals
 
 Catalog:
 
@@ -507,7 +507,7 @@ Correct! You got it after clue {n}.
 - Player reconnects:
   - Restore private guesses, solved state, and score.
 - All players solve early:
-  - Server may auto-enter reveal state; host still controls next round.
+  - The host still reveals/advances; automatic early reveal is future work.
 - No one solves:
   - Reveal answer after final clue or host reveal.
 - Duplicate answers:

@@ -2,6 +2,8 @@
 
 **Status: BUILT 2026-08-04 (REVIEW-2026-08 P1, option "first-party grace"). Hardened 2026-08-08 to require a signup-bonus ledger proof. Gamma only; production promotion remains user-gated.**
 
+Source reconciled 2026-10-10 against backend, SQL adapters, frontend, and focused tests. Dated rollout statements below are historical evidence; this review does not reverify hosted flags or perform deployments.
+
 ## Why
 
 The economy paywalled a brand-new host at ~game 2: signup grant 20 ⚡, room 10 ⚡. The 402

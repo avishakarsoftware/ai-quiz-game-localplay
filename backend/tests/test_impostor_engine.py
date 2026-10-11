@@ -1,5 +1,8 @@
 """Impostor — the pass-and-play secret-word game (SPEC-PASS-AND-PLAY §2)."""
 import random
+from copy import deepcopy
+
+import pytest
 
 import impostor_engine as imp
 import pass_play_common as pp
@@ -26,6 +29,42 @@ def _run_clues(state):
         imp.record_clue(state, pp.current_turn(state["turn"]), "word")
         guard += 1
     return state
+
+
+class TestPhaseGuards:
+    @pytest.mark.parametrize("phase", [imp.PHASE_CLUES, imp.PHASE_VOTING, imp.PHASE_ACCUSED_GUESS,
+                                       imp.PHASE_REVEAL, imp.PHASE_PODIUM])
+    def test_duplicate_role_seen_cannot_rewind_a_round(self, phase):
+        state = _reveal_all(_state())
+        state["phase"] = phase
+        before = deepcopy(state)
+        imp.mark_revealed(state, "s0")
+        assert state == before
+
+    @pytest.mark.parametrize("phase", [imp.PHASE_REVEAL_ROLES, imp.PHASE_CLUES, imp.PHASE_VOTING,
+                                       imp.PHASE_ACCUSED_GUESS, imp.PHASE_PODIUM])
+    def test_next_round_requires_a_resolved_round(self, phase):
+        state = _state()
+        state["phase"] = phase
+        before = deepcopy(state)
+        imp.next_round(state)
+        assert state == before
+
+
+class TestSpectatorDisclosure:
+    @pytest.mark.parametrize("phase", [imp.PHASE_REVEAL_ROLES, imp.PHASE_CLUES, imp.PHASE_VOTING,
+                                       imp.PHASE_ACCUSED_GUESS, imp.PHASE_REVEAL, imp.PHASE_PODIUM])
+    def test_shared_display_never_receives_private_roles(self, phase):
+        state = _state()
+        state["phase"] = phase
+        public = imp.spectator_state(state)
+        assert public["roles"] == {}
+        assert public["next_unrevealed"] == ""
+        if phase not in (imp.PHASE_REVEAL, imp.PHASE_PODIUM):
+            assert public["secret_word"] == ""
+            assert public["impostor_id"] == ""
+        if phase == imp.PHASE_REVEAL_ROLES:
+            assert imp.public_state(state)["roles"]  # passed phone retains its gate payload
 
 
 class TestSetup:
@@ -252,6 +291,7 @@ class TestRoundsAndScoring:
 
     def test_the_game_ends_at_the_configured_round_count(self):
         s = _state(3, total_rounds=1)
+        s["phase"] = imp.PHASE_REVEAL
         imp.next_round(s)
         assert s["phase"] == imp.PHASE_PODIUM
 

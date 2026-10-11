@@ -1,5 +1,9 @@
 # LocalPlay Never Have I Ever Game Spec
 
+## Current repository contract (reviewed 2026-10-10)
+
+Create rooms with `game_type="never_have_i_ever"` and optional `never_have_i_ever_config`. Player action `NHIE_ANSWER` carries `answer="have"|"never"`; host actions are `NHIE_REVEAL` and `NHIE_NEXT_ROUND`. State arrives as `SIMPLE_SOCIAL_SYNC.never_have_i_ever`, followed by standard `PODIUM`. The default deck has three prompts, and `round_count` is capped by the deck. With minority scoring, an empty side earns no points; a nonempty smaller group earns one point per player. `show_live_counts=true` intentionally exposes aggregate counts before reveal, while individual answers remain private.
+
 ## Overview
 
 Add **Never Have I Ever** as a light binary-vote party game where players privately answer whether they have done a prompt, then the room sees the group split.
@@ -15,7 +19,7 @@ Frontend display name: Never Have I Ever
 
 Status: standalone playable MVP implemented on June 24, 2026. `backend/never_have_i_ever_engine.py` owns prompt validation, player answer capture, reveal splits, optional minority scoring, redaction, late join, podium transition, and pure tests. LocalPlay now exposes the game in the standalone catalog with default content, room creation, WebSocket sync, organizer/player/spectator UI, rules metadata, reconnect handling, podium flow, and focused API/socket regression tests. Remaining follow-ups are setup/AI authoring UI and broader Playwright matrix coverage.
 
-- Host starts from curated or AI-generated prompts.
+- Host quick-starts curated prompts; the API accepts custom prompts. AI/setup authoring is future work.
 - Players answer `have` or `never`.
 - Players may change their answer until reveal when allowed.
 - Spectator sees submitted count before reveal, not individual answers.
@@ -52,7 +56,7 @@ Validation:
 - `round_count`: 3-25.
 - `safe_level`: `family`, `work`, `party`, or `spicy`.
 - Prompt text: 8-140 characters.
-- Minimum players: 1, recommended 4+.
+- Minimum players: 2, recommended 4+.
 
 ## Content Model
 
@@ -77,7 +81,7 @@ export interface NeverHaveIEverGame {
 - A player can see their own answer.
 - After reveal, public state includes answer counts and individual answers.
 
-## AI Prompt Guidance
+## Future AI Prompt Guidance
 
 Generate prompts that are playful, broadly answerable, and safe for the selected level. Avoid protected-class targeting, humiliation, sexual coercion, illegal activity, medical/private data, or prompts that pressure players to reveal sensitive information.
 

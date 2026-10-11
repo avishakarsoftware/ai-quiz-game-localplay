@@ -340,9 +340,60 @@ def init_db():
     )
     conn.commit()
     _migrate_generated_content_types()
+    _migrate_integration_resource_clocks()
     # Run one-time migration of old entitlements to token wallets
     migrate_entitlements_to_wallets()
     logger.info("Database initialized at %s", DB_PATH)
+
+
+def _migrate_integration_resource_clocks() -> None:
+    """Add old-writer-compatible clocks without freshening historical rows."""
+    conn = _get_conn()
+    conn.execute("""CREATE TABLE IF NOT EXISTS integration_content_tombstones (
+        content_type TEXT NOT NULL CHECK(content_type IN ('quiz', 'game')),
+        content_id TEXT NOT NULL,
+        occurred_at_us INTEGER NOT NULL CHECK(occurred_at_us > 0),
+        PRIMARY KEY(content_type, content_id)
+    )""")
+    # SQLite's built-in clock keeps triggers usable by a rollback binary which
+    # never registered a Python function. Millisecond ties advance by one µs.
+    clock = "CAST((julianday('now') - 2440587.5) * 86400000000 AS INTEGER)"
+    for table, kind in (("custom_quiz_packs", "quiz"), ("generated_content", "game"), ("game_sessions", "session")):
+        columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({table})")]
+        if "integration_updated_at_us" not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN integration_updated_at_us INTEGER")
+        updated_columns = ",".join(name for name in columns if name != "integration_updated_at_us")
+        prior = f"COALESCE((SELECT occurred_at_us FROM integration_content_tombstones WHERE content_type='{kind}' AND content_id=NEW.id), 0)"
+        expected = f"MAX({clock}, COALESCE(OLD.integration_updated_at_us, 0)+1, {prior}+1)"
+        # Internal assignments are exactly this value. Reject private-column
+        # tampering, including clock-only writes, without recursive triggers.
+        conn.execute(f"""CREATE TRIGGER IF NOT EXISTS integration_clock_{table}_guard
+            BEFORE UPDATE OF integration_updated_at_us ON {table}
+            WHEN NEW.integration_updated_at_us IS NOT {expected} BEGIN
+              SELECT RAISE(ABORT, 'integration_clock_override');
+            END""")
+        for action in ("INSERT", "UPDATE"):
+            before = "0" if action == "INSERT" else "COALESCE(OLD.integration_updated_at_us, 0)"
+            next_clock = f"MAX({clock}, {before}+1, {prior}+1)"
+            event = action if action == "INSERT" else f"UPDATE OF {updated_columns}"
+            conn.execute(f"""CREATE TRIGGER IF NOT EXISTS integration_clock_{table}_{action.lower()}
+                AFTER {event} ON {table} BEGIN
+                  SELECT CASE WHEN {next_clock} > {clock}+300000000
+                    THEN RAISE(ABORT, 'integration_clock_ahead') END;
+                  UPDATE {table} SET integration_updated_at_us={next_clock} WHERE id=NEW.id;
+                END""")
+        if kind != "session":
+            next_clock = f"MAX({clock}, COALESCE(OLD.integration_updated_at_us, 0)+1)"
+            conn.execute(f"""CREATE TRIGGER IF NOT EXISTS integration_clock_{table}_delete
+                AFTER DELETE ON {table} BEGIN
+                  SELECT CASE WHEN {next_clock} > {clock}+300000000
+                    THEN RAISE(ABORT, 'integration_clock_ahead') END;
+                  INSERT INTO integration_content_tombstones(content_type,content_id,occurred_at_us)
+                    VALUES('{kind}',OLD.id,{next_clock})
+                    ON CONFLICT(content_type,content_id) DO UPDATE
+                      SET occurred_at_us=MAX(excluded.occurred_at_us,occurred_at_us+1);
+                END""")
+    conn.commit()
 
 
 def _migrate_generated_content_types() -> None:
@@ -632,6 +683,14 @@ def delete_account(user_id: str) -> bool:
         # Wallet id == user id for signed-in users (get_wallet_id), so the user's Sparks and
         # authored content hang off this same value.
         conn.execute("DELETE FROM generated_content WHERE wallet_id = ?", (user_id,))
+        conn.execute(
+            "DELETE FROM custom_quiz_questions WHERE pack_id IN "
+            "(SELECT id FROM custom_quiz_packs WHERE owner_wallet_id = ?)", (user_id,),
+        )
+        conn.execute("DELETE FROM custom_quiz_packs WHERE owner_wallet_id = ?", (user_id,))
+        # Removes LocalPlay metadata only. IONOS byte deletion needs a separate
+        # authorized storage cleanup path; public CDN URLs may remain readable.
+        conn.execute("DELETE FROM media_assets WHERE owner_wallet_id = ?", (user_id,))
         conn.execute("DELETE FROM wallets WHERE id = ?", (user_id,))
         conn.execute("DELETE FROM entitlements WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM device_usage WHERE user_id = ?", (user_id,))
@@ -1454,6 +1513,9 @@ def get_wallet_stats(wallet_id: str) -> dict:
     ).fetchall()
     stats["by_game_type"] = [{"game_type": r["game_type"], "count": r["n"]} for r in by_type]
     stats["distinct_games_played"] = len(by_type)
+    stats["stats_scope"] = "lifetime"
+    stats["stats_row_limit"] = None
+    stats["stats_truncated"] = False
     return stats
 
 
@@ -1844,13 +1906,13 @@ def save_quiz_pack(owner_wallet_id: str, title: str, questions: list[dict], pack
                     now,
                 ),
             )
+        pack = get_quiz_pack(owner_wallet_id, pack_id)
+        if not pack:
+            raise RuntimeError("Failed to save quiz pack")
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
         raise
-    pack = get_quiz_pack(owner_wallet_id, pack_id)
-    if not pack:
-        raise RuntimeError("Failed to save quiz pack")
     return pack
 
 
@@ -1879,7 +1941,7 @@ def get_quiz_pack(owner_wallet_id: str, pack_id: str) -> Optional[dict]:
     return _row_to_quiz_pack(pack, [_question_row_to_dict(row) for row in questions])
 
 
-def delete_quiz_pack(owner_wallet_id: str, pack_id: str) -> bool:
+def delete_quiz_pack(owner_wallet_id: str, pack_id: str, *, return_snapshot: bool = False) -> bool | dict | None:
     conn = _get_conn()
     now = int(time.time())
     cursor = conn.execute(
@@ -1887,8 +1949,10 @@ def delete_quiz_pack(owner_wallet_id: str, pack_id: str) -> bool:
         "WHERE id = ? AND owner_wallet_id = ? AND deleted_at IS NULL",
         (now, now, pack_id, owner_wallet_id),
     )
+    deleted = cursor.rowcount > 0
+    snapshot = dict(conn.execute("SELECT * FROM custom_quiz_packs WHERE id = ?", (pack_id,)).fetchone()) if deleted else None
     conn.commit()
-    return cursor.rowcount > 0
+    return snapshot if return_snapshot else deleted
 
 
 def _content_type_for_game(game_type: str) -> str:
@@ -1925,10 +1989,10 @@ def save_game_content(owner_wallet_id: str, game_type: str, title: str, payload:
         "WHERE wallet_id = excluded.wallet_id",
         (content_id, owner_wallet_id, content_type, title, json.dumps(payload), created_at, now),
     )
-    conn.commit()
     content = get_game_content(owner_wallet_id, content_id)
     if not content:
         raise RuntimeError("Failed to save game content")
+    conn.commit()
     return content
 
 
@@ -1953,14 +2017,24 @@ def get_game_content(owner_wallet_id: str, content_id: str) -> Optional[dict]:
     return _row_to_game_content(row) if row else None
 
 
-def delete_game_content(owner_wallet_id: str, content_id: str) -> bool:
+def delete_game_content(owner_wallet_id: str, content_id: str, *, return_snapshot: bool = False) -> bool | dict | None:
     conn = _get_conn()
-    cursor = conn.execute(
-        "DELETE FROM generated_content WHERE id = ? AND wallet_id = ?",
-        (content_id, owner_wallet_id),
-    )
-    conn.commit()
-    return cursor.rowcount > 0
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        content = get_game_content(owner_wallet_id, content_id)
+        cursor = conn.execute(
+            "DELETE FROM generated_content WHERE id = ? AND wallet_id = ?",
+            (content_id, owner_wallet_id),
+        )
+        deleted = cursor.rowcount > 0
+        if deleted and content:
+            clock = conn.execute("SELECT occurred_at_us FROM integration_content_tombstones WHERE content_type='game' AND content_id=?", (content_id,)).fetchone()
+            content["integration_updated_at_us"] = clock["occurred_at_us"]
+        conn.execute("COMMIT")
+        return content if return_snapshot else deleted
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
 
 
 def _row_to_host_app_catalog_flag(row) -> dict:
@@ -2120,10 +2194,10 @@ def create_game_session(session: dict) -> dict:
         ":created_at, :started_at, :completed_at, :expires_at, :last_activity_at, :updated_at)",
         row,
     )
-    conn.commit()
     created = get_game_session(session["id"])
     if not created:
         raise RuntimeError("Failed to create game session")
+    conn.commit()
     return created
 
 
@@ -2197,8 +2271,9 @@ def update_game_session(session_id: str, updates: dict) -> Optional[dict]:
     values = list(body.values()) + [session_id]
     conn = _get_conn()
     conn.execute(f"UPDATE game_sessions SET {assignments} WHERE id = ?", values)
+    updated = get_game_session(session_id)
     conn.commit()
-    return get_game_session(session_id)
+    return updated
 
 
 if config.DB_BACKEND == "supabase":

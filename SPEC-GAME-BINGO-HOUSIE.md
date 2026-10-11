@@ -1,7 +1,12 @@
 # LocalPlay Bingo / Housie Game Spec
 
 Status: **Implemented** — the Bingo-family engine with Housie (`backend/housie_engine.py`) as the first full
-ruleset and custom Bingo (`backend/bingo_engine.py`) on top. Reviewed 2026-07-21.
+ruleset and custom Bingo (`backend/bingo_engine.py`) on top. Repository reconciliation: 2026-10-10.
+
+The current implementation section is authoritative for shipped behavior. Generic expansion
+types, additional patterns, AI-image endpoints, and the original build checklist below are
+design targets wherever they exceed that baseline. Current custom Bingo API details live in
+`SPEC-GAME-BINGO.md`; its payload is `deck`/`bingo_id`, not the proposed `deck_items`/`content_id` v2 envelope.
 
 ## Overview
 
@@ -15,8 +20,10 @@ This spec deliberately treats Housie as the first ruleset on top of a broader Bi
 Engine family: bingo
 First game type: housie
 Implemented sibling ruleset: bingo
-Next game types/rulesets: baby_bingo, word_bingo, emoji_bingo, image_bingo, photo_bingo, find_someone_who
-Backend engine: bingo_engine.py / housie_engine.py / bingo_content_engine.py
+Implemented presets: baby_bingo, wedding_bingo, holiday_bingo, road_trip_bingo (runtime bingo)
+Future named rulesets: word_bingo, emoji_bingo, image_bingo, photo_bingo
+Implemented social sibling: find_someone (separate find_someone_engine.py runtime)
+Backend engine: bingo_engine.py / housie_engine.py
 Frontend display names: Housie, Bingo
 ```
 
@@ -25,10 +32,10 @@ Frontend display names: Housie, Bingo
 Standalone Housie and configurable Bingo are implemented on the Bingo-family runtime:
 
 - `backend/bingo_engine.py` provides reusable deck/item helpers for numeric, text, emoji, and image-capable Bingo deck items.
-- `backend/bingo_content_engine.py` normalizes configurable Bingo setup payloads, validates deck size/item fields, sanitizes text/image metadata, and creates 5x5 cards with optional free center.
+- `backend/bingo_engine.py` normalizes deck items and creates 5x5 cards with optional free center; `main._sanitize_bingo_game` normalizes setup settings. There is no separate `bingo_content_engine.py` in the current repository.
 - `backend/housie_engine.py` generates classic 3x9 / 15-number Housie tickets, creates the 1-90 call deck, and validates Quick 5, Four Corners, Top/Middle/Bottom Row, and Full House claims.
 - `backend/socket_manager.py` has a dedicated `BINGO_CALLING` runtime path. Housie/Bingo do not overload quiz `QUESTION` rounds.
-- Standalone catalog shows Housie, Bingo, and Baby Bingo. `GET /catalog?host_app=revelry` exposes Housie on gamma after host-app policy allows it; generic Bingo/Baby Bingo remain standalone-only until their Revelry bridge contract is promoted.
+- Standalone catalog shows Housie, Bingo, Baby Bingo, Wedding Bingo, Holiday Bingo, and Road Trip Bingo. Housie is host-app eligible with party-scoped authoring; actual gamma/prod exposure follows host-app policy. The generic Bingo presets remain standalone-only.
 - Organizer can create a Housie setup, create a room, start with at least two players, call/undo numbers, view the called board, and end the game.
 - Organizer can choose Beginner/Pro mode, manual/auto caller mode, configurable auto interval, and auto-pause-on-claim behavior.
 - Players receive server-generated tickets, mark cells locally, submit prize claims, and see accepted claims.
@@ -38,7 +45,7 @@ Standalone Housie and configurable Bingo are implemented on the Bingo-family run
 - Exhausting the call deck also stops the caller and keeps the room in `BINGO_CALLING` so players can still claim prizes from the final call. The host explicitly ends the game after the claim window is done.
 - Claim buttons show awarded state as `{Prize} claimed by {player}` or `{Prize} claimed by {player, player}`. Non-terminal awarded prizes are disabled; terminal prizes remain claimable during the final window for other players.
 - Claim rejection messages must be player-friendly sentences, not raw validation reason codes.
-- Bingo setup supports template/manual/AI-text deck creation in standalone LocalPlay. The MVP supports text, emoji, number, and image-shaped deck items in the schema; image deck items require media-backed `asset_id`, `public_url`, `display`, and `alt_text` before they can be saved/started.
+- Bingo setup supports template/manual/AI-text deck creation and image upload in standalone LocalPlay. Generic deck kinds are `text`, `emoji`, and `image` (numeric labels use text); image fields are `image_asset_id`, `image_url`, and `alt_text`. Direct API validation currently checks URL/reference shape, not asset readiness or ownership; see `SPEC-GAME-BINGO.md`.
 - Bingo AI generation is a host-reviewed setup helper: the host gives a theme/prompt, LocalPlay generates editable deck items, and the deck is not live until the host reviews and saves/starts.
 - Housie is available in the Revelry gamma party hub as a party-scoped setup with default prizes: Quick 5, Four Corners, Top Row, Middle Row, Bottom Row, and Full House. Housie uses `generated_content` with `content_type = housie` in gamma Supabase.
 - `ROOM_RESET`/play-again keeps the same room code but now uses the shared all-games socket cleanup rule: dead player sockets discovered during reset broadcasts, runtime syncs, or pre-start probes are removed and followed by an updated roster. This prevents stale lobby counts such as "2 players" when those players are actually still on an old completed-results screen or have disconnected.
@@ -49,8 +56,9 @@ Known v1 limitations:
 - Latest-call and winner announcement animations exist, but need a final visual polish pass across organizer, player, and spectator screens.
 - Housie setup is still in-memory for standalone room creation; Revelry gamma Housie setup is persisted party-scoped through `generated_content`.
 - Generic Bingo and Baby Bingo are implemented for standalone/gamma UX first. They are not exposed to Revelry yet.
-- Word Bingo, Emoji Bingo, Image Bingo, Photo Bingo, and Find Someone Who remain future named rulesets on the same card/layout foundation.
-- Image Bingo has schema and validation requirements, but the full media upload / AI image generation authoring path remains a later slice.
+- Word Bingo, Emoji Bingo, Image Bingo, and Photo Bingo remain future named caller-led rulesets. Find Someone Who is implemented as the separate social runtime `find_someone`.
+- Host image upload exists in the generic Bingo editor. AI image generation, 4x4 caller-led cards, Two Lines/Postage Stamp/custom shapes, and a durable standalone template library remain later slices.
+- Ticket/card generation is randomized per player; no room-wide stable-hash duplicate retry is currently implemented.
 
 ## Goals
 
@@ -201,7 +209,7 @@ Housie v1 uses:
 - `engine_family = "bingo"`
 - Ticket layout: classic 3 rows x 9 numeric columns.
 - Filled cells per ticket: 15.
-- Empty cells per ticket: 15.
+- Empty cells per ticket: 12.
 - Numbers: 1 through 90 inclusive.
 - Each number appears at most once per ticket.
 - Numbers on a ticket are arranged by configured number buckets. The classic Housie/Tambola buckets are:
@@ -291,7 +299,7 @@ Each ticket must satisfy:
 - 15 filled cells total.
 - Exactly 5 filled cells per row.
 - No more than 3 filled cells in any column.
-- A column may have 0 filled cells.
+- Current generator fills every column with 1-3 numbers; empty-column variants are future work.
 - No duplicate numbers.
 - Filled numbers belong to their column range.
 - Filled numbers in a column are sorted ascending from top to bottom.
@@ -312,7 +320,8 @@ Implementation must include deterministic unit tests with seeded randomness.
 
 ### Ticket Uniqueness
 
-For v1, tickets should be unique within a room by a stable hash of their filled cells. If the generator produces a duplicate, retry. This is not a cryptographic guarantee; it is enough for a local party room.
+Current generation samples each ticket independently. A room-wide stable-hash duplicate retry
+is a follow-up requirement, not an implemented guarantee. Duplicate layouts are unlikely but possible.
 
 ## Caller / Draw Flow
 
@@ -529,6 +538,14 @@ type BingoDeckItem =
 For Housie v1, only `number` is needed.
 
 ## WebSocket Events
+
+Current controls are `START_GAME`, `BINGO_CALL_NEXT`, `BINGO_UNDO_LAST_CALL`,
+`BINGO_SET_CALLER_MODE`, `BINGO_PAUSE`, `BINGO_RESUME`, and `END_QUIZ`.
+Players send `BINGO_CLAIM`; marks remain client-local. Sync is
+`{type: "BINGO_SYNC", game_type, bingo: {...}}`, with `ticket` included only for its player.
+Calling remains `BINGO_CALLING` while auto is paused/stopped; `auto_status` tracks the caller.
+The expanded event list below is retained as a proposed protocol, including unimplemented
+`BINGO_START`, mark/unmark, play-mode, prize-closed, and winner-announcement event names.
 
 Organizer to server:
 
@@ -1102,7 +1119,7 @@ Housie is enabled for Revelry gamma through the party hub:
 - Saved Housie summaries treat `question_count` / `item_count` as prize-pattern count, not questions.
 - Housie has `supports_ai_generation = false`; the Revelry hub hides AI prompt generation for it.
 - Housie launch/start uses the same party-games start endpoint as other games with `game_type = "housie"` and optional `content_id`.
-- The gamma Supabase table `games_gamma_generated_content` must allow `content_type = 'housie'`; production remains unchanged until promotion.
+- Both generated-content constraints currently allow `housie` according to `DEPLOY.md`; Housie production exposure/authoring still depends on separate policy promotion. No hosted schema change is implied by this spec reconciliation.
 - Generic Bingo remains standalone-only in host-app policy. Do not expose `bingo` to Revelry until party-scoped setup save/start, result summaries, and E2E coverage are complete.
 
 ## Future Payment Integration
@@ -1136,7 +1153,9 @@ Recommended payment architecture:
 
 ## Implementation Details
 
-This section is the build checklist. If it conflicts with higher-level product notes above, prefer this section for v1 implementation.
+This section is the original build checklist and expansion design. The current implementation
+section and actual API/engine contracts take precedence; proposed modules, types, and routes here
+must not be mistaken for existing code.
 
 ### Backend Files
 
@@ -1665,8 +1684,8 @@ When a Housie room completes, write a `game_history` entry with:
 - `game_title`.
 - `player_count`.
 - `completed_at`.
-- `total_questions = 0` or a future renamed/optional round count; do not pretend there were quiz questions.
-- `leaderboard = []` unless later scoring is added.
+- `total_questions` and `total_rounds` currently contain the called-item count for legacy summary compatibility.
+- `leaderboard` uses the shared leaderboard; `winners` and `top_results` carry prize winners.
 - `metadata` or game-specific result payload with:
   - `called_count`.
   - `winners`.

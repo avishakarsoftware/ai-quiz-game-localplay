@@ -1,23 +1,25 @@
 # SPEC-GAME-ODD-QUESTION — asymmetric-prompt social deduction
 
 > **Naming history — two renames, both worth understanding (2026-07-28).**
-> `odd_one_out` → `odd_question` → `odd_question`.
+> `odd_one_out` → `impostor` → `odd_question`.
 > **Second rename:** "Impostor" is already a well-known teen pass-the-phone party game (secret-word,
 > Among Us-adjacent) — a different game we may genuinely build (see SPEC-PASS-AND-PLAY). Shipping an
 > unrelated game under that name would mislead every player who knows it, and would squat the id the
 > real thing should have. Same lesson as the first rename, one level up: ids collide in the cultural
 > namespace, not just the code namespace.
-> **First rename:** The original id `odd_question` collided with the
+> **First rename:** The original id `odd_one_out` collided with the
 > pre-existing quiz VARIANT `odd_one_out` ("find the item that breaks the pattern"), which
 > shipped to stores in v3.1.3. TypeScript unions dedupe silently, so the collision produced no
 > compile error — it surfaced as the quiz variant's rules modal showing THIS game's rules once the
 > backend catalog loaded, and as this game being unreachable from the picker (the only
-> `odd_question` tile launched the quiz variant). The standalone game was one day old and deployed
+> `odd_one_out` tile launched the quiz variant). The standalone game was one day old and deployed
 > nowhere, so it took the new name. Guards: `frontend/src/__tests__/gameIdCollision.test.ts`
 > asserts quiz-variant ids never collide with any other family and that every simple-social game
 > has its own picker tile.
 
-Status: **Spec + engine being built 2026-07-27.** Live status: DEPLOY.md's env-status ledger.
+Status: **Implemented in this repository**, reviewed 2026-10-10. The engine, catalog, socket flow,
+and organizer/player/spectator UI are wired. Deployment history belongs to DEPLOY.md's ledger;
+this review did not verify hosted environments.
 
 ## 1. Why this game and not another prompt deck
 
@@ -71,7 +73,11 @@ Late joiners are appended to the rotation, so they get a turn without disrupting
 
 ## 5. States
 
-`ASSIGNED → ANSWERING → VOTING → REVEAL → (next round | PODIUM)`
+`ODDQ_ANSWERING → ODDQ_VOTING → ODDQ_REVEAL → (next round | PODIUM)`
+
+There is no separate assigned phase. The host opens voting, reveals, and advances rounds manually.
+The engine exposes completion helpers, but the socket runtime does not auto-advance on them. Engine setup uses
+`prompt_pairs` and `total_rounds` (default 5, capped by the available pairs).
 
 - A player who joins mid-round is seated for the **next** round; they cannot answer or vote in the
   round already underway (they'd have seen the answers).
@@ -112,7 +118,10 @@ edit, not a code change.
 
 Engine, catalog entry, socket wiring and per-viewer prompt scoping are all live and verified over
 the wire. `launchable: True`, `status: "gamma"`. Live env status: DEPLOY.md's ledger.
-**Frontend organizer/player screens are NOT built yet** — see §10.
+The shared `frontend/src/components/SimpleSocialGame.tsx` includes the organizer, player, and
+spectator screens: private question, answer form, attributed answers, accusation buttons, reveal,
+and host controls. Revelry quick-start/settings capability is catalog-declared and policy-gated;
+saved-content authoring and AI generation remain disabled.
 
 ### How it wired: it joined the "simple social" family
 
@@ -125,9 +134,9 @@ which already provides everything it needs:
   prompt scoping this game requires — no new mechanism was needed.
 - Reconnect sync, standings, reveal/next-round host controls, podium and phase→room-state mapping.
 
-Actual wiring: engine import, `ooo_config`/`ooo_state` on Room + reset, `total_rounds`, host public
-state, a `MIN_ODD_ONE_OUT_PLAYERS` guard in START_GAME, branches in six `_simple_social_*` helpers,
-`OOO_ANSWER`/`OOO_VOTE`/`OOO_START_VOTING`/`OOO_REVEAL`/`OOO_NEXT_ROUND`, and adding one member to
+Actual wiring: engine import, `odd_question_config`/`odd_question_state` on Room + reset, `total_rounds`, host public
+state, a `MIN_ODD_QUESTION_PLAYERS` guard in START_GAME, branches in the `_simple_social_*` helpers,
+`ODDQ_ANSWER`/`ODDQ_VOTE`/`ODDQ_START_VOTING`/`ODDQ_REVEAL`/`ODDQ_NEXT_ROUND`, and adding one member to
 `SIMPLE_SOCIAL_GAME_TYPES`.
 
 It rides the shared **`SIMPLE_SOCIAL_SYNC`** envelope with an `odd_question` key rather than a
@@ -148,11 +157,9 @@ sets in `test_game_type_sets.py`.
 - Starting below 3 players returns an ERROR and leaves the room in LOBBY.
 
 Two mistakes worth recording: the test first waited on an invented `ODD_ONE_OUT_SYNC` (the family
-uses `SIMPLE_SOCIAL_SYNC`), and `OOO_REVEAL` was initially unwired — the test hung at reveal having
+uses `SIMPLE_SOCIAL_SYNC`), and the reveal action was initially unwired — the test hung at reveal having
 already proven the prompt scoping worked, which is exactly why it was written first.
 
 ## 10. Not built yet
 
-- **Frontend organizer/player screens.** The backend is complete, so the game will start and sync,
-  but there is no UI yet. The four sibling simple-social games have screens to model on.
 - AI-generated prompt pairs, multiple odd ones per round, photo answers (see §8).

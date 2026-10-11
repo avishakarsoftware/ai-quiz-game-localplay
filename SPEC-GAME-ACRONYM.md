@@ -1,5 +1,9 @@
 # LocalPlay Acronym Game Spec
 
+## Current repository contract (reviewed 2026-10-10)
+
+Create rooms with `game_type="acronym"` and optional `acronym_config`. The engine defaults to the three curated prompts and caps `round_count` at the available prompt count; `letters_min`/`letters_max` are not config fields. Player actions are `ACRO_SUBMIT` (`text`) and `ACRO_VOTE` (`entry_id`); host actions are `ACRO_START_VOTING`, `ACRO_REVEAL`, and `ACRO_NEXT_ROUND`. State arrives as `SIMPLE_SOCIAL_SYNC.acronym`; normal `PODIUM` completes the game. Minimum players is 2. Reveal and round advancement are host-paced.
+
 ## Overview
 
 Add **Acronym Game** as an anonymous submit-then-vote party game. The room gets a short acronym, players invent funny expansions, then everyone votes for a favorite.
@@ -15,7 +19,7 @@ Frontend display name: Acronym Game
 
 Status: standalone playable MVP implemented on June 24, 2026. `backend/acronym_engine.py` owns acronym validation, expansion validation, anonymous voting payloads, vote capture, reveal, scoring, redaction, late join, podium transition, standings, and pure tests. LocalPlay now exposes the game in the standalone catalog with default content, room creation, WebSocket sync, organizer/player/spectator UI, rules metadata, reconnect handling, podium flow, and focused API/socket regression tests. Remaining follow-ups are setup/AI authoring UI and broader Playwright matrix coverage.
 
-- Host starts from curated or AI-generated acronyms.
+- Host quick-starts curated acronyms; the API accepts a custom prompt list. AI/setup authoring is future work.
 - Each player submits one expansion per round.
 - Expansion words must match the acronym letters.
 - Voting view shows anonymous entries.
@@ -40,8 +44,6 @@ Status: standalone playable MVP implemented on June 24, 2026. `backend/acronym_e
   "game_title": "Acronym Game",
   "theme": "birthday",
   "round_count": 8,
-  "letters_min": 3,
-  "letters_max": 6,
   "allow_submission_changes": true
 }
 ```
@@ -77,7 +79,7 @@ export interface AcronymGame {
 - A player sees their own entry id to prevent self-vote confusion.
 - During reveal, authors and vote totals become public.
 
-## AI Prompt Guidance
+## Future AI Prompt Guidance
 
 Generate short pronounceable acronyms with party-safe hints. Avoid acronyms that form slurs, adult terms, political attacks, or protected-class references.
 

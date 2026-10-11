@@ -1,9 +1,72 @@
 # SPEC-TESTING — the test architecture, and what is safe to run against production
 
-Status: **Active test architecture (updated 2026-10-03).** Owner: Avi.
+Status: **Active test architecture (source reconciled 2026-10-10; historical release counts preserved).** Owner: Avi.
 Goal: Avi can run one command against **prod** at any time and get a trustworthy regression report.
 
+## Local source reconciliation — October 10, 2026
+
+This document mixes active test contracts, built runners and dated measurements. The source
+review below establishes local behavior only; the October production preparation and August
+counts remain evidence from those dates and are not results of a new live run.
+
+- Backend pytest isolation fixtures run after module imports. Set `DB_BACKEND=sqlite`,
+  `LOCALPLAY_ENV=local`, a private `DB_DIR`, and empty Supabase credentials before collection;
+  `SQLITE_DB_PATH` alone is not the current adapter's path setting. Room fixtures disable/redirect
+  snapshots. Real Postgres/PostgREST suites use their explicit disposable parity variables.
+- `make test` excludes `test_e2e.py` and `test_websocket_integration.py`; CI's broad unit step
+  excludes only `test_e2e.py`, then runs that file serially. `frontend/package.json` is the current
+  runner inventory; scope counts/examples below are dated rather than fixed catalog totals.
+- `scripts/regression.py` is the built prod runner. There is no `--deep`-only npm parser:
+  `npm run test:prod -- --deep` forwards the argument to Python. Default prod checks create a
+  synthetic wallet/referral if enabled and are read-mostly; any stateful deployed run still needs
+  the task's explicit operational authorization and owned-fixture cleanup.
+- `scripts/smoke-remote.py` is stateful (generation and gameplay), not a pure read-only probe.
+  Review its budget and cleanup before live use. Browser matrices/token issuance do not prove
+  every player/watch launch, camera, installed-native return, consumer callback or large-library deadline.
+- `test_room_snapshot.py` includes malformed-metadata recovery isolation and private-file checks;
+  `test_account_deletion.py` covers owned quiz/media metadata deletion and transaction rollback.
+  `test_account_content_deletion_migration.py` qualifies both prefix RPCs and their ACLs. Real
+  PostgREST equivalents require the disposable local stack; a skipped suite is not database evidence.
+- Script syntax, generated SQL equality and focused unit tests can be verified locally. Tests needing
+  TCP listener bind, local servers or Docker may require sandbox access; report an environment denial
+  separately from an assertion failure and never silently relabel such checks as passed.
+
+### October 10 local qualification evidence
+
+The working-tree reconciliation on baseline `3a6af36b` passed 227 focused SQLite integration,
+ownership, snapshot, account-deletion and deploy-script tests (six database-required cases
+skipped in that SQLite run). A separate fresh owned loopback PostgreSQL 16 / PostgREST 12.2.3
+run passed all 130 migration/parity/Supabase persistence, economy, catalog and concurrency tests,
+with no skips. A later snapshot rerun passed 24 cases including overflowing numeric timestamps.
+The editor suite passed 11 tests and `npx tsc -b` passed. These counts describe
+those scoped local runs; they are not new CI, deployed browser, native-device or hosted-DB evidence.
+
+The final reconciled working tree passed **1,716 broad backend tests** (82 optional/legacy skips),
+**538 frontend tests across 79 files**, and **78 local Chromium catalog/play/podium checks**
+(one real-camera Photo Clue skip). Backend collection explicitly used isolated SQLite; the
+database-required cases were qualified in the separate **130-test disposable PostgreSQL/PostgREST**
+run above. The production frontend build, deploy-script shell syntax, and `git diff --check` passed.
+`test_e2e.py` passed all **21 cases in 25 independent serial process runs**; three capture-enabled
+`test_ws_flow.py` + `test_e2e.py` runs each passed **57 cases**. Overlapping suite counts are not additive.
+
+The final frontend command was `npm test -- --run --maxWorkers=4`, running alone. An earlier run
+concurrent with the build and four browser workers hit eight existing five-second wall-clock
+timeouts; the affected 28 tests and full isolated rerun passed without changing timeouts or source.
+This is local bounded-worker evidence. Current CI, real IONOS camera upload, installed-native,
+hosted migrations, payment-provider configuration, and Revelry live acceptance remain separate gates.
+The complete final check ledger is in `SPEC.md` under Specification Reconciliation — 2026-10-10.
+
 ## 0. What already exists (this is not greenfield)
+
+The subsequent paired Revelry repair is qualified separately in
+[SPEC-REVELRY-CONTRACT-REPAIR.md](SPEC-REVELRY-CONTRACT-REPAIR.md): **1,765 broad
+backend passes / 120 skips**, **142 real disposable PostgreSQL/PostgREST passes**,
+**225 offline Revelry backend passes**, LocalPlay **548** and Revelry **2,357**
+frontend passes, both production builds, and **78 local browser passes / 1 camera
+waiver**. Actual caller/callee checks cover permissions, party ownership and closed
+check-in starts. The updated hosted gamma harness was discovered only. These
+overlapping checks are not additive and do not qualify deployment, shared schema
+application, atomic admission, native devices or actual hosted callback retry.
 
 - **Backend**: pytest coverage across engines, endpoints, socket flows, Supabase parity, money rails,
   and room lifecycle recovery.
@@ -11,8 +74,7 @@ Goal: Avi can run one command against **prod** at any time and get a trustworthy
   suites.
 - **Playwright**: 29 specs in `frontend/e2e/`, incl. a live harness (`liveGameHarness.ts`),
   gamma-live game specs, `preprod-live-regression`, store screenshots, legal pages.
-- **Remote smoke**: `scripts/smoke-remote.py` — already prod-safe, but narrow (one quiz + an
-  idempotency check).
+- **Remote smoke**: `scripts/smoke-remote.py` — narrow and stateful (one quiz + idempotency); use owned synthetic actors and review teardown before live execution.
 
 The July 2026 catalog coverage gap is now covered by `all-games.spec.ts`, which enumerates the
 deployed catalog and drives every enabled game. `podium-continuation.spec.ts` additionally checks
@@ -40,12 +102,6 @@ before connecting or applying SQL. Parse DSNs with psycopg's connection-info par
 query overrides, keyword DSNs, and multiple hosts cannot bypass the local-target check. Reject
 service-based routing, unsafe inherited host/hostaddr defaults, and missing hosts. The
 `test_postgres_target_safety.py` no-network suite runs in the Postgres CI job.
-
-Both Postgres parity entry points validate the DSN with psycopg's libpq parser before connecting.
-Every host/hostaddr, including URI query overrides, multi-host lists and inherited `PGHOST` /
-`PGHOSTADDR`, must be loopback or a supported disposable Docker service alias (`pg` / `postgres`).
-Service-based routing (`service` or `PGSERVICE`) and unspecified targets are refused before schema
-application or truncation. `test_postgres_target_safety.py` checks these cases without network access.
 
 ### Ownership refusal regression contract
 
@@ -117,8 +173,7 @@ breaks one is a defect regardless of what it verifies.
   failure must be reported with its room/session IDs and assigned for recovery; TTL is a fallback,
   not a passing cleanup assertion.
 
-**Budget awareness.** Rooms cost `COST_ROOM` (10) sparks and a fresh wallet gets
-`SIGNUP_BONUS_TOKENS` (20–30). So **a synthetic wallet funds ~2–3 rooms**. An L5 suite that
+**Budget awareness.** Read effective `COST_ROOM`, signup/daily grants and party-grace configuration before the run. Room cost is charged on successful `START_GAME`, not `/room/create`; first-party grace can waive a debit. Historical 10-spark rooms with 20–30 initial sparks fund roughly 2–3 paid starts, but that arithmetic is not a fixed current entitlement. An L5 suite that
 creates a room per game would run dry and report false failures. Either mint a fresh device id per
 game or assert the spark-exhaustion path deliberately — never accidentally.
 
@@ -308,7 +363,7 @@ One waiver today: `photo_clue` play-through (real camera). Its catalog leg and r
 - **`receive_json()` blocks forever** on a missing broadcast — always use
   `tests/ws_test_utils.recv_until`.
 - **`npx tsc --noEmit` checks NOTHING** — the root tsconfig is `files: []` + references. Use
-  `npm run build` or `tsc -p tsconfig.app.json`. This hid two real errors for a whole session.
+  `npm run build` or `npx tsc -b --force` so app, tooling and e2e/test projects all run.
 - **Gamma has no Stripe keys**, so `/webhook/stripe` is 503 there and 400 on prod. An L4/L5 shared
   assertion must account for that difference.
 - **Photo games can't be fully automated** (real camera). Waiver, documented.
@@ -514,14 +569,14 @@ Two details are load-bearing:
 Verified: 1399 pass, and `backend/data/revelry.db` is byte-identical (same md5) before and after a
 full run. Cost is ~50s → ~60s.
 
-### 8d. `test_e2e.py` is flaky — much reduced 2026-08-04, NOT eliminated
+### 8d. Legacy `test_e2e.py` stalls — historical investigation and October 10 fixture fix
 
 Was: three consecutive runs gave 20 pass (10.9s) → 1 fail (29.4s) → 3 fail (57.4s), runtime roughly
 doubling. 8c was one confirmed contributor; fixing it plus a missing `mafia_timer_task` cancellation
 in `_teardown_rooms` (Room creates **three** cancellable tasks, the teardown cancelled two) took the
 rate from **~1 in 6 to 1 in 25**, with runtime now pinned at 4.86–4.97s instead of doubling.
 
-**It is not fixed.** What is known about the residual:
+**August 4 conclusion: it was not fixed.** The observed residual at that time:
 - always the same test, `TestExportImportE2E::test_generate_export_import_play`;
 - always a 15s stall in `recv_until` waiting for `QUESTION` with **no messages at all** arriving;
 - **0/10 failures when run in isolation** (and 0.05s there vs ~5s in-file);
@@ -547,6 +602,34 @@ these sample sizes, could be timing perturbation; the failure signature was iden
 that mistake has already produced a confidently wrong conclusion once here. Note also that 10
 consecutive passes looked like a fix during this very session, and run 20 then failed; 25 runs was
 what it took to see it.
+
+#### October 10, 2026 — reproduced and isolated to simultaneous test portals
+
+The unchanged serial `test_e2e.py -q -s` rerun, after other broad/browser processes finished,
+failed `TestGameResetE2E` with 19 passes and the same 15-second `QUESTION after no messages`
+stall. Its live thread dump showed two `asyncio-portal-*` threads. This disproves the earlier
+claim that the remaining stall requires capture or a companion file; it preserves the August
+measurements as dated evidence rather than replacing them.
+
+The installed Starlette `TestClient._portal_factory` creates a new blocking portal for each
+websocket unless the client is entered as a context manager. This suite had a module-level client
+but never entered it. Organizer and player websocket sessions therefore ran on distinct event
+loops while sharing one `Room`. `Room.broadcast` could send to a player's AnyIO memory stream
+from the organizer's loop after the player was already waiting; that cross-loop queue wakeup can
+stay asleep. Two concurrent portals need not be leftovers from earlier tests, so the earlier
+portal-accumulation explanation is superseded for this local reproduction.
+
+The test-only `shared_client_portal` autouse fixture now enters `with client` per test after state
+isolation, giving HTTP and organizer/player/spectator sockets one loop and closing it before
+teardown. A regression asserts all three sockets share that portal and receives `QUESTION` on
+the player before the organizer. The receive timeout remains 15 seconds; diagnostic dumps and
+timeout socket-close cleanup remain in place. No production WebSocket behavior changed.
+
+Qualification: the first corrected run passed all 21 tests, followed by 25 independent serial
+runs of 21 tests each. Three capture-on companion runs of `test_ws_flow.py test_e2e.py` each
+passed 57 tests. No timeout/waiver was added. Original failed and subsequent passing diagnostic
+logs were retained privately for this local review. This closes the demonstrated test-fixture
+race locally; the next exact-source CI serial/socket run remains its required external evidence.
 
 ## 9. Release-candidate qualification and promotion evidence
 

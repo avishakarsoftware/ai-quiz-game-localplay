@@ -1,5 +1,9 @@
 # LocalPlay Story Chain Game Spec
 
+## Current repository contract (reviewed 2026-10-10)
+
+Rooms accept `story_chain_config` and require 3 players. The engine implements one chain and one sentence per player, seeded turn order, `STORY_TURN`, host-stepped `STORY_REVEAL`, and `PODIUM`. Every connection receives `STORY_SYNC.story_chain`; only the active player's payload adds `visible_context` and `is_active`, rather than a separate private event. Host controls are skip turn, next reveal step, and end game. The deadline determines the on-time bonus but does not automatically advance. `StoryChainGame.tsx` implements writing/progress/reveal views; setup, automatic timers, multiple chains, hidden-chain mode, and voting remain future work.
+
 ## Overview
 
 Add **Story Chain** as a sequential creative party game where players collaboratively build a story one sentence at a time. Each player adds a sentence to the chain, then the TV reveals the increasingly strange story with dramatic pacing.
@@ -133,10 +137,10 @@ Validation:
 
 - Minimum players: 3.
 - Recommended players: 4-20.
-- `chains`: 1-5.
+- `chains`: fixed to 1 in the implemented MVP; 2-5 is roadmap.
 - `turn_time_seconds`: 20-120.
 - `sentence_max_chars`: 60-280.
-- `sentences_per_player`: 1-3.
+- `sentences_per_player`: fixed to 1 in the implemented MVP; multiple turns per player are roadmap.
 - Starter prompt max: 180 chars.
 
 ## Prompt Safety Rules
@@ -166,7 +170,7 @@ AI prompt generation must include:
 Generate whimsical, family-friendly story starters for a party game. Avoid sensitive personal data, protected-class targeting, and explicit or hateful content.
 ```
 
-## Content Model
+## Original Data-Model Design (historical; voting/hidden-chain fields are roadmap)
 
 ```ts
 export interface StoryChainGame {
@@ -225,7 +229,7 @@ The active player receives only what the visibility mode permits:
 
 ```json
 {
-  "type": "STORY_TURN_PRIVATE",
+  "type": "STORY_SYNC",
   "chain_id": "chain_1",
   "starter_prompt": "The office coffee machine started giving life advice.",
   "visible_context": [
@@ -240,7 +244,7 @@ Visibility:
 
 - `full_context`: starter prompt plus all previous sentences.
 - `last_sentence_only`: starter prompt plus only the previous sentence.
-- `hidden_chain`: starter prompt only.
+- `hidden_chain`: roadmap only; the validator currently falls back to `last_sentence_only`.
 
 Inactive players receive:
 
@@ -258,34 +262,25 @@ Client to server:
 { "type": "STORY_SUBMIT_SENTENCE", "text": "Then it demanded a promotion." }
 { "type": "STORY_SKIP_TURN" }
 { "type": "STORY_NEXT_REVEAL_STEP" }
-{ "type": "STORY_VOTE", "chain_id": "chain_2" }
 ```
 
 Server to clients:
 
 ```json
-{ "type": "STORY_SYNC", "state": {} }
-{ "type": "STORY_TURN_STARTED", "active_player_id": "p2", "turn_index": 3 }
-{ "type": "STORY_TURN_PRIVATE", "visible_context": [] }
-{ "type": "STORY_SENTENCE_ACCEPTED", "player_id": "p2" }
-{ "type": "STORY_REVEAL_STEP", "sentence": {} }
-{ "type": "STORY_RESULT", "scores": [] }
+{ "type": "STORY_SYNC", "game_type": "story_chain", "story_chain": {} }
+{ "type": "PODIUM", "game_type": "story_chain", "story_chain": {}, "leaderboard": [] }
 ```
 
 ## Submission Rules
 
 - Active player only.
 - One sentence per turn.
-- Sentence must be non-empty.
+- Sentence must have at least 8 characters and three whitespace-separated words after cleaning.
 - Sentence max is configurable.
 - Strip leading/trailing whitespace.
 - Collapse repeated whitespace.
 - Reject or sanitize obvious markup/script content.
-- If time expires:
-  - MVP: auto-submit a safe placeholder such as "Then something unexpected happened."
-  - Alternative: skip turn and mark as skipped.
-
-Recommended MVP timeout: safe placeholder, because it keeps the reveal flowing.
+- Host `STORY_SKIP_TURN` inserts the safe placeholder "Then something unexpected happened." and advances. Automatic expiry is future work; elapsed deadlines do not close the active turn.
 
 ## Scoring
 
@@ -295,9 +290,7 @@ MVP scoring:
 
 - Every submitted sentence: 100 points.
 - On-time submission: +25.
-- If voting is enabled:
-  - winning chain contributors: +200.
-  - each vote received by a chain: +50 split among contributors.
+- A host skip/placeholder currently earns 125 points. Voting awards are future work; voting is forced off in MVP.
 
 Non-scored mode:
 
@@ -355,7 +348,7 @@ Reveal player:
 - Read along with TV.
 - Vote if enabled.
 
-## Organizer UX
+## Organizer UX Goals (setup, pause, extend, and auto-reveal are roadmap)
 
 Setup:
 
@@ -377,7 +370,7 @@ In-game:
 - Next reveal step / auto-reveal toggle.
 - End game.
 
-## Backend Implementation
+## Original Backend Design Sketch (historical helper names)
 
 Add:
 
@@ -410,9 +403,9 @@ def build_reveal_payload(state: dict, reveal_index: int) -> dict: ...
 
 - Reconnected active player receives current private turn payload if their turn is still active.
 - Reconnected waiting players receive public progress only.
-- If active player disconnects, timer continues.
-- Host can pause or skip.
-- Timeout placeholder keeps game moving.
+- If active player disconnects, the stored deadline continues but no automatic timeout runs.
+- Host can skip; pause/extend controls remain roadmap.
+- The host skip placeholder keeps the chain moving.
 - If a player leaves before their turn and cannot return, their turn can be skipped or placeholder-filled.
 
 ## AI Generation

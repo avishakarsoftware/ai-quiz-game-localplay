@@ -1,7 +1,7 @@
 # LocalPlay DrawingGame Spec
 
 Status: **Implemented** — DrawingGame is live (`backend/drawing_engine.py`, `DrawingCanvas` frontend).
-Reviewed 2026-07-21.
+Repository contract reviewed 2026-10-10. Hosted deployment status was not checked by this review.
 
 ## Overview
 
@@ -17,7 +17,7 @@ Frontend display name: Drawing Game
 
 The goal is to support a host-led local multiplayer drawing game where one player draws a prompt, other players guess in real time, and the spectator/TV screen shows the drawing surface, timer, accepted guesses, and round results.
 
-This spec should be implemented after the current LocalPlay platform work is stable enough for additional game types. It must preserve the existing quiz and WMLT flows.
+Drawing Game is implemented. The backend generation/room/socket routes, organizer prompt/review controls, player canvas/guessing, spectator view, timers, auto-advance, and podium exist. Historical implementation plans below describe the original rollout; they are not pending prerequisites.
 
 ## Goals
 
@@ -43,29 +43,14 @@ This spec should be implemented after the current LocalPlay platform work is sta
 
 ## Current Architecture Fit
 
-Current game support is centered on:
-
-- `GameType = 'quiz' | 'wmlt'` in `frontend/src/types.ts`.
-- Backend room runtime in `backend/socket_manager.py`.
-- Game-specific generation in `quiz_engine.py` and `mlt_engine.py`.
-- Host/player/spectator branching in:
-  - `frontend/src/pages/OrganizerPage.tsx`
-  - `frontend/src/pages/PlayerPage.tsx`
-  - `frontend/src/pages/SpectatorPage.tsx`
-  - `frontend/src/components/organizer/*`
-
-DrawingGame should follow the existing pattern first, then carve out abstractions only where the code gets materially cleaner.
-
-Key integration points that need updating:
-
-- `RoomCreateRequest.validate_game_type` in `main.py` currently rejects anything other than `"quiz"` or `"wmlt"`. Add `"drawing"`.
-- `frontend/src/types.ts` `GameType` union: add `'drawing'`.
-- Room creation must accept a `drawing_id` field alongside existing `quiz_id` and `mlt_id`, then branch in `create_room()` the same way it currently branches for `mlt_id`.
-- Content storage in `main.py` needs `drawing_games: Dict[str, dict]` and `drawing_timestamps: Dict[str, float]`, matching the `quizzes`/`quiz_timestamps` and `mlt_scenarios`/`mlt_timestamps` pattern.
-- `content_owners` must be set for generated drawing content and checked during room creation, so anonymous/user ownership remains consistent with quiz and WMLT.
-- Eviction in `_evict_old_content()` must include drawing content, skip drawing IDs used by active rooms, and remove stale `content_owners` entries.
-- The backend-served SPA `API_PREFIXES` list must include `/drawing`, otherwise `/drawing/...` API routes can be swallowed by the SPA fallback.
-- Admin/system stats should include drawing content counts once drawing content is kept in memory.
+- `drawing` is in the shared frontend `GameType` union and backend catalog/validators.
+- Standalone content routes are `POST /drawing/generate`, `POST /drawing/import`, `GET /drawing/{id}`, `PUT /drawing/{id}`, and prompt deletion.
+- `/room/create` accepts `drawing_id`, `drawing_auto_advance` (default true), and `drawing_inter_round_seconds` (default 5, range 0-30); round time is 5-60 seconds, default 30.
+- Generation uses the common provider/model selection and defers its generation spark charge until room start; generated/imported standalone decks live in the process cache with wallet ownership and TTL eviction.
+- Revelry prepared drawing setups are durable `generated_content` through the party authoring contract, separate from the standalone process cache. Host-app exposure is filtered by catalog policy.
+- `backend/socket_manager.py` owns drawer order, canvas operations, scoring, timers, and reconnect state. `backend/drawing_engine.py` owns generation, sanitization, guess matching, and progressive clues.
+- The canvas implementation is `frontend/src/components/DrawingCanvas.tsx`; organizer prompt/review screens and the three shared pages are wired.
+- `/drawing` remains in `API_PREFIXES` to protect API requests from the SPA fallback.
 
 ## Game Rules
 
@@ -130,15 +115,7 @@ The server computes clues from authoritative timer state and includes the update
 
 ### Drawer Rotation
 
-Default v1 behavior:
-
-- Every player should draw at least once before any player draws twice.
-- Drawer order should be deterministic per room once shuffled by the server.
-- Reconnecting players keep their drawer slot.
-- Disconnected drawers:
-  - If the drawer disconnects before drawing starts, skip to the next drawer.
-  - If the drawer disconnects mid-round, pause for up to 15 seconds.
-  - If they do not reconnect, end the round with no drawer bonus and continue.
+The runtime uses the room roster order and cycles it by round index. It preserves existing slots on reconnect and appends new names when allowed. The order is not shuffled. Disconnected seats can remain eligible; the timer continues without a dedicated 15-second pause or disconnected-drawer bonus rule. Skipping an absent drawer, shuffling, and disconnect-specific pause handling are follow-ups.
 
 ### Prompt Rules
 
@@ -183,8 +160,7 @@ Default scoring:
 
 | Event | Points |
 |---|---:|
-| First correct guesser | 1000 |
-| Later correct guessers | time-scaled 300-900 |
+| Every correct guesser | time-scaled 300-900 |
 | Drawer bonus per correct guesser | 200 |
 | All guessers correct | +500 drawer bonus |
 
@@ -197,7 +173,7 @@ guesser_points = 300 + round(600 * (time_remaining / time_limit))
 Rules:
 
 - Drawer gets no points if nobody guesses correctly.
-- Correct guessers get points immediately or at round end; v1 can apply at round end to reduce state churn.
+- Correct guessers and the drawer receive points immediately. Correct guess text stays server-side until reveal; public acceptance identifies the guesser without exposing an answer/alias.
 - Tie handling should reuse existing podium behavior.
 
 ## Content Model
@@ -207,7 +183,8 @@ Rules:
 Extend:
 
 ```ts
-export type GameType = 'quiz' | 'wmlt' | 'drawing';
+// Drawing is one member of the broader shared GameType union.
+export type DrawingGameType = 'drawing';
 ```
 
 Add:
@@ -327,8 +304,8 @@ Responsibilities:
 
 Generation model:
 
-- Use the same configured Gemini 2.5 Flash Lite model as quiz/WMLT.
-- Do not introduce a drawing-specific premium model in v1.
+- Reuse common provider and free/paid model selection, including remote-config overrides.
+- No drawing-specific premium model is required.
 
 ### Provider Prompt Requirements
 
@@ -534,23 +511,22 @@ Server response to guesser:
 }
 ```
 
-Broadcast for public feed:
+Broadcast for public feed (successful guess text is omitted):
 
 ```json
 {
   "type": "GUESS_ACCEPTED",
   "nickname": "Sam",
-  "rank": 1
+  "correct_guessers": ["Sam"]
 }
 ```
 
-Incorrect guess public feed, optional:
+Incorrect guesses use the implemented rolling `GUESS_LOG` feed:
 
 ```json
 {
-  "type": "GUESS_SUBMITTED",
-  "nickname": "Sam",
-  "guess": "chef hat"
+  "type": "GUESS_LOG",
+  "guess_log": [{"nickname": "Sam", "guess": "chef hat", "correct": false}]
 }
 ```
 
@@ -614,9 +590,9 @@ Recommended defaults:
 ```text
 Max points per DRAW_OP: 80
 Max ops per second per drawer: 30
-Max stored ops per round: 2500
+Max stored ops per round/sync: 500
 Max stroke width: 32
-Max color palette: fixed server-approved colors
+Colors: six-digit hex values (the UI provides swatches)
 Initial drawing color: black (#111111)
 Default round timer: 30 seconds
 Max DRAW_OP message size: 2048 bytes
@@ -628,17 +604,7 @@ If the drawer sends too many points:
 - Client should batch points every 30-50ms.
 - Client should quantize coordinates before sending, either as small integers in canvas-normalized space or rounded decimals, so 80-point strokes reliably fit under the DRAW_OP envelope limit.
 
-**Important**: The current global WebSocket rate limit is `WS_RATE_LIMIT_PER_SEC = 10` messages/second (in `config.py`). Drawing requires ~30 ops/second for smooth strokes. The rate limiter must be relaxed for DRAW_OP messages specifically, or the drawer's game type must bypass the global limit with a separate drawing-specific rate counter. Do not raise the global limit — only exempt `DRAW_OP` from it while enforcing the drawing-specific 30 ops/sec cap.
-
-The current receive loop in `backend/socket_manager.py` applies the global rate limit before parsing the JSON message type. Drawing implementation must reorder that loop carefully:
-
-1. Enforce `MAX_WS_MESSAGE_SIZE`.
-2. Parse JSON once.
-3. Read `msg["type"]`.
-4. For `DRAW_OP`, enforce the 2048-byte DRAW_OP envelope limit and a separate `DRAW_OP` counter, for example `draw_op_timestamps`, capped at 30/sec.
-5. For every other message type, keep the existing global `msg_timestamps` behavior.
-
-Similarly, `MAX_WS_MESSAGE_SIZE = 4096` bytes is sufficient for DRAW_OP, but validate that the entire DRAW_OP envelope stays under 2048 bytes to leave headroom for other messages and avoid unusually large stroke batches.
+The implemented receive loop parses JSON and applies separate limits: drawing operations use `DRAW_OP_RATE_LIMIT_PER_SEC=30` and `MAX_DRAW_OP_MESSAGE_SIZE=2048`; other messages keep `WS_RATE_LIMIT_PER_SEC=10`. Operation validation caps points at 80, width at 32, and coordinates to 0-1. `MAX_WS_MESSAGE_SIZE=4096` remains the global envelope limit.
 
 ### Reconnect
 
@@ -646,10 +612,11 @@ When a player/spectator reconnects during a drawing round, server sends:
 
 ```json
 {
-  "type": "DRAWING_SYNC",
-  "state": "DRAWING",
-  "round_number": 1,
-  "total_rounds": 10,
+  "type": "SYNC",
+  "state": "QUESTION",
+  "game_type": "drawing",
+  "question_number": 1,
+  "total_questions": 10,
   "time_remaining": 38,
   "drawer": "Avi",
   "is_drawer": false,
@@ -658,7 +625,7 @@ When a player/spectator reconnects during a drawing round, server sends:
 }
 ```
 
-Only the current drawer receives the prompt in sync.
+Player reconnects use `SYNC`; spectators use `SPECTATOR_SYNC`. Only the current drawer receives secret prompt text/aliases. Public rolling logs contain incorrect guesses only, so a successful guess cannot reveal the answer to the remaining guessers.
 
 ## Frontend UX
 
@@ -782,8 +749,7 @@ Podium:
 Create:
 
 ```text
-frontend/src/components/drawing/DrawingCanvas.tsx
-frontend/src/components/drawing/drawingOps.ts
+frontend/src/components/DrawingCanvas.tsx
 ```
 
 `DrawingCanvas` props:
@@ -810,7 +776,7 @@ Implementation notes:
 - Avoid page scroll while drawing on touch devices.
 - Maintain mobile safe areas.
 
-## Backend Implementation Plan
+## Original Backend Implementation Plan (historical; the phases are implemented)
 
 ### Phase 1: Types And Catalog
 
@@ -904,7 +870,7 @@ V1:
 
 Supabase future:
 
-- Store generated DrawingGame content in `games_generated_content` once content persistence is implemented.
+- Host-app prepared drawing setups already use `generated_content`; standalone generated decks still use the process cache.
 - Store completed summaries in `games_game_history`.
 - Do not store raw drawing ops by default.
 
@@ -935,7 +901,7 @@ Guess feed:
   - show only correct guesses publicly, or
   - show incorrect guesses only locally to the guesser.
 
-Recommended v1: only broadcast `GUESS_ACCEPTED`.
+Current behavior broadcasts `GUESS_ACCEPTED` without successful guess text, and a rolling public `GUESS_LOG` of incorrect guesses. Restricting incorrect guesses to the guesser is a possible future moderation policy.
 
 ## Performance
 
@@ -980,7 +946,7 @@ Recommended defaults:
 
 - Host chooses round count, default equals player count when known, otherwise 8.
 - Drawer only scores when at least one guesser is correct.
-- Broadcast only correct guesses in v1.
+- Current runtime broadcasts wrong guesses, with successful guess text redacted until reveal.
 - Hide aliases behind "Advanced".
 - Ignore teams for v1 scoring.
 - No replay in v1.
@@ -1003,7 +969,7 @@ Recommended defaults:
 
 ## Backlog After V1
 
-- Persist generated DrawingGame content in Supabase.
+- Persist standalone generated DrawingGame decks; host-app prepared drawing content is already durable.
 - Persist final game result summaries.
 - Add standalone saved custom prompt packs/library, equivalent to My Quizzes, so hosts can create, revisit, edit, and start custom DrawingGame sets outside a party context.
 - Add host-uploaded prompts.

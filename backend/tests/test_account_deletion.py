@@ -8,6 +8,7 @@ ones the spec flags as most likely to silently regress:
   * a late refund/purchase webhook must NOT recreate the user (§4.3).
 """
 import uuid
+import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
@@ -85,6 +86,48 @@ class TestEndpointContract:
 
 
 class TestDataRemoval:
+    def test_removes_owned_saved_quizzes_and_media_but_preserves_other_owners(self):
+        user_id, _, headers = _signed_in_user(balance=100)
+        stranger_id, _, _ = _signed_in_user(balance=50)
+        questions = [{"text": "Question", "options": ["One", "Two"], "answer_index": 0}]
+        owned_pack = db.save_quiz_pack(user_id, "Owned", questions)
+        deleted_pack = db.save_quiz_pack(user_id, "Previously deleted", questions)
+        db.delete_quiz_pack(user_id, deleted_pack["id"])
+        stranger_pack = db.save_quiz_pack(stranger_id, "Stranger", questions)
+        db.create_media_asset("owned-image", user_id, "local/owned.png", "https://example.invalid/owned.png", "image/png")
+        db.create_media_asset("stranger-image", stranger_id, "local/stranger.png", "https://example.invalid/stranger.png", "image/png")
+
+        assert client.request("DELETE", "/account", json={"confirm": "DELETE"}, headers=headers).status_code == 200
+        conn = db._get_conn()
+        for pack_id in (owned_pack["id"], deleted_pack["id"]):
+            assert conn.execute("SELECT 1 FROM custom_quiz_packs WHERE id = ?", (pack_id,)).fetchone() is None
+            assert conn.execute("SELECT 1 FROM custom_quiz_questions WHERE pack_id = ?", (pack_id,)).fetchone() is None
+        assert db.get_media_asset(user_id, "owned-image") is None
+        assert db.get_quiz_pack(stranger_id, stranger_pack["id"])["questions"]
+        assert db.get_media_asset(stranger_id, "stranger-image") is not None
+        assert db.get_user(stranger_id) is not None
+        assert conn.execute("SELECT 1 FROM token_transactions WHERE wallet_id = ?", (user_id,)).fetchone()
+
+    def test_failed_media_removal_rolls_back_the_entire_account_delete(self):
+        user_id, _, _ = _signed_in_user(balance=100)
+        questions = [{"text": "Question", "options": ["One", "Two"], "answer_index": 0}]
+        pack = db.save_quiz_pack(user_id, "Owned", questions)
+        db.save_game_content(user_id, "drawing", "Owned setup", {"game": {}}, "owned-setup")
+        db.create_media_asset("owned-image", user_id, "local/owned.png", "https://example.invalid/owned.png", "image/png")
+        conn = db._get_conn()
+        conn.execute("CREATE TRIGGER reject_media_delete BEFORE DELETE ON media_assets "
+                     "BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END")
+        conn.commit()
+
+        with pytest.raises(sqlite3.IntegrityError, match="simulated storage failure"):
+            db.delete_account(user_id)
+        assert db.get_user(user_id) is not None
+        assert db.get_wallet_balance(user_id) == 100
+        assert db.get_game_content(user_id, "owned-setup") is not None
+        assert db.get_quiz_pack(user_id, pack["id"])["questions"]
+        assert db.get_media_asset(user_id, "owned-image") is not None
+        assert db.is_account_deleted(user_id) is False
+
     def test_removes_pii_wallet_and_content(self):
         user_id, _, headers = _signed_in_user(balance=100)
         conn = db._get_conn()

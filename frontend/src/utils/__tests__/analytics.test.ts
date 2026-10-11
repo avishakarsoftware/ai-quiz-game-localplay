@@ -7,10 +7,11 @@ vi.mock('posthog-js', () => ({
     init: vi.fn(),
     capture: vi.fn(),
     identify: vi.fn(),
+    reset: vi.fn(),
   },
 }));
 
-import { track, identify } from '../analytics';
+import { track, identify, resetIdentity } from '../analytics';
 import posthog from 'posthog-js';
 
 // Before initAnalytics() runs, track/identify must be safe no-ops — a crash here would take
@@ -24,5 +25,9 @@ describe('analytics no-op safety (pre-init)', () => {
   it('identify does not call posthog before init', () => {
     identify('wallet-1', { signed_in: true });
     expect((posthog.identify as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+  it('identity reset does not call posthog before init', () => {
+    resetIdentity();
+    expect(posthog.reset).not.toHaveBeenCalled();
   });
 });

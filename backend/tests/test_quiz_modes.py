@@ -1,6 +1,7 @@
 """Quiz variant mode prompt tests."""
 import sys
 import os
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -152,3 +153,23 @@ def test_shuffle_question_options_leaves_two_option_classic_questions_alone(monk
     question = shuffled["questions"][0]
     assert question["options"] == ["True", "False"]
     assert question["answer_index"] == 1
+
+
+@pytest.mark.parametrize("count", [2, 3, 4])
+def test_classic_quiz_accepts_two_to_four_multiple_choice_answers(count):
+    options = ["Mercury", "Venus", "Earth", "Mars"][:count]
+    quiz = {"questions": [{"id": 1, "text": "Which planet is nearest the Sun?", "options": options, "answer_index": 0}]}
+    assert _validate_quiz(quiz, attempt=1, mode="classic") is True
+    assert quiz["questions"][0]["options"] == options
+
+
+@pytest.mark.parametrize("mode", ["rebus", "emoji_charades", "timeline", "odd_one_out"])
+@pytest.mark.parametrize("count", [2, 3])
+def test_nonclassic_quiz_modes_still_require_four_choices(mode, count):
+    quiz = {"questions": [{"id": 1, "text": "Movie: 🦁 first odd clue", "options": ["A", "B", "C"][:count], "answer_index": 0}]}
+    assert _validate_quiz(quiz, attempt=1, mode=mode) is False
+
+
+@pytest.mark.parametrize("question", [None, "bad", {"id": 1, "text": "Q", "options": None, "answer_index": 0}, {"id": 1, "text": "Q", "options": ["A", "B"], "answer_index": True}])
+def test_quiz_validation_rejects_malformed_question_and_boolean_answer_index(question):
+    assert _validate_quiz({"questions": [question]}, attempt=1) is False

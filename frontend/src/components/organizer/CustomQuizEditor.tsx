@@ -116,15 +116,20 @@ function toQuiz(title: string, questions: DraftQuestion[]): Quiz {
 }
 
 function draftFromQuiz(quiz: Quiz): DraftData {
-    const questions = quiz.questions.map((question) => ({
-        id: `q_${question.id}`,
-        type: question.options.length === 2 ? 'true_false' as const : 'multiple_choice' as const,
-        text: question.text,
-        options: question.options.length === 2 ? ['True', 'False'] : [...question.options, '', '', '', ''].slice(0, 4),
-        answerIndex: question.answer_index,
-        imageUrl: question.image_url || '',
-        imageAlt: question.image_alt || '',
-    }));
+    const questions = quiz.questions.map((question): DraftQuestion => {
+        const labels = question.options.map((option) => option.trim().toLowerCase());
+        const isTrueFalse = labels.length === 2 && labels.includes('true') && labels.includes('false');
+        return {
+            id: `q_${question.id}`,
+            type: isTrueFalse ? 'true_false' : 'multiple_choice',
+            text: question.text,
+            options: isTrueFalse ? ['True', 'False'] : question.options.slice(0, 4),
+            // Normalize a reversed False/True pair without changing its answer.
+            answerIndex: isTrueFalse ? (labels[question.answer_index] === 'false' ? 1 : 0) : question.answer_index,
+            imageUrl: question.image_url || '',
+            imageAlt: question.image_alt || '',
+        };
+    });
     const fallbackQuestion = createQuestion();
     const normalizedQuestions = questions.length > 0 ? questions : [fallbackQuestion];
     return {
@@ -137,13 +142,14 @@ function draftFromQuiz(quiz: Quiz): DraftData {
 function normalizeDraftQuestion(question: Partial<DraftQuestion>): DraftQuestion {
     const fallback = createQuestion();
     const type = question.type === 'true_false' ? 'true_false' : 'multiple_choice';
+    const savedOptions = Array.isArray(question.options) ? question.options.slice(0, 4) : [];
     return {
         id: question.id || fallback.id,
         type,
         text: question.text || '',
         options: type === 'true_false'
             ? ['True', 'False']
-            : [...(Array.isArray(question.options) ? question.options.slice(0, 4) : []), '', '', '', ''].slice(0, 4),
+            : [...savedOptions, ...Array(Math.max(0, 2 - savedOptions.length)).fill('')],
         answerIndex: typeof question.answerIndex === 'number' ? question.answerIndex : 0,
         imageUrl: question.imageUrl || '',
         imageAlt: question.imageAlt || '',
@@ -207,11 +213,19 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
                 next.options = ['True', 'False'];
                 next.answerIndex = Math.min(next.answerIndex, 1);
             }
-            if (patch.type === 'multiple_choice' && next.options.length < 4) {
+            if (patch.type === 'multiple_choice' && question.type !== 'multiple_choice' && next.options.length < 4) {
                 next.options = [...next.options, ...Array(4 - next.options.length).fill('')];
             }
             return next;
         }));
+    };
+
+    const removeAnswer = (question: DraftQuestion, optionIndex: number) => {
+        const options = normalizeOptions(question).filter((_, index) => index !== optionIndex);
+        const answerIndex = question.answerIndex > optionIndex
+            ? question.answerIndex - 1
+            : question.answerIndex === optionIndex ? Math.min(optionIndex, options.length - 1) : question.answerIndex;
+        updateQuestion(question.id, { options, answerIndex });
     };
 
     const addQuestion = () => {
@@ -463,10 +477,28 @@ export default function CustomQuizEditor({ onBack, onReview, onSave, initialQuiz
                                                 >
                                                     <Check size={16} />
                                                 </button>
+                                                {selectedQuestion.type === 'multiple_choice' && selectedQuestion.options.length > 2 && (
+                                                    <button
+                                                        onClick={() => removeAnswer(selectedQuestion, optionIndex)}
+                                                        className="review-action-btn review-action-delete"
+                                                        aria-label={`Remove answer ${String.fromCharCode(65 + optionIndex)}`}
+                                                    >
+                                                        <X size={16} />
+                                                    </button>
+                                                )}
                                             </div>
                                         );
                                     })}
                                 </div>
+                                {selectedQuestion.type === 'multiple_choice' && selectedQuestion.options.length < 4 && (
+                                    <button
+                                        onClick={() => updateQuestion(selectedQuestion.id, { options: [...selectedQuestion.options, ''] })}
+                                        className="custom-add-question-btn"
+                                    >
+                                        <Plus size={16} aria-hidden="true" />
+                                        Add Answer
+                                    </button>
+                                )}
                             </div>
 
                             <div>

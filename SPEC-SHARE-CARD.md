@@ -29,8 +29,8 @@ image landed 2026-07-27** — see the section at the end of this doc.
 | Dynamic OG **text** + static branded image | Title/desc are per-result (score, winner); image is the brand card | Trivial, no image pipeline, works offline of any renderer | **v1** |
 | Dynamic per-result **image** (render score onto a card) | Fully personalized image | Needs an SVG→PNG/headless render path on the server; heavier, a device/runtime dep | ~~Deferred~~ **shipped 2026-07-27** (no new dep — Pillow primitives) |
 
-The unfurl still shows the winner + score in the **title/description**, which is what humans read; the image
-is the recognizable brand card. Good enough to ship and measure.
+The implemented unfurl shows the winner and score in both text and the per-result PNG. The
+static brand image is the fallback for unknown/expired snapshots or renderer failures.
 
 ## 2. Backend
 
@@ -45,8 +45,10 @@ if it fails (e.g. Supabase before the migration is applied), `share.py` degrades
 No PII beyond a chosen nickname.
 
 ### `POST /share/game` `{leaderboard-ish minimal payload}` → `{token, share_url}`
-Host-authenticated enough to prevent spam: rate-limited (reuse `_check_rate_limit`), sanitize nickname via
-the existing HTML/control-char stripping. `share_url = f"{PUBLIC_BASE_URL}/share/game/{token}"`.
+This is a public, IP-rate-limited endpoint, not proof that the caller hosted or won a game.
+The supplied summary is sanitized and treated as a share-card claim, never a score/economy write.
+The returned share URL uses `PUBLIC_SITE_URL`; rendered image URLs use `PUBLIC_BASE_URL`.
+Nickname sanitization and HTML escaping apply independently.
 
 ### `GET /share/game/{token}` → HTML
 - Unknown/expired token → a generic branded page (200, no result), so stale links still look fine.
@@ -71,14 +73,16 @@ the existing HTML/control-char stripping. `share_url = f"{PUBLIC_BASE_URL}/share
 |---|---|---|
 | `SHARE_TTL_SECONDS` | 604800 (7d) | snapshot lifetime |
 | `MAX_SHARE_SNAPSHOTS` | 500 | eviction cap |
-| `PUBLIC_BASE_URL` | (existing) | absolute base for share + og:image URLs; if unset, feature degrades to clipboard-only relative link |
+| `PUBLIC_SITE_URL` | (existing) | canonical site base for share links/app redirects; empty yields a relative share URL |
+| `PUBLIC_BASE_URL` | (existing) | backend origin for dynamic PNG and static image fallback |
 
 ## 5. Testing (`backend/tests/test_share_card.py`)
 - create snapshot → `GET` returns HTML containing escaped title/description with the score; unknown token →
   generic page (200); XSS attempt in nickname is escaped in output; TTL/eviction prunes; rate limit on create.
 
 ## 6. Deferred / future
-- Nothing outstanding. (Per-result OG image — **done** 2026-07-27. Persisting snapshots to DB for
+- These cards are self-reported; authoritative result verification would require a room/session capability. It is not implemented.
+- Completed scope: (Per-result OG image — **done** 2026-07-27. Persisting snapshots to DB for
   durable links — **done** 2026-07-21.)
 
 ## 7. Files touched

@@ -27,7 +27,9 @@ Quests, Find Someone Who, quiz between questions) restore seamlessly.
 """
 import json
 import logging
+import math
 import os
+import tempfile
 import time
 from typing import Any, Dict, Optional
 
@@ -99,21 +101,32 @@ def _path(room_code: str) -> str:
 
 def save_all(rooms: Dict[str, Any]) -> int:
     """Atomically write a snapshot per room; prune files for rooms that no longer exist."""
-    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+    # Snapshots contain organizer/player credentials and private gameplay state.
+    os.makedirs(SNAPSHOT_DIR, mode=0o700, exist_ok=True)
+    os.chmod(SNAPSHOT_DIR, 0o700)
     saved = 0
     for code, room in list(rooms.items()):
         data = snapshot_room(room)
         if data is None:
             continue
         path = _path(code)
-        tmp = f"{path}.tmp"
+        tmp = None
         try:
-            with open(tmp, "w") as fh:
+            # mkstemp creates mode 0600 independently of the process umask and
+            # never follows a leftover temporary file from an interrupted save.
+            fd, tmp = tempfile.mkstemp(prefix=f".{os.path.basename(path)}.", suffix=".tmp", dir=SNAPSHOT_DIR)
+            with os.fdopen(fd, "w") as fh:
                 json.dump(data, fh)
             os.replace(tmp, path)
             saved += 1
         except OSError as exc:
             logger.error("room_snapshot: failed to write %s: %s", path, exc)
+        finally:
+            if tmp and os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError as exc:
+                    logger.error("room_snapshot: failed to remove temporary snapshot %s: %s", tmp, exc)
     # prune snapshots for rooms that are gone (closed/expired)
     live = {os.path.basename(_path(code)) for code in rooms}
     try:
@@ -153,7 +166,17 @@ def load_all(room_factory, ttl_seconds: int, lobby_ttl_seconds: Optional[int] = 
         except (OSError, ValueError) as exc:
             logger.error("room_snapshot: unreadable snapshot %s: %s", name, exc)
             continue
-        last_activity = float(data.get("last_activity") or 0)
+        # Syntactically valid JSON can still be an invalid snapshot. Reject it
+        # independently so one damaged file cannot stop every room's recovery.
+        try:
+            if not isinstance(data, dict):
+                raise ValueError("snapshot must be an object")
+            last_activity = float(data.get("last_activity") or 0)
+            if not math.isfinite(last_activity) or last_activity <= 0:
+                raise ValueError("last_activity must be a positive finite timestamp")
+        except (TypeError, ValueError, OverflowError) as exc:
+            logger.error("room_snapshot: invalid snapshot %s: %s", name, exc)
+            continue
         state = str(data.get("state") or "")
         # Mirror Room.is_expired: the party-length lobby grace only applies when there are
         # preserved SEATS to come back to. Connections are never serialized, so seats are the

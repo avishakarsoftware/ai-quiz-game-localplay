@@ -9,7 +9,7 @@ interface PhotoClueGameProps {
     role: 'organizer' | 'player' | 'spectator';
     nickname?: string;
     leaderboard?: LeaderboardEntry[];
-    onPhotoReady?: (assetId: string, imageUrl?: string) => void;
+    onPhotoReady?: (assetId: string, attachmentToken: string) => void;
     onGuess?: (guess: string) => void;
     onReveal?: () => void;
     onNextRound?: () => void;
@@ -73,6 +73,7 @@ export default function PhotoClueGame({
             });
             if (!signRes.ok) throw new Error('sign_failed');
             const signed = await signRes.json();
+            if (typeof signed.attachment_token !== 'string' || !signed.attachment_token) throw new Error('attachment_token_missing');
             const form = new FormData();
             Object.entries(signed.upload.fields as Record<string, string>).forEach(([key, value]) => form.append(key, value));
             form.append('file', file);
@@ -84,7 +85,8 @@ export default function PhotoClueGame({
             });
             if (!finalizeRes.ok) throw new Error('finalize_failed');
             const finalized = await finalizeRes.json();
-            onPhotoReady(finalized.asset.id, finalized.asset.public_url);
+            if (finalized.asset.id !== signed.asset.id || finalized.asset.status !== 'ready') throw new Error('finalize_invalid');
+            onPhotoReady(finalized.asset.id, signed.attachment_token);
             setUploadStatus('Photo submitted');
         } catch {
             setUploadStatus('Photo upload failed. Try another image.');

@@ -86,6 +86,7 @@ def _purchase(client, monkeypatch, wallet: str, session_id: str, sparks: int, ev
         "type": "checkout.session.completed",
         "data": {"object": {
             "id": session_id,
+            "payment_status": "paid",
             "metadata": {"device_id": DEVICE, "wallet_id": wallet,
                          "token_amount": str(sparks), "sku": "spark_pack_200", "promo_id": ""},
         }},
@@ -373,7 +374,7 @@ class TestStripePurchaseCredit:
         _fake_event(monkeypatch, {
             "id": "evt_no_wallet",
             "type": "checkout.session.completed",
-            "data": {"object": {"id": "cs_no_wallet", "metadata": {}}},
+            "data": {"object": {"id": "cs_no_wallet", "payment_status": "paid", "metadata": {}}},
         })
         res = client.post("/webhook/stripe", content=b"{}", headers={"stripe-signature": "t=1,v1=x"})
 
@@ -389,11 +390,40 @@ class TestStripePurchaseCredit:
             "id": "evt_legacy_meta",
             "type": "checkout.session.completed",
             "data": {"object": {"id": "cs_legacy_1",
+                                "payment_status": "paid",
                                 "metadata": {"device_id": DEVICE, "token_amount": "50"}}},
         })
         client.post("/webhook/stripe", content=b"{}", headers={"stripe-signature": "t=1,v1=x"})
 
         assert db.get_wallet_balance(DEVICE) == 50
+
+
+class TestDelayedPayment:
+    @pytest.mark.parametrize("payment_status", ["unpaid", None])
+    def test_no_credit_before_payment_settles(self, client, stripe_env, monkeypatch, payment_status):
+        _fake_event(monkeypatch, {
+            "id": "evt_pending", "type": "checkout.session.completed",
+            "data": {"object": {"id": "cs_delayed", "payment_status": payment_status,
+                                "metadata": {"wallet_id": DEVICE, "token_amount": "50"}}},
+        })
+        res = client.post("/webhook/stripe", content=b"{}")
+        assert res.status_code == 200
+        assert db.get_wallet_balance(DEVICE) == 0
+        assert db.is_webhook_event_processed("evt_pending")
+
+    def test_delayed_success_credits_once_across_distinct_events(self, client, stripe_env, monkeypatch):
+        for event_id in ("evt_delayed", "evt_delayed_again"):
+            _fake_event(monkeypatch, {
+                "id": event_id, "type": "checkout.session.async_payment_succeeded",
+                "data": {"object": {"id": "cs_delayed", "payment_status": "paid",
+                                    "metadata": {"device_id": DEVICE, "wallet_id": DEVICE,
+                                                 "token_amount": "50"}}},
+            })
+            assert client.post("/webhook/stripe", content=b"{}").status_code == 200
+        assert db.get_wallet_balance(DEVICE) == 50
+        assert db._get_conn().execute(
+            "SELECT COUNT(*) FROM token_transactions WHERE reason = 'purchase'"
+        ).fetchone()[0] == 1
 
 
 class TestSpendingRefusal:

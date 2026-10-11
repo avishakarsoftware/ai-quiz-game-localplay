@@ -1,7 +1,18 @@
 # LocalPlay Custom Bingo Game Spec
 
 Status: **Implemented** — Custom Bingo on the shared Bingo-family engine (`backend/bingo_engine.py`;
-`BINGO_ENABLED` defaults true). Reviewed 2026-07-21.
+`BINGO_ENABLED` defaults true). Reconciled against the repository 2026-10-10.
+
+Current contract: `POST /bingo/create` and `PUT /bingo/{bingo_id}` accept `game_title`, `deck`,
+`pattern_ids`, free-center settings, `caller_mode`, and the strict-claim flag. They return
+`{bingo_id, game}`; `GET /bingo/{bingo_id}` returns the game itself. `POST /bingo/generate`
+returns an editable generated game with the same envelope. Setups are process-local and owner
+checked on update; there is no durable standalone Bingo template library.
+
+Shipped catalog presets are Baby, Wedding, Holiday, and Road Trip Bingo, all using runtime
+`bingo`. Cards are 5x5; patterns are First Line, Four Corners, and Blackout. Hosted-image upload,
+text AI generation, and shared manual/auto caller controls exist. Dedicated named Word/Emoji/
+Image/Photo rulesets, 4x4 cards, extra patterns, and AI image generation remain roadmap work.
 
 ## Overview
 
@@ -19,16 +30,16 @@ Frontend display name: Bingo
 
 ## Rollout Constraint
 
-The first implementation is **gamma-only**.
+The original implementation slice was gamma-only. Current standalone Bingo-family entries are
+enabled by default in local, gamma, and production builds; Revelry remains a separate gated rollout.
 
 Rules:
 
 - Standalone Bingo and Baby Bingo are enabled in production LocalPlay. Revelry/host-app exposure remains separate and must stay disabled until the Bingo bridge contract, production schema constraint, policy rows, and production save/start smoke are deliberately promoted.
-- Any database/schema changes required for Bingo must be applied only to gamma objects, such as `games_gamma_*`.
-- Production `games_*` schema and production runtime behavior must remain untouched unless a later explicit production rollout is requested.
+- Future Bingo host-app schema changes need deliberate environment-specific promotion; default standalone enablement does not authorize new production DDL or policy writes.
 - Prefer reusing existing gamma media tables and generated-content structures before adding new schema.
 - If new schema is required, add a gamma migration/script or gamma SQL section first; keep production SQL unchanged in the same implementation pass.
-- Local development can support Bingo for testing, but deploy/release gating should keep the feature gamma-only.
+- `ENABLE_BINGO=false` and `VITE_ENABLE_BINGO=false` remain explicit standalone kill switches.
 
 ## Product Decision
 
@@ -62,7 +73,7 @@ Separate product expectations:
 ## Non-Goals For MVP
 
 - No Revelry/host-app exposure until standalone Bingo has setup, runtime, result summary, and tests.
-- No AI generation in the first slice unless it falls out cheaply from existing content generation patterns.
+- No AI image generation; text deck generation is implemented via `/bingo/generate`.
 - No player photo submission in MVP.
 - No image moderation or image AI validation in MVP.
 - No AI image generation in MVP. Image deck items come from host upload or already-existing media assets.
@@ -73,13 +84,13 @@ Separate product expectations:
 ## Accepted MVP Decisions
 
 - Minimum players: `2`, matching Housie.
-- Winner policy: one winner per prize pattern in MVP.
+- Winner policy: first valid claim for non-terminal patterns; terminal patterns share the final-call window.
 - Claim mode default: casual, `claim_requires_latest_call = false`.
 - Strict claims: supported as a setup flag if cheap, but not the default.
-- Baby Bingo: not required in the base Bingo implementation, but the setup/template model must make it a small follow-up.
+- Baby Bingo and the Wedding/Holiday/Road Trip presets are implemented on the shared runtime.
 - Image support: included in MVP.
 - Revelry exposure: disabled for MVP.
-- Auto-caller: manual caller only for the first pass unless Housie auto-caller reuse is trivial and low-risk.
+- Manual and auto caller controls reuse Housie; setup defaults to manual.
 
 ## Game Types And Catalog Model
 
@@ -117,7 +128,8 @@ Implemented preset behavior:
 - Starting the preset still creates a normal `bingo` setup and room; no new backend runtime type is introduced.
 - Baby Bingo remains disabled for Revelry/host-app mode until the generic Bingo bridge contract is deliberately enabled.
 
-Because the rollout is gamma-only, catalog exposure should be gated by environment/config. Production builds and production `/catalog` responses must not show `bingo` until an explicit production rollout.
+Standalone catalog exposure follows the configured Bingo kill switch. Host-app eligibility and
+remote policy remain separately gated; production standalone visibility does not imply Revelry support.
 
 ## MVP Gameplay
 
@@ -136,8 +148,8 @@ Host configures:
   - Four Corners
   - Blackout
 - Caller mode:
-  - Manual for MVP.
-  - Auto can reuse Housie later.
+  - Manual by default.
+  - Shared runtime auto/pause/resume controls are implemented.
 - Claim rule:
   - Casual mode: claim whenever pattern is complete.
   - Strict mode: pattern must become true on the latest called item.
@@ -175,6 +187,11 @@ For MVP image Bingo:
 - Image items count toward the same minimum deck size as text items.
 - Mixed decks are allowed: a single game can include text, emoji, and image cells.
 - If an image asset is still pending or failed, the setup screen must block room creation or remove that item before save/start.
+
+Current image-validation limit: normal setup uploads finalize the asset before adding its URL,
+and deck sanitization rejects external URLs. Direct create/update requests currently validate
+reference shape and URL prefix only; they do not query media readiness or ownership. Strong
+asset-state enforcement and its API regression tests remain follow-up work.
 - Players and spectators must see the image plus label/alt text where space allows.
 
 ### Player Flow
@@ -372,7 +389,10 @@ Baby Shampoo
 
 The host should be able to edit every item before room creation.
 
-## Backend Implementation Plan
+## Backend Implementation (Original Checklist)
+
+The current endpoint/response contract is listed at the top. This retained checklist is historical
+where it says "add"; it does not imply a `/bingo/generate-items` or `/bingo/generate-images` endpoint.
 
 Add or extend `backend/bingo_engine.py` with:
 
@@ -469,7 +489,7 @@ Frontend tests:
 - Player card marks cells without layout shift.
 - Claim buttons show awarded claimants; non-terminal awarded claims disable, while terminal claims can remain available during the final claim window.
 
-## Rollout
+## Rollout (Historical Sequence and Remaining Roadmap)
 
 1. Ship standalone gamma-only Bingo with custom text/emoji/image deck items.
 2. Add Baby Bingo preset card using the same runtime.

@@ -16,6 +16,9 @@ interface Stats {
     favorite_game_title: string;
     last_played_at: number;
     by_game_type: ByGameType[];
+    stats_scope?: 'lifetime' | 'recent_games' | 'unavailable';
+    stats_row_limit?: number | null;
+    stats_truncated?: boolean;
 }
 
 /**
@@ -46,6 +49,11 @@ export default function StatsSection() {
     return (
         <div className="settings-drawer-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
             <div style={{ fontWeight: 700, fontSize: 14 }}>Your parties</div>
+            {stats.stats_scope === 'recent_games' && stats.stats_truncated && (
+                <div style={{ fontSize: 12, opacity: 0.75 }}>
+                    Based on your latest {stats.stats_row_limit || stats.games_hosted} completed games.
+                </div>
+            )}
 
             <div style={{ display: 'flex', gap: 8 }}>
                 <Tile value={stats.games_hosted} label={stats.games_hosted === 1 ? 'game hosted' : 'games hosted'} />

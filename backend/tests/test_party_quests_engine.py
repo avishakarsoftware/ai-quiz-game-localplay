@@ -1,3 +1,5 @@
+import pytest
+
 from party_quests_engine import (
     PHASE_ACTIVE,
     PHASE_FINAL_CALL,
@@ -147,3 +149,45 @@ def test_generated_party_quests_are_normalized_for_review():
     assert result["quests_per_player"] == 3
     assert [quest["id"] for quest in result["quests"]] == ["quest_1", "quest_2", "quest_3", "quest_4", "quest_5"]
     assert result["quests"][2]["points"] == 150
+
+
+def test_reselected_partner_cannot_resolve_an_old_confirmation():
+    state = create_initial_state(["Avi", "Ruchi", "Sam"], {"quests_per_player": 3}, now=1000, seed="fixed")
+    quest_id = state["quest_boards_by_player"]["Avi"][0]["quest_id"]
+    state, old_request = create_confirmation_request(state, "Avi", quest_id, "Ruchi", now=1010)
+    state, new_request = create_confirmation_request(state, "Avi", quest_id, "Sam", now=1011)
+
+    assert old_request["id"] not in state["pending_confirmations"]
+    state, _ = apply_confirmation(state, new_request["id"], "Sam", True, now=1012)
+    with pytest.raises(ValueError, match="no longer available"):
+        apply_confirmation(state, old_request["id"], "Ruchi", False, now=1013)
+    assert state["quest_boards_by_player"]["Avi"][0]["status"] == "confirmed"
+    assert len(state["completed_confirmations"]) == 1
+
+
+def test_pending_requests_cannot_bypass_partner_limit_at_acceptance():
+    state = create_initial_state(["Avi", "Ruchi"], {
+        "quests_per_player": 3, "max_completions_per_partner": 1,
+    }, now=1000, seed="fixed")
+    quest_ids = [item["quest_id"] for item in state["quest_boards_by_player"]["Avi"]]
+    state, first = create_confirmation_request(state, "Avi", quest_ids[0], "Ruchi", now=1010)
+    state, second = create_confirmation_request(state, "Avi", quest_ids[1], "Ruchi", now=1011)
+    state, _ = apply_confirmation(state, first["id"], "Ruchi", True, now=1012)
+
+    with pytest.raises(ValueError, match="different person"):
+        apply_confirmation(state, second["id"], "Ruchi", True, now=1013)
+    assert len(state["completed_confirmations"]) == 1
+
+
+def test_expired_request_can_be_replaced_and_cannot_score_after_reveal():
+    state = create_initial_state(["Avi", "Ruchi"], {"quests_per_player": 3}, now=1000, seed="fixed")
+    quest_id = state["quest_boards_by_player"]["Avi"][0]["quest_id"]
+    state, expired = create_confirmation_request(state, "Avi", quest_id, "Ruchi", now=1010)
+    with pytest.raises(ValueError, match="expired"):
+        apply_confirmation(state, expired["id"], "Ruchi", True, now=1610)
+
+    state, replacement = create_confirmation_request(state, "Avi", quest_id, "Ruchi", now=1611)
+    state = reveal(state, now=1612)
+    with pytest.raises(ValueError, match="not accepting completions"):
+        apply_confirmation(state, replacement["id"], "Ruchi", True, now=1613)
+    assert state["scores"]["Avi"] == 0

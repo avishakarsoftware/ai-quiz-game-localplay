@@ -1,5 +1,9 @@
 # LocalPlay Random Chit Game Spec
 
+## Current repository contract (reviewed 2026-10-10)
+
+`chit_pull_id` or `chit_pull_config` selects room content. The implemented state machine is `CHIT_READY → CHIT_ACTIVE → CHIT_RESULT → … → PODIUM`, with host-only draw/complete/skip/redraw controls and `CHIT_SYNC.chit_pull`. Timer deadlines and `skip_limit_per_player` are stored settings; they do not trigger automatic completion or cap skips. No-repeat draws exhaust the deck; redraws do not consume chits until completion/skip. Text is cleaned, truncated to 180 characters, deduplicated, and filtered against a finite unsafe-term list, with curated defaults filling a short deck. This is basic validation, not exhaustive content moderation. Standalone generation/import/update is implemented; Revelry authoring/quick-start support is catalog-declared and filtered by host-app policy. Hosted rollout/QA statements below are historical.
+
 ## Overview
 
 Add **Random Chit** as a light party prompt game where the app randomly picks a player, reveals a random chit, and asks that player to answer a question, do a tiny action, make a funny face, perform a mini challenge, or involve the group.
@@ -129,7 +133,7 @@ Avoid:
 - Mean-spirited, humiliating, or targeted personal insults.
 - Anything requiring photos, documents, private screens, addresses, or employer secrets.
 
-Player-facing skip should always be available in MVP. The game should normalize skipping: "Skip is allowed. Keep it fun."
+Skipping is always available through the organizer. The player view gives a skip reminder; a player-operated skip action remains future work. The game should normalize skipping: "Skip is allowed. Keep it fun."
 
 ## Setup
 
@@ -160,7 +164,7 @@ Player-facing skip should always be available in MVP. The game should normalize 
 Defaults:
 
 - `selection_mode`: `random_player`.
-- `rounds`: 20.
+- `rounds`: min(20, available chits) by default; 10 with the curated deck and no repeats.
 - `turn_time_seconds`: 30.
 - `allow_player_repeats`: true.
 - `allow_chit_repeats`: false.
@@ -168,7 +172,7 @@ Defaults:
 - `scoring_enabled`: true.
 - `completion_points`: 100.
 - `bonus_points`: 50.
-- `safe_level`: `work_safe`.
+- `safe_level`: `family`.
 
 Validation:
 
@@ -283,7 +287,7 @@ Runtime state:
 
 ```ts
 export interface ChitPullState {
-  phase: 'CHIT_READY' | 'CHIT_REVEAL' | 'CHIT_ACTIVE' | 'CHIT_RESULT' | 'PODIUM';
+  phase: 'CHIT_READY' | 'CHIT_ACTIVE' | 'CHIT_RESULT' | 'PODIUM';
   round_number: number;
   total_rounds: number;
   selected_player_id: string;
@@ -329,9 +333,9 @@ export interface ChitPullTurnResult {
 
 Player selection:
 
-- Random among active players.
+- Random among the engine roster; disconnected seats remain eligible in the current runtime.
 - If `allow_player_repeats = false`, prefer players with the fewest turns.
-- Do not select disconnected players.
+- Excluding disconnected players at every draw is a follow-up; the host can redraw an absent selected player.
 - If the selected player disconnects before resolution, host can redraw player.
 
 Chit selection:

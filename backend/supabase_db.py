@@ -671,16 +671,32 @@ def record_game_result(room_code: str, wallet_id: str, game_type: str, game_titl
 
 
 def _wallet_result_rows(wallet_id: str) -> list[dict]:
-    return _sb().select(
+    client = _sb()
+    filters = {"wallet_id": f"eq.{wallet_id}"}
+    order = "completed_at.desc,room_code.desc"
+    rows = client.select(
         "game_results",
-        filters={"wallet_id": f"eq.{wallet_id}"},
-        order="completed_at.desc",
+        filters=filters,
+        order=order,
         limit=STATS_ROW_CAP,
     )
+    if len(rows) == STATS_ROW_CAP:
+        # A REST service can cap each response at 1000 even when limit=1001.
+        # select passes these parameters through; offset is a PostgREST paging
+        # control, rather than a table-column filter. Probe only one older row.
+        rows = rows + client.select(
+            "game_results",
+            filters={**filters, "offset": str(STATS_ROW_CAP)},
+            order=order,
+            limit=1,
+        )
+    return rows
 
 
 def get_wallet_stats(wallet_id: str) -> dict:
     rows = _wallet_result_rows(wallet_id)
+    truncated = len(rows) > STATS_ROW_CAP
+    rows = rows[:STATS_ROW_CAP]
     counts: dict[str, int] = {}
     for r in rows:
         gt = r.get("game_type") or ""
@@ -695,6 +711,9 @@ def get_wallet_stats(wallet_id: str) -> dict:
         "favorite_game_count": by_type[0][1] if by_type else 0,
         "by_game_type": [{"game_type": gt, "count": n} for gt, n in by_type],
         "distinct_games_played": len(by_type),
+        "stats_scope": "recent_games" if truncated else "lifetime",
+        "stats_row_limit": STATS_ROW_CAP,
+        "stats_truncated": truncated,
     }
 
 
@@ -870,7 +889,7 @@ def save_quiz_pack(owner_wallet_id: str, title: str, questions: list[dict], pack
     # Metadata and replacement questions commit together. The RPC also checks ownership
     # under a row lock, so two creators racing on one ID cannot reassign the pack.
     try:
-        _sb().rpc("save_quiz_pack", {
+        saved = _sb().rpc("save_quiz_pack", {
             "p_owner_wallet_id": owner_wallet_id,
             "p_pack_id": pack_id,
             "p_title": title,
@@ -882,9 +901,10 @@ def save_quiz_pack(owner_wallet_id: str, title: str, questions: list[dict], pack
         if exc.code == "42501" and exc.database_message == "Quiz pack belongs to another wallet":
             raise QuizPackOwnershipError() from exc
         raise
-    pack = get_quiz_pack(owner_wallet_id, pack_id)
-    if not pack:
-        raise SupabaseDBError("Failed to save quiz pack")
+    pack = saved.get("pack") if isinstance(saved, dict) else None
+    if not isinstance(pack, dict) or pack.get("id") != pack_id or pack.get("owner_wallet_id") != owner_wallet_id:
+        raise SupabaseDBError("Atomic quiz snapshot is unavailable; integration clock migration is required")
+    pack["questions"] = [_question_from_row(row) for row in pack.get("questions") or []]
     return pack
 
 
@@ -910,7 +930,11 @@ def get_quiz_pack(owner_wallet_id: str, pack_id: str) -> Optional[dict]:
     return pack
 
 
-def delete_quiz_pack(owner_wallet_id: str, pack_id: str) -> bool:
+def delete_quiz_pack(owner_wallet_id: str, pack_id: str, *, return_snapshot: bool = False) -> bool | dict | None:
+    if return_snapshot:
+        return _sb().rpc("delete_integration_content", {
+            "p_owner_wallet_id": owner_wallet_id, "p_content_id": pack_id, "p_content_type": "quiz",
+        })
     rows = _sb().update(
         "quiz_packs",
         {"status": "deleted", "deleted_at": _now(), "updated_at": _now()},
@@ -964,7 +988,7 @@ def save_game_content(owner_wallet_id: str, game_type: str, title: str, payload:
         })
     else:
         rows = _sb().insert("generated_content", content_row)
-    content = _game_content_from_row(rows[0]) if rows else get_game_content(owner_wallet_id, content_id)
+    content = _game_content_from_row(rows[0]) if rows else None
     if not content:
         raise SupabaseDBError("Failed to save game content")
     return content
@@ -993,7 +1017,12 @@ def get_game_content(owner_wallet_id: str, content_id: str) -> Optional[dict]:
     return _game_content_from_row(row) if row else None
 
 
-def delete_game_content(owner_wallet_id: str, content_id: str) -> bool:
+def delete_game_content(owner_wallet_id: str, content_id: str, *, return_snapshot: bool = False) -> bool | dict | None:
+    if return_snapshot:
+        row = _sb().rpc("delete_integration_content", {
+            "p_owner_wallet_id": owner_wallet_id, "p_content_id": content_id, "p_content_type": "game",
+        })
+        return _game_content_from_row(row) if row else None
     rows = _sb().delete(
         "generated_content",
         filters={"id": f"eq.{content_id}", "wallet_id": f"eq.{owner_wallet_id}"},
@@ -1115,7 +1144,9 @@ def create_game_session(session: dict) -> dict:
         "updated_at": session.get("updated_at", now),
     }
     rows = _sb().insert("game_sessions", row)
-    return rows[0] if rows else row
+    if not rows:
+        raise SupabaseDBError("Failed to create game session")
+    return rows[0]
 
 
 def get_game_session(session_id: str) -> Optional[dict]:

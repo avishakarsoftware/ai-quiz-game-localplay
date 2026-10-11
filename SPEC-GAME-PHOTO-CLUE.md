@@ -1,5 +1,13 @@
 # LocalPlay Photo Clue Game Spec
 
+## Current repository contract (reviewed 2026-10-10)
+
+Rooms accept `photo_clue_config`; the implemented phases are `PHOTO_WAITING_FOR_PHOTO`, `PHOTO_GUESSING`, `PHOTO_REVEAL`, and `PODIUM`. Prompts are assigned in roster order up front. All state, including the viewer's upcoming prompts and current guess, uses `PHOTO_CLUE_SYNC.photo_clue`; there are no separate photo-ready/private-prompts/result events. The clue-giver uploads through the shared media endpoints, then sends `PHOTO_CLUE_UPLOAD_READY`; the host uses `PHOTO_CLUE_REVEAL` to reveal/skip and `PHOTO_CLUE_NEXT_ROUND` to advance. The active prompt is private until reveal. Scoring is fixed per correct guess, with no first-guesser/time bonus. Deadlines are recorded but expiry/automatic reveal/progressive hints are roadmap.
+
+Attachment uses a short-lived server-signed capability returned by authenticated `/media/upload-url` for `purpose=photo_clue_submission`. `PHOTO_CLUE_UPLOAD_READY` carries its `attachment_token` alongside `asset_id`. The token binds the asset, authenticated owner, purpose, and expiry; the socket resolves the owner's ready DB record and attaches its canonical `public_url`, ignoring any caller-supplied URL. The active clue-giver and round phase are checked independently. This closes the former client-URL bypass without trusting a WebSocket-supplied wallet identity.
+
+`finalize` still marks owner-scoped metadata ready without independently fetching/decoding remote bytes. The IONOS upload handler verifies signed size and detected MIME, but dimensions and EXIF stripping remain follow-ups. CDN URLs have no room authorization or automatic retention cleanup in this repository; possession of a URL permits reading the file. Ownership checks on attachment therefore do not establish private/expiring CDN reads. The stronger media verification and retention requirements remain in `SPEC-IMAGE-GAMES.md`.
+
 ## Overview
 
 Add **Photo Clue** as an image-native party game where a player receives a secret word or phrase, submits a photo as the clue, and the rest of the room guesses the word from that photo.
@@ -26,7 +34,7 @@ Status: standalone playable MVP implemented on June 24, 2026. The shared media u
 
 Revelry bridge status: LocalPlay now marks Photo Clue as a host-app-capable quick-start/settings game for Revelry. It is `can_quick_start=true`, `can_create_content=false`, `can_edit_content=false`, `supports_ai_generation=false`, and `supports_images=true`. Actual Revelry visibility remains host-app policy gated and should ship only after gamma embedded QA covers upload/finalize, guessing, spectator reveal, reconnect, completion, and result polling. Revelry should not mirror raw submitted photos unless LocalPlay later returns an explicit safe share payload.
 
-- Host creates or AI-generates a list of words/phrases.
+- Host quick-starts curated prompts or supplies a custom prompt list through the room API. Dedicated AI/manual authoring UI remains roadmap.
 - At game start, the server pre-assigns prompts to players for all planned rounds.
 - Each player receives their own private prompt queue up front, before round 1 starts.
 - Each round has one clue-giver whose already-delivered private prompt becomes active.
@@ -39,7 +47,7 @@ Revelry bridge status: LocalPlay now marks Photo Clue as a host-app-capable quic
 - Player-submitted photos use the shared `/media/upload-url` and `/media/{asset_id}/finalize` flow.
 - Photos are private party content by default and are not publicly browsable through an index.
 
-## July 6, 2026 Implementation-Ready Polish / Revelry Readiness Pass
+## July 6, 2026 Polish Roadmap (not the current API contract)
 
 Photo Clue is playable, but should not be broadly exposed to Revelry production until the image-specific UX and privacy edges are tightened.
 
@@ -157,7 +165,7 @@ Acceptance:
 9. Clue-giver takes/uploads a photo clue.
 10. Server validates/finalizes the photo asset.
 11. Guessers and spectator see the photo.
-12. Guessers submit text guesses until the timer ends or all guessers are correct.
+12. Guessers submit text guesses while the host keeps the guessing phase open; automatic expiry/all-solved reveal is not implemented.
 13. Server accepts correct guesses using normalized matching.
 14. Round ends with a reveal of the target phrase and photo.
 15. Scores update.
@@ -180,10 +188,10 @@ Private prompt assignment payload:
 
 ```json
 {
-  "type": "PHOTO_CLUE_PRIVATE_PROMPTS",
-  "assignments": [
-    {"round_number": 1, "prompt_id": 7, "text": "secret snack", "aliases": ["hidden snack", "sneaky snack"]}
-  ]
+  "type": "PHOTO_CLUE_SYNC",
+  "photo_clue": {"private_prompts": [
+    {"round_index": 0, "prompt": {"id": "prompt_7", "answer": "secret snack", "aliases": ["hidden snack", "sneaky snack"]}}
+  ]}
 }
 ```
 
@@ -224,33 +232,33 @@ Prompt constraints:
 {
   "game_type": "photo_clue",
   "game_title": "Photo Clue",
-  "rounds": 10,
-  "photo_time_seconds": 60,
+  "round_count": 5,
+  "photo_time_seconds": 90,
   "guess_time_seconds": 45,
-  "allow_camera": true,
-  "allow_gallery_upload": true,
-  "show_incorrect_guess_feed": false
+  "correct_guess_points": 100,
+  "clue_giver_points": 50,
+  "allow_late_join": true
 }
 ```
 
 Defaults:
 
-- `rounds`: 10.
-- `photo_time_seconds`: 60.
+- `round_count`: 5, capped by available prompts.
+- `photo_time_seconds`: 90.
 - `guess_time_seconds`: 45.
-- `allow_camera`: true.
-- `allow_gallery_upload`: true.
-- `show_incorrect_guess_feed`: false.
+- `correct_guess_points`: 100.
+- `clue_giver_points`: 50 per correct guesser.
+- `allow_late_join`: true. Camera/feed controls are not engine config fields.
 
 Validation:
 
-- `rounds`: 1-50.
-- `photo_time_seconds`: 20-180.
-- `guess_time_seconds`: 15-120.
-- Minimum players: 3.
+- `round_count`: 3-25, capped by available prompts.
+- `photo_time_seconds`: 30-300.
+- `guess_time_seconds`: 10-120.
+- Minimum players: 2.
 - Recommended players: 4-12.
 
-## Content Model
+## Original Data-Model Design (historical; current phases are `PHOTO_*`)
 
 ```ts
 export interface PhotoCluePrompt {
@@ -290,7 +298,7 @@ export interface PhotoClueRound {
 }
 ```
 
-## Backend Engine
+## Original Backend Design Sketch (historical helper names)
 
 Add:
 
@@ -336,48 +344,47 @@ Reuse DrawingGame guess matching:
 Client to server:
 
 ```json
-{ "type": "PHOTO_CLUE_UPLOAD_READY", "asset_id": "asset_uuid" }
+{ "type": "PHOTO_CLUE_UPLOAD_READY", "asset_id": "asset_uuid", "attachment_token": "server_signed_capability" }
 { "type": "PHOTO_CLUE_GUESS", "guess": "secret snack" }
-{ "type": "PHOTO_CLUE_SKIP_PHOTO" }
+{ "type": "PHOTO_CLUE_REVEAL" }
 { "type": "PHOTO_CLUE_NEXT_ROUND" }
 ```
 
 Server to clients:
 
 ```json
-{ "type": "PHOTO_CLUE_SYNC", "state": {} }
-{ "type": "PHOTO_CLUE_PHOTO_READY", "photo_url": "/media/asset_uuid" }
-{ "type": "PHOTO_CLUE_GUESS_ACCEPTED", "player_id": "p2" }
-{ "type": "PHOTO_CLUE_ROUND_RESULT", "prompt": "secret snack", "correct_guessers": [] }
-{ "type": "PHOTO_CLUE_PRIVATE_PROMPTS", "assignments": [] }
+{ "type": "PHOTO_CLUE_SYNC", "game_type": "photo_clue", "photo_clue": {} }
+{ "type": "PODIUM", "game_type": "photo_clue", "leaderboard": [] }
 ```
 
 Visibility:
 
-- At game start, each player receives only their own `PHOTO_CLUE_PRIVATE_PROMPTS` assignment list.
+- At game start and reconnect, each player receives only their own `private_prompts` list inside `PHOTO_CLUE_SYNC.photo_clue`.
 - The current clue-giver receives `secret_prompt` again in round sync for convenience, but it must match their pre-assigned prompt.
 - Guessers and spectator do not receive `secret_prompt` until result.
 - Photo asset URL becomes public to the room only after finalize succeeds.
-- Incorrect guesses should be local-only in MVP unless `show_incorrect_guess_feed` is explicitly enabled.
+- Incorrect guesses are private to the submitting player; there is no public incorrect-guess feed setting.
 
 ## Media Upload Flow
 
 1. Clue-giver taps camera/upload.
-2. Frontend requests `POST /media/upload-url` with purpose `photo_clue_submission`.
+2. Authenticated frontend requests `POST /media/upload-url` with purpose `photo_clue_submission` and retains the returned `asset_id` and `attachment_token`.
 3. Browser uploads directly to IONOS using the signed URL.
 4. Frontend calls `POST /media/{asset_id}/finalize`.
-5. Frontend sends `PHOTO_CLUE_UPLOAD_READY`.
-6. Backend verifies asset ownership, status, purpose, size, and MIME type.
-7. Backend attaches the photo to the round and broadcasts `PHOTO_CLUE_PHOTO_READY`.
+5. Frontend sends `PHOTO_CLUE_UPLOAD_READY` with `asset_id` and `attachment_token`.
+6. Backend verifies the capability's signature, expiry, asset binding, and Photo Clue purpose, then resolves ready media metadata under its bound owner. It also validates the active clue-giver and waiting-for-photo phase.
+7. Backend attaches the record's canonical CDN `public_url` to the round and broadcasts `PHOTO_CLUE_SYNC`; caller-supplied `photo_url` or `image_url` is ignored.
 
 Constraints:
 
 - MIME: JPEG, PNG, WebP.
-- Size: use shared media limits; recommend 8 MB max.
+- Size: use shared media limits; backend and IONOS handler currently cap uploads at 2 MiB.
 - Strip EXIF metadata when normalization is available.
 - Block pending/failed/deleted assets.
 - Do not accept arbitrary external URLs.
-- Use only app-controlled `/media/{asset_id}` URLs in game state.
+- Use the canonical app-controlled CDN URL from the persisted asset record in game state. `/media/{asset_id}` currently serves generated in-memory images only.
+- A ready record is not independent proof that a remote file was uploaded successfully; remote byte verification remains a finalize requirement.
+- Attachment capabilities use HS256 with `MEDIA_UPLOAD_SECRET`, issuer `localplay.media`, audience `photo_clue`, scope `photo_clue_submission`, and lifetime `MEDIA_UPLOAD_TOKEN_TTL_SECONDS`. Required claims include the exact asset, owner, issued-at time, and expiry.
 
 ## Scoring
 
@@ -385,16 +392,10 @@ Default scoring:
 
 | Event | Points |
 |---|---:|
-| First correct guesser | 1000 |
-| Later correct guessers | time-scaled 300-900 |
-| Clue-giver bonus per correct guesser | 150 |
-| All guessers correct | +400 clue-giver bonus |
+| Each correct guesser (once per round) | 100 by default |
+| Clue-giver bonus per correct guesser | 50 by default |
 
-Time scaling:
-
-```text
-guesser_points = 300 + round(600 * (time_remaining / guess_time_seconds))
-```
+Both values are configurable (`correct_guess_points`: 10-1000; `clue_giver_points`: 0-500). First-guesser/time-scaled scoring and an all-solved bonus are roadmap.
 
 Rules:
 
@@ -408,12 +409,12 @@ Rules:
 - Reconnected players receive their private prompt assignment list again.
 - Reconnected clue-giver sees the active secret prompt if the round is still active.
 - Reconnected guesser sees the submitted photo and whether they already guessed correctly.
-- If clue-giver disconnects before submitting photo, round waits until `photo_time_seconds` expires.
+- If the clue-giver disconnects before submitting, the round waits for reconnect or host reveal; stored deadline expiry does not automatically skip.
 - Host can skip the round if photo submission is blocked.
-- If a guesser disconnects, they can rejoin and continue guessing while the timer is active.
+- If a guesser disconnects, they can rejoin and continue guessing while the host keeps the guessing phase open.
 - Submitted photos remain attached to the round even if the clue-giver disconnects.
 
-## Frontend UX
+## Frontend UX and Follow-Ups (prompt authoring/camera controls are roadmap)
 
 Organizer:
 
@@ -465,10 +466,10 @@ Backend tests:
 - Private prompt assignment sync sends only the viewer's own prompts.
 - Secret prompt is redacted from guesser/spectator sync.
 - Only clue-giver can attach a photo.
-- Pending/failed/wrong-owner media assets are rejected.
+- Missing, expired, wrong-purpose, tampered, and asset-mismatched attachment capabilities are rejected; only the bound owner's ready media record is eligible.
 - Guess normalization accepts aliases.
 - Clue-giver cannot guess.
-- Scoring matches first/later/time-scaled rules.
+- Scoring matches the configured fixed guesser and per-correct-guesser clue-giver points.
 - Reconnect sync preserves correct visibility.
 
 Frontend tests:

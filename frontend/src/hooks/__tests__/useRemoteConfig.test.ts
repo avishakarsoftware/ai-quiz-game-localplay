@@ -80,6 +80,9 @@ describe('useRemoteConfig', () => {
     it('keeps only well-formed announcements and defaults their optional fields', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => okResponse({
             announcements: [
+                null,
+                17,
+                'broken',
                 { id: 'a', text: 'Valid' },                                  // defaults applied
                 { id: 'b', text: 'Warned', type: 'warning', dismissible: false },
                 { id: 'c' },                                                 // no text -> dropped
@@ -95,6 +98,17 @@ describe('useRemoteConfig', () => {
         expect(second.type).toBe('warning');
         expect(second.dismissible).toBe(false);
         expect(third.type).toBe('info');   // 'explode' is not a valid type
+    });
+
+    it('does not lose a kill switch because an announcement is malformed', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => okResponse({
+            operations: { kill_switch: true },
+            announcements: [null, { id: 'valid', text: 'Maintenance' }],
+        })));
+        const { result } = renderHook(() => useRemoteConfig());
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.config.operations.kill_switch).toBe(true);
+        expect(result.current.config.announcements).toHaveLength(1);
     });
 
     it('serves a fresh cache without hitting the network', async () => {

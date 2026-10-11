@@ -1,5 +1,9 @@
 # LocalPlay Word Association Game Spec
 
+## Current repository contract (reviewed 2026-10-10)
+
+Create rooms with `game_type="word_association"` and optional `word_association_config`. Player action `WORD_SUBMIT` carries `word` (the socket also accepts `text`); host actions are `WORD_REVEAL` and `WORD_NEXT_ROUND`. State arrives as `SIMPLE_SOCIAL_SYNC.word_association`, then standard `PODIUM`. The default deck has three seeds, and `round_count` is capped by the available seeds. Reveal groups preserve submitted display text and normalize accents, punctuation, case, and whitespace for matching.
+
 ## Overview
 
 Add **Word Association** as a fast simultaneous text game. A seed word appears, everyone submits the first related word that comes to mind, and the reveal groups matching answers.
@@ -15,7 +19,7 @@ Frontend display name: Word Association
 
 Status: standalone playable MVP implemented on June 24, 2026. `backend/word_association_engine.py` owns seed validation, submission capture, normalization/grouping, majority scoring, redaction, late join, podium transition, standings, and pure tests. LocalPlay now exposes the game in the standalone catalog with default content, room creation, WebSocket sync, organizer/player/spectator UI, rules metadata, reconnect handling, podium flow, and focused API/socket regression tests. Remaining follow-ups are setup/AI authoring UI and broader Playwright matrix coverage.
 
-- Host starts from curated or AI-generated seed words.
+- Host quick-starts curated seed words; the API accepts custom seeds. AI/setup authoring is future work.
 - Players submit one association per round.
 - Players may edit before reveal when allowed.
 - Reveal groups normalized matches while preserving display text.
@@ -49,7 +53,7 @@ Validation:
 - `round_count`: 3-25.
 - Seed text: 1-60 characters.
 - Submission text: 1-80 characters.
-- Minimum players: 1, recommended 4+.
+- Minimum players: 2, recommended 4+.
 
 ## Content Model
 
@@ -73,7 +77,7 @@ export interface WordAssociationGame {
 - A player can see their own submission.
 - After reveal, public state includes grouped answers and player ids.
 
-## AI Prompt Guidance
+## Future AI Prompt Guidance
 
 Generate seed words that are concrete, party-safe, culturally broad, and likely to produce fun clusters. Avoid names of private attendees unless explicitly supplied by the host.
 

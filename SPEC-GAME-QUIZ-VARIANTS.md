@@ -2,11 +2,11 @@
 
 > **Naming note (2026-07-28):** the `odd_one_out` id here is the QUIZ VARIANT ("find the item that
 > breaks the pattern"). A standalone social-deduction game briefly shipped under the same id and has
-> been renamed to `impostor` (SPEC-GAME-IMPOSTOR). If you're searching for the "one player got a
+> been renamed to `impostor` (see `SPEC-GAME-ODD-QUESTION.md`). If you're searching for the "one player got a
 > different question" game, that's Impostor — not this variant.
 
 Status: **Implemented** — the quiz-variant modes reuse the proven quiz runtime (covered by
-`backend/tests/test_quiz_modes.py`). Reviewed 2026-07-21.
+`backend/tests/test_quiz_modes.py`). Reconciled against the repository 2026-10-10.
 
 ## Purpose
 
@@ -72,7 +72,7 @@ Options: Seahorse, Water Polo, Beach Ride, Ocean Pony
 - Wrong answers should be plausible misreads.
 - Avoid clues that require obscure private knowledge.
 - Prefer 4-option multiple choice.
-- True/false questions are allowed only if the model cannot make enough multiple-choice clues, but should be rare.
+- Rebus rounds require exactly four options; true/false fallback is rejected by mode validation.
 
 ### UX
 
@@ -237,12 +237,15 @@ System prompt construction:
 Validation:
 
 - Existing quiz validation remains the baseline.
-- Add optional mode-aware validation:
-  - `fact_fiction`: all options are exactly `True`, `False`.
-  - others: at least most questions have 4 options.
+- Mode-aware validation is mandatory for generated content:
+  - `fact_fiction`: exactly two options in `True`, `False` order (case is normalized), plus a declarative statement of at least five words. Questions, question marks, and meta wording such as "true or false" are rejected.
+  - All other non-classic modes: exactly four options for every question.
+  - Rebus/Emoji: the first 24 characters contain a non-ASCII visual clue or a supported category prefix.
+  - Timeline: question text contains a chronology cue; Odd One Out contains an odd-one-out cue.
+  - Classic quizzes, including manual/custom content, accept two to four choices without changing their text or answer meaning.
 - After provider output is validated and sanitized, backend shuffles each 4-option multiple-choice question and rewrites `answer_index` to the new correct option position. This is required because LLMs frequently put the correct answer first, especially for Rebus Rush and Emoji Charades. Two-option questions are not shuffled; `fact_fiction` keeps `["True", "False"]` order for clarity.
 
-Mode-aware validation can be warning-only in V1 so generation does not fail too aggressively.
+Invalid mode-specific provider output is rejected and retried through the normal generation retry path; it is not warning-only.
 
 ## Frontend Design
 

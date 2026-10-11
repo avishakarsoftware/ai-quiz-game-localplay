@@ -126,3 +126,40 @@ def test_clue_reveal_round_advance_and_podium():
 
     assert state["phase"] == PHASE_PODIUM
     assert final_standings(state)
+
+
+def test_solved_guesses_remain_private_until_answer_reveal():
+    state = create_initial_state(["Avi", "Ruchi"], {"round_count": 3}, now=100)
+    answer = state["config"]["rounds"][0]["answer"]
+    state, result = submit_guess(state, "Avi", answer, now=101)
+
+    assert result["correct"] is True
+    public = public_sync(state)
+    assert public["correct_players"] == ["Avi"]
+    assert public["correct_guessers"][0]["points"] == result["points"]
+    assert "guess" not in public["correct_guessers"][0]
+    assert "guess" not in private_sync(state, "Ruchi")["correct_guessers"][0]
+    assert private_sync(state, "Ruchi")["my_guesses"] == []
+    assert private_sync(state, "Avi")["my_guesses"][0]["guess"] == answer
+    assert state["correct_by_player"]["Avi"]["guess"] == answer
+
+    revealed = public_sync(reveal_answer(state))
+    assert revealed["answer"] == answer
+    assert revealed["correct_guessers"][0]["guess"] == answer
+
+
+def test_single_guess_per_clue_setting_waits_for_next_clue():
+    state = create_initial_state(["Avi", "Ruchi"], {
+        "round_count": 3,
+        "allow_multiple_guesses_per_clue": False,
+        "max_guesses_per_player_per_clue": 3,
+    }, now=100)
+    state, _ = submit_guess(state, "Avi", "wrong answer", now=101)
+    assert private_sync(state, "Avi")["config"]["max_guesses_per_clue"] == 1
+
+    with pytest.raises(ValueError, match="next clue"):
+        submit_guess(state, "Avi", "another wrong answer", now=102)
+
+    state = next_clue(state, now=103)
+    state, result = submit_guess(state, "Avi", state["config"]["rounds"][0]["answer"], now=104)
+    assert result["correct"] is True

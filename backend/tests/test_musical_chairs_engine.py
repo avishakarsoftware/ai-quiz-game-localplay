@@ -70,3 +70,19 @@ def test_choose_eliminated_removes_slowest_or_no_tap_players():
 def test_intensity_ramp_increases_over_rounds():
     assert intensity_for_round(1, 5, enabled=True) < intensity_for_round(5, 5, enabled=True)
     assert intensity_for_round(5, 5, enabled=False) == 0.35
+
+
+def test_rank_grabs_preserves_receipt_order_within_one_displayed_millisecond():
+    grabs = {"Zoe": 10.1001, "Alice": 10.1004, "Nia": 10.2}
+    ranked = rank_grabs(["Alice", "Nia", "Zoe"], grabs, stop_time=10)
+    assert [row["nickname"] for row in ranked] == ["Zoe", "Alice", "Nia"]
+    assert [row["reaction_ms"] for row in ranked[:2]] == [100, 100]
+    assert choose_eliminated(["Alice", "Zoe"], grabs, 10, 1) == ["Alice"]
+
+
+def test_physical_mode_matches_one_host_selected_elimination_per_round():
+    physical = validate_config({"gameplay_mode": "physical", "eliminations_per_round": 3})
+    digital = validate_config({"gameplay_mode": "digital", "eliminations_per_round": 3})
+    assert physical["eliminations_per_round"] == 1
+    assert total_rounds(7, physical["eliminations_per_round"]) == 6
+    assert digital["eliminations_per_round"] == 3

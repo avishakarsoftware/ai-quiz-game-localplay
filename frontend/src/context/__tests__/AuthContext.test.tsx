@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     iapLogOut: vi.fn(),
     track: vi.fn(),
     identify: vi.fn(),
+    resetIdentity: vi.fn(),
 }));
 
 vi.mock('../../utils/storage', () => ({
@@ -35,6 +36,7 @@ vi.mock('../../utils/iap', () => ({
 vi.mock('../../utils/analytics', () => ({
     track: mocks.track,
     identify: mocks.identify,
+    resetIdentity: mocks.resetIdentity,
 }));
 
 function Harness() {
@@ -76,8 +78,42 @@ describe('AuthProvider', () => {
 
         expect(mocks.storageSignOut).toHaveBeenCalledTimes(1);
         expect(mocks.iapLogOut).toHaveBeenCalledTimes(1);
+        expect(mocks.resetIdentity).toHaveBeenCalledTimes(1);
+        expect(mocks.identify).toHaveBeenLastCalledWith('test-device-id', { signed_in: false });
         expect(refresh).toHaveBeenCalledTimes(2);
 
         window.removeEventListener('refresh-sparks', refresh);
+    });
+
+    it('clears analytics identity when a cached session is rejected', async () => {
+        mocks.getUserProfile.mockReturnValue({ id: 'old-user', email: 'old@example.com' });
+        mocks.getSessionToken.mockReturnValue('expired-token');
+        mocks.fetchUserProfile.mockResolvedValue({ unauthorized: true });
+        render(<AuthProvider><Harness /></AuthProvider>);
+        await waitFor(() => expect(mocks.resetIdentity).toHaveBeenCalledTimes(1));
+        expect(mocks.identify).toHaveBeenLastCalledWith('test-device-id', { signed_in: false });
+        expect(mocks.iapLogOut).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns purchases and spark display to the device wallet after a failed sign-in', async () => {
+        mocks.signInWithBackend.mockRejectedValue(new Error('Sign-in rejected'));
+        const refresh = vi.fn();
+        window.addEventListener('refresh-sparks', refresh);
+        function FailedSignInHarness() {
+            const { user, signIn } = useAuth();
+            return <button onClick={() => { void signIn('google', 'bad-token').catch(() => {}); }}>
+                {user ? 'signed in' : 'Try sign-in'}
+            </button>;
+        }
+        try {
+            render(<AuthProvider><FailedSignInHarness /></AuthProvider>);
+            await userEvent.setup().click(screen.getByRole('button', { name: 'Try sign-in' }));
+            await waitFor(() => expect(mocks.iapLogOut).toHaveBeenCalledTimes(1));
+            expect(mocks.storageSignOut).toHaveBeenCalledTimes(1);
+            expect(mocks.identify).toHaveBeenLastCalledWith('test-device-id', { signed_in: false });
+            expect(refresh).toHaveBeenCalledTimes(1);
+        } finally {
+            window.removeEventListener('refresh-sparks', refresh);
+        }
     });
 });

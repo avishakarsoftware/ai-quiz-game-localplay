@@ -450,13 +450,14 @@ class TestQuizUpdate:
         })
         assert res.status_code == 422
 
-    def test_update_quiz_three_options_rejected(self):
+    def test_update_quiz_three_options_preserved(self):
         qid = seed_quiz()
         res = client.put(f"/quiz/{qid}", json={
             "quiz_title": "T",
             "questions": [{"id": 1, "text": "Q?", "options": ["A", "B", "C"], "answer_index": 0}],
         })
-        assert res.status_code == 422
+        assert res.status_code == 200
+        assert res.json()["quiz"]["questions"][0]["options"] == ["A", "B", "C"]
 
     def test_update_quiz_tf_valid(self):
         qid = seed_quiz()

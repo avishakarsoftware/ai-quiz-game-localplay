@@ -26,6 +26,7 @@ import jwt
 import httpx
 
 import config
+from integration_clock import resource_updated_at
 config.setup_logging()
 
 from quiz_engine import quiz_engine, _extract_gemini_text, _sanitize_quiz, _validate_quiz, VALID_QUIZ_MODES, DailyLimitExceeded, AIQuotaExceeded
@@ -50,6 +51,7 @@ from never_have_i_ever_engine import validate_config as validate_never_have_i_ev
 from word_association_engine import validate_config as validate_word_association_config
 from acronym_engine import validate_config as validate_acronym_config
 from photo_clue_engine import validate_config as validate_photo_clue_config
+from photo_clue_media import issue_attachment_token as issue_photo_clue_attachment_token
 from poker_engine import validate_config as validate_poker_config
 from impostor_engine import validate_config as validate_impostor_config
 from odd_question_engine import validate_config as validate_odd_question_config
@@ -1092,7 +1094,7 @@ def _store_quiz_image_asset(quiz_id: str, question: dict, image_b64: str, wallet
     asset = media_store.create_generated_image(
         image_b64,
         owner_wallet_id=wallet_id,
-        provider="stable_diffusion",
+        provider=config.IMAGE_GENERATION_PROVIDER,
         prompt=question.get("image_prompt") or question.get("text") or "",
         alt_text=question.get("text") or question.get("image_prompt") or "Generated quiz image",
         ttl_seconds=config.QUIZ_TTL_SECONDS,
@@ -1299,11 +1301,11 @@ class QuizUpdateRequest(BaseModel):
             if not all(k in q for k in ('id', 'text', 'options', 'answer_index')):
                 raise ValueError('Question missing required fields')
             opts = q['options']
-            if not isinstance(opts, list) or len(opts) not in (2, 4):
-                raise ValueError('Question must have 2 or 4 options')
+            if not isinstance(opts, list) or not 2 <= len(opts) <= 4:
+                raise ValueError('Question must have 2 to 4 options')
             if not all(isinstance(opt, str) for opt in opts):
                 raise ValueError('Each option must be a string')
-            if not isinstance(q['answer_index'], int) or not (0 <= q['answer_index'] < len(opts)):
+            if type(q['answer_index']) is not int or not (0 <= q['answer_index'] < len(opts)):
                 raise ValueError('Invalid answer_index')
         return v
 
@@ -1530,7 +1532,7 @@ async def create_media_upload_url(request: MediaUploadUrlRequest, req: Request):
     expires = int(time.time()) + config.MEDIA_UPLOAD_TOKEN_TTL_SECONDS
     token = _sign_media_upload(storage_path, expires, request.mime_type, request.bytes)
     asset = db.create_media_asset(asset_id, wallet_id, storage_path, public_url, request.mime_type, request.bytes)
-    return {
+    response = {
         "asset": asset,
         "upload": {
             "url": config.MEDIA_UPLOAD_URL,
@@ -1543,6 +1545,9 @@ async def create_media_upload_url(request: MediaUploadUrlRequest, req: Request):
             },
         },
     }
+    if request.purpose == "photo_clue_submission":
+        response["attachment_token"] = issue_photo_clue_attachment_token(asset_id, wallet_id)
+    return response
 
 
 @app.post("/media/{asset_id}/finalize")
@@ -2334,6 +2339,7 @@ async def _send_revelry_callback(event_type: str, payload: dict[str, Any]) -> No
     callback_started = time.perf_counter()
     event_type = _callback_event_type(event_type)
     session = payload.get("session") if isinstance(payload.get("session"), dict) else {}
+    content = payload.get("content") if isinstance(payload.get("content"), dict) else {}
     result_summary = _safe_result_summary(payload.get("result_summary") or payload.get("result"))
     session_id = payload.get("session_id") or session.get("session_id") or session.get("id")
     content_id = payload.get("content_id") or payload.get("localplay_content_id")
@@ -2347,7 +2353,7 @@ async def _send_revelry_callback(event_type: str, payload: dict[str, Any]) -> No
     body = {
         "event_id": event_id,
         "event_type": event_type,
-        "occurred_at": _iso(_now_ts()),
+        "occurred_at": payload.get("occurred_at") or resource_updated_at(session) or resource_updated_at(content),
         "host_app": payload.get("host_app") or session.get("host_app") or "revelry",
         "external_container_type": payload.get("external_container_type") or session.get("external_container_type") or "party",
         "external_container_id": payload.get("external_container_id") or session.get("external_container_id"),
@@ -2452,7 +2458,7 @@ def _quiz_pack_summary(pack: dict) -> dict:
         "thumbnail_url": thumbnail_url,
         "question_count": pack.get("question_count") or len(pack.get("questions") or []),
         "created_by": "",
-        "updated_at": _iso(pack.get("updated_at")),
+        "updated_at": resource_updated_at(pack),
         "last_used_at": None,
         "action_requirements": {
             "start": ["operate_game"],
@@ -2503,7 +2509,7 @@ def _game_content_summary(content: dict) -> dict:
         "item_count": count,
         "time_limit": payload.get("time_limit"),
         "created_by": "",
-        "updated_at": _iso(content.get("updated_at")),
+        "updated_at": resource_updated_at(content),
         "last_used_at": None,
         "action_requirements": {
             "start": ["operate_game"],
@@ -2601,6 +2607,7 @@ def _format_session(session: dict) -> dict:
         "completed_at": _iso(session.get("completed_at")),
         "expires_at": _iso(session.get("expires_at")),
         "last_activity_at": _iso(last_activity_at),
+        "updated_at": resource_updated_at(session),
     }
 
 
@@ -2874,7 +2881,8 @@ def _create_revelry_session_from_context(
             "superseded_by_session_id": session_id,
         })
         supersede_db_ms = _elapsed_ms(supersede_db_started)
-        session["_superseded_session"] = superseded or db.get_game_session(active["id"]) or active
+        if superseded:
+            session["_superseded_session"] = superseded
     logger.info(
         "revelry_session_create_timing session_id=%s external_container_id=%s game_type=%s content_id=%s active_session_id=%s total_ms=%s active_lookup_ms=%s content_ms=%s wallet_ms=%s room_ms=%s session_db_ms=%s supersede_db_ms=%s",
         session_id,
@@ -2947,7 +2955,9 @@ async def _cancel_revelry_session(
         "closed_message": message,
         "last_activity_at": now,
         "updated_at": now,
-    }) or session
+    })
+    if not updated:
+        raise HTTPException(status_code=404, detail="Session not found")
     if session.get("room_code"):
         await socket_manager.close_room(
             session["room_code"],
@@ -3427,7 +3437,7 @@ async def delete_revelry_content(
     content = pack or db.get_game_content(wallet_id, content_id)
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
-    deleted = db.delete_quiz_pack(wallet_id, content_id) if pack else db.delete_game_content(wallet_id, content_id)
+    deleted = db.delete_quiz_pack(wallet_id, content_id, return_snapshot=True) if pack else db.delete_game_content(wallet_id, content_id, return_snapshot=True)
     if not deleted:
         raise HTTPException(status_code=404, detail="Content not found")
     await _send_revelry_callback("content.deleted", {
@@ -3437,7 +3447,7 @@ async def delete_revelry_content(
         "content_id": content_id,
         "localplay_content_id": content_id,
         "status": "deleted_by_host",
-        "content": {**_prepared_content_summary(content), "status": "deleted_by_host"},
+        "content": {**_prepared_content_summary(deleted), "status": "deleted_by_host"},
     })
     return {"status": "deleted_by_host", "localplay_content_id": content_id, "workspace": _workspace_payload(context)}
 
@@ -3758,7 +3768,7 @@ async def delete_revelry_party_game_content(content_id: str, request: RevelryPar
     content = pack or db.get_game_content(wallet_id, content_id)
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
-    deleted = db.delete_quiz_pack(wallet_id, content_id) if pack else db.delete_game_content(wallet_id, content_id)
+    deleted = db.delete_quiz_pack(wallet_id, content_id, return_snapshot=True) if pack else db.delete_game_content(wallet_id, content_id, return_snapshot=True)
     if not deleted:
         raise HTTPException(status_code=404, detail="Content not found")
     await _send_revelry_callback("content.deleted", {
@@ -3768,7 +3778,7 @@ async def delete_revelry_party_game_content(content_id: str, request: RevelryPar
         "content_id": content_id,
         "localplay_content_id": content_id,
         "status": "deleted_by_host",
-        "content": {**_prepared_content_summary(content), "status": "deleted_by_host"},
+        "content": {**_prepared_content_summary(deleted), "status": "deleted_by_host"},
     })
     return {"status": "deleted_by_host", "localplay_content_id": content_id, "workspace": _workspace_payload(context)}
 
@@ -3931,6 +3941,9 @@ async def resolve_revelry_launch_token(launch_token: str, scope: str = ""):
         "scope": claims.get("scope"),
         "return_url": claims.get("return_url", ""),
         "launch_context": claims.get("launch_context") or {},
+        "host_app": session.get("host_app"),
+        "external_container_type": session.get("external_container_type"),
+        "external_container_id": session.get("external_container_id"),
     }
     if claims.get("scope") == "organizer":
         payload["organizer_token"] = session.get("organizer_token", "")
@@ -3964,6 +3977,7 @@ async def get_revelry_session_results(session_id: str, req: Request):
     return {
         "session_id": session_id,
         "status": _format_session(session)["status"],
+        "updated_at": resource_updated_at(session),
         "result": result,
         "result_summary": result,
         "feed_card": {
@@ -4143,13 +4157,15 @@ class QuizImportRequest(BaseModel):
         if not isinstance(v["questions"], list) or len(v["questions"]) == 0:
             raise ValueError("Quiz must have at least 1 question")
         for q in v["questions"]:
+            if not isinstance(q, dict):
+                raise ValueError("Each question must be an object")
             if not all(k in q for k in ("id", "text", "options", "answer_index")):
                 raise ValueError("Question missing required fields")
-            if not isinstance(q["options"], list) or len(q["options"]) not in (2, 4):
-                raise ValueError("Question must have 2 or 4 options")
+            if not isinstance(q["options"], list) or not 2 <= len(q["options"]) <= 4:
+                raise ValueError("Question must have 2 to 4 options")
             if not all(isinstance(opt, str) for opt in q["options"]):
                 raise ValueError("Each option must be a string")
-            if not isinstance(q["answer_index"], int) or not (0 <= q["answer_index"] < len(q["options"])):
+            if type(q["answer_index"]) is not int or not (0 <= q["answer_index"] < len(q["options"])):
                 raise ValueError("Invalid answer_index")
         return v
 
@@ -5534,7 +5550,10 @@ async def get_game_history(req: Request):
 
 @app.get("/stats")
 async def get_stats(req: Request):
-    """Lifetime hosting stats for the requesting wallet (SPEC-GAME-STATS).
+    """Hosting stats for the requesting wallet (SPEC-GAME-STATS).
+
+    SQLite aggregates all stored results. Supabase bounds its aggregation to the
+    latest 1000 results and reports that scope when older rows are excluded.
 
     Never 500s: if the `game_results` table isn't applied yet (or the DB blips), this returns
     zeroed stats with `available: false` so the UI can hide the section instead of erroring.
@@ -5558,6 +5577,9 @@ async def get_stats(req: Request):
             "last_played_at": 0,
             "by_game_type": [],
             "recent": [],
+            "stats_scope": "unavailable",
+            "stats_row_limit": None,
+            "stats_truncated": False,
         }
     # Resolve the catalog's display name so the UI never shows a raw id like "would_you_rather".
     fav_type = stats.get("favorite_game_type") or ""
@@ -5856,9 +5878,17 @@ async def stripe_webhook(req: Request):
         logger.info("Skipping duplicate webhook event: %s", event_id)
         return {"status": "ok", "detail": "already processed"}
 
-    if event["type"] == "checkout.session.completed":
+    if event["type"] in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
         session = event["data"]["object"]
+        if session.get("payment_status") not in ("paid", "no_payment_required"):
+            # Completing checkout can precede a delayed payment. The later success event
+            # has its own event ID and is credited once using the same session reference.
+            if event_id:
+                db.mark_webhook_event_processed(event_id)
+            return {"status": "ok", "detail": "Payment not settled"}
         stripe_session_id = session.get("id", "")
+        if not stripe_session_id:
+            raise HTTPException(status_code=400, detail="Missing checkout session id")
         metadata = session.get("metadata", {})
         device_id = metadata.get("device_id", "")
         wallet_id = metadata.get("wallet_id", "")
@@ -6409,7 +6439,8 @@ async def public_config():
     cfg = dict(base) if isinstance(base, dict) else {}
     # Backend is authoritative for spend costs (config.json can't override real spending).
     cfg["economy"] = {"cost_room": config.COST_ROOM, "cost_generate": config.COST_GENERATE}
-    ff = dict(cfg.get("feature_flags") or {})
+    raw_flags = cfg.get("feature_flags")
+    ff = dict(raw_flags) if isinstance(raw_flags, dict) else {}
     ff.setdefault("show_upgrade_button", True)
     ff.setdefault("enable_image_generation", True)
     ff["ads_enabled"] = False  # no ad SDK yet (SPEC-ADS)

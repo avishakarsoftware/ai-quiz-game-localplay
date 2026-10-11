@@ -17,6 +17,12 @@ Status: **Bluff MVP implemented locally; Revelry quick-start eligible**. The sha
 
 ## Goals
 
+Repository reconciliation: 2026-10-10. Shared card primitives and the default-config Bluff runtime are implemented.
+Custom standalone Bluff setup, automatic turn/challenge timers, and host removal/skip controls below remain design targets.
+`challenge_deadline` is currently informational: the socket runtime resolves windows through `BLUFF_RESOLVE` or
+`BLUFF_CONTINUE`, and does not enforce deadline expiry on challenges. Live host-app policy is separately controlled
+by the deployment ledger in `DEPLOY.md`; static eligibility does not prove current hosted exposure.
+
 - Create shared card primitives for future card games.
 - Support big groups by allowing multiple standard decks in one room.
 - Make Bluff the first concrete game on top of the engine.
@@ -94,7 +100,7 @@ Runtime wiring:
 - `START_GAME` validates at least 3 connected players, charges room start normally, locks the room, deals cards server-side, and broadcasts `BLUFF_SYNC`.
 - Player sockets receive `private_sync`, which includes only that player's cards.
 - Organizer and spectator sockets receive `public_sync`, which includes hand counts only.
-- Supported WS actions: `BLUFF_PLAY`, `BLUFF_PASS`, `BLUFF_CHALLENGE`, `BLUFF_CONTINUE`, and organizer `END_QUIZ`.
+- Supported WS actions: `BLUFF_PLAY`, `BLUFF_PASS`, `BLUFF_CHALLENGE`, `BLUFF_RESOLVE`, `BLUFF_CONTINUE`, and organizer `END_QUIZ`.
 - The current MVP uses host/player-driven continue for challenge windows; automatic challenge timers can be added after remote UX testing.
 
 ## Host Controller vs Player Seat
@@ -331,6 +337,10 @@ Client to server (the play message is `BLUFF_PLAY`):
 
 Server to client:
 
+The shipped sync envelope is `{ "type": "BLUFF_SYNC", "game_type": "bluff", "bluff": {} }`.
+Challenge reveal additionally broadcasts `BLUFF_REVEAL`; final results use shared `PODIUM`.
+The `state` envelope and standalone `BLUFF_CLAIM` / `BLUFF_WINNER` events below are original design examples.
+
 ```json
 { "type": "BLUFF_SYNC", "state": {} }
 { "type": "BLUFF_CLAIM", "actor_id": "p1", "claimed_rank": "A", "claimed_count": 2 }
@@ -344,10 +354,13 @@ Validation:
 - Only non-actor connected players can challenge.
 - Played card ids must exist in the actor's hand.
 - `claimed_count` must equal the number of submitted card ids.
-- A player cannot challenge after the deadline.
+- Deadline enforcement is deferred with automatic challenge timers; current manual windows remain open until resolved.
 - A player cannot play zero cards unless using `BLUFF_PASS`.
 
 ## Reconnects, Disconnects, and Leaving
+
+Implemented: reconnect restores the seated player's hand and redacted public state, and the room is locked after start.
+Automatic disconnect handling and host card-removal behavior in the following bullets are follow-up targets.
 
 - Reconnected players receive their current hand and the public room state.
 - If the active player disconnects, keep their turn alive for `turn_time_seconds`.

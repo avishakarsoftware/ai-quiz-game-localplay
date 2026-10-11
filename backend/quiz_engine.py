@@ -351,13 +351,13 @@ def _validate_quiz(quiz_data: dict, attempt: int, mode: str = "classic") -> bool
         return False
 
     for q in quiz_data["questions"]:
-        if not all(k in q for k in ("id", "text", "options", "answer_index")):
+        if not isinstance(q, dict) or not all(k in q for k in ("id", "text", "options", "answer_index")):
             logger.warning("Attempt %d: Question missing required fields: %s", attempt, q)
             return False
-        if not isinstance(q["options"], list) or len(q["options"]) not in (2, 4):
-            logger.warning("Attempt %d: Question %s has invalid options count: %d", attempt, q.get("id"), len(q.get("options", [])))
+        if not isinstance(q["options"], list) or not 2 <= len(q["options"]) <= 4:
+            logger.warning("Attempt %d: Question %s has invalid options", attempt, q.get("id"))
             return False
-        if not isinstance(q["answer_index"], int) or not (0 <= q["answer_index"] < len(q["options"])):
+        if type(q["answer_index"]) is not int or not (0 <= q["answer_index"] < len(q["options"])):
             logger.warning("Attempt %d: Question %s has invalid answer_index", attempt, q.get("id"))
             return False
     for q in quiz_data["questions"]:

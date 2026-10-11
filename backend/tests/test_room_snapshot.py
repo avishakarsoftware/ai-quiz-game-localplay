@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+import stat
 import time
 
 import pytest
@@ -102,6 +103,17 @@ class TestRestoreNormalization:
 
 
 class TestLifecycle:
+    def test_snapshots_are_private_even_with_permissive_umask(self, snapshot_dir):
+        room = _quiz_room()
+        previous_umask = os.umask(0)
+        try:
+            room_snapshot.save_all({room.room_code: room})
+        finally:
+            os.umask(previous_umask)
+        assert stat.S_IMODE(snapshot_dir.stat().st_mode) == 0o700
+        assert stat.S_IMODE((snapshot_dir / "SNAP01.json").stat().st_mode) == 0o600
+        assert not list(snapshot_dir.glob("*.tmp"))
+
     def test_expired_snapshot_skipped_and_removed(self, snapshot_dir):
         room = _quiz_room()
         room.last_activity = time.time() - 99999
@@ -151,6 +163,18 @@ class TestLifecycle:
         (snapshot_dir / "ZZZZ99.json").write_text("{not json")
         restored = _restore_one()
         assert [r.room_code for r in restored] == ["SNAP01"]
+
+    @pytest.mark.parametrize("payload", [[], None, {"last_activity": "broken"},
+                                        {"last_activity": []}, {"last_activity": 10 ** 400},
+                                        {"last_activity": "NaN"},
+                                        {"last_activity": "Infinity"}])
+    def test_invalid_snapshot_metadata_does_not_block_other_rooms(self, snapshot_dir, payload):
+        room = _quiz_room()
+        room_snapshot.save_all({room.room_code: room})
+        # Sort before the healthy room to prove recovery continues after rejection.
+        (snapshot_dir / "AAAA00.json").write_text(json.dumps(payload))
+        assert [r.room_code for r in _restore_one()] == ["SNAP01"]
+        assert (snapshot_dir / "AAAA00.json").exists(), "retain damaged evidence for diagnosis"
 
 
 class TestManagerIntegration:

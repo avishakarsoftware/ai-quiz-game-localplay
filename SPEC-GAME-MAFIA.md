@@ -2,7 +2,16 @@
 
 Status: **implemented standalone MVP locally; Revelry quick-start eligible; gamma multi-device Playwright QA pending**
 
-Last updated: June 24, 2026
+Last reconciled against the repository: October 10, 2026
+
+Current implementation: `mafia_engine.py` owns roles, phases, Night Reads, safe public/private
+sync, and result summaries; `socket_manager.py` owns phase timers. Standalone currently
+quick-starts default settings rather than presenting the full setup form described below.
+Public phases use the `MAFIA_*` constants and shared `PODIUM`. The socket contract sends
+personalized `MAFIA_SYNC`, private action/read/vote ACKs, and shared `PODIUM`; the additional
+narration/phase event names below are original design targets, not required existing messages.
+Static Revelry eligibility is implemented; current hosted exposure is policy controlled and
+must be taken from `DEPLOY.md` rather than inferred from this local reconciliation.
 
 The current implementation is a deterministic, in-memory standalone runtime that
 works without AI narration or durable party/host-app authoring. It includes Night Reads so every living player has a private night
@@ -108,13 +117,13 @@ LOBBY → ROLE_REVEAL → NIGHT → DAY_DISCUSSION → DAY_VOTE → VOTE_RESULT 
 
 **ROLE_REVEAL**: Each player's phone shows their secret role with a brief description. The organizer/TV screen shows a dramatic "Roles have been assigned..." message. This phase lasts a configurable duration (default 10 seconds) so players can read their role.
 
-**NIGHT**: The app walks through night actions in a fixed order, but every living player receives a private night prompt so action roles are not socially exposed by being the only people interacting with their phones:
+**NIGHT**: The app collects all role actions concurrently during one shared night timer, then resolves them together. Every living player also receives a private night prompt so action roles are not socially exposed by being the only people interacting with their phones:
 1. Mafia members see a list of living Town players and vote on a target. If multiple Mafia members exist, majority rules; ties are broken by the first vote. Mafia members can see each other's identity.
 2. Detective chooses a living player to investigate. The result (Mafia or Town) is shown privately.
 3. Doctor chooses a living player to protect. The Doctor may protect themselves (v1 allows self-protection; the host can disable it in setup).
 4. Villagers, and optionally special roles after submitting their real action, answer a lightweight **Night Read** prompt such as "Who do you suspect is Mafia?", "Who feels definitely Town?", or "Who is playing the best game so far?"
 
-Each night action has a configurable timer (default 30 seconds). If a player with a night action doesn't act before the timer expires, a random valid choice is made (Mafia target) or no action is taken (Detective skips, Doctor skips).
+The shared night timer defaults to 30 seconds. If no Mafia votes arrive, resolution selects a random valid Town target; otherwise it uses submitted Mafia votes. Missing Detective/Doctor actions are skipped.
 
 Players without night actions should never see a passive "wait for dawn" screen as their primary night UI. They receive a social-read prompt that requires the same kind of quiet phone interaction as action roles. This preserves the in-person stealth of Mafia: everyone checks their phone, everyone appears to be thinking, and no one can infer role ownership merely from who is tapping.
 
@@ -155,7 +164,7 @@ Eliminated players:
 
 ## Setup / Authoring
 
-### Standalone Setup
+### Standalone Setup (Settings API; Full Form Planned)
 
 The host configures:
 
@@ -413,6 +422,7 @@ cleanup pattern as existing room timers.
 ### Player to Server
 
 - `MAFIA_NIGHT_ACTION` — Submit a night action. Payload: `{ "target": "player_nickname" }`. The server infers the action type from the player's role.
+- `MAFIA_NIGHT_READ` — Submit the quiet social-read selection with `{ "target": "player_nickname" }`; the server supplies the current prompt id.
 - `MAFIA_VOTE` — Submit a Day vote. Payload: `{ "target": "player_nickname" }` or `{ "target": "skip" }`.
 
 ### Server to All (Broadcast)
@@ -525,10 +535,10 @@ The organizer has moderator controls: skip timer, extend discussion, end game.
 Each player's phone shows their private role and phase-appropriate actions:
 
 - **ROLE_REVEAL**: "You are the Detective. Each night, you can investigate one player." Role-specific description and icon.
-- **NIGHT (Mafia)**: List of living Town players. Tap to target. See other Mafia members' names. If multiple Mafia, see who they targeted. Timer.
+- **NIGHT (Mafia)**: List of living Town players. Tap to target. See living Mafia teammates' names and the viewer's submitted target; teammate vote targets remain private. Timer.
 - **NIGHT (Detective)**: List of living players (except self). Tap to investigate. Timer.
 - **NIGHT (Doctor)**: List of living players (including self if allowed). Tap to protect. Timer.
-- **NIGHT (Villager/no action)**: "Night has fallen. Wait for dawn." Ambient screen.
+- **NIGHT (Villager/no action)**: Answer the private Night Read by choosing another living player, then show its submitted state until dawn.
 - **DAY_DISCUSSION**: Night result. Discussion timer. "Discuss with the group — who do you suspect?"
 - **DAY_VOTE**: List of living players. Tap to vote. "Skip" option. Timer.
 - **VOTE_RESULT**: Tally. Eliminated player reveal.
@@ -580,8 +590,8 @@ Do not include:
   "engine_family": "mafia",
   "title": "Mafia",
   "description": "Secret roles, night kills, and daytime accusations. Find the Mafia before they outnumber you.",
-  "status": "planned",
-  "launchable": false,
+  "status": "live",
+  "launchable": true,
   "min_players": 6,
   "max_players": 15,
   "estimated_minutes": 20,
@@ -596,7 +606,7 @@ Do not include:
 }
 ```
 
-Keep `launchable = false` until:
+The standalone launch gate is satisfied. The original gate required:
 - Standalone runtime is playable end-to-end.
 - Night actions, voting, elimination, and win conditions all work.
 - Template narration works without revealing private actions.
@@ -778,7 +788,7 @@ Update `backend/main.py`:
 validate_mafia_config({"game_title": title or "Mafia"})
 ```
 
-- For `POST /rooms`, when `game_type == "mafia"`, use `request.mafia_config`
+- For `POST /room/create`, when `game_type == "mafia"`, use `request.mafia_config`
   or validated defaults.
 
 Keep `launchable = false` in host-app/Revelry catalogs until the acceptance

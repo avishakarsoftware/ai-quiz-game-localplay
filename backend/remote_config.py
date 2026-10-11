@@ -38,6 +38,9 @@ async def _fetch_remote_config() -> Optional[dict]:
             res = await client.get(REMOTE_CONFIG_URL)
             if res.status_code == 200:
                 data = res.json()
+                if not isinstance(data, dict):
+                    logger.warning("Remote config must be a JSON object; keeping last good config")
+                    return None
                 _cached_config = data
                 _last_fetch = time.time()
                 logger.debug("Remote config fetched: ai_models=%s", data.get("ai_models"))
@@ -142,7 +145,7 @@ async def init():
     if not REMOTE_CONFIG_URL:
         logger.warning("REMOTE_CONFIG_URL not configured — using hardcoded AI model defaults")
     await _fetch_remote_config()
-    ai = _cached_config.get("ai_models", {})
+    ai = _get_ai_models()
     logger.info("Remote AI config: free=%s, paid=%s, provider=%s",
                 ai.get("free_model", "default"), ai.get("paid_model", "default"),
                 ai.get("provider", "default"))

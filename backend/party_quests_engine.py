@@ -1,6 +1,7 @@
 import random
 import re
 import time
+import uuid
 from typing import Any
 
 from engine_common import clamp_int as _clamp_int, make_clean_text
@@ -208,7 +209,12 @@ def create_confirmation_request(state: dict, player_id: str, quest_id: str, part
     timestamp = now or time.time()
     next_boards = {pid: [dict(entry) for entry in board] for pid, board in boards.items()}
     next_item = _board_item({"quest_boards_by_player": next_boards}, player_id, quest_id)
-    pending = dict(state.get("pending_confirmations", {}))
+    # A retry/reselection replaces the previous request for this quest. Otherwise an older
+    # recipient could deny an already-confirmed quest or record a second completion.
+    pending = {
+        request_id: request for request_id, request in state.get("pending_confirmations", {}).items()
+        if not (request.get("requester_id") == player_id and request.get("quest_id") == quest_id)
+    }
     request = None
 
     if setup.get("confirmation_mode") == "honor":
@@ -229,7 +235,7 @@ def create_confirmation_request(state: dict, player_id: str, quest_id: str, part
         }]
         return _with_scores({**state, "quest_boards_by_player": next_boards, "completed_confirmations": completions}), None
 
-    request_id = f"quest_req_{int(timestamp * 1000)}_{len(pending) + 1}"
+    request_id = f"quest_req_{uuid.uuid4().hex}"
     next_item.update({
         "status": "pending_confirmation",
         "confirmed_by_player_id": partner_player_id,
@@ -251,6 +257,8 @@ def create_confirmation_request(state: dict, player_id: str, quest_id: str, part
 
 
 def apply_confirmation(state: dict, request_id: str, confirmer_id: str, accepted: bool, now: float | None = None) -> tuple[dict, dict]:
+    if state.get("phase") not in {PHASE_ACTIVE, PHASE_FINAL_CALL}:
+        raise ValueError("Party Quests is not accepting completions now")
     request_id = str(request_id or "")
     confirmer_id = str(confirmer_id or "").strip()
     pending = dict(state.get("pending_confirmations", {}))
@@ -259,13 +267,22 @@ def apply_confirmation(state: dict, request_id: str, confirmer_id: str, accepted
         raise ValueError("That confirmation is no longer available")
     if request.get("partner_player_id") != confirmer_id:
         raise ValueError("Only the selected person can confirm this quest")
-    pending.pop(request_id, None)
-
     timestamp = now or time.time()
+    if timestamp >= float(request.get("expires_at", timestamp + 1)):
+        raise ValueError("That confirmation has expired; request it again")
+    setup = state.get("config", {})
+    if accepted and not setup.get("allow_repeat_partner") and _partner_completion_count(
+        state, request["requester_id"], confirmer_id
+    ) >= int(setup.get("max_completions_per_partner", 2)):
+        raise ValueError("Find a different person for this quest")
+
+    pending.pop(request_id, None)
     boards = {pid: [dict(entry) for entry in board] for pid, board in state.get("quest_boards_by_player", {}).items()}
     item = _board_item({"quest_boards_by_player": boards}, request["requester_id"], request["quest_id"])
     if not item:
         raise ValueError("Quest was not found")
+    if item.get("status") != "pending_confirmation" or item.get("request_id") != request_id:
+        raise ValueError("That confirmation is no longer available")
 
     if accepted:
         item.update({

@@ -91,6 +91,8 @@ def validate_config(raw: Optional[dict]) -> dict:
     except (TypeError, ValueError):
         eliminations = 1
     eliminations = int(_clamp(eliminations, 1, 10))
+    if gameplay_mode == "physical":
+        eliminations = 1
 
     return MusicalChairsConfig(
         game_title=title,
@@ -128,7 +130,11 @@ def rank_grabs(active_players: Iterable[str], grabs: Dict[str, float], stop_time
             "nickname": nickname,
             "reaction_ms": reaction_ms,
         })
-    ranked.sort(key=lambda item: (item["reaction_ms"] is None, item["reaction_ms"] if item["reaction_ms"] is not None else 10**12, item["nickname"].lower()))
+    ranked.sort(key=lambda item: (
+        grabs.get(item["nickname"]) is None,
+        grabs.get(item["nickname"], float("inf")),
+        item["nickname"].lower(),
+    ))
     for index, item in enumerate(ranked, start=1):
         item["rank"] = index
     return ranked

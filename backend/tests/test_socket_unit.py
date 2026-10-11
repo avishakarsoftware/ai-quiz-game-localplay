@@ -532,7 +532,14 @@ class TestSimpleSocialGames:
 
 class TestPhotoClueGame:
     @pytest.mark.asyncio
-    async def test_photo_clue_upload_guess_reveal_and_next_round(self):
+    async def test_photo_clue_upload_guess_reveal_and_next_round(self, monkeypatch):
+        import db
+        from photo_clue_media import issue_attachment_token
+
+        monkeypatch.setattr(config, "MEDIA_UPLOAD_SECRET", "photo-clue-socket-test-secret-only-for-isolated-regressions-01234567")
+        owner = "photo-clue-player-wallet"
+        photo_url = "https://media.example.test/uploads/photo.webp"
+        db.create_media_asset("asset_1", owner, "uploads/photo.webp", photo_url, "image/webp", 1234, status="ready")
         room = make_photo_clue_room()
         sm = SocketManager()
         organizer = add_organizer(room, "org-1")
@@ -546,9 +553,12 @@ class TestPhotoClueGame:
         assert alice.last("PHOTO_CLUE_SYNC")["photo_clue"]["secret_prompt"]["answer"] == "Birthday Cake"
         assert "secret_prompt" not in bob.last("PHOTO_CLUE_SYNC")["photo_clue"]
 
-        await sm.handle_message(room, "p1", {"type": "PHOTO_CLUE_UPLOAD_READY", "asset_id": "asset_1", "image_url": "/media/asset_1"}, is_organizer=False)
+        await sm.handle_message(room, "p1", {
+            "type": "PHOTO_CLUE_UPLOAD_READY", "asset_id": "asset_1",
+            "attachment_token": issue_attachment_token("asset_1", owner),
+        }, is_organizer=False)
         assert room.state == "PHOTO_GUESSING"
-        assert spectator.last("PHOTO_CLUE_SYNC")["photo_clue"]["image_url"] == "/media/asset_1"
+        assert spectator.last("PHOTO_CLUE_SYNC")["photo_clue"]["image_url"] == photo_url
 
         await sm.handle_message(room, "p2", {"type": "PHOTO_CLUE_GUESS", "guess": "cake"}, is_organizer=False)
         assert room.players["p2"]["score"] == 100
@@ -580,6 +590,15 @@ class TestPokerGame:
         assert spectator.last("POKER_SYNC")["poker"]["hole_cards"]["Alice"][0]["hidden"] is True
         assert alice.last("POKER_SYNC")["poker"]["hole_cards"]["Alice"][0]["rank"]
         assert alice.last("POKER_SYNC")["poker"]["hole_cards"]["Bob"][0]["hidden"] is True
+        dealt_ids = {card["id"] for cards in room.poker_state["hole_cards"].values() for card in cards}
+        for websocket in (organizer, spectator):
+            hidden_cards = websocket.last("POKER_SYNC")["poker"]["hole_cards"]
+            assert all(card["id"] not in dealt_ids for cards in hidden_cards.values() for card in cards)
+
+        opening_stacks = dict(room.poker_state["stacks"])
+        await sm.handle_message(room, "org-1", {"type": "POKER_NEXT_HAND"}, is_organizer=True)
+        assert room.poker_state["hand_number"] == 1
+        assert room.poker_state["stacks"] == opening_stacks
 
         await sm.handle_message(room, "p1", {"type": "POKER_STAY"}, is_organizer=False)
         assert room.poker_state["decisions"]["Alice"] == "stay"
@@ -587,6 +606,10 @@ class TestPokerGame:
         assert room.state == "POKER_SHOWDOWN"
         assert room.poker_state["hand_result"]["winner_id"] == "Alice"
         assert bob.last("POKER_SYNC")["poker"]["hole_cards"]["Alice"][0]["rank"]
+
+        settled_stacks = dict(room.poker_state["stacks"])
+        await sm.handle_message(room, "org-1", {"type": "POKER_REVEAL"}, is_organizer=True)
+        assert room.poker_state["stacks"] == settled_stacks
 
         await sm.handle_message(room, "org-1", {"type": "POKER_NEXT_HAND"}, is_organizer=True)
         assert room.poker_state["hand_number"] == 2

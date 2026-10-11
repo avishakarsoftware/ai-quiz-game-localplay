@@ -44,6 +44,9 @@ def test_records_a_game_and_aggregates_it():
     assert stats["players_entertained"] == 4
     assert stats["favorite_game_type"] == "quiz"
     assert stats["distinct_games_played"] == 1
+    assert stats["stats_scope"] == "lifetime"
+    assert stats["stats_row_limit"] is None
+    assert stats["stats_truncated"] is False
 
 
 def test_same_room_is_idempotent_so_a_replayed_podium_cannot_double_count():
@@ -132,6 +135,7 @@ class TestStatsEndpoint:
         assert body["favorite_game_type"] == "would_you_rather"
         assert body["favorite_game_title"] and body["favorite_game_title"] != "would_you_rather"
         assert body["recent"][0]["room_code"] == "HTTP1"
+        assert body["stats_scope"] == "lifetime"
 
     def test_stats_requires_auth(self, monkeypatch):
         from fastapi.testclient import TestClient
@@ -157,6 +161,7 @@ class TestStatsEndpoint:
         assert res.status_code == 200
         assert res.json()["available"] is False
         assert res.json()["games_hosted"] == 0
+        assert res.json()["stats_scope"] == "unavailable"
 
 
 class TestGameCompletionRecording:
@@ -213,3 +218,70 @@ class TestGameCompletionRecording:
         main.record_game_completion({"room_code": "NOWALLET", "wallet_id": "", "completed_at": 0})
         assert called["n"] == 0
         assert main.game_history[-1]["room_code"] == "NOWALLET"
+
+
+class TestSupabaseStatsScope:
+    def test_aggregation_reports_when_older_games_are_excluded(self, monkeypatch):
+        import supabase_db
+
+        rows = [
+            {"game_type": "quiz", "player_count": 3, "completed_at": 2000 - index}
+            for index in range(1000)
+        ] + [{"game_type": "poker", "player_count": 99, "completed_at": 1}]
+        calls = []
+
+        class FakeSupabase:
+            def select(self, table, **kwargs):
+                calls.append((table, kwargs))
+                # Simulate a service that caps EACH response, even if asked for 1001.
+                offset = int(kwargs["filters"].get("offset", 0))
+                return rows[offset:offset + min(kwargs["limit"], 1000)]
+
+        monkeypatch.setattr(supabase_db, "_sb", lambda: FakeSupabase())
+        stats = supabase_db.get_wallet_stats("large-wallet")
+        assert calls == [("game_results", {
+            "filters": {"wallet_id": "eq.large-wallet"},
+            "order": "completed_at.desc,room_code.desc",
+            "limit": 1000,
+        }), ("game_results", {
+            "filters": {"wallet_id": "eq.large-wallet", "offset": "1000"},
+            "order": "completed_at.desc,room_code.desc",
+            "limit": 1,
+        })]
+        assert stats["games_hosted"] == 1000
+        assert stats["players_entertained"] == 3000
+        assert stats["distinct_games_played"] == 1
+        assert stats["stats_scope"] == "recent_games"
+        assert stats["stats_row_limit"] == 1000
+        assert stats["stats_truncated"] is True
+
+    def test_exactly_one_thousand_results_still_reports_full_history(self, monkeypatch):
+        import supabase_db
+
+        rows = [{"game_type": "quiz", "player_count": 2, "completed_at": 1}] * 1000
+
+        class FakeSupabase:
+            def select(self, _table, **kwargs):
+                offset = int(kwargs["filters"].get("offset", 0))
+                return rows[offset:offset + min(kwargs["limit"], 1000)]
+
+        monkeypatch.setattr(supabase_db, "_sb", lambda: FakeSupabase())
+        stats = supabase_db.get_wallet_stats("wallet")
+        assert stats["stats_scope"] == "lifetime"
+        assert stats["stats_truncated"] is False
+
+    def test_small_history_does_not_need_an_overflow_probe(self, monkeypatch):
+        import supabase_db
+        calls = []
+
+        class FakeSupabase:
+            def select(self, table, **kwargs):
+                calls.append((table, kwargs))
+                return [{"game_type": "quiz", "player_count": 2, "completed_at": 1}]
+
+        monkeypatch.setattr(supabase_db, "_sb", lambda: FakeSupabase())
+        stats = supabase_db.get_wallet_stats("small-wallet")
+        assert len(calls) == 1
+        assert stats["games_hosted"] == 1
+        assert stats["stats_scope"] == "lifetime"
+        assert stats["stats_truncated"] is False

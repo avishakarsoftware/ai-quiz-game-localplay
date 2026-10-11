@@ -284,6 +284,7 @@ def test_stripe_webhook_caps_tampered_amount(monkeypatch):
         "type": "checkout.session.completed",
         "data": {"object": {
             "id": "cs_cap_1",
+            "payment_status": "paid",
             "metadata": {
                 "device_id": CHECKOUT_DEVICE,
                 "wallet_id": wallet,

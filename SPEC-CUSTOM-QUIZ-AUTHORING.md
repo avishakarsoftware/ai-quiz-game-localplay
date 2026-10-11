@@ -1,5 +1,44 @@
 # LocalPlay Custom Quiz Authoring Spec
 
+## October 10, 2026 — Source reconciliation
+
+Status: manual editor, explicit durable saves/library, signed image upload and Revelry-scoped
+create/edit/duplicate/versioning are implemented. This review is local; deployment evidence stays
+in `DEPLOY.md`. The detailed phase plans below retain proposed work and dated history.
+
+Current implementation anchors are `frontend/src/components/organizer/CustomQuizEditor.tsx`,
+`PromptScreen.tsx`, `ReviewScreen.tsx`, library state in `OrganizerPage.tsx`, and API handlers in
+`backend/main.py`. The proposed `customQuiz/` component tree below is not the actual file layout.
+
+- The editor preserves 2–4 multiple-choice options, including through browser draft recovery,
+  and normalizes real True/False pairs without changing the correct answer. Answer add/remove
+  controls keep the selected answer aligned; unrelated two-option questions remain multiple choice.
+- Explicit pack save/list/get/delete/materialize accepts the resolved signed-in or device wallet.
+  Automatic signed-in debounce save, pack search/duplicate/export endpoints, conflict checks and
+  server-side draft storage are future work. The browser draft has no seven-day expiry enforcement.
+- Manual editing, import and image upload do not call an AI provider or incur a generation charge.
+  Creating a room stages its lobby; actual standalone `START_GAME` applies room-cost/grace rules.
+  Free manual authoring does not waive the standalone gameplay fee. Revelry gameplay is host-app-managed.
+- Editor input limits are title 80 / question 500 / option 200 characters. Current backend sanitizer
+  caps are 500 / 2,000 / 500; it strips disallowed image URLs instead of rejecting every save. Stronger
+  nonempty/duplicate/type/count validation remains a requirement, not a claim of current enforcement.
+- Signed uploads are limited to 2 MiB and PNG/JPEG/WebP. The editor supports upload, replace, remove,
+  preview and alt text. It currently carries `image_url`/`image_alt`; preserving `image_asset_id`
+  in its draft/payload and verifying asset owner/status on durable save/materialize are future work.
+- The durable schema persists a smaller metadata/question field set than the proposed schema below:
+  explanation, per-question timer/points, pack description/source/visibility and retention fields
+  are not part of the current adapter's write contract. Retention/grace/paid recovery rules below
+  are proposed product policy; no 30-day deletion job or paid retention feature is implemented.
+- Account deletion now removes the user's saved pack/question rows and media metadata atomically,
+  including soft-deleted packs; the new Supabase RPC migration must be applied separately. IONOS
+  bytes are still public at a known URL because physical media deletion is not implemented.
+
+Regression anchors: `backend/tests/test_quiz_pack_ownership.py`, `test_revelry_review_regressions.py`,
+`test_account_deletion.py`, disposable PostgREST content/economy suites, and
+`frontend/src/components/__tests__/CustomQuizEditor.test.tsx`, `ReviewScreen.test.tsx`,
+`frontend/src/pages/__tests__/RevelryAuthoringPage.test.tsx`. Planned endpoint/retention/media checks
+in the testing plan are acceptance targets; they are not all existing tests.
+
 ## Purpose
 
 Let hosts create, edit, save, and run their own quiz packs inside LocalPlay without needing JSON import/export or an AI generation prompt.
@@ -34,7 +73,7 @@ LocalPlay already has most of the quiz runtime pieces:
 - Standalone organizer flow can generate quiz images through `/quiz/generate-images` after a quiz has been created.
 - Revelry AI quiz authoring can generate question text and save the resulting quiz, but needs an explicit image-generation option and a review UI that previews each question as players will see it.
 
-Current gaps:
+Implemented slices and remaining gaps:
 
 - The "Start from blank quiz" flow is implemented through **Create Your Own**.
 - Hosts can manually author content before any AI generation/import step.
@@ -109,7 +148,7 @@ For host-app launches such as Revelry:
 - Host app opens a LocalPlay-hosted authoring route with signed party/user context, `draft_id`, and `return_url`.
 - The embedded quiz authoring surface presents AI vs custom as a **two-step choice** rather than stacking both at once: a first "Create a quiz" step offers just **AI quiz** and **Custom quiz**, and only the chosen path's detailed UI (AI topic/difficulty/count form, or the question editor) is then shown. Opening an existing saved quiz skips the chooser and goes straight to the editor. See "two-step choice" under Revelry quiz creation in `SPEC-REVELRY-INTEGRATION.md`.
 - LocalPlay handles authoring, image upload, validation, local draft recovery, and saved content.
-- LocalPlay returns to the host app with the canonical `localplay_content_id` and safe metadata hints. In embedded (iframe) mode it does **not** navigate its own frame — it posts `revelry.localplay.return_to_parent` to the parent, and (since 2026-07-09) mirrors the saved pointer in the message as `content: { localplay_content_id, game_type, status }` (also on `return_url`'s query string). The host app must reconcile in place and router-navigate — a full `window.location` reload on this message drops the host's session and signs them out. Top-level/direct and native flows fall back to navigating the same allowlisted `return_url`. Contract: `SPEC-REVELRY-INTEGRATION.md` → "postMessage Events".
+- LocalPlay returns to the host app with canonical `localplay_content_id` and safe metadata hints. A same-origin hub return navigates inside the frame; for cross-origin host returns in embedded mode it does **not** navigate its own frame — it posts `revelry.localplay.return_to_parent` to the parent, and (since 2026-07-09) mirrors the saved pointer in the message as `content: { localplay_content_id, game_type, status }` (also on `return_url`'s query string). The host app must reconcile in place and router-navigate — a full `window.location` reload on this message drops the host's session and signs them out. Top-level/direct and native flows fall back to navigating the same allowlisted `return_url`. Contract: `SPEC-REVELRY-INTEGRATION.md` → "postMessage Events".
 - Host app verifies the returned content server-side before storing a prepared game setup pointer or creating a session.
 - Universal/app links and explicitly allowlisted custom schemes should work for native return flows.
 
@@ -120,8 +159,8 @@ Prepared game setup decisions:
 - Prepared quizzes are visible to host/cohost only until started.
 - Creating or editing a prepared quiz does not close an active game; replacement warning happens when the host taps Start.
 - Once a `content_id` is used to start a session, it becomes immutable. Later edits create a new version/content id.
-- Draft autosave survives 7 days since last edit.
-- Free saved party content survives until 30 days after party end, or party start plus 48 hours plus 30 days when no end time exists.
+- Proposed server-draft retention is 7 days since last edit; current browser-local autosave has no enforced expiry.
+- Proposed party-content retention is 30 days after party end, or party start plus 48 hours plus 30 days when no end time exists; expiry enforcement is future work.
 - Authoring tokens are edit-only credentials and last 60 minutes. Expiry does not delete saved content or interrupt gameplay; server-side refresh/autosave recovery is backlog hardening.
 
 ### Create Flow
@@ -146,7 +185,7 @@ The minimum happy path:
 6. Host taps **Review & Start**.
 7. App validates the quiz and moves into the existing review/start room flow.
 
-The UI should autosave locally while editing. If the host is signed in, autosave should also persist to Supabase after debounce.
+The UI autosaves locally while editing. Debounced server autosave for signed-in hosts remains future work; durable saves are explicit today.
 
 ### Question Builder Layout
 
@@ -256,7 +295,7 @@ Product behavior:
 - The host must review the image questions before saving/returning to a host app or creating a room.
 - If some images fail, keep the quiz, show a non-blocking warning, and let the host save/start the text-only questions.
 - If no image provider is configured, hide the image-generation option from normal standalone and host-app authoring surfaces. Do not show diagnostic copy such as "not configured" to production or gamma users.
-- In Revelry/host-app mode, require an explicit capability such as `premium_ai`, `ai_quiz_images`, or `party_games` before enabling the option. If the capability is absent, manual quiz editing and text-only AI generation still work.
+- Future host-app image rollout must define an explicit capability/entitlement gate. The current Revelry authoring UI hides AI image generation; a configured provider alone must not be described as that feature being enabled. If the capability is absent, manual quiz editing and text-only AI generation still work.
 - Gamma/testing may temporarily enable AI image generation with `IMAGE_GENERATION_PROVIDER=gemini` and `GEMINI_IMAGE_MODEL=gemini-2.5-flash-image`, but the default gamma and production posture is disabled.
 - Production and gamma must keep AI image generation disabled unless a deliberate rollout sets an image provider and policy/entitlement gates. The deploy script should set `IMAGE_GENERATION_PROVIDER=none` by default for both production and gamma.
 
@@ -380,7 +419,7 @@ Rules:
 - `question_count` should be maintained server-side when questions change.
 - `deleted` packs should be soft-deleted by default.
 - Free saved packs may become `expired` or `deleted` after a LocalPlay-defined retention window.
-- Hard delete can be a future account-data deletion operation after any grace/recovery period.
+- Account deletion hard-deletes owned packs/questions and media metadata atomically in source; deployed Supabase needs the targeted RPC migration. Any general library hard-delete/recovery policy remains future work.
 
 ### Retention Model
 
@@ -645,7 +684,7 @@ Recommendation: implement Option A first because it isolates authoring from room
 
 ## Frontend Components
 
-Add organizer components:
+Proposed decomposition (future refactor). The current editor lives at `frontend/src/components/organizer/CustomQuizEditor.tsx`; library UI is in `OrganizerPage.tsx`:
 
 ```text
 frontend/src/components/organizer/customQuiz/
@@ -687,6 +726,8 @@ export interface CustomQuizQuestion {
 The editor should convert to the existing runtime `Quiz` type before review/start.
 
 ## Validation Rules
+
+Target stricter validation. Current editor/backend limits and remaining server checks are stated in the source reconciliation above.
 
 Pack:
 
@@ -805,7 +846,7 @@ Conflict policy for V1:
 
 Manual custom quiz authoring should remain free because comparable products commonly include it. The LocalPlay monetization opportunity is durability and premium creator features, not the basic ability to create a quiz.
 
-Free saved custom quizzes are retained for 30 days by default, followed by a 7-day recoverable grace period. In standalone LocalPlay, hosts can pay LocalPlay to keep quizzes longer, expand their saved library, or unlock premium creator features. In Revelry-launched party mode, Revelry owns customer-facing party pass/payment decisions and LocalPlay should receive normalized party capabilities such as `saved_custom_games`, `premium_ai`, and `expires_at`.
+Proposed retention policy, not enforced by current code: retain free saved custom quizzes for 30 days followed by a 7-day recoverable grace period. In standalone LocalPlay, hosts can pay LocalPlay to keep quizzes longer, expand their saved library, or unlock premium creator features. In Revelry-launched party mode, Revelry owns customer-facing party pass/payment decisions and LocalPlay should receive normalized party capabilities such as `saved_custom_games`, `premium_ai`, and `expires_at`.
 
 Charge sparks only for optional AI assist actions:
 
@@ -817,7 +858,7 @@ Charge sparks only for optional AI assist actions:
 Recommended behavior:
 
 - Show spark cost on the AI assist button.
-- Never charge for typing, editing, deleting, reordering, importing, exporting, duplicating, or launching a manual quiz while it is inside the free retention window.
+- Never charge a generation fee for typing, editing, deleting, reordering, importing, exporting, or duplicating. Standalone gameplay still applies the normal room start fee/party-grace rules; manual content does not create a free-game entitlement.
 - Never charge for uploading a host-provided image unless a separate storage/quota product decision is made.
 - Keep save/retention entitlement separate from gameplay launch entitlement so guests never see payment prompts while joining or playing.
 
@@ -1098,7 +1139,7 @@ custom_quiz_ai_assist_enabled=false
 
 ## Backlog
 
-- Generic host-app content table migration. The current implementation intentionally reuses existing custom quiz tables for both standalone and Revelry quiz authoring: standalone quizzes use the user's wallet id, and Revelry party quizzes use owner wallet id `revelry:party:<party_id>`. This avoids blocking the Revelry quiz flow on a schema migration while keeping non-Revelry custom quiz behavior on the same proven storage path. When LocalPlay adds editable non-quiz content types such as Bingo, Housie, Baby Bingo, Rebus, or other host-app-authored games, add a generic host-app content table/schema that carries `host_app`, `external_container_id`, `game_type`, ownership, retention, media, versioning, and payload metadata explicitly.
+- Future richer host-app content table migration. The current implementation intentionally reuses existing custom quiz tables for both standalone and Revelry quiz authoring: standalone quizzes use the user's wallet id, and Revelry party quizzes use owner wallet id `revelry:party:<party_id>`. This avoids blocking the Revelry quiz flow on a schema migration while keeping non-Revelry custom quiz behavior on the same proven storage path. WMLT/Drawing/Housie/Random Chit/Party Quests already reuse `generated_content`; when their needs exceed that simple setup model or other richer authoring games arrive, add a dedicated host-app content table/schema that carries `host_app`, `external_container_id`, `game_type`, ownership, retention, media, versioning, and payload metadata explicitly.
 - CSV import.
 - Paste import.
 - AI assist for wrong answers and rewrites.

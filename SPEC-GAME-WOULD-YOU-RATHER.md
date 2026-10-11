@@ -1,5 +1,9 @@
 # LocalPlay Would You Rather Game Spec
 
+## Current repository contract (reviewed 2026-10-10)
+
+The room API accepts `would_you_rather_config`. The shared `SimpleSocialGame` renders host, player, and spectator views; `WYR_VOTE`, `WYR_REVEAL`, and `WYR_NEXT_ROUND` drive the host-paced runtime. There is no separate vote acknowledgment event: viewer-specific sync echoes `your_vote`. Before reveal, public state exposes submitted count and optional aggregate `live_counts`; at reveal it also includes the individual `votes` map. Revelry capabilities describe repository support and remain subject to the effective host-app policy.
+
 ## Overview
 
 Add **Would You Rather** as a fast binary-vote party game where players choose between two playful options, the TV reveals the split, and the room debates the result.
@@ -17,7 +21,7 @@ This is intentionally close to Most Likely To and Fact or Fiction in pacing, but
 
 Status: standalone playable MVP implemented on June 24, 2026. `backend/would_you_rather_engine.py` owns prompt validation, round state, binary vote capture, reveal, split calculation, optional majority scoring, public-state redaction, and pure tests. LocalPlay now exposes the game in the standalone catalog with default content, room creation, WebSocket sync, organizer/player/spectator UI, rules metadata, reconnect handling, podium flow, and focused API/socket regression tests. Remaining follow-ups are AI/manual authoring UI and broader Playwright matrix coverage.
 
-- Host starts with curated prompts or AI-generated prompts from a theme.
+- Host quick-starts curated prompts or supplies custom prompts through the API. AI/manual setup UI remains future work.
 - Each prompt has exactly two options.
 - Every connected player can vote once per round.
 - Players can change their vote until reveal.
@@ -45,7 +49,7 @@ Status: standalone playable MVP implemented on June 24, 2026. `backend/would_you
 
 ## Game Rules
 
-1. Host chooses or generates a prompt set.
+1. Host quick-starts a curated prompt set or supplies custom content through the API.
 2. Players join the lobby.
 3. Host starts the game.
 4. The current prompt appears with two options.
@@ -73,7 +77,7 @@ Status: standalone playable MVP implemented on June 24, 2026. `backend/would_you
 
 Defaults:
 
-- `round_count`: 10.
+- `round_count`: available prompt count, capped at 10 by default (3 with the curated deck).
 - `scoring_mode`: `majority`.
 - `show_live_counts`: false.
 - `allow_vote_changes`: true.
@@ -83,7 +87,7 @@ Validation:
 - `round_count`: 3-25.
 - Prompt text: 4-120 characters.
 - Option text: 1-80 characters.
-- Minimum players: 1 for party-mode usability, recommended 3+.
+- Minimum players: 2, recommended 3+.
 
 ## Prompt Model
 
@@ -135,9 +139,8 @@ Client to server:
 Server to clients:
 
 ```json
-{ "type": "ROOM_STATE", "state": { "would_you_rather": { "...": "..." } } }
-{ "type": "WYR_VOTE_ACK", "round_index": 0, "choice": "A" }
-{ "type": "GAME_OVER", "results": [] }
+{ "type": "SIMPLE_SOCIAL_SYNC", "game_type": "would_you_rather", "would_you_rather": {} }
+{ "type": "PODIUM", "game_type": "would_you_rather", "leaderboard": [] }
 ```
 
 ## Redaction Rules
@@ -180,7 +183,7 @@ Unit tests:
 - Next round resets votes and advances.
 - Public state hides individual votes before reveal.
 
-Integration tests after UI/socket implementation:
+Additional authoring and integration coverage goals:
 
 - Host creates AI/manual prompt set.
 - Two players vote and reveal.
@@ -190,6 +193,6 @@ Integration tests after UI/socket implementation:
 
 ## Open Follow-Ups
 
-- Decide whether the first UI slice should reuse Most Likely To components.
-- Add AI generator prompt once the game is catalog-exposed.
+- Add a dedicated prompt setup/review UI; live organizer/player/spectator views already use `SimpleSocialGame.tsx`.
+- Add AI generation and host review; the game is already catalog-exposed for curated quick-start.
 - Consider a debate/re-vote mode after MVP.

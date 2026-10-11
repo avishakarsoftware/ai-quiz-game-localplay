@@ -191,6 +191,8 @@ def role_for(state: dict, sid: str) -> dict:
 
 def mark_revealed(state: dict, sid: str) -> dict:
     """Record that a seat has seen their role and passed the phone on."""
+    if state.get("phase") != PHASE_REVEAL_ROLES:
+        return state
     if sid and sid in seat_ids(state.get("seats", [])) and sid not in state["revealed_to"]:
         state["revealed_to"].append(sid)
     if all_revealed(state):
@@ -301,6 +303,8 @@ def _score_round(state: dict) -> None:
 
 
 def next_round(state: dict, rng: random.Random | None = None) -> dict:
+    if state.get("phase") != PHASE_REVEAL:
+        return state
     if state.get("round_number", 0) >= state["config"]["total_rounds"]:
         state["phase"] = PHASE_PODIUM
         return state
@@ -363,3 +367,11 @@ def public_state(state: dict) -> dict:
         "impostor_id": state.get("impostor_id", "") if resolved else "",
         "accused_guess": state.get("accused_guess", ""),
     }
+
+
+def spectator_state(state: dict) -> dict:
+    """Shared displays never receive the roles intended for the passed phone."""
+    payload = public_state(state)
+    payload["roles"] = {}
+    payload["next_unrevealed"] = ""
+    return payload

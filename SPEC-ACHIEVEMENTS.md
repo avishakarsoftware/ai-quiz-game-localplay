@@ -16,9 +16,10 @@ Related: `SPEC-REFERRAL.md`, `SPEC-GIFTING.md` (award trigger sites), `SPEC-ANAL
 ## 0. Goal
 
 Reward players with badges on milestones. Read-mostly, **no economy risk** (badges never mint sparks).
-v1 awards from clean economy choke-points only — no game-completion hooks, because game completions are
-persisted to an in-memory list (`main.game_history`), not per-wallet in the DB, so game-based badges are a
-deliberate follow-up (they'd need a durable completion write across ~6 socket_manager sites first).
+v1 awards from economy/view paths only. Lightweight wallet-attributed completions now persist in
+`game_results` for `SPEC-GAME-STATS.md`, while rich `main.game_history` remains in memory. Game-based
+badges are still a follow-up requiring verified coverage and attribution across completion paths;
+the existence of durable stats does not automatically award them.
 
 ## 1. Badge catalog (v1)
 
@@ -74,7 +75,6 @@ shows an earned/total count. Stays hidden on empty/failed fetch.
   hidden on empty; hidden on fetch failure.
 
 ## 7. Follow-ups
-- Game-based badges (first game, Nth game, big win, streak day N, first purchase) — needs durable per-wallet
-  game-completion + purchase writes first (game_history is currently in-memory). `first_purchase` could hook
-  the webhook credit path when that's wired.
+- Game-based badges (first game, Nth game, big win, streak day N, first purchase) — needs deliberate, idempotent hooks into durable `game_results` / purchase-ledger writes and
+  complete runtime coverage. `first_purchase` could hook the existing webhook credit path.
 - Award toast/notification on first earn (currently silent + analytics only).

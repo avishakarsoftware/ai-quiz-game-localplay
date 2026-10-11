@@ -7,6 +7,8 @@ Related: `SPEC.md` (spark economy), `SPEC-GIFTING.md` (shares the friend-code + 
 
 ---
 
+Source reconciled 2026-10-10 against backend, SQL adapters, frontend, and focused tests. Dated rollout statements below are historical evidence; this review does not reverify hosted flags or perform deployments.
+
 ## 0. Goal
 
 A viral growth loop: every wallet gets a shareable **referral code**. When a new player redeems a code,

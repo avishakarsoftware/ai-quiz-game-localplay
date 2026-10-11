@@ -134,3 +134,21 @@ def test_add_player_to_team_does_not_duplicate_reconnects():
 
     assert sum(team["player_ids"].count("Alice") for team in updated["teams"]) == 1
     assert next(team["id"] for team in updated["teams"] if "Alice" in team["player_ids"]) == team_id
+
+
+def test_repeated_score_action_does_not_award_round_twice():
+    state = create_initial_state(["Alice", "Bob", "Cara", "Dee"], {"team_size": 2, "rounds": 1}, now=100, seed=1)
+    for index, team in enumerate(state["teams"]):
+        state = submit_fact(state, team["player_ids"][0], f"{team['name']} shared fact", now=101 + index)
+    state = start_voting(state, now=103)
+    target = state["submissions"][state["teams"][1]["id"]]["id"]
+    state = submit_vote(state, state["teams"][0]["player_ids"][0], target)
+    scored = score_round(state, now=104)
+    scores = dict(scored["scores"])
+
+    repeated = score_round(scored, now=105)
+    assert repeated["scores"] == scores
+    assert len(repeated["round_results"]) == 1
+    completed = next_round(repeated, now=106)
+    assert completed["phase"] == PHASE_PODIUM
+    assert all(row["valid_submissions"] == 1 for row in final_standings(completed))

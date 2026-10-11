@@ -52,7 +52,7 @@ export async function fetchUserProfile(): Promise<FetchUserProfileResult> {
             headers: apiHeaders(),
             signal: controller.signal,
         });
-        if (res.status === 401 || res.status === 403) return { unauthorized: true };
+        if (res.status === 401 || res.status === 403 || res.status === 410) return { unauthorized: true };
         if (!res.ok) return { unavailable: true };
         return await res.json();
     } catch {

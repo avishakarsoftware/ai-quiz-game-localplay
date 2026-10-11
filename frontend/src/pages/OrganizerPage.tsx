@@ -62,6 +62,7 @@ import { useRemoteConfigContext } from '../context/RemoteConfigContext';
 import { GENERIC_PROMPT_GAME_IDS, getGameModeConfig, getMinPlayers, isQuizRuntimeGame, runtimeGameType, filterGameModesForCatalog } from '../gameModes';
 import { rulesForGame, type CatalogGameWithRules, type GameRules } from '../gameRules';
 import { returnToHostApp as returnToHostAppParent } from '../utils/hostAppReturn';
+import { consumeHostAppLaunchToken, hostAppLaunchRequest, matchesHostAppSession, resolvedHostAppSession, type HostAppSessionBinding } from '../utils/hostAppSession';
 
 type OrganizerState = 'SELECT_GAME' | 'PROMPT' | 'QUIZ_VARIANT_PROMPT' | 'CUSTOM_QUIZ' | 'QUIZ_LIBRARY' | 'MLT_PROMPT' | 'DRAWING_PROMPT' | 'WHO_AM_I_PROMPT' | 'WHO_AM_I_REVIEW' | 'CHIT_PULL_PROMPT' | 'CHIT_PULL_REVIEW' | 'HOUSIE_SETUP' | 'BINGO_PROMPT' | 'BINGO_SETUP' | 'MUSICAL_CHAIRS_SETUP' | 'PARTY_QUESTS_SETUP' | 'LOADING' | 'REVIEW' | 'MLT_REVIEW' | 'DRAWING_REVIEW' | 'GENERATING_IMAGES' | 'ROOM' | 'QUESTION' | 'BINGO_CALLING' | 'MUSICAL_CHAIRS' | 'BLUFF' | 'POKER' | 'TWO_TRUTHS' | 'STORY_CHAIN' | 'COMMON_GROUND' | 'FIND_SOMEONE' | 'WHO_AM_I' | 'CHIT_PULL' | 'IMPOSTOR' | 'MAFIA' | 'PARTY_QUESTS' | 'SURVEY_SAYS' | 'GENERIC_PROMPT' | 'SIMPLE_SOCIAL' | 'PHOTO_CLUE' | 'ANSWER_REVEAL' | 'LEADERBOARD' | 'PODIUM';
 
@@ -155,6 +156,10 @@ function starterBingoDeck(): BingoDeckItem[] {
 }
 
 export default function OrganizerPage() {
+    const launchRequest = useRef(hostAppLaunchRequest(new URLSearchParams(window.location.search))).current;
+    const savedLaunchSession = useRef(getSavedOrganizerSession()).current;
+    const savedManagedSession = matchesHostAppSession(savedLaunchSession, launchRequest) ? savedLaunchSession : null;
+    const hostAppSessionRef = useRef<HostAppSessionBinding>(savedManagedSession || {});
     const { config: remoteConfig } = useRemoteConfigContext();
     const [state, setState] = useState<OrganizerState>('SELECT_GAME');
     const [gameType, setGameType] = useState<GameType>('quiz');
@@ -173,8 +178,8 @@ export default function OrganizerPage() {
     const [roomCode, setRoomCode] = useState('');
     const [hostAppJoinUrl, setHostAppJoinUrl] = useState('');
     const [hostAppJoinLabel, setHostAppJoinLabel] = useState('Scan to join from Revelry');
-    const [hostAppReturnUrl, setHostAppReturnUrl] = useState('');
-    const [hostAppPartyHubUrl, setHostAppPartyHubUrl] = useState('');
+    const [hostAppReturnUrl, setHostAppReturnUrl] = useState(savedManagedSession?.hostAppReturnUrl || '');
+    const [hostAppPartyHubUrl, setHostAppPartyHubUrl] = useState(savedManagedSession?.hostAppPartyHubUrl || '');
     const [timeLimit, setTimeLimit] = useState(15);
     const [playerCount, setPlayerCount] = useState(0);
     const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -254,6 +259,8 @@ export default function OrganizerPage() {
     const [errorModal, setErrorModal] = useState<{ title: string; message: string; upgradeAvailable?: boolean; returnToHostApp?: boolean } | null>(null);
     const [showPurchase, setShowPurchase] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
+    const [organizerConnected, setOrganizerConnected] = useState(false);
+    const pendingImpostorSeatsRef = useRef<{ roomCode: string; names: string[]; emojis: string[] } | null>(null);
     const stateRef = useRef<OrganizerState>('SELECT_GAME');
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const roomCodeRef = useRef('');
@@ -277,6 +284,7 @@ export default function OrganizerPage() {
         const token = String(overrides?.organizerToken || organizerTokenRef.current || '');
         if (!code || !token) return;
         saveOrganizerSession({
+            ...hostAppSessionRef.current,
             roomCode: code,
             organizerToken: token,
             gameType: String(overrides?.gameType || gameTypeRef.current || gameType),
@@ -484,6 +492,7 @@ export default function OrganizerPage() {
         let msg: Record<string, unknown>;
         try { msg = JSON.parse(event.data); } catch { return; }
         if (msg.type === 'ROOM_CREATED' || msg.type === 'ORGANIZER_RECONNECTED') {
+            if (hostAppMode) consumeHostAppLaunchToken(hostAppSessionRef.current);
             // An empty lobby uses ROOM_CREATED even when the host is recovering
             // a saved/API-created room. Restore the server's settings in both cases.
             if (typeof msg.time_limit === 'number') setTimeLimit(msg.time_limit);
@@ -1628,6 +1637,7 @@ export default function OrganizerPage() {
     };
 
     const connectWs = useCallback((code: string) => {
+        setOrganizerConnected(false);
         if (reconnectTimerRef.current) {
             clearTimeout(reconnectTimerRef.current);
             reconnectTimerRef.current = null;
@@ -1643,12 +1653,19 @@ export default function OrganizerPage() {
             if (!mountedRef.current || wsRef.current !== ws) return;
             // First-frame auth: send token as first message instead of query string
             ws.send(JSON.stringify({ type: 'AUTH', token: organizerTokenRef.current }));
+            const pendingSeats = pendingImpostorSeatsRef.current;
+            if (pendingSeats?.roomCode === code && gameTypeRef.current === 'impostor') {
+                ws.send(JSON.stringify({ type: 'IMPOSTOR_SET_SEATS', seat_names: pendingSeats.names, seat_emojis: pendingSeats.emojis }));
+                pendingImpostorSeatsRef.current = null;
+            }
+            setOrganizerConnected(true);
         };
         ws.onmessage = (event) => {
             if (mountedRef.current && wsRef.current === ws) handleWsMessage(event);
         };
         ws.onclose = () => {
             if (wsRef.current !== ws) return;
+            setOrganizerConnected(false);
             wsRef.current = null;
             if (!mountedRef.current) return;
             const activeStates: OrganizerState[] = ['ROOM', 'QUESTION', 'BINGO_CALLING', 'MUSICAL_CHAIRS', 'BLUFF', 'POKER', 'TWO_TRUTHS', 'STORY_CHAIN', 'COMMON_GROUND', 'FIND_SOMEONE', 'WHO_AM_I', 'CHIT_PULL', 'IMPOSTOR', 'MAFIA', 'PARTY_QUESTS', 'SURVEY_SAYS', 'GENERIC_PROMPT', 'SIMPLE_SOCIAL', 'PHOTO_CLUE', 'ANSWER_REVEAL', 'LEADERBOARD', 'PODIUM'];
@@ -1661,11 +1678,11 @@ export default function OrganizerPage() {
     useEffect(() => { connectWsRef.current = connectWs; }, [connectWs]);
 
     useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('launch_token')) return;
+        if (launchRequest.token && !savedManagedSession) return;
         if (roomCodeRef.current || stateRef.current !== 'SELECT_GAME') return;
-        const saved = getSavedOrganizerSession();
+        const saved = launchRequest.managed ? savedManagedSession : savedLaunchSession;
         if (!saved) return;
+        if (!launchRequest.managed && saved.hostAppSessionId) return;
         organizerTokenRef.current = saved.organizerToken;
         setRoomCode(saved.roomCode);
         if (saved.gameType) setGameType(saved.gameType as GameType);
@@ -1679,9 +1696,8 @@ export default function OrganizerPage() {
     }, []);
 
     useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const launchToken = params.get('launch_token');
-        if (!launchToken) return;
+        const launchToken = launchRequest.token;
+        if (!launchToken || savedManagedSession) return;
         let cancelled = false;
         (async () => {
             try {
@@ -1689,6 +1705,9 @@ export default function OrganizerPage() {
                 if (!res.ok) throw new Error('Launch token rejected');
                 const data = await res.json();
                 if (cancelled) return;
+                const binding = resolvedHostAppSession(data, launchRequest);
+                if (!data.room_code || !data.organizer_token) throw new Error('Launch credential missing');
+                hostAppSessionRef.current = binding;
                 const display = data.launch_context?.display || {};
                 const launchedGameType = data.game_type as GameType | undefined;
                 const launchedContentId = String(data.content_id || '');
@@ -1710,6 +1729,7 @@ export default function OrganizerPage() {
                     hostAppReturnUrl: data.launch_context?.return_url || data.return_url || '',
                     hostAppPartyHubUrl: data.launch_context?.party_hub_url || '',
                 });
+                consumeHostAppLaunchToken(binding);
                 setState('ROOM');
                 connectWsRef.current(data.room_code);
             } catch {
@@ -1980,107 +2000,119 @@ export default function OrganizerPage() {
         }
     };
 
+    const sendOrganizerAction = (message: Record<string, unknown>): boolean => {
+        const ws = wsRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+        ws.send(JSON.stringify(message));
+        return true;
+    };
+
     const startGame = () => {
+        if (wsRef.current?.readyState !== WebSocket.OPEN) return;
         soundManager.play('gameStart');
         track('game_started', { room_code: roomCode, game_type: gameType, player_count: playerCount, num_questions: totalQuestions });
         if (gameType === 'wmlt') {
-            wsRef.current?.send(JSON.stringify({ type: 'SET_SHOW_VOTES', show_votes: showVotes }));
+            sendOrganizerAction({ type: 'SET_SHOW_VOTES', show_votes: showVotes });
         }
-        wsRef.current?.send(JSON.stringify({ type: 'START_GAME' }));
-        if (gameType !== 'housie' && gameType !== 'bingo' && gameType !== 'drawing' && gameType !== 'musical_chairs' && gameType !== 'bluff' && gameType !== 'poker' && gameType !== 'two_truths' && gameType !== 'story_chain' && gameType !== 'common_ground' && gameType !== 'find_someone' && gameType !== 'who_am_i' && gameType !== 'chit_pull' && gameType !== 'mafia' && gameType !== 'party_quests' && gameType !== 'survey_says' && gameType !== 'would_you_rather' && gameType !== 'never_have_i_ever' && gameType !== 'word_association' && gameType !== 'acronym' && gameType !== 'photo_clue') {
-            wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
+        sendOrganizerAction({ type: 'START_GAME' });
+        if (isQuizRuntimeGame(gameType) || gameType === 'wmlt') {
+            sendOrganizerAction({ type: 'NEXT_QUESTION' });
         }
     };
 
-    const nextQuestion = () => wsRef.current?.send(JSON.stringify({ type: 'NEXT_QUESTION' }));
+    const nextQuestion = () => sendOrganizerAction({ type: 'NEXT_QUESTION' });
 
     // --- Pass-and-play: Impostor (SPEC-PASS-AND-PLAY) ---
     // Every one of these runs on the HOST socket: there is one device, so the host's taps carry
     // the whole table's actions. That is also why the backend gives pass-and-play rooms a higher
     // WS rate limit (PASS_PLAY_RATE_LIMIT_PER_SEC).
-    const sendImpostorSeats = (names: string[], emojis: string[]) =>
-        wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_SET_SEATS', seat_names: names, seat_emojis: emojis }));
+    const sendImpostorSeats = (names: string[], emojis: string[]) => {
+        pendingImpostorSeatsRef.current = { roomCode: roomCodeRef.current || roomCode, names, emojis };
+        if (sendOrganizerAction({ type: 'IMPOSTOR_SET_SEATS', seat_names: names, seat_emojis: emojis })) {
+            pendingImpostorSeatsRef.current = null;
+        }
+    };
     const impostorRoleSeen = (seatId: string) =>
-        wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_ROLE_SEEN', seat_id: seatId }));
+        sendOrganizerAction({ type: 'IMPOSTOR_ROLE_SEEN', seat_id: seatId });
     const impostorClueSpoken = (seatId: string) =>
-        wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_CLUE_SPOKEN', seat_id: seatId }));
+        sendOrganizerAction({ type: 'IMPOSTOR_CLUE_SPOKEN', seat_id: seatId });
     const impostorVote = (voterId: string, accusedId: string) =>
-        wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_VOTE', voter_id: voterId, accused_id: accusedId }));
-    const impostorCloseVote = () => wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_CLOSE_VOTE' }));
+        sendOrganizerAction({ type: 'IMPOSTOR_VOTE', voter_id: voterId, accused_id: accusedId });
+    const impostorCloseVote = () => sendOrganizerAction({ type: 'IMPOSTOR_CLOSE_VOTE' });
     const impostorAccusedGuess = (guess: string) =>
-        wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_ACCUSED_GUESS', guess }));
-    const impostorNextRound = () => wsRef.current?.send(JSON.stringify({ type: 'IMPOSTOR_NEXT_ROUND' }));
-    const callHousieNumber = () => wsRef.current?.send(JSON.stringify({ type: 'BINGO_CALL_NEXT' }));
-    const undoHousieCall = () => wsRef.current?.send(JSON.stringify({ type: 'BINGO_UNDO_LAST_CALL' }));
+        sendOrganizerAction({ type: 'IMPOSTOR_ACCUSED_GUESS', guess });
+    const impostorNextRound = () => sendOrganizerAction({ type: 'IMPOSTOR_NEXT_ROUND' });
+    const callHousieNumber = () => sendOrganizerAction({ type: 'BINGO_CALL_NEXT' });
+    const undoHousieCall = () => sendOrganizerAction({ type: 'BINGO_UNDO_LAST_CALL' });
     const setHousieCallerModeRuntime = (mode: 'manual' | 'auto') => {
         setHousieCallerMode(mode);
-        wsRef.current?.send(JSON.stringify({ type: 'BINGO_SET_CALLER_MODE', caller_mode: mode, auto_interval_seconds: housieAutoInterval }));
+        sendOrganizerAction({ type: 'BINGO_SET_CALLER_MODE', caller_mode: mode, auto_interval_seconds: housieAutoInterval });
     };
-    const pauseHousieAuto = () => wsRef.current?.send(JSON.stringify({ type: 'BINGO_PAUSE' }));
-    const resumeHousieAuto = () => wsRef.current?.send(JSON.stringify({ type: 'BINGO_RESUME' }));
-    const endQuiz = () => wsRef.current?.send(JSON.stringify({ type: 'END_QUIZ' }));
+    const pauseHousieAuto = () => sendOrganizerAction({ type: 'BINGO_PAUSE' });
+    const resumeHousieAuto = () => sendOrganizerAction({ type: 'BINGO_RESUME' });
+    const endQuiz = () => sendOrganizerAction({ type: 'END_QUIZ' });
     const cancelCurrentGame = () => {
         const guestCopy = playerCount > 0
             ? ` ${playerCount} connected guest${playerCount === 1 ? '' : 's'} will be returned to Revelry.`
             : '';
         if (!window.confirm(`Cancel this game?${guestCopy} No results will be recorded.`)) return;
-        wsRef.current?.send(JSON.stringify({ type: 'CANCEL_GAME' }));
+        sendOrganizerAction({ type: 'CANCEL_GAME' });
     };
-    const startMusicalChairsRound = () => wsRef.current?.send(JSON.stringify({ type: 'MC_START_ROUND' }));
-    const stopMusicalChairsMusic = () => wsRef.current?.send(JSON.stringify({ type: 'MC_STOP_MUSIC' }));
-    const eliminateMusicalChairsPlayer = (nickname: string) => wsRef.current?.send(JSON.stringify({ type: 'MC_ELIMINATE_PLAYER', nickname }));
-    const continueBluff = () => wsRef.current?.send(JSON.stringify({ type: 'BLUFF_CONTINUE' }));
-    const startTwoTruthsReveal = () => wsRef.current?.send(JSON.stringify({ type: 'TT_START_REVEAL' }));
-    const nextTwoTruthsStep = () => wsRef.current?.send(JSON.stringify({ type: 'TT_NEXT_AUTHOR' }));
-    const skipStoryTurn = () => wsRef.current?.send(JSON.stringify({ type: 'STORY_SKIP_TURN' }));
-    const nextStoryReveal = () => wsRef.current?.send(JSON.stringify({ type: 'STORY_NEXT_REVEAL_STEP' }));
-    const startCommonReveal = () => wsRef.current?.send(JSON.stringify({ type: 'COMMON_START_REVEAL' }));
-    const startCommonVoting = () => wsRef.current?.send(JSON.stringify({ type: 'COMMON_START_VOTING' }));
-    const scoreCommonRound = () => wsRef.current?.send(JSON.stringify({ type: 'COMMON_SCORE_ROUND' }));
-    const nextCommonRound = () => wsRef.current?.send(JSON.stringify({ type: 'COMMON_NEXT_ROUND' }));
-    const nextWhoAmIClue = () => wsRef.current?.send(JSON.stringify({ type: 'WHOAMI_NEXT_CLUE' }));
-    const revealWhoAmIAnswer = () => wsRef.current?.send(JSON.stringify({ type: 'WHOAMI_REVEAL_ANSWER' }));
-    const nextWhoAmIRound = () => wsRef.current?.send(JSON.stringify({ type: 'WHOAMI_NEXT_ROUND' }));
-    const pullNextChit = () => wsRef.current?.send(JSON.stringify({ type: 'CHIT_NEXT' }));
-    const completeChit = (bonus = false) => wsRef.current?.send(JSON.stringify({ type: 'CHIT_COMPLETE', bonus }));
-    const skipChit = () => wsRef.current?.send(JSON.stringify({ type: 'CHIT_SKIP' }));
-    const redrawChitPlayer = () => wsRef.current?.send(JSON.stringify({ type: 'CHIT_REDRAW_PLAYER' }));
-    const redrawChit = () => wsRef.current?.send(JSON.stringify({ type: 'CHIT_REDRAW_CHIT' }));
-    const skipMafiaTimer = () => wsRef.current?.send(JSON.stringify({ type: 'MAFIA_SKIP_TIMER' }));
-    const extendMafiaTimer = () => wsRef.current?.send(JSON.stringify({ type: 'MAFIA_EXTEND_TIMER' }));
-    const partyQuestsFinalCall = () => wsRef.current?.send(JSON.stringify({ type: 'QUESTS_FINAL_CALL' }));
-    const partyQuestsReveal = () => wsRef.current?.send(JSON.stringify({ type: 'QUESTS_REVEAL' }));
-    const revealSurveyAnswer = (answerId: string) => wsRef.current?.send(JSON.stringify({ type: 'SURVEY_REVEAL_ANSWER', answer_id: answerId }));
-    const strikeSurvey = () => wsRef.current?.send(JSON.stringify({ type: 'SURVEY_STRIKE' }));
-    const revealSurveyAll = () => wsRef.current?.send(JSON.stringify({ type: 'SURVEY_REVEAL_ALL' }));
-    const nextSurveyRound = () => wsRef.current?.send(JSON.stringify({ type: 'SURVEY_NEXT_ROUND' }));
-    const startGenericPromptVoting = () => wsRef.current?.send(JSON.stringify({ type: 'GENERIC_START_VOTING' }));
-    const revealGenericPromptRound = () => wsRef.current?.send(JSON.stringify({ type: 'GENERIC_REVEAL' }));
-    const nextGenericPromptRound = () => wsRef.current?.send(JSON.stringify({ type: 'GENERIC_NEXT_ROUND' }));
+    const startMusicalChairsRound = () => sendOrganizerAction({ type: 'MC_START_ROUND' });
+    const stopMusicalChairsMusic = () => sendOrganizerAction({ type: 'MC_STOP_MUSIC' });
+    const eliminateMusicalChairsPlayer = (nickname: string) => sendOrganizerAction({ type: 'MC_ELIMINATE_PLAYER', nickname });
+    const continueBluff = () => sendOrganizerAction({ type: 'BLUFF_CONTINUE' });
+    const startTwoTruthsReveal = () => sendOrganizerAction({ type: 'TT_START_REVEAL' });
+    const nextTwoTruthsStep = () => sendOrganizerAction({ type: 'TT_NEXT_AUTHOR' });
+    const skipStoryTurn = () => sendOrganizerAction({ type: 'STORY_SKIP_TURN' });
+    const nextStoryReveal = () => sendOrganizerAction({ type: 'STORY_NEXT_REVEAL_STEP' });
+    const startCommonReveal = () => sendOrganizerAction({ type: 'COMMON_START_REVEAL' });
+    const startCommonVoting = () => sendOrganizerAction({ type: 'COMMON_START_VOTING' });
+    const scoreCommonRound = () => sendOrganizerAction({ type: 'COMMON_SCORE_ROUND' });
+    const nextCommonRound = () => sendOrganizerAction({ type: 'COMMON_NEXT_ROUND' });
+    const nextWhoAmIClue = () => sendOrganizerAction({ type: 'WHOAMI_NEXT_CLUE' });
+    const revealWhoAmIAnswer = () => sendOrganizerAction({ type: 'WHOAMI_REVEAL_ANSWER' });
+    const nextWhoAmIRound = () => sendOrganizerAction({ type: 'WHOAMI_NEXT_ROUND' });
+    const pullNextChit = () => sendOrganizerAction({ type: 'CHIT_NEXT' });
+    const completeChit = (bonus = false) => sendOrganizerAction({ type: 'CHIT_COMPLETE', bonus });
+    const skipChit = () => sendOrganizerAction({ type: 'CHIT_SKIP' });
+    const redrawChitPlayer = () => sendOrganizerAction({ type: 'CHIT_REDRAW_PLAYER' });
+    const redrawChit = () => sendOrganizerAction({ type: 'CHIT_REDRAW_CHIT' });
+    const skipMafiaTimer = () => sendOrganizerAction({ type: 'MAFIA_SKIP_TIMER' });
+    const extendMafiaTimer = () => sendOrganizerAction({ type: 'MAFIA_EXTEND_TIMER' });
+    const partyQuestsFinalCall = () => sendOrganizerAction({ type: 'QUESTS_FINAL_CALL' });
+    const partyQuestsReveal = () => sendOrganizerAction({ type: 'QUESTS_REVEAL' });
+    const revealSurveyAnswer = (answerId: string) => sendOrganizerAction({ type: 'SURVEY_REVEAL_ANSWER', answer_id: answerId });
+    const strikeSurvey = () => sendOrganizerAction({ type: 'SURVEY_STRIKE' });
+    const revealSurveyAll = () => sendOrganizerAction({ type: 'SURVEY_REVEAL_ALL' });
+    const nextSurveyRound = () => sendOrganizerAction({ type: 'SURVEY_NEXT_ROUND' });
+    const startGenericPromptVoting = () => sendOrganizerAction({ type: 'GENERIC_START_VOTING' });
+    const revealGenericPromptRound = () => sendOrganizerAction({ type: 'GENERIC_REVEAL' });
+    const nextGenericPromptRound = () => sendOrganizerAction({ type: 'GENERIC_NEXT_ROUND' });
     const revealSimpleSocialRound = () => {
-        if (gameType === 'would_you_rather') wsRef.current?.send(JSON.stringify({ type: 'WYR_REVEAL' }));
-        else if (gameType === 'never_have_i_ever') wsRef.current?.send(JSON.stringify({ type: 'NHIE_REVEAL' }));
-        else if (gameType === 'word_association') wsRef.current?.send(JSON.stringify({ type: 'WORD_REVEAL' }));
-        else if (gameType === 'acronym') wsRef.current?.send(JSON.stringify({ type: 'ACRO_REVEAL' }));
-        else if (gameType === 'odd_question') wsRef.current?.send(JSON.stringify({ type: 'ODDQ_REVEAL' }));
+        if (gameType === 'would_you_rather') sendOrganizerAction({ type: 'WYR_REVEAL' });
+        else if (gameType === 'never_have_i_ever') sendOrganizerAction({ type: 'NHIE_REVEAL' });
+        else if (gameType === 'word_association') sendOrganizerAction({ type: 'WORD_REVEAL' });
+        else if (gameType === 'acronym') sendOrganizerAction({ type: 'ACRO_REVEAL' });
+        else if (gameType === 'odd_question') sendOrganizerAction({ type: 'ODDQ_REVEAL' });
     };
     const nextSimpleSocialRound = () => {
-        if (gameType === 'would_you_rather') wsRef.current?.send(JSON.stringify({ type: 'WYR_NEXT_ROUND' }));
-        else if (gameType === 'odd_question') wsRef.current?.send(JSON.stringify({ type: 'ODDQ_NEXT_ROUND' }));
-        else if (gameType === 'never_have_i_ever') wsRef.current?.send(JSON.stringify({ type: 'NHIE_NEXT_ROUND' }));
-        else if (gameType === 'word_association') wsRef.current?.send(JSON.stringify({ type: 'WORD_NEXT_ROUND' }));
-        else if (gameType === 'acronym') wsRef.current?.send(JSON.stringify({ type: 'ACRO_NEXT_ROUND' }));
+        if (gameType === 'would_you_rather') sendOrganizerAction({ type: 'WYR_NEXT_ROUND' });
+        else if (gameType === 'odd_question') sendOrganizerAction({ type: 'ODDQ_NEXT_ROUND' });
+        else if (gameType === 'never_have_i_ever') sendOrganizerAction({ type: 'NHIE_NEXT_ROUND' });
+        else if (gameType === 'word_association') sendOrganizerAction({ type: 'WORD_NEXT_ROUND' });
+        else if (gameType === 'acronym') sendOrganizerAction({ type: 'ACRO_NEXT_ROUND' });
     };
-    const startAcronymVoting = () => wsRef.current?.send(JSON.stringify({ type: 'ACRO_START_VOTING' }));
+    const startAcronymVoting = () => sendOrganizerAction({ type: 'ACRO_START_VOTING' });
     // Acronym and Impostor are the two-step simple-social games (close input, then reveal).
     const startSimpleSocialVoting = () => {
-        if (gameType === 'odd_question') wsRef.current?.send(JSON.stringify({ type: 'ODDQ_START_VOTING' }));
+        if (gameType === 'odd_question') sendOrganizerAction({ type: 'ODDQ_START_VOTING' });
         else startAcronymVoting();
     };
-    const revealPhotoClue = () => wsRef.current?.send(JSON.stringify({ type: 'PHOTO_CLUE_REVEAL' }));
-    const nextPhotoClueRound = () => wsRef.current?.send(JSON.stringify({ type: 'PHOTO_CLUE_NEXT_ROUND' }));
-    const revealPokerHand = () => wsRef.current?.send(JSON.stringify({ type: 'POKER_REVEAL' }));
-    const nextPokerHand = () => wsRef.current?.send(JSON.stringify({ type: 'POKER_NEXT_HAND' }));
+    const revealPhotoClue = () => sendOrganizerAction({ type: 'PHOTO_CLUE_REVEAL' });
+    const nextPhotoClueRound = () => sendOrganizerAction({ type: 'PHOTO_CLUE_NEXT_ROUND' });
+    const revealPokerHand = () => sendOrganizerAction({ type: 'POKER_REVEAL' });
+    const nextPokerHand = () => sendOrganizerAction({ type: 'POKER_NEXT_HAND' });
     const createPartyQuestsAndRoom = async (config: PartyQuestSetupConfig) => {
         setPartyQuestsConfig(config);
         setGameType('party_quests');
@@ -2703,6 +2735,7 @@ export default function OrganizerPage() {
                         initialNames={impostorSeats.map((seat) => seat.name)}
                         minSeats={getMinPlayers(gameType)}
                         maxSeats={12}
+                        connectionReady={organizerConnected}
                         onChange={sendImpostorSeats}
                         onStart={(names, emojis) => {
                             // Push the final roster, then start. The backend gates START_GAME on
@@ -2726,8 +2759,9 @@ export default function OrganizerPage() {
                         hostAppJoinUrl={hostAppJoinUrl}
                         hostAppJoinLabel={hostAppJoinLabel}
                         onStartGame={startGame}
-                        onToggleLock={() => wsRef.current?.send(JSON.stringify({ type: 'TOGGLE_LOCK' }))}
-                        onRemoveOfflinePlayers={() => wsRef.current?.send(JSON.stringify({ type: 'REMOVE_OFFLINE_PLAYERS' }))}
+                        connectionReady={organizerConnected}
+                        onToggleLock={() => { sendOrganizerAction({ type: 'TOGGLE_LOCK' }); }}
+                        onRemoveOfflinePlayers={() => { sendOrganizerAction({ type: 'REMOVE_OFFLINE_PLAYERS' }); }}
                         onCancelGame={hostAppMode ? cancelCurrentGame : undefined}
                         onBackToGames={leaveLobbyForGameList}
                         onReviewContent={isQuizRuntimeGame(gameType) && quiz ? () => setReviewPeekOpen(true) : undefined}

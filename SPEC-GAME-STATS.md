@@ -1,9 +1,10 @@
 # SPEC-GAME-STATS — durable game results + the hosting stats screen
 
-Status: **Built 2026-07-27, not yet deployed.** Works on SQLite immediately. On Supabase the
-`game_results` table must be applied first (`sql/migrations/20260727T000000_game_results{,_gamma}.sql`);
-until then `/stats` reports `available: false` and the UI hides itself, so shipping the code ahead
-of the migration is safe and needs no feature flag. Live status: DEPLOY.md's env-status ledger.
+Status: **Implemented; reconciled 2026-10-10.** SQLite creates the table automatically.
+`DEPLOY.md` records both gamma and production Supabase `game_results` tables verified present
+on 2026-10-03 (`sql/migrations/20260727T000000_game_results{,_gamma}.sql`). This reconciliation
+uses that recorded evidence and does not perform hosted verification. Read failures still return
+`available: false` and hide the UI; no stats feature flag is needed.
 
 ## 1. Why
 
@@ -46,6 +47,11 @@ re-broadcast, a host reconnect, a room reset path. `room_code` as the PK plus `I
 (SQLite) / `ignore_duplicates` (PostgREST) means a replayed podium is a no-op. Without it every
 number on the screen silently inflates, and badges re-fire.
 
+Current limitation: `RESET_ROOM` reuses the room code for a genuinely new game, so its later
+completion is also suppressed by this primary key. Counts currently represent first recorded
+completions per room code, not every play-again run. Correct per-run counting requires a stable
+completion/run identity shared by retries, plus a schema migration; it is roadmap work.
+
 ## 4. The write path — one choke-point
 
 Before this change, 18 separate engine podium paths each inlined the same four lines:
@@ -77,6 +83,9 @@ durable write. Adding a game means calling one function; there is no second plac
 ```jsonc
 {
   "available": true,           // false => couldn't read; UI hides the section
+  "stats_scope": "lifetime",  // "recent_games" when older Supabase rows were excluded
+  "stats_row_limit": null,     // 1000 for Supabase; null for SQLite
+  "stats_truncated": false,
   "games_hosted": 12,
   "players_entertained": 47,
   "distinct_games_played": 4,
@@ -101,6 +110,14 @@ GROUP BY RPC: PostgREST has no clean grouping and one host's lifetime games is a
 at `STATS_ROW_CAP = 1000` rows so a pathological wallet can't pull an unbounded result. Tie-breaking
 matches SQLite's `ORDER BY n DESC, game_type ASC` so both backends return the same favourite.
 
+SQLite aggregates all recorded rows. Supabase reads the newest 1000 rows, then probes at offset
+1000 for one older row only when the first page is full. This detects overflow even when the REST
+service caps each response at 1000. Ordering includes `room_code` as a stable timestamp tie-breaker;
+at most 1001 rows are read and only the newest 1000 are aggregated. `stats_scope = "recent_games"` and `stats_truncated = true`
+make this bounded scope explicit; the settings drawer says "Based on your latest 1000 completed
+games." At 1000 or fewer stored results both backends report `stats_scope = "lifetime"`.
+Favourite/type totals may differ between backends when older Supabase results are excluded.
+
 Table-only — no RPC, so the migration is a plain `CREATE TABLE` + index + RLS policy.
 
 ## 7. Achievements unblocked (SPEC-ACHIEVEMENTS v2)
@@ -123,11 +140,12 @@ Awarded from `_award_game_badges`, gated on `_ACHIEVEMENTS_SUPPORTED`, best-effo
 
 ## 9. Tests
 
-Backend 15 (`backend/tests/test_game_stats.py`): aggregation, idempotent replay, empty wallet,
+Backend (`backend/tests/test_game_stats.py`): aggregation, idempotent replay, empty wallet,
 favourite tie-break, recency ordering, limit clamping, walletless rejection, per-wallet scoping,
 endpoint aggregates/auth/degradation, and that a DB failure can't break a podium.
-Frontend 7 (`StatsSection.test.tsx`): renders, says "hosted" not "played", never leaks a raw
-game_type, and all three hidden states.
+Frontend (`StatsSection.test.tsx`): renders, says "hosted" not "played", resolves known game
+titles, all three hidden states, and truncated-history scope copy. Backend tests use mocked
+Supabase responses to verify bounded reads and the 1000/1001 boundary without network access.
 
 **Testing gotcha:** conftest's autouse `fund_test_wallet` pins `tokens.get_wallet_id` to
 `TEST_DEVICE_ID` for every request, so endpoint tests must seed *that* wallet — an `X-Device-Id`
@@ -140,3 +158,4 @@ no-op.
 - Guest-side stats (needs guest identity — see §2).
 - Streaks ("hosted N days in a row") — needs a date-bucketed query; the data now supports it.
 - A full history screen; `recent` is returned but only the aggregate tiles are rendered.
+- Per-run completion identity so play-again games in one room count independently.

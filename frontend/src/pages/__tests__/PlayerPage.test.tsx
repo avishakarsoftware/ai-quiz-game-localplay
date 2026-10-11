@@ -94,6 +94,8 @@ function fillAndJoin(roomCode: string, nickname: string) {
 describe('PlayerPage', () => {
     beforeEach(() => {
         routeState.query = '';
+        window.history.replaceState({}, '', '/join');
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) }));
         vi.useFakeTimers();
         MockWebSocket.instances = [];
         sessionStorage.clear();
@@ -109,6 +111,60 @@ describe('PlayerPage', () => {
         simulateWsMessage({ type: 'RECONNECTED', game_type: 'quiz', state: 'LOBBY', players: [] });
         act(() => { getLatestWs().onclose?.(); vi.advanceTimersByTime(2000); });
         expect(MockWebSocket.instances).toHaveLength(2);
+    });
+
+    it('recovers the exact managed player seat after launch expiry and keeps its return destination', () => {
+        routeState.query = 'session_id=managed-1&party_id=party-1&launch_token=expired';
+        window.history.replaceState({}, '', `/join?${routeState.query}`);
+        sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode: 'ROOM42', nickname: 'Alice', team: '', avatar: '🐶', sessionToken: 'runtime-token', hostAppSessionId: 'managed-1', hostAppContainerId: 'party-1', hostAppReturnUrl: 'https://app.revelryapp.me/party/party-1/games/join' }));
+        render(<StrictMode><PlayerPage /></StrictMode>);
+        act(() => { vi.advanceTimersByTime(100); getLatestWs().onopen?.(); });
+        expect(JSON.parse(getLatestWs().send.mock.calls[0][0])).toMatchObject({ type: 'JOIN', nickname: 'Alice', session_token: 'runtime-token' });
+        simulateWsMessage({ type: 'RECONNECTED', game_type: 'quiz', state: 'LOBBY', session_token: 'runtime-token', players: [] });
+        expect(window.location.search).not.toContain('launch_token');
+        expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('launch-token/resolve'))).toBe(false);
+        simulateWsMessage({ type: 'ROOM_CLOSED' });
+        expect(screen.getByRole('button', { name: 'Back to Revelry Games' })).toBeInTheDocument();
+        expect(sessionStorage.getItem('localplay_session')).toBeNull();
+        const count = MockWebSocket.instances.length;
+        act(() => { getLatestWs().onclose?.(); vi.advanceTimersByTime(6000); });
+        expect(MockWebSocket.instances).toHaveLength(count);
+    });
+
+    it.each([
+        'session_id=another-session&party_id=party-1',
+        'session_id=managed-1&party_id=another-party',
+    ])('does not recover another managed player session (%s)', (query) => {
+        routeState.query = query;
+        sessionStorage.setItem('localplay_session', JSON.stringify({ roomCode: 'ROOM42', nickname: 'Alice', team: '', avatar: '🐶', sessionToken: 'runtime-token', hostAppSessionId: 'managed-1', hostAppContainerId: 'party-1' }));
+        render(<PlayerPage />);
+        act(() => { vi.advanceTimersByTime(150); });
+        expect(MockWebSocket.instances).toHaveLength(0);
+        expect(screen.getByText('Game Unavailable')).toBeInTheDocument();
+    });
+
+    it('consumes a player launch token only after a runtime seat is issued, then resumes on reload', async () => {
+        routeState.query = 'session_id=managed-new&launch_token=fresh';
+        window.history.replaceState({}, '', `/join?${routeState.query}`);
+        vi.mocked(fetch).mockImplementation(async (url) => String(url).includes('launch-token/resolve')
+            ? { ok: true, json: async () => ({ session_id: 'managed-new', external_container_id: 'party-new', room_code: 'NEW123', return_url: 'https://app.revelryapp.me/party/party-new/games/join' }) } as Response
+            : { ok: false, json: async () => ({}) } as Response);
+        let rendered!: ReturnType<typeof render>;
+        await act(async () => { rendered = render(<PlayerPage />); });
+        expect(window.location.search).toContain('launch_token=fresh');
+        fireEvent.change(screen.getByTestId('player-nickname-input'), { target: { value: 'Alice' } });
+        fireEvent.click(screen.getByTestId('player-join-button'));
+        act(() => { getLatestWs().onopen?.(); });
+        simulateWsMessage({ type: 'JOINED_ROOM', session_token: 'issued-runtime-token' });
+        expect(window.location.search).toBe('?session_id=managed-new&party_id=party-new');
+        expect(JSON.parse(sessionStorage.getItem('localplay_session')!)).toMatchObject({ hostAppSessionId: 'managed-new', hostAppContainerId: 'party-new', hostAppReturnUrl: 'https://app.revelryapp.me/party/party-new/games/join' });
+        rendered.unmount();
+        routeState.query = window.location.search.slice(1);
+        vi.mocked(fetch).mockClear();
+        render(<PlayerPage />);
+        act(() => { vi.advanceTimersByTime(100); getLatestWs().onopen?.(); });
+        expect(JSON.parse(getLatestWs().send.mock.calls[0][0])).toMatchObject({ nickname: 'Alice', session_token: 'issued-runtime-token' });
+        expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('launch-token/resolve'))).toBe(false);
     });
 
     it('wake reconnect cancels a scheduled retry and ignores callbacks from the replaced socket', () => {

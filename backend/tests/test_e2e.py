@@ -41,9 +41,10 @@ GENEROUS_TOKENS = 500  # enough for many generates + room starts
 # Do NOT reach for a bigger number to "fix" the known cross-suite flake. Measured: raising 8s -> 45s
 # changed nothing except how long a failing run takes (14s passing, ~60s failing — the difference IS
 # the timeout). The failure is "waiting for QUESTION after NO messages", so the socket is wedged, not
-# slow. The decisive variable is pytest OUTPUT CAPTURE: this file plus test_ws_flow.py fails 3/3 with
-# capture on and passes 3/3 with -s. Full investigation, including three disproven theories, is in
-# BACKLOG.md — read it before touching this helper.
+# slow. Historical runs paired with test_ws_flow.py failed 3/3 with capture on and passed 3/3 with
+# -s. October 10 reproduced the stall with -s in this file alone, then identified simultaneous
+# websocket portals sharing one Room. shared_client_portal now keeps them on one ASGI loop.
+# The original investigation, including three disproven theories, remains in BACKLOG.md.
 DEFAULT_WS_RECEIVE_TIMEOUT = float(os.getenv("LOCALPLAY_WS_TEST_TIMEOUT", "15"))
 
 
@@ -119,6 +120,19 @@ def clear_state():
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def shared_client_portal(clear_state):
+    """Run a test's HTTP and websocket sessions on one ASGI event loop.
+
+    Without the TestClient context, each websocket opens a separate blocking
+    portal. Room broadcasts then touch a player's AnyIO stream from the
+    organizer's loop, which can leave its waiting receive asleep indefinitely.
+    The context also closes the portal before clear_state tears down rooms.
+    """
+    with client:
+        yield
+
+
 def receive_json_with_timeout(ws, *, timeout=DEFAULT_WS_RECEIVE_TIMEOUT, context="websocket"):
     """Receive one TestClient websocket message with a real wall-clock timeout."""
     result_queue = queue.Queue(maxsize=1)
@@ -134,9 +148,8 @@ def receive_json_with_timeout(ws, *, timeout=DEFAULT_WS_RECEIVE_TIMEOUT, context
     try:
         status, value = result_queue.get(timeout=timeout)
     except queue.Empty:
-        # A stall here is the known residual flake (SPEC-TESTING §8d): ~1 run in 25 of the full file,
-        # always TestExportImportE2E, never reproducible in isolation (0/10). Order is deterministic
-        # (no pytest-randomly), so it is time-dependent cross-test interference, not ordering.
+        # Preserve diagnostic evidence if the historical stall recurs (SPEC-TESTING §8d).
+        # Before shared_client_portal, isolated serial runs also stalled in GameReset.
         # Dump the state a debugger would want, because the next occurrence is the only evidence
         # anyone will get — reproducing it on demand has not been possible.
         # UNBLOCK THE READER BEFORE RAISING. The thread above is parked inside
@@ -281,6 +294,27 @@ def create_room(content_id, game_type="quiz", time_limit=30, headers=None):
 # ===========================================================================
 # Full Game Flow
 # ===========================================================================
+
+class TestClientLifecycle:
+    def test_room_sockets_share_the_client_portal(self):
+        room_code, org_token = create_room(seed_quiz(2))
+        assert client.portal is not None
+        with org_connect(room_code, org_token) as org_ws:
+            recv_until(org_ws, "ROOM_CREATED")
+            with client.websocket_connect(f"/ws/{room_code}/p-1") as p_ws:
+                p_ws.send_json({"type": "JOIN", "nickname": "PortalTester"})
+                recv_until(p_ws, "JOINED_ROOM")
+                recv_until(org_ws, "PLAYER_JOINED")
+                recv_until(p_ws, "PLAYER_JOINED")
+                with client.websocket_connect(f"/ws/{room_code}/spec-1?spectator=true") as spec_ws:
+                    assert org_ws.portal is p_ws.portal is spec_ws.portal is client.portal
+                    start_game_and_wait(org_ws, [p_ws], [spec_ws])
+                    org_ws.send_json({"type": "NEXT_QUESTION"})
+                    # Player first reproduces the direction that previously stalled.
+                    recv_until(p_ws, "QUESTION")
+                    recv_until(org_ws, "QUESTION")
+                    recv_until(spec_ws, "QUESTION")
+
 
 class TestEndToEnd:
     """Full game flow: generate quiz -> edit -> create room -> play -> podium."""

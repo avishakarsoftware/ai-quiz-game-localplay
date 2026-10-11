@@ -1,5 +1,9 @@
 # LocalPlay Find Someone Who Game Spec
 
+## Current repository contract (reviewed 2026-10-10)
+
+`find_someone_config` is the room setup field. The default deck is 30 prompts, and the validator fills short custom decks from curated content to satisfy the selected 4x4/5x5 layout. The picker quick-starts defaults. `FIND_SYNC.find_someone` is canonical; private payloads add the viewer's card, incoming requests, and claimed patterns. Technical minimum is 1 for check-in startup, while a room needs other guests to complete default partner-based cells. `round_time_seconds` (120-7200, default 900; standalone setup uses 1800) records a deadline, but the host currently ends the game or a terminal blackout does. AI authoring, prompt editing UI, expiry automation, and richer prompt highlights remain roadmap. Host-app deployment dates below are historical records, not a new hosted-environment verification.
+
 ## Overview
 
 Add **Find Someone Who** as a social icebreaker game where each player gets a Bingo-style grid of people-finding prompts and marks squares by finding someone in the room who matches the prompt.
@@ -103,7 +107,7 @@ Generate only light, voluntary, conversation-friendly prompts. Avoid sensitive p
 Defaults:
 
 - `layout`: `bingo_5x5_free`.
-- `prompt_count`: 40.
+- Prompt count is derived from `prompts` (30 in the curated deck); `prompt_count` is not an engine input.
 - `confirmation_mode`: `tap_confirm`.
 - `claim_patterns`: first line, four corners, blackout.
 - `round_time_seconds`: 900 engine default; standalone quick-start uses 1800 for party-friendly play.
@@ -275,16 +279,12 @@ Rules:
 
 MVP can use prize-style claims rather than point scoring:
 
-- First accepted `first_line` wins that prize.
-- First accepted `four_corners` wins that prize.
-- First accepted `blackout` wins final/top prize.
-- Podium can rank by:
-  1. Blackout winner.
-  2. Most accepted prize claims.
-  3. Most confirmed cells.
-  4. Earliest last accepted claim timestamp.
-
-If no blackout happens before time expires, rank by accepted claims and confirmed cells.
+- Each player can claim each pattern once; a pattern is not globally closed after another player claims it.
+- An accepted terminal blackout moves the game to podium.
+- Score is `1000 * accepted_claims + 25 * confirmed_non_free_cells`.
+- Standings sort by score, earlier last accepted claim timestamp, then player id.
+- Blackout has no separate ranking override.
+- The deadline is stored, but automatic expiry is not implemented; the host can end the game.
 
 ## Spectator/TV UX
 
@@ -326,7 +326,7 @@ Buttons:
 - `Confirm`
 - `Not me`
 
-## Organizer UX
+## Organizer UX Goals (custom/AI prompt setup remains roadmap)
 
 Setup:
 
@@ -465,7 +465,7 @@ Playwright:
 - Optional tap confirmation works.
 - Claims validate server-side.
 - Spectator shows aggregate progress and winners.
-- Podium ranks by blackout/claims/confirmed cells.
+- Podium ranks by claim/cell score and deterministic tie-breakers.
 - No sensitive personal detail is exposed in result summaries.
 - Existing Bingo/Housie runtime remains unaffected.
 

@@ -1,9 +1,10 @@
-"""Pure Impostor game mechanics (SPEC-GAME-IMPOSTOR).
+"""Pure Odd Question game mechanics (SPEC-GAME-ODD-QUESTION).
 
 Renamed from "Odd One Out" 2026-07-28: that id collided with the pre-existing quiz VARIANT
 `odd_one_out` ("find the item that breaks the pattern"), which shipped in v3.1.3. Two different
 games sharing one id meant the variant's rules modal showed this game's rules once the backend
 catalog loaded. The standalone game was one day old and deployed nowhere, so it took the new name.
+The final name is Odd Question; `impostor` belongs to the separate pass-and-play secret-word game.
 
 Asymmetric-prompt social deduction: everyone answers what looks like the same question, one player
 secretly got a different one, and the group votes on who it was. Fills the gap between the catalog's

@@ -2,7 +2,62 @@
 
 Status: Gamma bridge plus party-scoped quiz authoring, generic WMLT/Drawing/Housie/Random Chit setup-save-start flow, catalog-driven party hub creation, and party hub start flow implemented; production expansion remains policy/QA gated for games that are not explicitly enabled. June 24, 2026 expanded LocalPlay host-app quick-start eligibility to Bluff, Find Someone Who, Random Chit, Mafia, Would You Rather, Never Have I Ever, Word Association, Acronym Game, Photo Clue, and Party Poker; policy enablement/embedded QA still gates actual Revelry exposure. The July 9, 2026 Party Quests staged setup/check-in/cancellation contract is implemented, regression-tested, and enabled for both gamma and production: gamma was flipped strict on 2026-07-09, and production `generated_content.content_type` DDL plus the strict authoring/check-in policy row were applied on 2026-07-14 after the LocalPlay-owned gamma pre-prod harness passed setup-required -> saved preview -> prepared start -> correct game lobby -> first-player auto-start -> late join -> cancellation. See the *Environment status ledger* in `DEPLOY.md` for the authoritative what-is-live-where table (this spec deliberately stops restating deploy SHAs; stale spec headers were a recurring bug).
 
-Last updated: 2026-10-03
+Last updated: 2026-10-10 (local source reconciliation; no live environment check)
+
+## October 10, 2026 — Paired contract repair
+
+[SPEC-REVELRY-CONTRACT-REPAIR.md](SPEC-REVELRY-CONTRACT-REPAIR.md) governs the new
+cross-repository implementation and its qualification. Revelry forwards verified
+effective Games permissions, supplies party ownership on content GET/DELETE,
+and rejects check-in mutations for closed parties. The clients preserve exact
+session/party-bound recovery and authoring correlation; embedded fullscreen
+reentry obtains fresh credentials. Workspace refresh loads prepared pointers by
+party in bounded pages, skips unchanged rows, and retains guarded version,
+deletion and concurrent-write handling. This is newly integrated source;
+the separately published maintenance commits below do not qualify it.
+
+LocalPlay adds a database-managed microsecond resource clock without changing
+integer-second lifecycle fields. Callback `occurred_at` and provider content,
+session, status and result `updated_at` share the exact stored resource revision.
+Separate `20261010T010000_integration_resource_clocks.sql` and `_gamma.sql`
+migrations are prepared **UNAPPLIED**. Physically deleted generated content has
+an environment-scoped, opaque deletion tombstone; no historical backfill is
+performed. Old rows retain explicit timestamp compatibility until mutated.
+Revelry atomic admission flags remain off, with hosted/provider/native and
+paired deployment acceptance still required. See the repair spec for current
+local test evidence and the remaining promotion gates.
+
+## October 10, 2026 — Current source contract and remaining work
+
+This section resolves contradictions in the older plans below against the local implementation at
+review baseline `3a6af36b`. Dated deployment/test statements are historical evidence, not a fresh
+live-state assertion. The October gamma runtime `dfcb266e` and immutable image
+`sha256:e318edd8cd2b812370b665b42ada8afdf4cbfdc600ff510d700501277ae6b275`
+were qualified in the release record; production remained unchanged in that record. Published Revelry
+consumer fixes `ada6f6e9` / `f4497edb` require deployment and paired live qualification before the
+workspace scaling gate can close. See `DEPLOY.md` and `RELEASE-EVIDENCE-2026-10.md` for recorded evidence.
+
+| Boundary | Implemented source | Remaining requirement |
+| --- | --- | --- |
+| Party authoring | Quiz packs plus `generated_content` for WMLT, Drawing, Housie, Random Chit and Party Quests; actor/catalog gating, ownership, immutable-after-use copies, duplicate scope rotation | Server drafts, save idempotency/version conflicts, retention enforcement and generalized content model |
+| Session lifecycle | Durable `game_sessions`, safe results/callbacks, cancellation/replacement and runtime availability reconciliation in `backend/main.py` / `backend/socket_manager.py` | Durable participant/event/outbox tables, multi-instance realtime and role-revocation contract |
+| Restart recovery | Process-local rooms with private disk snapshots in `backend/room_snapshot.py`; sockets reconnect using restored organizer/player credentials | Deployment-specific snapshot compatibility and restart evidence; disk snapshots are not shared realtime state |
+| Managed continuation | Podium returns to the authenticated hub; a new start creates a fresh session; managed `RESET_ROOM` rejects before mutation | Any roster-preserving managed continuation needs a distinct new-session/token/mirror contract |
+| Browser credentials | LocalPlay hub/authoring/launch JWTs require issuer, expiry, issued-at and id; protected hub/content/media HTTP operations validate their current token | No separate long-lived hub/authoring runtime-token exchange or refresh endpoint; expiry can require reopening from Revelry. Preserve local edits and give recovery copy |
+| Identity | Signed handoff actor/context is authoritative; launch JWT resolves to a room and organizer token when scoped accordingly | The service `RevelryLaunchTokenRequest` has no `actor` field, and durable host-app participant identity is deferred; body actor extras do not bind a guest seat |
+| Media | Signed uploads/finalize and public app-controlled image URLs; runtime image fallback | Attachment ownership/status checks on pack save/materialize, physical delete/retention jobs, dimension/EXIF normalization |
+
+Browser token expiry does not end already authenticated gameplay sockets or delete saved content,
+but it can reject subsequent authoring/hub/media requests. One-time `jti` replay consumption is a
+future hardening requirement; current launch credentials may be reused until expiry. The contract
+must not imply that resolving a hub token already issues an independent longer-lived credential.
+
+Source regression anchors: `backend/tests/test_revelry_integration.py`,
+`test_revelry_integration_hardening.py`, `test_revelry_review_regressions.py`,
+`test_host_app_catalog_policy.py`, `test_room_snapshot.py`; frontend authoring and host-app tests,
+plus opt-in `frontend/e2e/revelry-preprod-live.spec.ts`, `revelry-party-quests-staging.spec.ts` and
+`revelry-gamma-flow.spec.ts`. API token minting and local tests do not establish native app or
+current deployed browser/consumer behavior.
 
 ## October 3, 2026 — Repository review hardening
 
@@ -167,7 +222,7 @@ The target flow separates **configure**, **preview**, **arm for check-in**, **li
 | Ready | No | No | Safe prepared-content metadata | Edit, Preview, Arm for check-in, Start now |
 | Preview | No for MVP | No real guests | No session/result callbacks | Switch Host/Player/TV preview, return to edit |
 | Armed | No until Revelry receives the triggering check-in | No LocalPlay room yet | No game callback | Edit setup, disarm, start now |
-| Lobby | Yes | Yes | `session.created` | Host game, cancel game; auto-start may advance on first player join |
+| Lobby | Yes | Yes | `game.session_created` | Host game, cancel game; auto-start may advance on first player join |
 | Live | Yes | Yes when late join is enabled | `game.started`, then completion/cancellation | Final call, end and reveal, cancel game |
 | Complete | Yes, terminal/non-joinable | No | Safe result summary and `game.completed` | View results, start a new version/session |
 | Cancelled | Yes, terminal/non-joinable | No | `game.cancelled`, no result podium | Return to hub, start again |
@@ -642,7 +697,7 @@ July 6, 2026 Find Someone check-in/open-or-create contract:
 
 - `POST /integrations/revelry/party-games/start` accepts `settings.find_someone_config` and `open_or_create`.
 - `POST /integrations/revelry/sessions` accepts the same behavior through `settings.open_or_create=true` or `settings.find_someone_config.default_for_checkin=true`.
-- If an active Find Someone session already exists for the party and the call is open-or-create/default-check-in, LocalPlay returns the existing session with `opened_existing=true`, mints a fresh launch token, and does not create a duplicate room or duplicate `session.created` callback.
+- If an active Find Someone session already exists for the party and the call is open-or-create/default-check-in, LocalPlay returns the existing session with `opened_existing=true`, mints a fresh launch token, and does not create a duplicate room or duplicate `game.session_created` callback.
 - If the latest Find Someone session has already ended, LocalPlay returns `409` with `detail.code="find_someone_session_finished"` and `detail.action_required="host_start_new_session"`; Revelry should show a host-facing action to start a new session rather than treating this as a check-in auto-start.
 
 Gamma/prod rollout still requires host-app catalog policy rows for each game and an embedded hub smoke test. In production, missing policy fails closed.
@@ -677,7 +732,7 @@ July 6, 2026 LocalPlay check-in/default contract:
 - The LocalPlay catalog now advertises Party Quests with `checkin_friendly=true`, `supports_late_join=true`, `can_start_with_first_player=true`, `default_for_checkin_supported=true`, `auto_start_on_first_checkin_default=true`, and `checkin_join_policy="resume_or_join"`.
 - `POST /integrations/revelry/party-games/start` accepts `settings.party_quests_config` and `open_or_create`.
 - `POST /integrations/revelry/sessions` accepts the same behavior through `settings.open_or_create=true` or `settings.party_quests_config.default_for_checkin=true`.
-- If an active Party Quests session already exists for the party and the call is open-or-create/default-check-in, LocalPlay returns the existing session with `opened_existing=true`, mints a fresh launch token, and does not create a duplicate room or duplicate `session.created` callback.
+- If an active Party Quests session already exists for the party and the call is open-or-create/default-check-in, LocalPlay returns the existing session with `opened_existing=true`, mints a fresh launch token, and does not create a duplicate room or duplicate `game.session_created` callback.
 - If the latest Party Quests session has already ended, LocalPlay returns `409` with `detail.code="party_quests_session_finished"` and `detail.action_required="host_start_new_session"`; Revelry should show a host-facing action to start a new session rather than treating this as a check-in auto-start.
 - If a different active game exists, normal active-session conflict/replacement behavior still applies.
 
@@ -799,10 +854,10 @@ GET  /revelry/author
 
 Current limitations and follow-up work:
 
-- rooms live in process memory
+- rooms are process-local, with periodic/graceful-shutdown disk snapshots and startup restore; live sockets remain process-local
 - participant persistence remains deferred; session metadata is durable
-- quiz-only LocalPlay-hosted authoring/content APIs are implemented by reusing durable quiz-pack storage scoped to `revelry:party:{external_container_id}`
-- the party-scoped "Revelry Games" hub is implemented for list/create/edit/start quiz flows
+- quiz authoring uses durable party-scoped quiz packs; generic WMLT/Drawing/Housie/Random Chit/Party Quests content uses party-scoped `generated_content`
+- the party-scoped "Revelry Games" hub implements catalog-driven create/edit/preview/start/cancel/reentry flows for supported content and quick-start games
 - host-app launch chrome is hidden on `/revelry/*` and tokenized/embedded organizer/player/spectator launch URLs; deeper brand-specific polish remains iterative
 - organizer gameplay renders the live WebSocket `QUESTION` payload, because Revelry-launched organizer sessions may not have the original quiz object in browser state
 - host-app media upload paths sanitize synthetic owner ids such as `revelry:party:{party_id}` before signing IONOS paths; raw colons or other unsafe wallet characters must never appear in `storage_path`
@@ -834,9 +889,9 @@ Workspace sync and one-active-game checks must ignore sessions where `joinable =
 
 ### Phase 1: Session-First Integration
 
-Goal: make LocalPlay sessions first-class product objects.
+Historical phase plan: `game_sessions`, scoped launch routes, integration status/results and result persistence are implemented. A generic `GET /sessions/{session_id}` route and durable participant/event tables remain future work.
 
-Add:
+Original target list:
 
 - persistent `GameSession` table/model
 - `/integrations/revelry/sessions`
@@ -1420,7 +1475,7 @@ create index if not exists {prefix}host_app_catalog_flags_lookup_idx
   on {prefix}host_app_catalog_flags (environment, host_app, game_id);
 ```
 
-- Allowed `capability_overrides` keys are: `can_create_content`, `can_edit_content`, `can_quick_start`, `supports_ai_generation`, `supports_images`, `payments_enabled`, and `embedded_authoring_supported`. Unknown override keys must be ignored and logged.
+- Allowed `capability_overrides` keys are: `can_create_content`, `can_edit_content`, `can_quick_start`, `supports_ai_generation`, `supports_images`, `payments_enabled`, `embedded_authoring_supported`, and `requires_prepared_content_for_checkin`. Unknown overrides do not expand static support.
 - Merge algorithm for every static catalog entry:
   1. Drop entries where `host_app_supported` is false or `supported_host_apps` does not contain `revelry`.
   2. Load policy for `(environment, "revelry", game_id)`.
@@ -1554,7 +1609,7 @@ Rules:
 - Requires service authorization from Revelry.
 - Actor must include `author_content` or `manage_games`.
 - `return_url` must match the allowlist for Revelry web, universal/app-link hosts, or explicitly allowed custom schemes.
-- `draft_id` is stable across reopen/retry and is used for autosave recovery.
+- Server-side `draft_id` recovery is future work. Current link models accept `prepared_setup_id` as pointer context; the frontend scopes browser-local drafts by party/content/credential. An extra `draft_id` request field is not a persisted server draft.
 - `mode` is `create`, `edit`, or `duplicate`; `mode = edit` should include the existing `content_id` / `localplay_content_id`. Editing locked/used content must create a new version/content id.
 - Token lifetime is 60 minutes. The authoring UI may refresh it through the same service-backed flow while the host remains active.
 - The response must not include the shared integration secret. Browser clients receive only the short-lived LocalPlay `authoring_token` embedded in `authoring_url`.
@@ -1654,11 +1709,11 @@ Rules:
 - Revelry must use LocalPlay APIs for authoring and media; it must not write LocalPlay quiz, content, or media tables directly.
 - Content create/update requests should eventually include an idempotency key or stable `draft_id` so browser refreshes, mobile webview reloads, and upload retries can recover without duplicating partial games. Current implementation relies on `content_id` for edit idempotency and the editor's local draft for unsaved create recovery.
 - `GET /integrations/revelry/content/{content_id}` returns safe metadata by default. The response includes the safe prepared-card metadata both nested under `content` and duplicated as top-level compatibility fields such as `game_type`, `title`, `status`, `question_count`, `item_count`, `time_limit`, and `thumbnail_url`. Revelry may read either shape but should treat both as safe summary metadata only. The LocalPlay authoring UI may request `include_payload=true` using an authoring token to load the full quiz for editing; Revelry should not persist that full payload.
-- `DELETE /integrations/revelry/content/{content_id}` soft-deletes host-app-scoped content when called with service auth plus `external_container_id`, or with an authoring token scoped to the content.
-- `DELETE /integrations/revelry/party-games/content/{content_id}` soft-deletes party-scoped content from the LocalPlay Revelry Games hub using `party_games_token`; the actor must have `manage_games`.
+- `DELETE /integrations/revelry/content/{content_id}` deletes host-app-scoped content when called with service auth plus `external_container_id`, or with an authoring token scoped to the content.
+- `DELETE /integrations/revelry/party-games/content/{content_id}` deletes party-scoped content from the LocalPlay Revelry Games hub using `party_games_token`; the actor must have `manage_games`.
 - Host-app content deletion sends a signed `content.deleted` callback with `status = deleted_by_host`, `content_id`, and top-level host-app/container context.
-- Content statuses: `draft`, `ready`, `locked`, `deleted_by_host`, `expired`, `archived`.
-- Validation errors use `422 invalid_content` with field paths such as `questions[2].options`.
+- Quiz deletion is a soft delete; generic `generated_content` deletion removes the row. Current workspace status is `ready` or derived `locked` after use; `deleted_by_host` is callback metadata. Server draft/expired/archive lifecycle and recoverable generic deletion are future requirements.
+- Validation returns `422`; a uniform `invalid_content` envelope with field paths such as `questions[2].options` remains a target contract.
 - Duplicate idempotency keys returning the original response and stale update-version `409 edit_conflict` handling are backlog hardening items.
 - AI-assisted authoring may use `source = ai` and include prompt/theme metadata, but it still returns a stable `content_id` before room creation.
 - Manual custom quiz authoring should remain free because comparable products commonly include it. LocalPlay may monetize long-term saving/retention, larger libraries, larger media quotas, premium templates, AI assist, advanced branding, analytics, or cross-event reuse outside the Revelry-managed gameplay path.
@@ -1667,11 +1722,11 @@ LocalPlay persistence requirements:
 
 - Store drafts/content in LocalPlay-owned tables, not Revelry tables. Current quiz implementation reuses `quiz_packs` / `quiz_questions` with owner wallet id `revelry:party:{external_container_id}`. A generic host-app content table should be added when additional editable game types need payloads that no longer fit the quiz-pack schema.
 - Current required persisted fields for quiz content are `id`, `owner_wallet_id`, `title`, `status`, `question_count`, `deleted_at`, `created_at`, `updated_at`, and question rows. Future generic content should add `host_app`, `external_container_type`, `external_container_id`, `created_by_external_user_id`, `game_type`, `thumbnail_asset_id`, `draft_id`, `source`, `payload_version`, `locked_at`, `used_at`, `retention_expires_at`, and safe `metadata`.
-- Required draft fields: `draft_id`, `host_app`, `external_container_id`, `actor_external_user_id`, `game_type`, `payload`, `autosave_version`, `editing_lock_actor_id`, `editing_lock_expires_at`, `expires_at`, `created_at`, and `updated_at`.
-- Drafts expire 7 days after last edit. Saved party-scoped content expires 30 days after party end, or party start plus 48 hours plus 30 days when no end time exists.
-- When content is used to start a session, set `used_at` / `locked_at`; future edits must duplicate/version rather than mutate that content id.
+- Proposed server-draft fields: `draft_id`, `host_app`, `external_container_id`, `actor_external_user_id`, `game_type`, `payload`, `autosave_version`, `editing_lock_actor_id`, `editing_lock_expires_at`, `expires_at`, `created_at`, and `updated_at`.
+- Future retention policy: drafts expire 7 days after last edit; saved party-scoped content expires 30 days after party end, or party start plus 48 hours plus 30 days when no end time exists. Current storage has no enforcement job or persisted party-time expiry contract.
+- Current locking is derived from session references and edits after use create a new content version. Persisted `used_at` / `locked_at` fields are future schema work.
 - Media asset rows must record content/draft ownership so unused draft images can be marked orphaned and cleaned up asynchronously.
-- Retention cleanup should run as a scheduled LocalPlay job. For the current quiz-pack implementation, the job should soft-delete expired `revelry:party:{party_id}` quiz packs, mark expired drafts as `expired`, and enqueue orphaned IONOS media cleanup. Until the scheduled job exists, expired content remains hidden by UI/status rules but may remain in storage.
+- Retention cleanup should run as a scheduled LocalPlay job. For the current quiz-pack implementation, the job should soft-delete expired `revelry:party:{party_id}` quiz packs, mark expired drafts as `expired`, and enqueue orphaned IONOS media cleanup. Until expiry fields/status transitions and the scheduled job exist, elapsed time alone does not expire or hide current saved content.
 
 Common error responses:
 
@@ -1793,7 +1848,7 @@ Rules:
 - Free saved party content survives until 30 days after party end. If party end is unknown, use party start plus 48 hours, then 30 days.
 - Deleting a prepared setup in Revelry detaches/hides the pointer and asks LocalPlay to mark the content `deleted_by_host`; IONOS media deletion happens asynchronously after a grace period.
 - Images for expired/deleted drafts/content are marked orphaned/expired first and deleted later by cleanup. Completed game recap media should remain available through the result-retention window.
-- MVP media limits: one image per question, 20 questions max, 5 MB per image, PNG/JPEG/WebP.
+- Current upload limit: one image per question, 2 MiB per image, PNG/JPEG/WebP. The 20-question generation/catalog ceiling is not currently a universal import/save cap; stricter custom-pack limits need deliberate validation.
 - Manual authoring ships first. AI assist may use the same LocalPlay-hosted surface later.
 
 Suggested Revelry pointer fields:
@@ -1887,7 +1942,7 @@ Response:
 Rules:
 
 - Requires service authorization from Revelry. Browser/native clients must never receive the shared integration secret.
-- The `party_games_token` is a short-lived exchange token. After exchange, LocalPlay issues a session-scoped runtime credential for the hub, authoring, and start actions.
+- The `party_games_token` is a short-lived browser credential used directly for hub, authoring-link and start actions. Resolve returns context/workspace; it does not issue a separate session-scoped credential. Independent runtime credentials are established for gameplay, while hub/authoring refresh remains future work.
 - Gamma-only test utilities may pass `ttl_seconds` to `POST /integrations/revelry/party-games-link` for repeatable automated E2E runs against disposable gamma parties. LocalPlay caps this at 30 days outside production and rejects custom party-games token TTLs in production. Product clients should not depend on custom TTLs.
 - For Start shortcuts, Revelry may pass `intent = start`, `content_id`, `game_type`, and optional `time_limit`. LocalPlay returns a `start_url` that opens the party hub with `start_content_id`. This URL is still LocalPlay-owned ingress: the hub/start-intent route validates capabilities, content ownership, active-session state, replacement confirmation, and room creation before opening organizer/lobby.
 - `start_url` query parameters must be generated with structured URL encoding. Do not concatenate raw `content_id`, tokens, or game parameters into URLs.
@@ -1898,7 +1953,7 @@ Rules:
 - The same `guest_join_url` should power both TV/QR joining and copy/share joining. When LocalPlay shows a host-app lobby share action, it should copy/share this Revelry-owned URL, never a raw LocalPlay `/join/{room_code}` URL. If a caller wants to skip the mode choice, it may mint internal/deep-link routes with an explicit intent such as `mode=player` or `mode=spectator`, but the default host-facing QR/link should stay mode-neutral.
 - The token must carry the normalized host-app launch context, actor capabilities, allowlisted `return_url`, and display policy.
 - Party imagery/metadata in `display` is safe presentation context only. LocalPlay may use it for headers/cards, but Revelry remains authoritative for private party details.
-- If the token expires before exchange, LocalPlay shows "Open this from Revelry again." Expiry after exchange must not interrupt authoring, lobby, or gameplay while runtime credentials remain valid.
+- An expired hub token requires reopening from Revelry; subsequent hub actions cannot use it. Already established gameplay credentials remain valid independently. Authoring uses its own token and expiry; uninterrupted browser authoring across that expiry is a future refresh/recovery requirement.
 - LocalPlay may mint a longer-lived party-hub return token for organizer/results egress so "Back to Revelry Games" works after a game lasts longer than the original launch token. This token is scoped to the party hub, not organizer control. Keep it environment-configured, short enough for party usage, and never expose the service integration secret.
 
 LocalPlay hub route:
@@ -2308,7 +2363,7 @@ For future paid Revelry games, LocalPlay should enforce the normalized capabilit
 
 LocalPlay usage callbacks may include metering facts such as `game_type`, `session_id`, `content_id`, `premium_features_used`, and `session_count_delta`. They should not include prices, payment provider IDs, receipt payloads, or refund state unless a later settlement contract explicitly requires it.
 
-Authoring and gameplay must establish runtime credentials that survive the short-lived handoff/launch token. Token expiry should not interrupt a host while they are writing questions, uploading images, reviewing AI-generated content, waiting in lobby, or playing.
+Gameplay uses room credentials after launch exchange. Browser authoring/hub requests continue to require their expiring JWT; preserving edits and refreshing/reopening that credential is the future requirement for uninterrupted long authoring sessions.
 
 ### Frontend Launch Context Contract
 
@@ -2407,7 +2462,7 @@ Implementation-ready host-app lobby behavior:
 - Browser APIs such as `navigator.share()` are only for sharing the link; they are not a reliable TV/cast picker. Native Chromecast, Google Cast SDK, AirPlay/Apple TV, and richer receiver flows remain backlog enhancements on top of the same spectator/watch surface.
 - Tests should cover both modes: standalone still shows/copies the LocalPlay room URL, host-app with `guest_join_url` shows/copies the Revelry URL, and host-app without `guest_join_url` does not show a raw LocalPlay share fallback.
 - Completed host-app games must not expose the standalone LocalPlay game picker/library loop. Final results should keep the action boundary explicit:
-  - `Play Again` may reuse the current party-scoped content/session context and reset the current LocalPlay room for another round when LocalPlay can do so without creating standalone-owned content.
+  - Managed replay/next-game returns to the authenticated party hub and creates a fresh durable session. Direct managed `RESET_ROOM` is rejected; standalone replay may reuse its room.
   - `Back to Revelry Games` / `Choose Another Game` returns to the same party's LocalPlay hub by default. The hub may then offer Start Another Game, edit/create content, or an explicit Back to Revelry action using the validated `return_url`.
 - Standalone review/setup screens and host-app party-hub setup screens share room creation helpers but must keep their invocation shapes separate. UI button handlers should call no-arg room creation functions explicitly, while host-app start-intent and reset/play-again flows may pass deliberate content ids. DOM click events must never flow into the optional content-id override.
 - Organizer launches created by the LocalPlay party hub/start-intent route should include a longer-lived `party_hub_url` in launch context. This allows post-game and terminal recovery actions to return to LocalPlay's party hub even when the original short-lived party ingress token has expired.
@@ -2502,7 +2557,7 @@ Rules:
 - Revelry must validate `event.origin`
 - messages are UI hints only
 - backend result APIs remain the source of truth
-- In embedded Revelry mode, LocalPlay **Back to Revelry** / authoring return sends `window.parent.postMessage({ type: "revelry.localplay.return_to_parent", return_url }, targetOrigin)`. LocalPlay does **not** navigate its own frame in this mode — it only posts the message.
+- For cross-origin return URLs in embedded Revelry mode, LocalPlay **Back to Revelry** / authoring return sends `window.parent.postMessage({ type: "revelry.localplay.return_to_parent", return_url }, targetOrigin)`. For a same-origin LocalPlay party-hub return URL it navigates within the frame; cross-origin host returns post the message.
 - **Authoring save-return also mirrors the saved pointer in the payload** (added 2026-07-09): `{ type: "revelry.localplay.return_to_parent", return_url, content: { localplay_content_id, game_type, status } }`. The same three values are also on `return_url`'s query string. Revelry should reconcile its mirrored setup state **in place** from `content` (or the `return_url` params) and **router-navigate inside its SPA** — it must NOT do a full `window.location` reload on this message. A full reload drops the Revelry session and signs the host out; that regression is why the structured `content` field was added so no navigation is required to pick up the pointer.
 - `targetOrigin` must be derived from `parent_origin` when present, otherwise from `new URL(return_url).origin`. It must never use `window.location.origin`, because LocalPlay's iframe origin is `gamesapi-*` while the parent Revelry surface may be `api-gamma.revelryapp.me`, `app.revelryapp.me`, or an app/universal-link origin.
 - External/mobile/fullscreen fallback may navigate to the same validated `return_url`.
@@ -2630,7 +2685,7 @@ Landed 2026-07-08 so cross-app specs can select by testid (with text/role fallba
 | `player-in-game` | `/join` | hidden sentinel present once the player is past join/lobby and in active play through podium |
 | `spectator-root` | `/spectate` (`SpectatorPage`) | root container (all render paths) |
 
-## Rollout Status
+## Recorded rollout evidence (dated; consult the deployment ledger for current state)
 
 Roll out integration changes on gamma first, then promote to production after the changed path is playable end to end.
 
@@ -2688,7 +2743,7 @@ Recommended LocalPlay order:
 19. Backlog: add server-side draft/autosave recovery for generic WMLT/Drawing setup forms. Quiz authoring has browser-local draft isolation; generic setup forms should gain equivalent party-scoped draft ids before long editing flows become common.
 20. Backlog: move WMLT/Drawing default prompts and party-type recommendations into catalog/server config. Current MVP defaults are safe built-ins, but future party types should receive context-aware prompt suggestions without adding hub-side conditionals.
 21. Add a remote host-app catalog policy layer so Revelry game availability and per-game capabilities can be enabled, disabled, allowlisted, or gamma-only without a LocalPlay deploy. Done for backend policy evaluation with `backend/host_app_catalog_policy.py`, SQLite/Supabase `{TABLE_PREFIX}host_app_catalog_flags` storage, shared filtering for `/catalog`, party hub resolve, launch-context allowed game ids, authoring/content generation, start-intent links, and session creation. The implementation includes 30-60 second policy caching, production fail-closed behavior, static-capability ceilings, and regression tests for disabled, allowlisted, production-missing-policy, capability-intersection, unsupported-game, and action-time rejection cases.
-22. Implement the July 9 Party Quests staging contract: saved/AI content support, LocalPlay preview, prepared-content check-in enforcement, first-player runtime auto-start, hub/lobby/live cancellation, callbacks, and local regression coverage. Done on the LocalPlay side. Pending rollout work: apply gamma DDL, opt gamma policy capabilities in explicitly, complete cross-app gamma QA, complete the Revelry prepared-pointer/arming flow, then repeat the reviewed process for production.
+22. Implement the July 9 Party Quests staging contract: saved/AI content, preview, check-in enforcement, first-player auto-start, cancellation, callbacks and regressions are implemented. July 9/14 DDL and policy work is recorded above as historical applied evidence; future candidate changes still require affected cross-app/device qualification and the current release gates.
 
 ## Open Questions
 

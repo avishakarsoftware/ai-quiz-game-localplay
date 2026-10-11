@@ -2,7 +2,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { getUserProfile, getSessionToken, getDeviceId, type UserProfile } from '../utils/storage';
 import { signInWithBackend, fetchUserProfile, signOut as storageSignOut } from '../utils/auth';
-import { track, identify } from '../utils/analytics';
+import { track, identify, resetIdentity } from '../utils/analytics';
 import { iapLogIn, iapLogOut } from '../utils/iap';
 
 interface AuthState {
@@ -41,6 +41,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 } else if ('unauthorized' in data) {
                     storageSignOut();
                     setUser(null);
+                    resetIdentity();
+                    identify(getDeviceId(), { signed_in: false });
+                    void iapLogOut();
+                    window.dispatchEvent(new CustomEvent('refresh-sparks'));
                 }
                 // Network/timeout failures keep the cached session. A slow phone network
                 // should not silently sign out an otherwise valid user.
@@ -64,16 +68,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Clean up any partial state from failed sign-in
             storageSignOut();
             setUser(null);
+            resetIdentity();
+            identify(getDeviceId(), { signed_in: false });
+            void iapLogOut();
+            window.dispatchEvent(new CustomEvent('refresh-sparks'));
             throw err;
         }
     }, []);
 
     const signOut = useCallback(() => {
+        track('signed_out');
         storageSignOut();
         setUser(null);
+        resetIdentity();
+        identify(getDeviceId(), { signed_in: false });
         void iapLogOut();  // revert RevenueCat to the device-scoped wallet (best-effort, native only)
         window.dispatchEvent(new CustomEvent('refresh-sparks'));
-        track('signed_out');
     }, []);
 
     return (

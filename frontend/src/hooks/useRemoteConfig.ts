@@ -24,7 +24,9 @@ function mergeWithDefaults(data: Partial<RemoteConfig>): RemoteConfig {
     enabled_game_types: Array.isArray(data.enabled_game_types) ? data.enabled_game_types : undefined,
     announcements: Array.isArray(data.announcements)
       ? data.announcements
-          .map((item) => item as unknown as Record<string, unknown>)
+          .map((item): unknown => item)
+          .filter((item): item is Record<string, unknown> =>
+            typeof item === 'object' && item !== null && !Array.isArray(item))
           .filter((a) => typeof a.id === 'string' && typeof a.text === 'string')
           .map((a) => ({
             id: a.id as string,

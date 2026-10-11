@@ -1,5 +1,5 @@
 /**
- * Storage abstraction — web uses localStorage, native uses Capacitor Preferences.
+ * Storage abstraction — web and native currently use localStorage.
  * All token/ID reads go through this wrapper so native apps can switch to
  * Keychain (iOS) / Keystore (Android) in the future.
  */
@@ -77,6 +77,8 @@ export interface SavedOrganizerSession {
     hostAppJoinLabel?: string;
     hostAppReturnUrl?: string;
     hostAppPartyHubUrl?: string;
+    hostAppSessionId?: string;
+    hostAppContainerId?: string;
     savedAt: number;
 }
 

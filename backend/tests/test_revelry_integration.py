@@ -658,6 +658,7 @@ def test_runtime_callback_uses_safe_result_summary_and_game_event(monkeypatch):
             "status": "complete",
             "game_type": "quiz",
             "game_title": "Runtime Quiz",
+            "integration_updated_at_us": 1791630000123456,
         },
         {
             "game_title": "Runtime Quiz",
@@ -674,7 +675,8 @@ def test_runtime_callback_uses_safe_result_summary_and_game_event(monkeypatch):
     assert body["host_app"] == "revelry"
     assert body["external_container_id"] == "party-runtime"
     assert body["session_id"] == "lp_runtime"
-    assert re.match(r"^\d{4}-\d{2}-\d{2}T.*Z$", body["occurred_at"])
+    assert body["occurred_at"] == "2026-10-10T11:00:00.123456Z"
+    assert body["payload"]["updated_at"] == body["occurred_at"]
     assert body["payload"]["session"] == {
         "session_id": "lp_runtime",
         "room_code": "RUN123",

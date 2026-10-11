@@ -1,7 +1,17 @@
 # LocalPlay Game Rules Surface Spec
 
 Status: Phase 2 rules access polish implemented; deeper room-config-specific rule overrides remain planned
-Last updated: July 7, 2026
+Last reconciled against the repository: October 10, 2026
+
+The July access updates below are implemented. The older rollout phases at the end are historical:
+menu access shipped with the access polish, while room-config overrides and localization remain planned.
+Current sources are `backend/game_rules.py` (attached to the catalog), `frontend/src/gameRules.ts`
+(fallback/context registry), and `GameRulesModal`; rules are static, not personalized with private game state.
+
+The October review fixed fallback-section composition so game-specific extras append to the
+base Objective, Flow, and Scoring/Winning sections. Mafia therefore retains those sections
+alongside its Privacy guidance. Registry and rendered-modal regressions cover this behavior;
+the local catalog browser matrix also passed the Mafia rules check.
 
 ## July 7, 2026 Contextual Menu Rules Fix
 
@@ -103,9 +113,9 @@ Add a shared `rules` object to each `GAME_CATALOG` entry.
     "title": "Mafia Rules",
     "summary": "Find the Mafia before they outnumber the town.",
     "player_count": {
-      "min": 5,
+      "min": 6,
       "recommended": "7-15",
-      "max": 50
+      "max": 15
     },
     "sections": [
       {
@@ -320,11 +330,11 @@ Implemented in this phase:
 - Revelry embedded Party Hub catalog cards can render a Rules button when LocalPlay catalog metadata includes rules.
 - Tests cover backend rules presence/policy propagation and the game-picker rules modal.
 
-Phase 2:
+Phase 2 (remaining roadmap):
 
 - Add room-config-aware rule overrides for games such as Musical Chairs mode, Bingo card shape, and Mafia role mix.
 
-Phase 3:
+Phase 3 (menu access implemented; localization deferred):
 
 - Add post-start help access from the menu for complex games.
 - Add localized rules copy if LocalPlay becomes multilingual.

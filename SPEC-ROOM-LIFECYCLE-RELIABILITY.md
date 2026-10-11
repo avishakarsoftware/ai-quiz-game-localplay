@@ -1,6 +1,6 @@
 # SPEC-ROOM-LIFECYCLE-RELIABILITY
 
-Status: **Implemented baseline, active hardening track** (updated 2026-10-03).
+Status: **Implemented baseline, active hardening track** (source reconciled 2026-10-10; live status not rechecked).
 
 Owner: LocalPlay / Revelry Games.
 
@@ -10,8 +10,8 @@ Purpose: make party-scale room creation, lobby waiting, reconnect, reset, cleanu
 
 Rooms are party infrastructure, not a single-game throwaway detail.
 
-- A QR/link that guests scanned should remain useful across a short sequence of games when the host uses in-place replay/next-game actions.
-- Guests who are sitting on a completed game's final-results screen should be moved into the next lobby by `ROOM_RESET` without rescanning.
+- Standalone QR/room links remain useful across in-place replay/next-game actions. Revelry-managed continuation uses the party-aware join URL and a fresh durable session from its hub.
+- Standalone guests on final results move into the next lobby by `ROOM_RESET` without rescanning. Managed clients return to the party hub; roster reuse across a fresh managed session remains future work.
 - A host who waits while announcing or explaining should not lose the whole lobby just because phones slept or networks wobbled.
 - The lobby must make connected versus preserved/offline seats understandable. Start gates count connected players only.
 - Every organizer lobby must show the actual game title, an obvious **Back to games** action, Rules, and Start state feedback. The hamburger Home entry is secondary, not the only escape hatch.
@@ -49,10 +49,22 @@ Rooms are party infrastructure, not a single-game throwaway detail.
 - `RESET_ROOM` must not run from active gameplay or from a non-organizer client.
 - Clients clear every prior game payload, including generic prompts, photo clues, card hands, and Bingo tickets/marks, before entering the reset lobby. A new `GAME_STARTING` received before its runtime sync must show a waiting state rather than the previous game's content.
 
+### Snapshot recovery
+
+- `ROOM_SNAPSHOT_ENABLED` defaults to true and the interval defaults to ten seconds; graceful shutdown saves once more. `ROOM_SNAPSHOT_DIR` defaults under `DB_DIR/room_snapshots`.
+- Snapshot directories/files use owner-only permissions (0700/0600), since they contain organizer/player credentials and private game payloads. Protect copied backups equally.
+- Atomic per-room writes preserve the last complete snapshot. Malformed JSON or metadata in one file is logged and skipped without stopping healthy rooms; retain unreadable files for diagnosis.
+- Restore uses the longer lobby TTL only when preserved seats exist. Empty lobbies and active rooms use the base room TTL. Runtime/session TTLs are distinct: advertised four-hour session expiry does not keep an abandoned process room alive for four hours.
+- Live sockets/tasks/locks are recreated. Lobby seats restore offline; active seats preserve score/streak/answered state for token reclaim. Quiz countdown restarts while scoring retains its original start timestamp; Housie auto-call restores stopped. Musical Chairs/Mafia timed tasks still require host recovery.
+- Snapshot recovery protects a single writable mounted volume. It does not provide multiple-instance routing/fanout, durable participant tables or native device qualification.
+
+Regression anchor: `backend/tests/test_room_snapshot.py`; deployed restart evidence remains a separate release gate.
+
 ### Client Reconnect And Recovery
 
 - An authenticated organizer receives authoritative `time_limit`, `game_type`, and full game content in `ROOM_CREATED`, including recovery of an empty lobby; unauthenticated sockets cannot receive organizer configuration.
 - Each mounted organizer/player/spectator/TV surface owns one current socket. Frames and close callbacks from superseded sockets are ignored; replacing a socket cancels its scheduled retry.
+- Organizer actions send only through the current open socket, and lobby/pass-and-play Start stays disabled while connecting or reconnecting. Setup edits retain only the latest same-room Impostor roster and send it after the organizer's `AUTH` frame; gameplay actions are not replayed after reconnect.
 - A player waking while a retry is pending reconnects once, without a second timer opening another socket and taking over their own nickname.
 - Saved organizer/player recovery works under the application's React StrictMode effect setup/cleanup cycle. A saved player token is attached only to its matching room and nickname; opening a different room link does not silently join using the old room credential.
 - `KICKED` is terminal until the player deliberately joins again. Focus/online events must not cause the displaced tab to steal its nickname back from the active tab.
@@ -130,7 +142,7 @@ Gamma all-games is not the concurrency test. It intentionally runs with lower pa
 
 Before production deploys that touch room creation, WebSockets, lobby reconnect, reset, room cleanup, or shared organizer/player/spectator surfaces:
 
-1. Run backend tests excluding the known legacy E2E file.
+1. Run isolated SQLite backend tests (set `DB_BACKEND=sqlite` and a private `DB_DIR`) excluding the known legacy E2E file; run that file serially as its own CI/local step.
 2. Run focused socket scenarios.
 3. Run frontend vitest and `npx tsc -b`.
 4. Run local all-games Playwright.

@@ -16,6 +16,7 @@ import httpx
 import random
 
 import config
+from integration_clock import resource_updated_at
 import room_snapshot
 import tokens as token_module
 from media_store import media_store
@@ -250,6 +251,7 @@ from photo_clue_engine import (
     submit_photo as photo_submit_photo,
     validate_config as validate_photo_clue_config,
 )
+from photo_clue_media import resolve_attachment as resolve_photo_clue_attachment
 from poker_engine import (
     PHASE_PODIUM as POKER_PHASE_PODIUM,
     create_initial_state as poker_create_initial_state,
@@ -708,6 +710,9 @@ class Room:
 
     def current_round_data(self) -> Optional[dict]:
         """Current round item (question or statement)."""
+        if self.game_type == "impostor":
+            # Pass-and-play tracks its own rounds, without a shared question index.
+            return imp.spectator_state(self.impostor_state) if self.impostor_state else None
         idx = self.current_question_index
         if idx < 0 or idx >= self.total_rounds():
             return None
@@ -746,10 +751,6 @@ class Room:
         if self.game_type == "odd_question":
             # Host view: deliberately passes no viewer_id, so neither prompt is included.
             return oddq_public_state(self.odd_question_state, host=True) if self.odd_question_state else None
-        if self.game_type == "impostor":
-            # One viewer, so there is no per-seat scoping here by design; the engine withholds
-            # the secret until the round resolves and the UI privacy gate handles the rest.
-            return imp.public_state(self.impostor_state) if self.impostor_state else None
         if self.game_type == "would_you_rather":
             return wyr_public_state(self.wyr_state) if self.wyr_state else None
         if self.game_type == "never_have_i_ever":
@@ -1223,7 +1224,7 @@ class SocketManager:
                         sync["drawer"] = room.current_drawer
                         sync["drawing_ops"] = room.drawing_ops[-config.MAX_DRAW_OPS_PER_SYNC:]
                         sync["correct_guessers"] = list(room.correct_guessers)
-                        sync["guess_log"] = room.guess_log[-10:]
+                        sync["guess_log"] = self._drawing_public_guess_log(room)
                     else:
                         sync["question"] = {k: v for k, v in round_data.items() if k != "answer_index"}
                     sync["time_limit"] = room.time_limit
@@ -1264,6 +1265,8 @@ class SocketManager:
                     sync["photo_clue"] = self._photo_clue_public_state(room)
                 if room.game_type == "poker" and room.poker_state:
                     sync["poker"] = self._poker_public_state(room)
+                if room.game_type == "impostor" and room.impostor_state:
+                    sync["impostor"] = imp.spectator_state(room.impostor_state)
                 await websocket.send_json(sync)
                 while (
                     self.rooms.get(room_code) is room
@@ -1304,10 +1307,10 @@ class SocketManager:
             room.organizer = websocket
             room.organizer_id = client_id
             # Notify players and spectators that host is back (only on actual reconnect, not first connect)
-            if was_disconnected and (room.current_question_index >= 0 or len(room.players) > 0):
+            if was_disconnected and (room.current_question_index >= 0 or len(room.players) > 0 or room.impostor_state):
                 await room.broadcast({"type": "HOST_RECONNECTED"})
             # Detect reconnection: room already has players or game has progressed
-            if room.current_question_index >= 0 or len(room.players) > 0:
+            if room.current_question_index >= 0 or len(room.players) > 0 or room.impostor_state:
                 await self._send_organizer_sync(room)
             else:
                 await websocket.send_json({
@@ -1444,7 +1447,7 @@ class SocketManager:
                 sync["drawer"] = room.current_drawer
                 sync["drawing_ops"] = room.drawing_ops[-config.MAX_DRAW_OPS_PER_SYNC:]
                 sync["correct_guessers"] = list(room.correct_guessers)
-                sync["guess_log"] = room.guess_log[-10:]
+                sync["guess_log"] = self._drawing_public_guess_log(room)
                 sync["answered_count"] = len(room.correct_guessers)
             else:
                 sync["question"] = round_data
@@ -3442,7 +3445,7 @@ class SocketManager:
     def _start_poker_game(self, room: Room):
         nicknames = [player["nickname"] for player in room.players.values()]
         room.poker_config = validate_poker_config(room.quiz)
-        room.poker_state = poker_create_initial_state(nicknames, room.poker_config, seed=room.room_code, now=time.time())
+        room.poker_state = poker_create_initial_state(nicknames, room.poker_config, seed=secrets.randbits(128), now=time.time())
         room.poker_completed_sent = False
         room.state = room.poker_state["phase"]
         room.answer_log = []
@@ -3614,11 +3617,8 @@ class SocketManager:
             async with room.lock:
                 if message.get("type") == "PHOTO_CLUE_UPLOAD_READY":
                     asset_id = str(message.get("asset_id") or "").strip()
-                    asset = media_store.get_asset(asset_id) if asset_id else None
-                    image_url = getattr(asset, "url", "") if asset else str(message.get("image_url") or "")
-                    if asset is not None and getattr(asset, "status", "") not in ("ready", "finalized", "active"):
-                        raise ValueError("Photo upload is not ready yet")
-                    room.photo_clue_state = photo_submit_photo(room.photo_clue_state, nickname, asset_id, image_url, now=time.time())
+                    asset = resolve_photo_clue_attachment(asset_id, message.get("attachment_token"))
+                    room.photo_clue_state = photo_submit_photo(room.photo_clue_state, nickname, asset_id, asset["public_url"], now=time.time())
                     room.answer_log.append({"kind": "photo", "nickname": nickname, "asset_id": asset_id})
                 else:
                     room.photo_clue_state, correct = photo_submit_guess(room.photo_clue_state, nickname, str(message.get("guess") or ""), now=time.time())
@@ -4767,11 +4767,21 @@ class SocketManager:
         room.answer_log = []
 
     async def _broadcast_impostor_sync(self, room: Room):
-        await room.broadcast({
+        public = {
             "type": "IMPOSTOR_SYNC",
-            "impostor": imp.public_state(room.impostor_state) if room.impostor_state else None,
+            "impostor": imp.spectator_state(room.impostor_state) if room.impostor_state else None,
             "impostor_seats": room.impostor_seats,
+        }
+        await room.broadcast_to_players(public)
+        await room.send_to_organizer({
+            **public,
+            "impostor": imp.public_state(room.impostor_state) if room.impostor_state else None,
         })
+        for client_id, ws in list(room.spectators.items()):
+            try:
+                await ws.send_json(public)
+            except Exception:
+                room._remove_connection(client_id)
 
     async def _handle_impostor_message(self, room: Room, client_id: str, message: dict) -> bool:
         """Organizer-only Impostor messages. Returns True if the message was handled."""
@@ -5797,8 +5807,13 @@ class SocketManager:
             "is_drawer": is_drawer,
             "drawing_ops": room.drawing_ops[-config.MAX_DRAW_OPS_PER_SYNC:],
             "correct_guessers": list(room.correct_guessers),
-            "guess_log": room.guess_log[-10:],
+            "guess_log": self._drawing_public_guess_log(room),
         }
+
+    def _drawing_public_guess_log(self, room: Room) -> list[dict]:
+        # Successful guesses contain the secret answer or an accepted alias. Keep those
+        # texts in the server history, and show only wrong guesses while players are guessing.
+        return [dict(item) for item in room.guess_log if not item.get("correct")][-10:]
 
     def _drawing_clue(self, room: Room, prompt: Optional[dict] = None) -> str:
         prompt = prompt or room.current_round_data() or {}
@@ -5954,7 +5969,6 @@ class SocketManager:
                 "type": "GUESS_ACCEPTED",
                 "nickname": nickname,
                 "correct_guessers": list(room.correct_guessers),
-                "guess": guess,
             })
             await room.send_to_organizer({
                 "type": "ANSWER_COUNT",
@@ -5969,7 +5983,7 @@ class SocketManager:
             room.guess_log.append({"nickname": nickname, "guess": guess, "correct": False})
             room.guess_log = room.guess_log[-20:]
             await self._send_to_client(room, client_id, {"type": "GUESS_RESULT", "correct": False, "points": 0})
-            await room.broadcast({"type": "GUESS_LOG", "guess_log": room.guess_log[-10:]})
+            await room.broadcast({"type": "GUESS_LOG", "guess_log": self._drawing_public_guess_log(room)})
 
     def get_team_leaderboard(self, room: Room) -> List[dict]:
         """Aggregate player scores by team. Solo players use their nickname."""
@@ -6168,7 +6182,8 @@ class SocketManager:
                 "completed_at": now,
                 "last_activity_at": now,
             })
-            self._send_integration_callback("session.completed", updated or session, safe_summary)
+            if updated:
+                self._send_integration_callback("session.completed", updated, safe_summary)
         except Exception:
             logger.warning("Could not update game session for room %s", room.room_code)
 
@@ -6195,7 +6210,7 @@ class SocketManager:
         body = {
             "event_id": f"lp_evt_{uuid.uuid4().hex}",
             "event_type": event_type,
-            "occurred_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "occurred_at": resource_updated_at(session),
             "host_app": session.get("host_app"),
             "external_container_type": session.get("external_container_type"),
             "external_container_id": session.get("external_container_id"),
@@ -6215,6 +6230,7 @@ class SocketManager:
                     if session.get("expires_at") is not None else None
                 ),
                 "game_type": session.get("game_type"),
+                "updated_at": resource_updated_at(session),
                 "game_title": session.get("game_title"),
                 "result_summary": result_summary,
                 "feed_card": session.get("feed_card"),
@@ -6297,7 +6313,8 @@ class SocketManager:
                 "expires_at": now + config.REVELRY_SESSION_IDLE_TTL_SECONDS,
                 "last_activity_at": now,
             })
-            self._send_integration_callback("session.started", updated or session)
+            if updated:
+                self._send_integration_callback("session.started", updated)
         except Exception:
             logger.warning("Could not mark game session started for room %s", room.room_code)
 
@@ -6319,7 +6336,8 @@ class SocketManager:
                 "closed_message": message,
                 "last_activity_at": now,
             })
-            self._send_integration_callback(f"session.{status}", updated or session)
+            if updated:
+                self._send_integration_callback(f"session.{status}", updated)
         except Exception:
             logger.warning("Could not mark game session closed for room %s", room.room_code)
 

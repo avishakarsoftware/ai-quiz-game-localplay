@@ -1,3 +1,5 @@
+import pytest
+
 from card_engine import make_card
 from poker_engine import (
     PHASE_DECISION,
@@ -5,6 +7,7 @@ from poker_engine import (
     PHASE_SHOWDOWN,
     create_initial_state,
     public_sync,
+    reveal_hand,
     start_next_hand,
     submit_decision,
     validate_config,
@@ -101,3 +104,55 @@ def test_tournament_completes_when_one_player_remains():
 
     assert state["phase"] == PHASE_PODIUM
     assert state["standings"][0]["player_id"] == "alice"
+
+
+def test_hidden_card_payloads_do_not_identify_the_dealt_cards():
+    state = create_initial_state(["alice", "bob"], seed="privacy", now=100)
+    dealt_ids = {card["id"] for cards in state["hole_cards"].values() for card in cards}
+    for viewer in (None, "alice", "bob"):
+        sync = public_sync(state, viewer)
+        for player_id, cards in sync["hole_cards"].items():
+            if player_id == viewer:
+                assert cards == state["hole_cards"][player_id]
+            else:
+                assert len({card["id"] for card in cards}) == 2
+                assert all(card["id"] not in dealt_ids for card in cards)
+                assert all(set(card) == {"id", "hidden"} and card["hidden"] for card in cards)
+
+
+def test_showdown_cannot_award_the_same_pot_twice():
+    state = create_initial_state(["alice", "bob"], seed="replay", now=100)
+    settled = reveal_hand(state)
+    stacks = dict(settled["stacks"])
+    with pytest.raises(ValueError, match="No poker hand to reveal"):
+        reveal_hand(settled)
+    assert settled["stacks"] == stacks
+    assert sum(stacks.values()) == 2000
+
+
+def test_next_hand_cannot_abandon_an_unsettled_hand_or_restart_a_podium():
+    state = create_initial_state(["alice", "bob"], {"starting_stack": 200, "ante": 100}, seed="phase", now=100)
+    with pytest.raises(ValueError, match="Finish the current poker hand"):
+        start_next_hand(state, now=101)
+    assert state["hand_number"] == 1
+    assert state["stacks"] == {"alice": 100, "bob": 100}
+    state = submit_decision(state, "alice", "stay")
+    state = submit_decision(state, "bob", "fold")
+    state = start_next_hand(state, now=200)
+    state = submit_decision(state, "alice", "stay")
+    state = submit_decision(state, "bob", "fold")
+    with pytest.raises(ValueError, match="Finish the current poker hand"):
+        start_next_hand(state, now=300)
+
+
+def test_a_player_cannot_change_a_submitted_decision():
+    state = create_initial_state(["alice", "bob", "cara"], seed="decision", now=100)
+    state = submit_decision(state, "alice", "stay")
+    with pytest.raises(ValueError, match="already submitted"):
+        submit_decision(state, "alice", "fold")
+    assert state["decisions"]["alice"] == "stay"
+
+
+@pytest.mark.parametrize("raw", [{"big_blind": None}, {"big_blind": "bad"}, {"ante": None, "big_blind": "bad"}])
+def test_malformed_legacy_ante_falls_back_to_a_valid_default(raw):
+    assert validate_config(raw)["ante"] == 20

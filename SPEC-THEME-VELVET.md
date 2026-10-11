@@ -1,24 +1,27 @@
 # LocalPlay Velvet Theme Redesign Spec
 
-Status: **Implemented — the Velvet theme is live** (tokens in `frontend/src/index.css`; reworked TV host
-surface shipped). Reviewed 2026-07-21.
+Status: **Implemented — the Velvet theme is live** (tokens in `frontend/src/index.css`; reworked TV
+spectator surface shipped). Reconciled 2026-10-10.
 
 ## Overview
 
-Replace the current "game show purple" aesthetic with **Velvet** — a late-night lounge theme with midnight purple, neon magenta, electric mint, and warm cream text. This is primarily a frontend change. Backend APIs and WebSocket message contracts should stay unchanged; a small frontend-only `INTRO` presentation state is allowed.
+Replace the current "game show purple" aesthetic with **Velvet** — a late-night lounge theme with midnight purple, neon magenta, electric mint, and warm cream text. This document retains the original migration blueprint. The current theme is implemented; the exact tokens/components are in production source, and the reconciliation notes below override obsolete prototype details.
 
-The redesign also introduces a proper **TV host surface** (reworked SpectatorPage) alongside the existing phone player and organizer views.
+The redesign introduced a **TV presentation surface** (reworked SpectatorPage) alongside the existing phone player and organizer views.
 
 Design reference: `marketing/claude-design-1/` — specifically `src/screens.jsx`, `src/styles.css`, and `src/data.jsx`.
 
 Important: the marketing prototype is visual guidance, not production code. Recreate the intent inside LocalPlay's existing React/TypeScript structure, accessibility patterns, route model, auth/payment UX, and game state machines. Do not copy prototype-only fake games, demo data, URLs, or timing assumptions into production unless the current backend supports them.
+
+Current implementation boundary: `index.css` self-hosts Outfit for both body and display text, keeps native/monospace fallback stacks and compatibility aliases, and uses `.spectator-root` for the browser presentation layout. `Avatar`, `PlayerChip`, `TimerRing`, answer-card primitives, and reduced-motion rules exist. Sizes, animation sequencing, and component signatures in the original blueprint below are design guidance; they are not all exact current values. Native TV packaging and complete remote-only host controls belong to `SPEC-TV-APP.md` and remain future work.
+
 
 ## Implementation Principles
 
 - Preserve current product behavior first: quiz and WMLT must remain playable from organizer, player, and spectator views.
 - Ship this as a design-system migration plus screen-by-screen restyle, not as a rewrite of gameplay logic.
 - Keep visual density appropriate to each surface: player phone screens are direct controls, organizer screens are operational controls, spectator screens are TV presentation.
-- Maintain mobile safe areas, installable PWA behavior, and IONOS `/quiz/` base path.
+- Maintain mobile safe areas, installable PWA behavior, and IONOS root base path (`VITE_BASE_PATH=/`; `/quiz/` is legacy).
 - Keep all text legible at current supported breakpoints. Validate narrow phones, desktop organizer, and 1280×720 TV.
 - Avoid adding backend persistence or new WebSocket messages as part of this theme work.
 
@@ -28,7 +31,7 @@ Important: the marketing prototype is visual guidance, not production code. Recr
 
 ### CSS Variable Contract
 
-Add the Velvet token set in `index.css`, then keep a compatibility layer for the existing variable names while the screen migration is in progress. The current app references `--bg-primary`, `--accent-primary`, `--glass-bg`, `--text-tertiary`, and similar names in many components and Tailwind arbitrary values. Removing them up front will create invisible text and broken colors.
+The Velvet token set and compatibility layer are implemented in `index.css`. The palette snippet below preserves the original design values; current CSS is authoritative for exact opacity/elevation values. The current app references `--bg-primary`, `--accent-primary`, `--glass-bg`, `--text-tertiary`, and similar names in many components and Tailwind arbitrary values. Removing them up front will create invisible text and broken colors.
 
 ```css
 :root {
@@ -59,9 +62,9 @@ Add the Velvet token set in `index.css`, then keep a compatibility layer for the
   --shadow: 0 0 40px -10px rgba(255,46,122,0.35), 0 20px 60px rgba(0,0,0,0.5);
 
   /* Typography */
-  --font-display: 'Bricolage Grotesque', sans-serif;
-  --font-body:    'Hanken Grotesk', sans-serif;
-  --font-mono:    'JetBrains Mono', monospace;
+  --font-display: 'Outfit', 'Bricolage Grotesque', 'Arial Rounded MT Bold', system-ui, sans-serif;
+  --font-body:    'Outfit', 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:    'SFMono-Regular', 'JetBrains Mono', ui-monospace, monospace;
 
   /* Temporary compatibility aliases. Delete only after rg confirms no usage. */
   --bg-primary: var(--bg);
@@ -134,15 +137,7 @@ Phone surface:
 
 ### Font Loading
 
-Preferred implementation: self-host font files under `frontend/public/fonts/` and define `@font-face` in `index.css` so the PWA remains stable and avoids a third-party runtime dependency. If self-hosting is not done in the first implementation pass, Google Fonts may be used temporarily in `index.html`, but track a follow-up to self-host before release.
-
-Temporary Google Fonts option:
-
-```html
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-```
+Current implementation: `@font-face` in `frontend/src/index.css` loads the variable Outfit font from `frontend/src/assets/fonts/outfit-variable.woff2` with `font-display: swap` and weights 100–900. Vite fingerprints/packages the font with the application assets. Both body and display stacks use Outfit first; Bricolage/Hanken are fallbacks, and numbers use a native monospace stack. `index.html` does not load Google Fonts. Keep fonts self-hosted so PWA/native/web builds share the same assets.
 
 ### Variable Migration Map
 
@@ -168,7 +163,7 @@ Temporary Google Fonts option:
 - Glassmorphism as a dominant visual language (`backdrop-filter: blur`, semi-transparent white panels). A very subtle overlay is allowed only for drawer/backdrop readability.
 - The current purple-heavy `--bg-gradient`.
 - Direct use of old token names in components. Keep aliases during migration, then remove once all references are converted.
-- System font stack as the primary brand typography. Keep native fallbacks after Hanken/Bricolage/JetBrains.
+- System font stack as the primary brand typography. Keep native fallbacks after Outfit and the optional fallback families.
 - Colored answer buttons (red/blue/yellow/green). Replace with unified dark cards and neutral letter glyph badges.
 - `ANSWER_STYLES` as a visual source of truth. Do not delete it until all components/tests stop importing it; instead introduce an answer-label helper (`A/B/C/D`) and migrate callers.
 - Existing `@keyframes` in `index.css`: audit each. Keep functional animations (timer pulse, score pop), replace decorative ones with Velvet equivalents, remove unused.
@@ -242,8 +237,8 @@ The component already exists at `components/TimerRing.tsx`. Update the styling:
   - Warning (≤10s): `var(--gold)` (#FFC76B)
   - Danger (≤5s): `var(--accent)` with pulse animation
 - Track (background circle): `var(--rule)` (10% white)
-- Center number: `font-family: var(--font-mono)`, color `var(--ink)`
-- Sizes: 80px (phone default), 120px (TV question), 140px (TV pictionary/taboo)
+- Center number uses `var(--font-mono)`; the current `TimerRing` uses the active ring color for the number.
+- Default size is 80px with a 4px stroke; call sites may pass larger TV sizes. Drawing/Taboo size suggestions from the prototype are not a separate runtime requirement.
 
 ### Answer Cards
 
@@ -536,7 +531,7 @@ PhoneHeader (eyebrow nav bar)
 
 ## Phase 4: TV Surface (SpectatorPage Rework)
 
-The current SpectatorPage is a simplified view. Rework it into a proper TV host surface at 1280×720 target resolution.
+SpectatorPage now provides the presentation layout at TV/browser sizes. This original screen blueprint describes the theme intent. It does not give spectators organizer authority; `/tv` is a separate partial launcher shell and `/tv/:code` opens the spectator shortcut.
 
 ### TV Layout Shell
 
@@ -555,7 +550,7 @@ TVHeader (eyebrow nav with game info + room code)
 
 This is a new screen for when the TV is waiting / no game selected.
 
-Implementation note: the current production backend only supports `quiz` and `wmlt`. The library may visually preview future games as disabled/coming-soon cards, but selectable cards must be limited to supported `GameType` values until the backend implements the new games.
+Current implementation: Organizer game selection and the separate `/tv` launcher use the implemented catalog and effective eligibility. Quiz, WMLT, Drawing, Bluff, Poker, Bingo/Housie, social games, and quiz variants have backend support. Use canonical catalog IDs; prototype-only names such as `pictionary`, `whispers`, and `fibbage` are not supported game IDs.
 
 - Header: eyebrow row with "LocalPlay", session info, host name, spark count
 - Title: display (80px): "Pick a game" ("game" italic accent)
@@ -566,16 +561,16 @@ Implementation note: the current production backend only supports `quiz` and `wm
   - Display name (36px), tagline (14px, ink-2)
   - Footer: eyebrow player count + pace, display arrow (20px, italic, accent) "→"
 
-Current supported cards:
+Canonical examples (catalog policy supplies the full current list):
 
-| Game | ID | Enabled |
+| Game | ID | Current implementation |
 |---|---|---|
-| Trivia | `quiz` | Yes |
-| Most Likely To | `wmlt` | Yes |
-| Pictionary | `pictionary` | Disabled / Coming soon |
-| Taboo | `taboo` | Disabled / Coming soon |
-| Whispers | `whispers` | Disabled / Coming soon |
-| Bluff | `fibbage` or future backend id | Disabled / Coming soon |
+| AI Quiz | `quiz` | Implemented |
+| Most Likely To | `wmlt` | Implemented |
+| Drawing Game | `drawing` | Implemented |
+| Bluff | `bluff` | Implemented card-game MVP |
+| Party Poker | `poker` | Implemented stay/fold MVP |
+| Chinese Whispers / Taboo | No current runtime IDs | Future game designs |
 
 ### TV: Lobby
 
@@ -723,7 +718,7 @@ Implementation note: in addition to the global transition/animation damping abov
 
 ---
 
-## Phase 6: Screen-by-Screen Migration Checklist
+## Phase 6: Original Screen-by-Screen Migration Checklist
 
 ### Organizer Screens
 
@@ -785,7 +780,7 @@ Implementation note: in addition to the global transition/animation damping abov
 
 ---
 
-## Implementation Order
+## Original Implementation Order
 
 1. **Token foundation** — Add Velvet tokens plus compatibility aliases in `index.css`. Load fonts, preferably self-hosted. Verify current screens remain readable before deeper refactors.
 2. **Shared primitives** — Build `<Avatar>`, `<PlayerChip>`, `.eyebrow`, `.display`, `.num`, `.answer-card`, `.answer-glyph`, `.btn-ghost`, and restyle existing button classes without changing behavior.
@@ -802,27 +797,19 @@ Implementation note: in addition to the global transition/animation damping abov
 
 ## INTRO State Machine Change
 
-This is the only allowed state-machine change in this redesign, and it is optional. Both PlayerPage and SpectatorPage may add an `INTRO` presentation state between `LOBBY` and `QUESTION`, but it must not reduce real answer time or require backend timing changes.
+Current implemented flow: the quiz-style runtime enters backend `INTRO` on `START_GAME`; the organizer sends `NEXT_QUESTION`, and the server broadcasts `QUESTION`. PlayerPage and SpectatorPage react to `GAME_STARTING` with an intro presentation and immediately replace it when authoritative round data arrives. PlayerPage starts local 3/2/1 ticks; the spectator view currently shows a static “3” with a pulse. There is no guaranteed 2.5-second intro window or delayed question rendering. Other runtimes start their game-specific views directly.
 
-**Current flow:**
-```
-GAME_STARTING → stay in LOBBY → first QUESTION arrives → QUESTION state
-```
-
-**New flow:**
-```
-GAME_STARTING → INTRO state (3-2-1 countdown, ~2.5s) → first QUESTION arrives → QUESTION state
-```
+The following remain presentation guardrails:
 
 Implementation guardrails:
 - On `GAME_STARTING` message: transition to `INTRO` instead of staying in `LOBBY`
 - INTRO screen runs a local countdown (`3` -> `2` -> `1` -> `Go.`)
 - When the first `QUESTION` message arrives, transition to `QUESTION` regardless of countdown progress (the backend is the source of truth for timing)
-- No backend changes needed — `GAME_STARTING` is already sent
+- Keep the existing server timing authoritative; the backend already has the quiz-style `INTRO` phase and `GAME_STARTING` event.
 - If the backend sends `QUESTION` immediately enough that users lose visible answer time, skip or shorten the intro rather than delaying question rendering.
 - Respect `prefers-reduced-motion`: show a static "Get ready" screen or skip the countdown.
 
-Add `'INTRO'` to the `PlayerState` and spectator state types.
+`INTRO` is already included in the current frontend state types.
 
 ---
 
@@ -848,7 +835,7 @@ Before merging the theme implementation:
 - Existing WMLT flow works on phone player, organizer, and spectator.
 - Google/Apple sign-in controls remain visible and usable in SettingsDrawer.
 - Token badge, purchase modal/error modal, maintenance overlay, and announcement banner remain readable.
-- IONOS `/quiz/` build loads with the correct base path and no broken asset URLs.
+- IONOS root build (`npm run ionos:build`) loads with the correct base path and no broken asset URLs.
 - Playwright or manual screenshot coverage includes: narrow phone, desktop organizer, 1280x720 spectator, and a long-question/long-answer quiz. The committed Playwright suite currently covers the DrawingGame organizer prompt screen on desktop and mobile, including fixed-control overlap and no horizontal overflow.
 - No text overlaps fixed controls, safe-area notches, or the settings/spark badges.
 - `rg "var\\(--text-quaternary|var\\(--bg-tertiary|answer-red|answer-blue|answer-yellow|answer-green" frontend/src` is either clean or every remaining hit is intentionally covered by a compatibility alias.
@@ -858,9 +845,9 @@ Before merging the theme implementation:
 
 ## What This Spec Does NOT Cover
 
-- New game implementations (Pictionary, Taboo, Whispers, Bluff) — those have their own game-specific screens built when the games are built. The theme system supports them.
+- Game implementations and rules — DrawingGame and Bluff have their own implemented components/specs; Chinese Whispers and Taboo remain separate future designs.
 - Backend API or WebSocket protocol changes.
 - Theme switching — this spec ships Velvet as the only theme. Multi-theme support can be added later by wrapping variables in `[data-theme="velvet"]` selectors.
-- Drawing canvas for Pictionary — separate component, separate spec.
+- Drawing canvas behavior — implemented in `DrawingCanvas`, governed by `SPEC-GAME-DRAWING.md`.
 - Recharts dependency decision — the LeaderboardBarChart currently uses Recharts. This can either be replaced with pure CSS bars (matching the TV leaderboard spec) or kept with updated colors. Decide during implementation.
 - Long-term generated-content persistence, Cloud Run readiness, or multi-instance room state.

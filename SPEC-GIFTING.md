@@ -12,6 +12,8 @@ Related: `SPEC-REFERRAL.md` (shared friend-code/idempotency pattern), `SPEC.md` 
 
 ---
 
+Source reconciled 2026-10-10 against backend, SQL adapters, frontend, and focused tests. Dated rollout statements below are historical evidence; this review does not reverify hosted flags or perform deployments.
+
 ## 0. Goal
 
 Let a player send N sparks to a friend. A directed transfer — one atomic **debit-then-credit** in a

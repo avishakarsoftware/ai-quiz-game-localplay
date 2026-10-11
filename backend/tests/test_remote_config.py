@@ -7,6 +7,7 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import config
+import pytest
 
 
 class TestRemoteConfigURL:
@@ -117,6 +118,37 @@ class TestRemoteConfigCacheBehavior:
             import asyncio
             result = asyncio.run(remote_config.get_config())
             assert result.get("ai_models", {}).get("free_model") == "good-model"
+
+    @pytest.mark.parametrize("payload", [None, [], "broken", 42])
+    def test_malformed_fetch_preserves_last_good_config(self, monkeypatch, payload):
+        import asyncio
+        import remote_config
+
+        last_good = {"operations": {"kill_switch": True}, "ai_models": {"free_model": "good-model"}}
+        monkeypatch.setattr(remote_config, "_cached_config", last_good)
+        monkeypatch.setattr(remote_config, "_last_fetch", 0)
+        monkeypatch.setattr(remote_config, "REMOTE_CONFIG_URL", "https://config.example.test/config.json")
+        monkeypatch.setattr(remote_config, "get_overrides", lambda: {})
+        response = mock.Mock(status_code=200)
+        response.json.return_value = payload
+        fake_client = mock.AsyncMock()
+        fake_client.get.return_value = response
+        fake_client.__aenter__.return_value = fake_client
+        monkeypatch.setattr(remote_config.httpx, "AsyncClient", lambda **kwargs: fake_client)
+
+        result = asyncio.run(remote_config.get_config())
+        assert result == last_good
+        assert remote_config._cached_config == last_good
+
+    def test_startup_tolerates_malformed_ai_models(self, monkeypatch):
+        import asyncio
+        import remote_config
+
+        monkeypatch.setattr(remote_config, "_cached_config", {"ai_models": "broken"})
+        monkeypatch.setattr(remote_config, "get_overrides", lambda: {})
+        monkeypatch.setattr(remote_config, "_fetch_remote_config", mock.AsyncMock(return_value=None))
+        asyncio.run(remote_config.init())
+        assert remote_config.get_free_model() == config.GEMINI_MODEL
 
 
 class TestModelOverrideAllProviders:

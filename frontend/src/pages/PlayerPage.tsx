@@ -20,6 +20,7 @@ import { apiUrl } from '../utils/api';
 import PodiumInviteCta from '../components/PodiumInviteCta';
 import { hasEmoji, isEmojiForwardGame } from '../utils/emoji';
 import { returnToHostApp } from '../utils/hostAppReturn';
+import { consumeHostAppLaunchToken, hostAppLaunchRequest, matchesHostAppSession, resolvedHostAppSession, type HostAppSessionBinding } from '../utils/hostAppSession';
 import MusicalChairsPlayer from '../components/player/MusicalChairsPlayer';
 import BluffTable from '../components/BluffTable';
 import PokerGame from '../components/PokerGame';
@@ -52,7 +53,7 @@ interface PlayerQuestion {
     image_url?: string;
 }
 
-type SavedPlayerSession = { roomCode: string; nickname: string; team: string; avatar: string; sessionToken?: string; savedAt?: number };
+type SavedPlayerSession = HostAppSessionBinding & { roomCode: string; nickname: string; team: string; avatar: string; sessionToken?: string; savedAt?: number; hostAppReturnUrl?: string };
 const PLAYER_SESSION_KEY = 'localplay_session';
 const PLAYER_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
@@ -112,9 +113,13 @@ function friendlyJoinError(message: string): string {
 export default function PlayerPage() {
     const [searchParams] = useSearchParams();
     const { code: urlCode } = useParams();
-    const saved = getSavedSession();
-    const hostAppMode = searchParams.get('embed') === '1' || searchParams.has('launch_token') || searchParams.has('session_id');
-    const savedSession = hostAppMode ? null : saved;
+    const launchRequest = useRef(hostAppLaunchRequest(searchParams)).current;
+    const [saved] = useState(getSavedSession);
+    const hostAppMode = launchRequest.managed;
+    const savedSession = hostAppMode
+        ? (matchesHostAppSession(saved, launchRequest) && saved?.sessionToken ? saved : null)
+        : (saved?.hostAppSessionId ? null : saved);
+    const hostAppSessionRef = useRef<HostAppSessionBinding & { hostAppReturnUrl?: string }>(savedSession || {});
     const [state, setState] = useState<PlayerState>('JOIN');
     const [roomCode, setRoomCode] = useState(normalizeRoomCode(urlCode || searchParams.get('room') || savedSession?.roomCode || ''));
     const [nickname, setNickname] = useState(savedSession?.nickname || '');
@@ -138,9 +143,9 @@ export default function PlayerPage() {
     const [myRank, setMyRank] = useState(0);
     const [error, setError] = useState('');
     const [claimFeedback, setClaimFeedback] = useState('');
-    const [hostAppReturnUrl, setHostAppReturnUrl] = useState('');
-    const [hostAppTerminalError, setHostAppTerminalError] = useState(false);
-    const [launchResolving, setLaunchResolving] = useState(() => searchParams.has('launch_token'));
+    const [hostAppReturnUrl, setHostAppReturnUrl] = useState(savedSession?.hostAppReturnUrl || '');
+    const [hostAppTerminalError, setHostAppTerminalError] = useState(Boolean(launchRequest.sessionId && !launchRequest.token && !savedSession));
+    const [launchResolving, setLaunchResolving] = useState(Boolean(launchRequest.token && !savedSession));
     const [introCount, setIntroCount] = useState(3);
     const [lobbyPlayers, setLobbyPlayers] = useState<PlayerInfo[]>([]);
     const [catalog, setCatalog] = useState<CatalogGameWithRules[]>([]);
@@ -162,8 +167,8 @@ export default function PlayerPage() {
     }, []);
 
     useEffect(() => {
-        const launchToken = searchParams.get('launch_token');
-        if (!launchToken) return;
+        const launchToken = launchRequest.token;
+        if (!launchToken || savedSession) return;
         let cancelled = false;
         setLaunchResolving(true);
         (async () => {
@@ -173,6 +178,8 @@ export default function PlayerPage() {
                 const data = await res.json();
                 if (!data.room_code) throw new Error('Launch token missing room code');
                 if (!cancelled && data.room_code) {
+                    const binding = resolvedHostAppSession(data, launchRequest);
+                    hostAppSessionRef.current = { ...binding, hostAppReturnUrl: data.launch_context?.return_url || data.return_url || '' };
                     setRoomCode(data.room_code);
                     setHostAppReturnUrl(data.launch_context?.return_url || data.return_url || '');
                     setHostAppTerminalError(false);
@@ -188,7 +195,7 @@ export default function PlayerPage() {
             }
         })();
         return () => { cancelled = true; };
-    }, [searchParams]);
+    }, [launchRequest, savedSession]);
     const [hiddenOptions, setHiddenOptions] = useState<number[]>([]);
     const [isBonus, setIsBonus] = useState(false);
     const [showBonusSplash, setShowBonusSplash] = useState(false);
@@ -348,6 +355,8 @@ export default function PlayerPage() {
             track('player_joined', { room_code: roomCode, nickname, has_team: !!team });
             const savedSession = getSavedSession();
             const sessionToken = savedSession?.roomCode === roomCode && savedSession.nickname === nickname
+                && (!hostAppMode || (savedSession.hostAppSessionId === hostAppSessionRef.current.hostAppSessionId
+                    && savedSession.hostAppContainerId === hostAppSessionRef.current.hostAppContainerId))
                 ? savedSession.sessionToken || '' : '';
             ws.send(JSON.stringify({ type: 'JOIN', nickname, team: team || undefined, avatar, session_token: sessionToken }));
         };
@@ -416,7 +425,8 @@ export default function PlayerPage() {
             }
             if (msg.type === 'JOINED_ROOM') {
                 nicknameReconnectRetriesRef.current = 0;
-                savePlayerSession({ roomCode, nickname, team, avatar, sessionToken: msg.session_token || '' });
+                savePlayerSession({ ...hostAppSessionRef.current, roomCode, nickname, team, avatar, sessionToken: msg.session_token || '' });
+                if (hostAppMode && msg.session_token) consumeHostAppLaunchToken(hostAppSessionRef.current);
                 if (msg.game_type) {
                     setGameType(msg.game_type as GameType);
                     setGameTypeKnown(true);
@@ -473,7 +483,8 @@ export default function PlayerPage() {
                 nicknameReconnectRetriesRef.current = 0;
                 if (msg.players) setLobbyPlayers(msg.players as PlayerInfo[]);
                 const token = (msg.session_token as string) || getSavedSession()?.sessionToken || '';
-                savePlayerSession({ roomCode, nickname, team, avatar, sessionToken: token });
+                savePlayerSession({ ...hostAppSessionRef.current, roomCode, nickname, team, avatar, sessionToken: token });
+                if (hostAppMode && token) consumeHostAppLaunchToken(hostAppSessionRef.current);
                 setQuestionNumber(msg.question_number as number);
                 setTotalQuestions(msg.total_questions as number);
                 if (msg.game_type) {
@@ -1237,9 +1248,9 @@ export default function PlayerPage() {
         soundManager.hapticsSelect();
         wsRef.current?.send(JSON.stringify({ type: 'ODDQ_VOTE', accused }));
     };
-    const submitPhotoClueReady = (assetId: string, imageUrl?: string) => {
+    const submitPhotoClueReady = (assetId: string, attachmentToken: string) => {
         soundManager.hapticsSelect();
-        wsRef.current?.send(JSON.stringify({ type: 'PHOTO_CLUE_UPLOAD_READY', asset_id: assetId, image_url: imageUrl || '' }));
+        wsRef.current?.send(JSON.stringify({ type: 'PHOTO_CLUE_UPLOAD_READY', asset_id: assetId, attachment_token: attachmentToken }));
     };
     const submitPhotoClueGuess = (photoGuess: string) => {
         soundManager.hapticsSelect();

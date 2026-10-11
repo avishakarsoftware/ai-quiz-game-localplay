@@ -267,10 +267,17 @@ def public_sync(state: dict, players: list[dict[str, str]] | None = None) -> dic
     revealed = all_clues[:clue_index + 1]
     phase = state.get("phase", PHASE_ROUND)
     correct_items = list(state.get("correct_by_player", {}).values())
+    answer_visible = phase in {PHASE_REVEAL, PHASE_PODIUM} or bool(state.get("round_revealed"))
+    public_correct_items = [
+        dict(item) if answer_visible else {key: value for key, value in item.items() if key != "guess"}
+        for item in correct_items
+    ]
     guess_count = sum(len(value) for value in state.get("guesses_by_player", {}).values())
     config_payload = {k: v for k, v in state.get("config", {}).items() if k != "rounds"}
     config_payload["clue_count"] = int(config_payload.get("clues_per_round", len(all_clues)))
     config_payload["max_guesses_per_clue"] = int(config_payload.get("max_guesses_per_player_per_clue", 3))
+    if not config_payload.get("allow_multiple_guesses_per_clue", True):
+        config_payload["max_guesses_per_clue"] = 1
     payload = {
         "phase": phase,
         "config": config_payload,
@@ -284,13 +291,13 @@ def public_sync(state: dict, players: list[dict[str, str]] | None = None) -> dic
         "category": round_item.get("category", ""),
         "correct_count": len(correct_items),
         "correct_players": [item.get("player_id", "") for item in correct_items if item.get("player_id")],
-        "correct_guessers": correct_items,
+        "correct_guessers": public_correct_items,
         "guesses_count": guess_count,
         "scores": dict(state.get("scores", {})),
         "deadline": state.get("deadline"),
         "round_revealed": bool(state.get("round_revealed")),
     }
-    if phase in {PHASE_REVEAL, PHASE_PODIUM} or state.get("round_revealed"):
+    if answer_visible:
         payload["answer"] = round_item.get("answer", "")
         payload["aliases"] = list(round_item.get("aliases", []))
     return payload
@@ -318,6 +325,8 @@ def submit_guess(state: dict, player_id: str, guess: Any, now: float | None = No
     guesses = guesses_by_player.get(player_id, [])
     used_this_clue = len([item for item in guesses if int(item.get("clue_index", -1)) == clue_index])
     max_guesses = int(state.get("config", {}).get("max_guesses_per_player_per_clue", 3))
+    if not state.get("config", {}).get("allow_multiple_guesses_per_clue", True):
+        max_guesses = 1
     if used_this_clue >= max_guesses:
         raise ValueError("Wait for the next clue before guessing again")
 

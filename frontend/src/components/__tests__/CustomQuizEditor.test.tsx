@@ -72,6 +72,58 @@ describe('CustomQuizEditor', () => {
         });
     });
 
+    it.each([
+        ['Paris', 'Rome'],
+        ['Paris', 'Rome', 'Berlin'],
+        ['Paris', 'Rome', 'Berlin', 'Madrid'],
+    ])('preserves multiple-choice options when reopening and restoring drafts: %j', (...options) => {
+        const onReview = vi.fn();
+        const props = { onBack: () => {}, onReview };
+        const { unmount } = render(<CustomQuizEditor {...props} initialQuiz={{
+            quiz_title: 'Cities',
+            questions: [{ id: 1, text: 'Which city?', options, answer_index: 1, image_prompt: '' }],
+        }} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Multiple Choice' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Review & Start' }));
+        expect(onReview.mock.calls[0][0].questions[0]).toMatchObject({ options, answer_index: 1 });
+        unmount();
+
+        render(<CustomQuizEditor {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Review & Start' }));
+        expect(onReview.mock.calls[1][0].questions[0]).toMatchObject({ options, answer_index: 1 });
+    });
+
+    it('normalizes a reversed true/false pair without changing the correct answer', () => {
+        const onReview = vi.fn();
+        render(<CustomQuizEditor onBack={() => {}} onReview={onReview} initialQuiz={{
+            quiz_title: 'Facts',
+            questions: [{ id: 1, text: 'A claim.', options: ['False', 'True'], answer_index: 0, image_prompt: '' }],
+        }} />);
+        expect(screen.getByLabelText('Answer A')).toBeDisabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Review & Start' }));
+        expect(onReview.mock.calls[0][0].questions[0]).toMatchObject({ options: ['True', 'False'], answer_index: 1 });
+    });
+
+    it('adds and removes choices while keeping the selected answer aligned', () => {
+        const onReview = vi.fn();
+        render(<CustomQuizEditor onBack={() => {}} onReview={onReview} initialQuiz={{
+            quiz_title: 'Cities',
+            questions: [{ id: 1, text: 'Which city?', options: ['Paris', 'Rome', 'Berlin', 'Madrid'], answer_index: 2, image_prompt: '' }],
+        }} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Remove answer A' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Review & Start' }));
+        expect(onReview.mock.calls[0][0].questions[0]).toMatchObject({ options: ['Rome', 'Berlin', 'Madrid'], answer_index: 1 });
+        fireEvent.click(screen.getByRole('button', { name: 'Add Answer' }));
+        expect(screen.getByRole('button', { name: 'Review & Start' })).toBeDisabled();
+        fireEvent.change(screen.getByLabelText('Answer D'), { target: { value: 'Lisbon' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Review & Start' }));
+        expect(onReview.mock.calls[1][0].questions[0]).toMatchObject({ options: ['Rome', 'Berlin', 'Madrid', 'Lisbon'], answer_index: 1 });
+        fireEvent.click(screen.getByRole('button', { name: 'True / False' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Multiple Choice' }));
+        expect(screen.getByLabelText('Answer D')).toHaveValue('');
+        expect(screen.getByRole('button', { name: 'Review & Start' })).toBeDisabled();
+    });
+
     it('preserves saved question image references without exposing storage paths', () => {
         const onReview = vi.fn();
         render(<CustomQuizEditor

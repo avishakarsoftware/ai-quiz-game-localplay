@@ -99,10 +99,10 @@ describe('fetchUserProfile', () => {
         expect(result?.user.email).toBe('test@test.com');
     });
 
-    it('returns unauthorized on auth rejection', async () => {
+    it.each([401, 403, 410])('returns unauthorized on auth rejection (%s)', async (status) => {
         globalThis.fetch = vi.fn().mockResolvedValue({
             ok: false,
-            status: 401,
+            status,
         });
 
         const result = await fetchUserProfile();

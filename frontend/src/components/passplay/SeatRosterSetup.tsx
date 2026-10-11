@@ -13,6 +13,7 @@ interface SeatRosterSetupProps {
     onStart: (names: string[], emojis: string[]) => void;
     /** Live-sync the roster so a host who reconnects mid-setup doesn't lose their typing. */
     onChange?: (names: string[], emojis: string[]) => void;
+    connectionReady?: boolean;
     startLabel?: string;
 }
 
@@ -34,6 +35,7 @@ export default function SeatRosterSetup({
     maxSeats,
     onStart,
     onChange,
+    connectionReady = true,
     startLabel = 'Start game',
 }: SeatRosterSetupProps) {
     // Start with enough blank rows to reach the minimum, so the host sees what's required
@@ -47,7 +49,8 @@ export default function SeatRosterSetup({
     const emojis = useMemo(() => names.map((_, i) => EMOJI_POOL[i % EMOJI_POOL.length]), [names]);
 
     const filled = useMemo(() => names.map((n) => n.trim()).filter(Boolean), [names]);
-    const canStart = filled.length >= minSeats;
+    const enoughSeats = filled.length >= minSeats;
+    const canStart = enoughSeats && connectionReady;
 
     const publish = useCallback(
         (next: string[]) => {
@@ -140,11 +143,12 @@ export default function SeatRosterSetup({
                 </button>
             </div>
 
-            {!canStart && (
+            {!enoughSeats && (
                 <p className="passplay-roster__need" data-testid="seat-need-more">
                     Add at least {minSeats} players ({filled.length} so far).
                 </p>
             )}
+            {!connectionReady && <p className="passplay-roster__need" role="status">Connecting to your game…</p>}
         </div>
     );
 }

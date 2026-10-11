@@ -15,6 +15,7 @@ interface LobbyScreenProps {
     minPlayers?: number;
     locked: boolean;
     onStartGame: () => void;
+    connectionReady?: boolean;
     onToggleLock: () => void;
     /** Clear every offline lobby seat now, instead of waiting out the reconnect grace. */
     onRemoveOfflinePlayers?: () => void;
@@ -39,6 +40,7 @@ export default function LobbyScreen({
     minPlayers = 1,
     locked,
     onStartGame,
+    connectionReady = true,
     onToggleLock,
     onRemoveOfflinePlayers,
     onBackToGames,
@@ -243,7 +245,7 @@ export default function LobbyScreen({
                 </button>
             )}
 
-            <button onClick={onStartGame} disabled={playerCount < minPlayers} className="btn btn-primary btn-glow w-full" data-testid="organizer-start-game">
+            <button onClick={onStartGame} disabled={playerCount < minPlayers || !connectionReady} className="btn btn-primary btn-glow w-full" data-testid="organizer-start-game">
                 Start Game
             </button>
             {playerCount < minPlayers && (

@@ -16,11 +16,12 @@ Related: `SPEC.md` (spark economy), `backend/db.py` (`check_and_grant_daily_bonu
 
 ---
 
-## 0. What exists today
+## 0. Implemented baseline (source reviewed 2026-10-10)
 
-`check_and_grant_daily_bonus(wallet_id)` grants a **flat** `DAILY_BONUS_TOKENS` (10) once per UTC day
-(idempotent on `wallets.last_daily_bonus_date`). There is **no streak** — a player who logs in daily gets
-the same 10 as one who logs in monthly. (Note: `config.STREAK_THRESHOLDS` is an *in-game answer-streak*
+`check_and_grant_daily_bonus(wallet_id)` grants the escalating reward below once per UTC day,
+using `wallets.last_daily_bonus_date` and `wallets.bonus_streak`. Both SQLite and the Supabase RPC
+return `(granted, new_balance, streak, reward)`; the streak advances even if the balance cap
+clips the credit. The settings drawer shows a streak from day two onward and tomorrow's reward. (Note: `config.STREAK_THRESHOLDS` is an *in-game answer-streak*
 points multiplier — unrelated to this login streak.)
 
 ## 1. Goal
@@ -41,12 +42,12 @@ streak resets. Purely additive to the existing daily-bonus mechanic; same once-p
 Day 1→10, 2→15, 3→20, 4→25, 5+→30. `DAILY_BONUS_TOKENS` stays as the day-1 value; `STREAK_BASE` defaults to
 it. (If they diverge, `STREAK_BASE` wins for streak math; keep them equal to avoid confusion.)
 
-## 3. Data model
+## 3. Implemented data model
 
-Add `wallets.bonus_streak INTEGER NOT NULL DEFAULT 0` via the try/except `ALTER TABLE ADD COLUMN` migration
+The schema includes `wallets.bonus_streak INTEGER NOT NULL DEFAULT 0` via the try/except `ALTER TABLE ADD COLUMN` migration
 pattern (both SQLite `db.py` and a Supabase migration + `supabase_db` parity).
 
-## 4. Logic — extend `check_and_grant_daily_bonus`
+## 4. Implemented logic — `check_and_grant_daily_bonus`
 
 Inside the existing `BEGIN IMMEDIATE` txn, after the "already claimed today" check:
 - `today = _utc_date_str()`, `yesterday = _utc_yesterday_str()` (new helper).
@@ -55,14 +56,14 @@ Inside the existing `BEGIN IMMEDIATE` txn, after the "already claimed today" che
 - `reward = min(STREAK_BASE + (streak-1)*STREAK_STEP, STREAK_MAX)`.
 - Credit `reward` (cap at `MAX_TOKEN_BALANCE`), set `last_daily_bonus_date = today`, `bonus_streak = streak`,
   reset the ad counter (as today), write a `daily_bonus` transaction with `metadata={"streak":streak}`.
-- Return `(granted, new_balance, streak, reward)` — extend the return tuple (update all callers).
+- Return `(granted, new_balance, streak, reward)`. `reward` is the computed amount, not necessarily the actual capped balance increase.
 
 ## 5. Surfacing
 
 - `tokens.get_token_status` / `GET /tokens/balance` payload gains `bonus_streak` and (when just granted)
   keeps `bonus_amount` = the streak-scaled reward. Add `streak_next_reward` (what tomorrow pays) for UI.
 - **Frontend:** show the streak in the balance UI / `SettingsDrawer` (e.g. "🔥 Day 3 — +20 sparks",
-  "Day 4 tomorrow = +25"). Fire `spark_earned{source:'daily_bonus', streak}` (per SPEC-ANALYTICS).
+  "Day 4 tomorrow = +25"). The backend emits `spark_earned{source:'daily_bonus', streak}` (per SPEC-ANALYTICS); the client does not duplicate that event.
 
 ## 6. Edge cases
 

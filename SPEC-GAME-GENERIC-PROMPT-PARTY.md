@@ -1,7 +1,11 @@
 # Generic Prompt Party Games Spec
 
-Status: Implemented in LocalPlay standalone and covered by a live gamma regression suite. Gamma redeploy pending this change set.
-Last updated: 2026-06-24
+## Current repository contract (reviewed 2026-10-10)
+
+`generic_prompt_config` is the room setup field for all ten concrete game ids. The existing three modes use host-paced reveal/round advancement. Player and spectator text-vote entries conceal authors until reveal; host sync intentionally includes the attributed submissions, private choices, and private votes. Default decks contain five rounds; config accepts 3-25 but caps the round count at available content. The current `one_word_vibes` validator does not enforce a single word: it shares the 160-character text input limit.
+
+Status: Implemented in LocalPlay standalone. Historical gamma regression coverage is recorded below; hosted environments were not checked by the 2026-10-10 repository review.
+Last updated: 2026-10-10
 
 ## Purpose
 
@@ -185,5 +189,5 @@ Build coverage:
 - Add AI/custom authoring for host-created prompt packs.
 - Add Revelry host-app support only after a host-app bridge and policy pass.
 - Add richer prompt packs per occasion: birthday, wedding, office, school, family, spicy, work-safe.
-- Add Playwright multi-tab coverage for at least one `choice_vote`, one `text_vote`, and one `text_group` game.
-- Consider anonymous submissions/voting as a per-game setting for Caption Contest, Pitch Battle, and Roast & Toast.
+- Extend the existing generic-prompt Playwright matrix to reconnects, late joins, and completion across all modes.
+- Consider configurable anonymity. Player/spectator text-vote entries are already anonymous before reveal; the organizer receives attributed submissions for moderation.

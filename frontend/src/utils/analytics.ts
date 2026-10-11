@@ -40,3 +40,9 @@ export function identify(id: string, properties?: Record<string, unknown>) {
   if (!initialized) return;
   posthog.identify(id, properties);
 }
+
+/** Start a fresh guest identity after a signed-in account leaves this device. */
+export function resetIdentity() {
+  if (!initialized) return;
+  posthog.reset();
+}

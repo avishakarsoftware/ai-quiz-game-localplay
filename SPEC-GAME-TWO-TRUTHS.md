@@ -1,5 +1,9 @@
 # LocalPlay Two Truths and a Lie Game Spec
 
+## Current repository contract (reviewed 2026-10-10)
+
+Rooms accept `two_truths_config` and start with at least 3 connected players. The implemented phases are `TT_SUBMISSION`, `TT_VOTING`, `TT_RESULT`, and `PODIUM`. `TT_START_REVEAL` selects submitted authors; `TT_NEXT_AUTHOR` closes the current voting phase into result, then advances from result to the next author on a subsequent action. All updates use `TT_SYNC.two_truths`, including viewer-private saved submission/vote. Timer settings, `auto_paced`, and `allow_ai_inspiration` are accepted config metadata; the live runtime remains host-paced without automatic deadlines or an inspiration endpoint. The current picker quick-starts defaults; dedicated setup/timer controls, extend/skip-author controls, and AI ideas are roadmap UX.
+
 ## Overview
 
 Add **Two Truths and a Lie** as a player-authored icebreaker where each player writes three statements about themselves, marks one as the lie, and the room guesses which statement is false.
@@ -40,7 +44,7 @@ Not implemented in the first slice:
   - two true
   - one lie
 - Players privately mark which statement is the lie.
-- Server validates completion before the reveal phase starts.
+- Server validates each submitted set. The host can start reveal as soon as at least one player has submitted; non-submitters are skipped as authors.
 - Each round reveals one player's three statements.
 - Everyone except the author votes on which statement is the lie.
 - Reveal shows the lie, vote distribution, and who guessed correctly.
@@ -56,7 +60,7 @@ Not implemented in the first slice:
 - Keep the authoring flow fast and mobile-friendly.
 - Preserve privacy until reveal: players' statements stay hidden until their round.
 - Make the TV reveal suspenseful and readable.
-- Support host-paced and auto-paced modes.
+- Support host-paced play now; auto-paced timers remain future work.
 - Avoid sensitive prompt pressure.
 
 ## Non-Goals
@@ -174,7 +178,7 @@ Public reveal payload must not include `is_lie` until result.
 10. Host closes voting to reveal the result.
 11. Result reveals the lie and vote distribution.
 12. Scores update.
-13. Host/auto advances to next author.
+13. Host advances to the next author.
 14. Final podium after every submitted author has been revealed.
 
 ## Submission Phase
@@ -188,7 +192,7 @@ Player requirements:
 - Author can edit until reveal starts.
 - Author cannot see other players' statements before reveal.
 
-Server should allow late joiners during submission:
+Late-join roadmap (not implemented):
 
 - If they submit before reveal starts, include them.
 - New players are currently blocked once the room is locked and the game starts.
@@ -197,13 +201,13 @@ Server should allow late joiners during submission:
 
 Eligible voters:
 
-- All connected players except the current author.
-- Late joiners may vote if they are in the room before the vote closes.
+- All players in the game roster except the current author; disconnecting does not remove their earlier votes.
+- New seats are blocked after start; existing seats can reconnect and vote while the host keeps voting open.
 
 Voting rules:
 
 - One vote per voter per author round.
-- Voters can change vote until the timer ends.
+- Voters can change their vote until the host closes voting.
 - Author cannot vote on their own statements.
 - Votes are hidden until result.
 
@@ -226,12 +230,8 @@ Client to server:
 Server to clients:
 
 ```json
-{ "type": "TT_SYNC", "state": {} }
-{ "type": "TT_SUBMISSION_STATUS", "submitted_count": 4, "total_players": 6 }
-{ "type": "TT_REVEAL_AUTHOR", "author_id": "p1", "statements": [] }
-{ "type": "TT_VOTE_ACCEPTED", "statement_id": "stmt_2" }
-{ "type": "TT_ROUND_RESULT", "lie_statement_id": "stmt_2", "votes": {} }
-{ "type": "TT_GAME_RESULT", "standings": [] }
+{ "type": "TT_SYNC", "game_type": "two_truths", "two_truths": {} }
+{ "type": "PODIUM", "game_type": "two_truths", "leaderboard": [] }
 ```
 
 Visibility:
@@ -239,7 +239,7 @@ Visibility:
 - During submission, a player sees only their own submission.
 - During reveal/voting, clients see current author's statement text but not `is_lie`.
 - During result, clients see the lie and aggregate votes.
-- Individual vote choices may be shown in result only if product decides it is fun; MVP should show aggregate counts plus "you were right/wrong" privately.
+- Result sync contains aggregate `tally`, `correct_voters`, and `fooled_voters`. The player-private payload echoes `my_vote`; there is no public per-voter statement-id map.
 
 ## Scoring
 
@@ -310,7 +310,7 @@ Result:
 - "You got it" / "Fooled" feedback.
 - Score delta.
 
-## Organizer UX
+## Organizer UX Goals and Follow-Ups
 
 Setup:
 

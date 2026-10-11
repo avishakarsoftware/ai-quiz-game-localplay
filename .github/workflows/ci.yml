@@ -85,7 +85,8 @@ jobs:
           PARITY_POSTGRES_DSN: postgresql://parity:parity@localhost:5432/parity
         run: |
           cd backend
-          python -m pytest tests/test_postgres_parity.py tests/test_postgres_target_safety.py -q
+          python -m pytest tests/test_postgres_parity.py tests/test_postgres_target_safety.py \
+            tests/test_account_content_deletion_migration.py -q
 
   frontend-build:
     runs-on: ubuntu-latest

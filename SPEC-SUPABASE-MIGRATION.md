@@ -1,7 +1,63 @@
 # LocalPlay Supabase Migration Spec
 
-Status: **Implemented — Supabase is live on gamma + prod** (the persistence backend for both; SQLite remains
-local-dev + rollback only). Reviewed 2026-07-21; see DEPLOY.md's env-status ledger for details.
+Status: **Implemented — deployment records place gamma + prod on Supabase**; SQLite remains local-dev and deliberate recovery only. Historical cutover evidence reviewed 2026-07-21; source reconciled 2026-10-10. See DEPLOY.md's env-status ledger for deployed details; this review did not query either live database.
+
+## October 10, 2026 — Implemented persistence boundary
+
+`backend/db.py` retains the SQLite implementation and replaces an explicit export list with
+`backend/supabase_db.py` functions when configured for Supabase. There is no `storage/` directory;
+that layout below is an old design option. `/admin/stats` already uses the facade/RPC.
+
+| State | Current authoritative storage | Remaining work |
+| --- | --- | --- |
+| Users, wallets, ledger, usage, idempotency, entitlements | Selected SQLite/Supabase adapter | Prefix-specific RPC/deployment verification; hosted access remains explicitly authorized |
+| Saved quiz packs/questions, media metadata | Selected adapter | Rich creator fields, attachment rights, server drafts and retention; IONOS holds file bytes |
+| Party WMLT/Drawing/Housie/Random Chit/Party Quests setups | `generated_content` through `save/get/list/delete_game_content` | Rich generalized content/retention model; API mapping `wmlt` → stored `mlt` |
+| Revelry lifecycle/context/safe result summary | `game_sessions` through facade helpers | Durable participant/event/outbox models are not implemented |
+| Hosted-game stats | Lightweight `game_results` through `record_game_result` | Rich legacy `game_history` API remains a process-local ring; SQL `game_history` is unused |
+| Standalone generated/imported runtime content and ownership | `main.py` dictionaries; active rooms copy payloads | Shared/TTL persistence for generate→review→create across restart |
+| Live rooms and credentials | Process-local runtime plus private local disk snapshots | Multi-instance routing/state; VM volume is required even with Supabase |
+
+The table/RPC inventory and initial phase lists below are historical design/cutover evidence.
+The current schema template and rendered pair include later economics, content, sessions, policy,
+stats and account-deletion additions. SQLite and Supabase expose the same facade contract but
+SQLite does not reproduce every extra Postgres constraint or unused column.
+
+A normal image rollback keeps the Supabase ledger and current snapshots. The mounted legacy
+SQLite file persists but does not contain writes accepted by Supabase since cutover; switching
+`DB_BACKEND` is a deliberate reconciliation/recovery operation, not an automatic fresh backup.
+The May one-shot importer handles only its original eight tables, uses inserts and removes
+transaction IDs; it is not an idempotent/current full-data migration tool. Never use `--clear-target`
+as a current recovery shortcut.
+
+Prepared source migration `sql/migrations/20261010T000000_account_content_deletion[_gamma].sql`
+extends the existing atomic `delete_account` RPC to delete the owner's quiz questions/packs and
+media metadata, with explicit service-role execution grant. It retains ledger rows, foreign-owned
+content and party-wallet content. The migration does not physically delete IONOS media, and its
+presence here does not establish live application. Apply gamma first only in an authorized SQL
+window, verify owned/foreign data, ledger retention and failure rollback through real PostgREST,
+then qualify the corresponding production fragment separately.
+
+The subsequent paired bridge repair prepares
+`sql/migrations/20261010T010000_integration_resource_clocks[_gamma].sql`, also
+**UNAPPLIED**. It adds nullable DB-assigned microsecond clocks only to LocalPlay
+quiz packs, generated content and sessions; opaque deletion tombstones; a
+snapshot-returning save RPC and service-only fixed-table deletion RPC. Existing
+whole-second fields and historical rows are not rewritten. The new Supabase
+adapter requires these RPCs and fails closed against the old response shape.
+Install only the approved environment fragment before its new provider code;
+retain additive schema during recovery. A schema-compatible old image does not
+qualify an atomic Revelry consumer paired with old send-time callbacks or polls
+without durable clocks. Admission, paired tests and compatible artifact recovery
+are specified in [SPEC-REVELRY-CONTRACT-REPAIR.md](SPEC-REVELRY-CONTRACT-REPAIR.md).
+
+Local qualification on October 10 used fresh owned PostgreSQL 16 / PostgREST 12.2.3 containers
+bound to loopback, restored the baseline delete RPC bodies and applied both targeted migrations.
+All 130 tests in the migration, raw parity/target-safety and Supabase money/economy/content/catalog/
+concurrency suites passed. The migration tests verify exact template/rendered consistency, no
+PUBLIC/anon/authenticated execution, explicit service-role execution, owner isolation, ledger
+retention and atomic rollback on a forced media-delete failure. This is local qualification only;
+no hosted schema or production data was accessed.
 
 ## Goal
 
@@ -89,7 +145,7 @@ Future SQL changes must still be applied deliberately; editing files in this rep
 
 ## Current SQLite Surface
 
-Current SQLite file locations:
+Historical deployed SQLite backups (not the active Supabase ledger). The Docker data volume remains needed for room snapshots and deliberately authorized SQLite recovery:
 
 ```text
 Prod:  /home/revelry-games/revelry-data/revelry.db
@@ -119,10 +175,10 @@ Current in-memory state not covered by SQLite:
 | Generated quiz/MLT content | `main.py` dictionaries | Phase 2 |
 | Content ownership | `content_owners` dict | Phase 2 |
 | Completed game history | `game_history` list | Phase 2 |
-| Durable session lifecycle | `socket_manager.rooms` plus API state | Phase 2 |
-| Session participants | `socket_manager.rooms` player state | Phase 2 |
-| External host-app integration context | Not currently persisted | Phase 2 |
-| Live room state | `socket_manager.rooms` | Future Cloud Run phase |
+| Durable session lifecycle | `game_sessions` via DB facade | Implemented |
+| Session participants | `socket_manager.rooms` and room snapshots | Durable participant table deferred |
+| External host-app integration context | `game_sessions` | Implemented |
+| Live room state | `socket_manager.rooms` plus volume snapshots | Multi-instance Cloud Run deferred |
 | WebSocket connection objects | `socket_manager` | Must remain process-local |
 
 ## Target Architecture
@@ -261,8 +317,8 @@ Use the same schema shape for prod and gamma, differing only by prefix:
 | Webhook events | `games_webhook_events` | `games_gamma_webhook_events` |
 | Generated content | `games_generated_content` | `games_gamma_generated_content` |
 | Game sessions | `games_game_sessions` | `games_gamma_game_sessions` |
-| Game session participants | `games_game_session_participants` | `games_gamma_game_session_participants` |
-| Game session events/results | `games_game_session_events` | `games_gamma_game_session_events` |
+| Game session participants (future) | `games_game_session_participants` | `games_gamma_game_session_participants` |
+| Game session events (future; current results are in sessions) | `games_game_session_events` | `games_gamma_game_session_events` |
 | Game history | `games_game_history` | `games_gamma_game_history` |
 | Rejections/debug events | `games_rejections` | `games_gamma_rejections` |
 
@@ -443,7 +499,7 @@ CREATE INDEX IF NOT EXISTS idx_games_webhook_events_processed
 CREATE TABLE IF NOT EXISTS games_generated_content (
   id TEXT PRIMARY KEY,
   wallet_id TEXT NOT NULL,
-  content_type TEXT NOT NULL CHECK (content_type IN ('quiz', 'mlt')),
+  content_type TEXT NOT NULL CHECK (content_type IN ('quiz', 'mlt', 'drawing', 'housie', 'chit_pull', 'party_quests')),
   title TEXT NOT NULL DEFAULT '',
   payload JSONB NOT NULL,
   prompt TEXT,
@@ -745,9 +801,8 @@ Required existing functions to preserve:
 
 ### Admin Stats
 
-`backend/main.py` currently reaches into SQLite with `db._get_conn()` for `/admin/stats`.
+Implemented: `/admin/stats` uses the database facade and the Supabase adapter calls the prefixed `admin_stats` RPC:
 
-Replace this with facade helpers:
 
 ```python
 db.get_admin_stats()
@@ -772,7 +827,8 @@ In Supabase mode, `get_admin_stats()` must call the prefixed `admin_stats` RPC s
 
 ### Content Persistence Phase 2
 
-Add facade helpers:
+Historical proposed helpers (these exact generated-content/history names are not current facade exports). Current party setup helpers are `save/get/list/delete_game_content`; durable stats use `record_game_result`, `get_wallet_stats` and `get_recent_games`:
+
 
 ```python
 save_generated_content(...)
@@ -812,8 +868,8 @@ Prefer generating prod/gamma SQL from a template to avoid drift:
 
 ```text
 sql/templates/games-schema.template.sql
-scripts/render-supabase-sql.py --prefix games_ > sql/games-schema.sql
-scripts/render-supabase-sql.py --prefix games_gamma_ > sql/games-gamma-schema.sql
+scripts/render-supabase-sql.py --prefix games_ --output sql/games-schema.sql
+scripts/render-supabase-sql.py --prefix games_gamma_ --output sql/games-gamma-schema.sql
 ```
 
 If no generator is added, every schema/RPC change must be applied to both prod and gamma files in the same commit.
@@ -901,10 +957,12 @@ The script reads SQLite directly, inserts through PostgREST with the configured 
 
 ### Import Rules
 
-For production, imports must be idempotent:
+Requirements for a future repeatable importer. The May cutover utility below uses plain inserts and is not idempotent; it must only be used with a deliberately empty/reviewed target. Current transaction IDs also determine merge/purchase ordering, so a new migration must preserve order/IDs or prove an explicit remapping.
+
+Future production imports must be idempotent:
 
 - Use `upsert` on natural primary keys.
-- Preserve `token_transactions.id` if possible, or let Postgres assign new ids only if no code depends on the old integer ID. Current code does not appear to depend on transaction IDs externally.
+- Preserve `token_transactions.id` and sequence state, or prove remapped IDs retain the ordering used by wallet merge identity logic. Current code uses IDs to distinguish purchases after earlier merges.
 - Preserve transaction ordering by `created_at`.
 - Preserve all `reference_id` values.
 
@@ -1003,9 +1061,10 @@ Add Supabase adapter unit tests with mocked HTTP/RPC client:
 - RPC failures are surfaced with useful messages.
 - Returned Supabase rows normalize to existing dict shapes.
 
-### Integration Tests Against Gamma Supabase
+### Historical proposed hosted-gamma tests (not an implemented runner)
 
-Guard behind an explicit env var so tests never hit Supabase accidentally:
+The following `RUN_SUPABASE_TESTS` example is an old proposal. Current automated Supabase suites use the disposable local Postgres/PostgREST stack and refuse hosted targets; never substitute gamma credentials into those suites. Any separate live smoke requires authorized owned QA fixtures:
+
 
 ```bash
 RUN_SUPABASE_TESTS=1 DB_BACKEND=supabase TABLE_PREFIX=games_gamma_ ...
@@ -1054,6 +1113,8 @@ Production:
 - One low-risk wallet/admin grant check.
 
 ## Data Retention
+
+Proposed operational policy; the repository has no scheduled job enforcing these durations. Approved account deletion is a separate explicit mutation.
 
 Permanent:
 
@@ -1148,7 +1209,7 @@ Phase 1 is complete when:
 - Prod and gamma data are isolated by table prefix in the shared Supabase project.
 - Rollback to SQLite remains documented and possible during the initial rollout window.
 
-Phase 1 status: complete as of the 2026-05-19 production cutover, with the caveat that generated quiz/MLT content is still process-memory backed and the right Phase 2 persistence strategy is undecided.
+Phase 1 cutover is recorded complete as of 2026-05-19. Later source implements durable party setups, sessions/results and lightweight stats; standalone generated drafts, rich history, participant/events, retention and multi-instance realtime remain incomplete as described in the current boundary table.
 
 Phase 2 is complete when:
 

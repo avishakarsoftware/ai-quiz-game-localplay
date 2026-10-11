@@ -1,232 +1,77 @@
 # SPEC-ACCOUNT-DELETION — In-app account deletion
 
-Status: **Implemented — live + verified on gamma + prod** (deleted-account denylist + `delete_account` RPC + `DELETE /account`; account-deletion UI shipped to all three web surfaces 2026-07-19). See DEPLOY.md's env-status ledger. (reviewed 2026-07-21)
-Owner: Avi
-Related: `SPEC-IAP.md` (wallets, purchases), `LAUNCH-CHECKLIST.md` (submission blocker),
-`frontend/public/privacy.html` (§5 rights), `marketing/store-privacy-declarations.md`
+Status: **Implemented, with owned-content cleanup expanded in the 2026-10-10 source review.** The new Supabase RPC migration is saved locally and has not been applied to gamma or production. Earlier deployment evidence is in `DEPLOY.md`; it does not qualify this change.
 
----
+Related: `SPEC-IAP.md`, `SPEC-CUSTOM-QUIZ-AUTHORING.md`, `SPEC-SUPABASE-MIGRATION.md`, `frontend/public/privacy.html`.
 
-## 0. Why this exists
+## 1. Identity and revocation
 
-**This is a store-submission blocker.** App Store Review Guideline **5.1.1(v)**: an app that
-supports account creation must let the user **initiate account deletion from within the app**.
-Revelry Games creates accounts — `find_or_create_user` does `INSERT INTO users` on Google/Apple
-sign-in — and today offers sign-in, sign-out, and Restore purchases, but **no deletion path** in
-the UI or the backend. Pointing users at an email address does **not** satisfy the guideline.
+`tokens.get_wallet_id` uses the signed-in `users.id` as the wallet id, and the device id for guests. Sign-in merges the device wallet into the user wallet. Provider subject identifies the account; email is display information.
 
-Google Play's equivalent (Data safety → data deletion) can be satisfied by a URL, so Android is
-already covered by the policy contact. **iOS is the blocker.**
+Session JWTs have a default 30-day lifetime. `auth.get_session_from_request` verifies the JWT and checks `deleted_accounts`. A denylisted user is treated as signed out, so the old session cannot recreate the deleted user's wallet. Wallet operations also guard deleted accounts. There is no automatic denylist pruning job; removing entries merely because the JWT lifetime elapsed would need a separate review of late payment fulfillment.
 
----
+## 2. Transactional deletion
 
-## 1. The data model (verified 2026-07-18, `backend/db.py`)
+`db.delete_account(user_id)` and the prefixed Supabase `delete_account` RPC perform these changes in one transaction:
 
-Understanding this is non-optional, because the identity model is unusual.
+| Data | Behavior |
+|---|---|
+| `users` | Delete the provider identity and email row. |
+| `wallets` | Delete the wallet keyed by user id, including unspent Sparks. |
+| `generated_content` | Delete rows owned by that wallet. |
+| SQLite `custom_quiz_packs` / `custom_quiz_questions`; Supabase `{prefix}quiz_packs` / `{prefix}quiz_questions` | Delete all owned packs and their questions, including previously soft-deleted packs. |
+| `media_assets` | Delete owned LocalPlay asset metadata. |
+| `entitlements`, `device_usage` | Delete rows linked by user id. |
+| `deleted_accounts` | Insert the opaque user id and deletion timestamp. |
+| `token_transactions` | Retain the purchase/spend ledger and stable reference ids for payment deduplication. |
 
-**`wallet_id` is polymorphic.** From `tokens.get_wallet_id`:
+Another wallet's content must remain untouched. Revelry content owned by `revelry:party:{party_id}` belongs to the party and is not erased by deleting an individual's standalone account. Existing rooms, process-local histories, statistics, other aggregate records, and analytics already sent to PostHog are not covered by this transaction.
 
-> *"Resolve wallet ID: user_id if signed in, else device_id."*
+**Storage limitation:** metadata deletion does not delete IONOS/CDN bytes or revoke a public image URL. A separate authenticated storage deletion/retention path remains required before claiming uploaded files are physically erased. Images may also remain in active in-memory rooms until those rooms expire.
 
-There is **no foreign key**. `wallets.id` holds a `users.id` for signed-in users and a raw device
-id for guests. Consequently a user's Sparks live in a wallet row whose primary key **is** their
-user id, and `token_transactions.wallet_id` / `generated_content.wallet_id` point at that same
-value.
+## 3. API
 
-Tables carrying user-linked data:
-
-| Table | Link column | Contains |
-|---|---|---|
-| `users` | `id` (PK) | provider, provider_subject_id, **email** — the only PII |
-| `wallets` | `id` == user_id | balance, lifetime_purchased, bonus/streak state |
-| `token_transactions` | `wallet_id` | purchase + spend ledger, `reference_id` |
-| `generated_content` | `wallet_id` | saved quizzes/prompts the user authored |
-| `entitlements` | `user_id`, `device_id` | legacy entitlement rows |
-| `device_usage` | `user_id`, `device_id` | free-usage counters |
-
-On sign-in, `merge_device_to_user` and `merge_wallet(device_id, user_id)` fold the guest wallet
-into the user wallet — so by deletion time, Sparks earned as a guest are already in the user wallet.
-
----
-
-## 2. ⚠️ The trap: sessions are unrevocable JWTs
-
-`create_session_token` issues a **stateless JWT** (`SESSION_JWT_EXPIRY_DAYS = 30`), and
-`get_session_from_request` **only verifies the signature — it never checks that the user still
-exists.**
-
-A naive "delete the users row" implementation is therefore actively harmful:
-
-1. Delete `users` row. The client still holds a valid JWT for up to **30 days**.
-2. Next request → `get_wallet_id()` returns the deleted `user_id` from the token.
-3. `get_or_create_wallet(user_id, signup_bonus=True)` **recreates the wallet — with a fresh signup
-   bonus.**
-
-Net effect: the account silently resurrects, deletion appears not to work, and it becomes a
-**Spark-farming loop** (delete → keep using the same token → repeat). Any implementation must close
-this, and it is the single most important requirement in this spec.
-
-**Decision: maintain a `deleted_users` denylist**, checked during session verification.
-Rejected alternatives:
-- *Look up `users` on every request* — adds a DB read to the hot path, and cannot distinguish
-  "deleted" from "never existed", which matters for the error we return.
-- *Shorten JWT expiry* — narrows but does not close the window, and hurts normal users.
-
-Rows may be pruned once older than `SESSION_JWT_EXPIRY_DAYS` (no live token can reference them).
-
----
-
-## 3. What is deleted, kept, and why
-
-**Deleted immediately (hard delete):**
-- `users` row — **all PII** (email, provider subject id)
-- `wallets` row keyed on the user id — **including any unspent Spark balance**
-- `generated_content` authored by that wallet
-- `entitlements` / `device_usage` rows for that `user_id`
-
-**Retained — `token_transactions`:** the purchase/spend ledger stays. This is a deliberate,
-disclosed exception, on two grounds:
-1. **Legal.** Purchase records are financial records with tax/accounting retention obligations, and
-   GDPR Art. 17(3)(b) permits retention for legal compliance. Apple accepts retention where law
-   requires it, provided it is disclosed.
-2. **Operational.** `credit_purchase` is idempotent on `reference_id`; the ledger is what prevents
-   double-crediting a replayed or late webhook.
-
-The ledger is **pseudonymized by construction after deletion**: its only identifier is
-`wallet_id` — the deleted user's random UUID. With `users` gone, nothing links it to an email,
-provider, or person. **No additional scrubbing is required, and none should be invented** — mutating
-`wallet_id` would break the idempotency guarantee above.
-
-> Open question for Avi: confirm this retention stance is what you want. The alternative (deleting
-> transactions too) is cleaner privacy-wise but sacrifices refund/chargeback defensibility and
-> double-credit protection.
-
-**Not deleted:** live in-memory game sessions (they expire on their own), and analytics events
-already sent to PostHog (documented in the policy as separately retained).
-
----
-
-## 4. Behaviour
-
-### 4.1 Endpoint
-
-```
+```http
 DELETE /account
-Headers: X-Session-Token (required)
-Body:    { "confirm": "DELETE" }
+X-Session-Token: <session JWT>
+Content-Type: application/json
+
+{"confirm":"DELETE"}
 ```
 
-- **401** if no/invalid session; **410 Gone** if the user is already deleted (denylisted).
-- **400** if `confirm` is absent — a deliberate second gate so a stray call cannot destroy data.
-- **200** `{ "deleted": true }` on success.
-- **Rate limited** (reuse the existing limiter) — this is a destructive, unauthenticated-adjacent
-  endpoint.
-- **Idempotent**: deleting twice returns 410, never 500.
-- Wrapped in a **single transaction** so a partial failure cannot leave a half-deleted account
-  (e.g. wallet gone, PII retained — the worst possible outcome).
+- The endpoint uses the existing per-IP rate limiter; excess requests return `429`.
+- Missing/invalid/denylisted session returns `401`. A retry using the deleted user's old token normally follows this path.
+- A well-formed body with missing or incorrect confirmation returns `400`; malformed/missing request bodies may return FastAPI validation `422`.
+- Successful deletion returns `200 {"deleted":true}`.
+- If the account becomes denylisted after the session check, the transaction returns false and the endpoint returns `410`.
+- Failure rolls back the transaction; no partial content, identity, wallet, or denylist deletion is allowed.
 
-### 4.2 Client
+`account_deleted` is captured before the database call, without email or provider tokens. That best-effort analytics event is not proof the deletion transaction committed.
 
-Settings drawer, in the account section, below Sign out:
-- **"Delete account"** in a destructive style, shown **only when signed in**.
-- Confirmation dialog stating plainly:
-  - the account and **email** are permanently deleted
-  - **unspent Sparks are forfeited** — see §4.2.1, this is the headline warning
-  - purchases **cannot be restored** to a new account
-  - saved custom content is deleted
-  - the action **cannot be undone**
-- Requires an explicit confirm (typed `DELETE`, matching the API contract).
-- On success: clear the local session/device state, sign out, return to the catalog as a guest,
-  and show a confirmation toast.
+## 4. Client
 
-#### 4.2.1 Unspent Sparks warning (required)
+`SettingsDrawer` shows **Delete account** only while signed in. `DeleteAccountDialog` requires exact typed `DELETE`, disables duplicate submissions, and warns that the account, email, unspent Sparks, and owned content are lost. Purchases cannot restore the old wallet after signing in again.
 
-Losing paid-for currency is the most consequential and least obvious effect of deletion, and the
-one a user is most likely to regret. The dialog must therefore surface it **conditionally and
-concretely** — never as boilerplate:
+The dialog fetches `/tokens/balance` on open. Positive balances receive a numeric warning with correct singular/plural wording; zero omits it. A failed balance fetch uses “Any unspent Sparks will be permanently destroyed” and does not block deletion. This is a fresh read, not a guarantee that another concurrent purchase/spend cannot change the balance before confirmation.
 
-- **Balance > 0 →** show a prominent, visually distinct warning with the **exact live balance**,
-  fetched at dialog-open time (not a stale cached value):
+On `200` or `410`, the caller signs out and refreshes guest balance. The device id remains so deletion does not create a new device signup bonus. `401` requests reauthentication. Auth revalidation rejects `401`, `403`, and `410`, clears the cached session, and resets analytics to the guest identity; network/timeouts/server errors preserve a potentially valid cached login.
 
-  > ⚡ **You still have 240 Sparks.**
-  > They will be permanently destroyed and cannot be recovered, refunded, or moved to another
-  > account — including if you sign in again with the same Google or Apple account.
+## 5. Later requests and payments
 
-  Singular/plural must agree ("1 Spark"). If the balance is large, this is exactly the case where a
-  user should be given pause, so the warning ranks **above** the other consequences in the dialog.
+- Signing in with the same provider subject creates a new user id. The deleted user's wallet and purchase access do not return.
+- Guest behavior uses the existing device id; it must not grant a fresh device signup bonus.
+- A late `credit_purchase` to a denylisted wallet is ignored without recreating that wallet or adding a new credit. The webhook is acknowledged and its event id processed; previously credited session/transaction references remain deduplicated by the retained ledger.
+- Repeated deletion must not return `500` or partially mutate another wallet's content.
 
-- **Balance == 0 →** omit the Sparks warning entirely. Warning someone about losing nothing is
-  noise that trains people to skip the dialog, which is precisely when they miss a real warning.
+## 6. Verification and rollout
 
-- **Balance unavailable** (request fails) → do **not** silently show nothing, and do not block
-  deletion. Fall back to the non-numeric form: *"Any unspent Sparks will be permanently destroyed."*
+SQLite regression coverage is in `backend/tests/test_account_deletion.py`: identity/wallet/content removal, denylist and stale-token behavior, re-sign-in, retained ledger, other-owner isolation, and forced transactional rollback. Real PostgREST coverage is in `backend/tests/test_supabase_economy_features.py`, including saved content/media ownership and rollback under an injected deletion failure. Frontend coverage is in `DeleteAccountDialog.test.tsx`, `SettingsDrawer.test.tsx`, `AuthContext.test.tsx`, and `utils/__tests__/auth.test.ts`.
 
-The number shown must come from the same `/tokens/balance` source the header badge uses, so the
-dialog can never contradict the balance the user is looking at.
+The review updates `sql/templates/games-schema.template.sql` and both rendered schemas. Existing installations need the **targeted** migrations:
 
-### 4.3 After deletion
+- `sql/migrations/20261010T000000_account_content_deletion_gamma.sql`
+- `sql/migrations/20261010T000000_account_content_deletion.sql`
 
-- **Signing in again with the same Google/Apple account creates a brand-new account** — new
-  `users.id`, new empty wallet. Prior Sparks and purchase history do **not** return. The
-  confirmation copy must make this unambiguous.
-- **Guest wallet:** the device id persists, so the user falls back to their guest wallet. Deletion
-  must **not** grant a fresh signup bonus to that device — verify `get_or_create_wallet` is called
-  with the existing device id (already-existing wallet ⇒ no bonus).
-- **Late webhooks** (a refund or a delayed purchase arriving after deletion) must **not** resurrect
-  an account. `credit_purchase` for a denylisted wallet id should be recorded and acked (HTTP 200,
-  so the provider stops retrying) but must not recreate `users`. **Test this explicitly** — it is
-  the second-most-likely way for this feature to silently regress.
+These replace only the corresponding deletion RPC and preserve its service-role-only execution boundary. Do not apply a full bootstrap schema to the shared database. Qualify both prefixes against a fresh disposable local PostgreSQL/PostgREST stack, then use the release plan's backup, targeted migration, gamma verification, and promotion gates. Local SQL validation is not evidence that either hosted function has been updated.
 
----
-
-## 5. Testing
-
-**Backend**
-- deletes users/wallet/content/entitlements/device_usage; retains `token_transactions`
-- **a session token for a deleted user is rejected** (the §2 trap) — and specifically does *not*
-  recreate a wallet with a signup bonus
-- second delete → 410, not 500
-- missing/incorrect `confirm` → 400; no session → 401
-- a late `credit_purchase` for a deleted wallet does not resurrect the user
-- re-sign-in with the same provider subject creates a *different* `users.id`
-- transaction integrity: a forced mid-delete failure leaves **no** partial state
-
-**Frontend**
-- the button is hidden when signed out, visible when signed in
-- confirmation is required; cancelling changes nothing
-- success clears session and returns to guest state
-- **Sparks warning (§4.2.1):**
-  - balance 240 → warning shown containing "240"
-  - balance 1 → singular wording ("1 Spark", not "1 Sparks")
-  - balance 0 → Sparks warning **not** rendered
-  - balance request fails → non-numeric fallback shown, deletion still possible
-  - the figure matches `/tokens/balance`, i.e. the dialog cannot contradict the header badge
-
-**E2E**: extend `legal-pages.spec.ts` or add an account spec asserting the deletion path is
-reachable in-app — that is precisely what Apple review checks.
-
----
-
-## 6. Out of scope
-
-- Grace period / soft-delete with recovery window. Immediate deletion is simpler, more
-  privacy-forward, and sufficient. Revisit only if support burden demands it.
-- Data **export** (GDPR portability). Currently handled by emailing support; revisit if requested
-  volume grows.
-- Deleting analytics already transmitted to PostHog.
-- Web-only account management UI beyond the shared Settings drawer (the same component serves all
-  surfaces).
-
----
-
-## 7. Rollout
-
-1. Implement backend + tests; full backend suite must stay green.
-2. Implement client + tests.
-3. Deploy gamma → verify by deleting a real gamma account, then confirm the old token is rejected
-   and no wallet reappears.
-4. Deploy prod + IONOS.
-5. `npm run cap:sync:prod` — **before** the iOS archive, since the native apps bundle the web build.
-6. Update `privacy.html` §5 to state deletion is available **in the app** (currently email-only),
-   and note the transaction-ledger retention from §3.
-7. Update `LAUNCH-CHECKLIST.md` / `DEPLOY.md` ledger.
+Deletion has no recovery window. Data export, remote byte cleanup, and removal of previously transmitted analytics remain separate work.

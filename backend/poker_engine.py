@@ -23,7 +23,8 @@ def validate_config(raw: Optional[dict]) -> dict:
     raw = raw or {}
     title = str(raw.get("game_title") or raw.get("title") or "Party Poker").strip()[:120] or "Party Poker"
     starting_stack = _clamp_int(raw, "starting_stack", 1000, 200, 10000)
-    ante = _clamp_int(raw, "ante", raw.get("big_blind", 20), 5, 500)
+    legacy_ante = _clamp_int(raw, "big_blind", 20, 5, 500)
+    ante = _clamp_int(raw, "ante", legacy_ante, 5, 500)
     if ante >= starting_stack:
         ante = max(5, starting_stack // 20)
     return {
@@ -50,7 +51,7 @@ def create_initial_state(player_ids: list[str], config: Optional[dict] = None, s
     players = _players(player_ids)
     setup = validate_config(config)
     state = {
-        "phase": PHASE_DECISION,
+        "phase": PHASE_SHOWDOWN,
         "config": setup,
         "players": players,
         "stacks": {player_id: setup["starting_stack"] for player_id in players},
@@ -90,6 +91,8 @@ def active_players(state: dict) -> list[str]:
 
 
 def start_next_hand(state: dict, now: float | None = None) -> dict:
+    if state.get("phase") != PHASE_SHOWDOWN:
+        raise ValueError("Finish the current poker hand before starting another")
     next_state = _copy_state(state)
     live = active_players(next_state)
     if len(live) <= 1:
@@ -120,6 +123,8 @@ def submit_decision(state: dict, player_id: str, decision: str) -> dict:
         raise ValueError("Poker decisions are closed for this hand")
     if player_id not in state.get("decisions", {}):
         raise ValueError("You are not in this poker hand")
+    if state["decisions"][player_id] != "pending":
+        raise ValueError("Your decision is already submitted")
     normalized = str(decision or "").strip().lower()
     if normalized not in {"stay", "fold"}:
         raise ValueError("Choose stay or fold")
@@ -135,7 +140,7 @@ def submit_decision(state: dict, player_id: str, decision: str) -> dict:
 
 
 def reveal_hand(state: dict) -> dict:
-    if state.get("phase") not in {PHASE_DECISION, PHASE_SHOWDOWN}:
+    if state.get("phase") != PHASE_DECISION:
         raise ValueError("No poker hand to reveal")
     next_state = _copy_state(state)
     contenders = [player_id for player_id, decision in next_state.get("decisions", {}).items() if decision != "fold"]
@@ -210,8 +215,10 @@ def _complete_tournament(state: dict, winner_id: str) -> dict:
     return next_state
 
 
-def _redact_card(card: dict) -> dict:
-    return {"id": card.get("id", "hidden"), "hidden": True}
+def _redact_card(player_id: str, index: int) -> dict:
+    # Standard card ids contain the suit and rank, so even an otherwise hidden
+    # card must use a placeholder that does not identify the dealt card.
+    return {"id": f"hidden:{player_id}:{index}", "hidden": True}
 
 
 def public_sync(state: dict, viewer_id: str | None = None) -> dict:
@@ -221,7 +228,7 @@ def public_sync(state: dict, viewer_id: str | None = None) -> dict:
         if reveal or (viewer_id and player_id == viewer_id):
             hole_cards[player_id] = [dict(card) for card in cards]
         else:
-            hole_cards[player_id] = [_redact_card(card) for card in cards]
+            hole_cards[player_id] = [_redact_card(player_id, index) for index, _ in enumerate(cards)]
     return {
         "phase": state.get("phase"),
         "config": dict(state.get("config") or {}),

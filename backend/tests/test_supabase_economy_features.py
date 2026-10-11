@@ -223,6 +223,61 @@ def test_account_deletion_denylists_and_retains_the_ledger(sdb, postgrest_stack)
     assert rows[0] > 0, "the purchase ledger must survive account deletion"
 
 
+def test_account_deletion_removes_only_owned_quizzes_and_media(sdb, postgrest_stack):
+    user = sdb.find_or_create_user("google", f"sub-{uuid.uuid4()}", "qa@example.invalid")["id"]
+    stranger = _funded(sdb, 0)
+    sdb.get_or_create_wallet(user, signup_bonus=False)
+    sdb.credit_purchase(user, 100, f"cs_{uuid.uuid4().hex}")
+    questions = [{"text": "Question", "options": ["One", "Two"], "answer_index": 0}]
+    pack = sdb.save_quiz_pack(user, "Owned", questions)
+    deleted_pack = sdb.save_quiz_pack(user, "Deleted", questions)
+    sdb.delete_quiz_pack(user, deleted_pack["id"])
+    other_pack = sdb.save_quiz_pack(stranger, "Stranger", questions)
+    image_id, other_image_id = uuid.uuid4().hex, uuid.uuid4().hex
+    for owner, asset_id in ((user, image_id), (stranger, other_image_id)):
+        sdb.create_media_asset(asset_id, owner, f"local/{asset_id}.png", "https://example.invalid/image.png", "image/png")
+
+    assert sdb.delete_account(user) is True
+    from postgrest_harness import DSN
+    with postgrest_stack.connect(DSN, autocommit=True) as conn:
+        assert conn.execute("SELECT 1 FROM games_quiz_packs WHERE owner_wallet_id = %s", (user,)).fetchone() is None
+        assert conn.execute("SELECT 1 FROM games_quiz_questions WHERE pack_id IN (%s, %s)",
+                            (pack["id"], deleted_pack["id"])).fetchone() is None
+        assert conn.execute("SELECT 1 FROM games_media_assets WHERE owner_wallet_id = %s", (user,)).fetchone() is None
+        assert conn.execute("SELECT 1 FROM games_token_transactions WHERE wallet_id = %s", (user,)).fetchone()
+    assert sdb.get_quiz_pack(stranger, other_pack["id"])["questions"]
+    assert sdb.get_media_asset(stranger, other_image_id) is not None
+
+
+def test_account_deletion_failure_preserves_all_owned_data(sdb, postgrest_stack):
+    user = sdb.find_or_create_user("google", f"sub-{uuid.uuid4()}", "qa@example.invalid")["id"]
+    sdb.get_or_create_wallet(user, signup_bonus=False)
+    sdb.credit_tokens(user, 100, "test_seed")
+    pack = sdb.save_quiz_pack(user, "Owned", [{"text": "Question", "options": ["One", "Two"], "answer_index": 0}])
+    setup = sdb.save_game_content(user, "drawing", "Owned", {"game": {}})
+    image_id = uuid.uuid4().hex
+    sdb.create_media_asset(image_id, user, f"local/{image_id}.png", "https://example.invalid/image.png", "image/png")
+    from postgrest_harness import DSN
+    from supabase_db import SupabaseDBError
+    with postgrest_stack.connect(DSN, autocommit=True) as conn:
+        conn.execute("CREATE FUNCTION public.qa_reject_media_delete() RETURNS trigger LANGUAGE plpgsql "
+                     "AS $$ BEGIN RAISE EXCEPTION 'simulated storage failure'; END; $$")
+        conn.execute("CREATE TRIGGER qa_reject_media_delete BEFORE DELETE ON games_media_assets "
+                     "FOR EACH ROW EXECUTE FUNCTION public.qa_reject_media_delete()")
+        try:
+            with pytest.raises(SupabaseDBError, match="simulated storage failure"):
+                sdb.delete_account(user)
+            assert sdb.get_user(user) is not None
+            assert sdb.get_wallet_balance(user) == 100
+            assert sdb.get_quiz_pack(user, pack["id"])["questions"]
+            assert sdb.get_game_content(user, setup["id"]) is not None
+            assert sdb.get_media_asset(user, image_id) is not None
+            assert sdb.is_account_deleted(user) is False
+        finally:
+            conn.execute("DROP TRIGGER qa_reject_media_delete ON games_media_assets")
+            conn.execute("DROP FUNCTION public.qa_reject_media_delete()")
+
+
 # --- stats -------------------------------------------------------------------
 
 def test_game_result_feeds_wallet_stats(sdb):

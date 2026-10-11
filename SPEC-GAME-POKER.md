@@ -16,6 +16,10 @@ Frontend display name: Party Poker
 
 ## Implementation-Ready MVP Scope
 
+Repository reconciliation: 2026-10-10. The quick Stay/Fold contract in this section is current.
+The detailed full-betting setup, state, actions, side pots, timer rules, and dealer controls
+below are Phase 2 design targets, not shipped API contracts.
+
 Status: first playable standalone MVP implemented on June 24, 2026. The shared card engine dependency exists through the Bluff MVP, and `backend/poker_hand_evaluator.py` evaluates best 5-card Hold'em hands from 5-7 cards, handles wheel straights, tie-breaking, player ranking, and pure tests. `backend/poker_engine.py` now ships a quick no-money Hold'em tournament slice: equal play-chip stacks, fixed antes, two private hole cards, five table cards, Stay/Fold decisions, showdown, elimination, podium, private card redaction, room/socket events, organizer/player/spectator UI, and focused API/socket regression tests. Full betting rounds, blinds, raises, all-ins, side pots, and richer dealer controls remain Phase 2.
 
 Revelry bridge status: LocalPlay now marks Party Poker as a host-app-capable quick-start/settings game for Revelry. It is `can_quick_start=true`, `can_create_content=false`, `can_edit_content=false`, `supports_ai_generation=false`, and `supports_custom_content=false`. Actual Revelry visibility remains host-app policy gated and should ship only after gamma embedded QA covers start, join, spectator, reconnect, showdown, completion, and result polling. Revelry must preserve the no-money framing and must not attach sparks, rewards, buy-ins, cash-out language, or economic value to poker outcomes.
@@ -28,6 +32,10 @@ Revelry bridge status: LocalPlay now marks Party Poker as a host-app-capable qui
 > - Pot: a single pot. **On a tied showdown the pot is split evenly among all players tied for the best hand, with odd chips going to the earliest-ranked (best-hand-order) winners.** Side pots and all-in handling are Phase 2.
 > - Dealer button is stored but static (no rotation yet).
 > - Hand evaluator API (`poker_hand_evaluator.py`): `evaluate_best`, `compare_hands`, `rank_players` (royal flush is the top `straight_flush`, not a separate category). Evaluation results use `category`, `category_rank`, `tiebreakers`, `cards`, `rank_tuple`.
+> - Current socket actions: player `POKER_STAY` / `POKER_FOLD`; organizer `POKER_REVEAL` / `POKER_NEXT_HAND` / `END_QUIZ`. `POKER_SYNC` carries the `poker` state; completion uses shared `PODIUM`.
+> - Each player submits one decision per hand. Reveal is accepted only during `POKER_DECISION`, and next hand only during `POKER_SHOWDOWN`, preventing duplicate pot awards and abandoned-hand ante charges.
+> - Hidden hole cards use stable seat/slot placeholders; their ids must not encode the dealt rank or suit. At showdown the current MVP reveals all dealt hands, including folded hands; eligible-hands-only reveal is a Phase 2 target.
+> - `decision_time_seconds` is stored and a deadline is sent, but the current socket runtime does not schedule a Poker timeout. The host can reveal pending decisions, which are treated as staying. Automated timeouts remain follow-up work.
 
 - Variant: Texas Hold'em tournament. The shipped first slice is quick Hold'em with antes plus Stay/Fold decisions; full betting is Phase 2.
 - One table only in MVP.
@@ -85,7 +93,7 @@ Everyone gets the same play-chip stack. No money, no buy-ins, no cash-out.
 Play chips are only for this table.
 ```
 
-## Setup
+## Full Betting Setup (Phase 2 Target)
 
 Default setup:
 
@@ -268,9 +276,9 @@ A betting street closes when:
 
 If all remaining live players are all-in, the server should deal remaining streets automatically and proceed to showdown.
 
-## Side Pots
+## Side Pots (Phase 2 Target)
 
-The engine must support side pots in MVP because all-in actions are common and avoiding them makes poker feel broken.
+The full betting engine must support side pots before enabling all-in actions. The current quick MVP has one pot and no all-in action.
 
 Side-pot rules:
 

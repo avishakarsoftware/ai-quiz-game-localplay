@@ -86,4 +86,17 @@ describe('StatsSection', () => {
         render(<StatsSection />);
         await screen.findByText('game hosted');
     });
+
+    it('labels capped results as the latest completed games', async () => {
+        mockStats({ ...FULL, stats_scope: 'recent_games', stats_row_limit: 1000, stats_truncated: true });
+        render(<StatsSection />);
+        await screen.findByText('Based on your latest 1000 completed games.');
+    });
+
+    it('does not suggest that complete history is capped', async () => {
+        mockStats({ ...FULL, stats_scope: 'lifetime', stats_row_limit: 1000, stats_truncated: false });
+        render(<StatsSection />);
+        await screen.findByText('Your parties');
+        expect(screen.queryByText(/Based on your latest/)).not.toBeInTheDocument();
+    });
 });

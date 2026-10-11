@@ -1,10 +1,11 @@
 # SPEC-PASS-AND-PLAY — one shared phone, everyone plays
 
-Status: **Backend + primitives + Impostor UI BUILT and deployed 2026-07-28.**
+Status: **Backend + primitives + Impostor UI built; deployment recorded 2026-07-28.** Reconciled 2026-10-10; current live status is the deployment ledger, not a new hosted verification.
+
 - Phase 1 (backend): `pass_play_common.py`, `impostor_engine.py`, catalog entry, rules, socket
-  wiring. 66 tests.
+  wiring. Focused engine/socket tests cover setup, phase privacy, voting, scoring, and reconnect.
 - Phase 2 (primitives): `SeatRosterSetup`, `PassScreen`, `PrivacyGate`, `GroupScreenFrame` in
-  `frontend/src/components/passplay/`. 19 tests.
+  `frontend/src/components/passplay/`, with component tests.
 - Phase 3 (game UI): `ImpostorGame.tsx`, OrganizerPage wiring, picker tile, and "1 phone" badge
   are live.
 - Revelry stance: standalone-only until Revelry adds a pass-and-play interaction contract. The
@@ -16,7 +17,7 @@ see SPEC-GAME-ODD-QUESTION's naming history.
 
 ## 1. Why this is a platform feature, not a game
 
-Every existing game assumes **one phone per player** plus an optional host/TV screen. That
+Most scored game runtimes assume **one phone per player** plus an optional host/TV screen. That
 assumption silently excludes real party guests: kids, grandparents, people whose phone is dead,
 dinner tables where phones are away, and — per Avi — **teens already play exactly this way**
 (one phone circulating is the native mode of Impostor, Truth-or-Dare apps, Paranoia).
@@ -37,16 +38,14 @@ per-game inventions:
 filter" is right about per-VIEWER scoping (meaningless with one device) but wrong if read as
 "always send everything". The client genuinely needs every role during the reveal pass, and
 genuinely should not have the secret while the phone is face-up on a table. So disclosure is
-scoped **by phase**, not by viewer: `public_state` ships a `roles` map only during the
-gated reveal phase, and empties it for every face-up phase. Secrets travel exactly when a gate is
-mounted to hold them. Pinned by `TestPhaseScopedDisclosure`.
+scoped **by phase** on the passed phone: `public_state` ships a `roles` map only during the
+gated reveal phase on the authenticated organizer phone, and empties it for every face-up phase. Shared displays and ordinary player sockets receive `spectator_state`, which never includes the role map, even during reveal or reconnect. Only a resolved round reveals the secret word/impostor publicly. Pinned by phase-scoped engine tests and live/reconnect socket tests.
 
 Existing plumbing that carries over unchanged: room creation/sparks, the host screen/Chromecast as
 an optional shared display, game history/stats (`record_game_completion` — the host wallet
 attribution model is *exactly* right here, since only the host has a device), share cards.
 
-What does NOT carry over: WebSocket-per-player sync, reconnect/seat grace (there are no player
-sockets), per-viewer payload scoping. Secrets are still phase-scoped: present only during the
+What does NOT carry over: WebSocket-per-seat identity and player-seat reconnect grace (seats have no sockets). Organizer transport recovery does carry over: a reconnect restores the active Impostor phase, typed roster, and gated role payload. Public spectator payloads are separately redacted. Secrets are still phase-scoped: present only during the
 private reveal pass, then withheld during face-up table phases.
 That's why this is cheaper than it looks — a pass game is nearly a single-client state machine.
 
@@ -54,12 +53,12 @@ That's why this is cheaper than it looks — a pass game is nearly a single-clie
 
 The teen-popular secret-word game. **This is why the `impostor` id was kept free.**
 
-- Setup: host enters player names (3–12). Category chosen or AI-generated word pair.
+- Setup: host enters player names (3–12). The current UI uses curated category packs; API/config can supply sanitized word pairs. AI word-pair generation is future work.
 - Everyone except one player is shown the **secret word** via the privacy gate; the impostor is
   shown "You are the IMPOSTOR — bluff!" (optionally a decoy category hint).
 - Phone goes face-up on the table. In turn order, each player **says one word aloud** related to
   the secret word — vague enough not to tip the impostor, specific enough to prove they know it.
-  The phone just shows whose turn it is (+ optional round timer).
+  The phone shows whose turn it is; there is no automatic clue/discussion timer in the current MVP.
 - After N spoken rounds: discussion, then a **table vote** — tap the accused's name on the shared
   screen (or vote by pointing; the phone records the outcome).
 - Reveal: impostor caught → word-knowers win; impostor survives *or* correctly guesses the secret
@@ -86,7 +85,7 @@ Existing games that gain a cheap **pass mode** (same engine, new shell): `chit_p
 `never_have_i_ever` (show of hands instead of taps), `wmlt` (point at people), `two_truths`
 (spoken statements, phone only tracks scores).
 
-## 4. MVP slice (when this gets built)
+## 4. Implemented MVP and Remaining Work
 
 1. The five primitives as shared components (`PassScreen`, `PrivacyGate`, seat-roster setup,
    turn engine, group-screen frame) — built once, themed Velvet.
@@ -94,7 +93,11 @@ Existing games that gain a cheap **pass mode** (same engine, new shell): `chit_p
 3. Catalog entry with a new `interaction: "pass_and_play"` field so the picker can badge these
    games ("One phone — no downloads for guests") — that badge is itself a selling point in a
    store listing: it's the answer to "what if my friends won't install anything?"
-4. No per-player sockets, no reconnect logic, no per-viewer scoping — deliberately.
+4. No per-seat sockets or identity tokens. The single organizer socket reconnects through the existing transport path; shared display payloads are redacted. Role-seen actions only apply during private reveal; next-round actions only apply after outcome reveal, so stale/repeated messages cannot rewind or skip a round.
+
+Setup remains editable while the organizer connects. The client retains the latest same-room typed roster and sends it after `AUTH` when the current socket opens; Start remains disabled until then, and sends the final roster before `START_GAME`. Gameplay action handlers also require an open socket. Pass-and-play start does not send the quiz-only `NEXT_QUESTION` action.
+
+Remaining work: AI packs, optional timers, more pass-and-play games, mid-game roster controls, and a dedicated spectator presentation. The current `SpectatorPage` has no complete Impostor-specific group-screen renderer; the shared `GroupScreenFrame` is on the organizer phone. TV controller transfer is also future work in `SPEC-TV-APP.md`.
 
 Open questions for Avi: age-rating implications of Truth-or-Dare content (IARC is already
 Teen/PEGI-18 in places); whether pass-and-play rooms should cost fewer sparks (no server fan-out);

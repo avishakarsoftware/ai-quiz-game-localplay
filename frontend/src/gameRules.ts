@@ -39,13 +39,13 @@ function rules(title: string, summary: string, objective: string[], flow: string
         version: 1,
         title,
         summary,
+        ...extra,
         sections: [
             { id: 'objective', title: 'Objective', items: objective },
             { id: 'flow', title: 'How it works', items: flow },
             { id: 'scoring', title: 'Scoring and winning', items: scoring },
             ...(extra?.sections || []),
         ],
-        ...extra,
     };
 }
 

@@ -1,5 +1,9 @@
 # LocalPlay Survey Says Game Spec
 
+## Current repository contract (reviewed 2026-10-10)
+
+Create rooms with `survey_says_config`; the curated deck contains three rounds, so the default is three (requested round count is capped by available rounds). The host adjudicates every guess. `SURVEY_SYNC.survey_says` uses `round_number` and `total_rounds` alongside the board, teams, bank, strike count, and standings. The engine records `deadline`, but the socket runtime does not automatically strike or advance when it expires. `guess_time_seconds` is a setup/pacing value; reveal, steal resolution, and progression remain host-controlled. Unrevealed slots expose rank and points but hide answer text from players/spectators; host sync includes text, aliases, and guesses.
+
 ## Overview
 
 Add **Survey Says** as a team survey-answer game inspired by family feud formats. Players submit free-text guesses from their phones, while the host adjudicates close answers, reveals answer slots, tracks strikes, and advances rounds. The TV/spectator view shows the answer board, teams, current bank, and final podium.

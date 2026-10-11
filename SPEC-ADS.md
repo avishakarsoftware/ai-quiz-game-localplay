@@ -18,7 +18,11 @@ Related: `SPEC-IAP.md` (paid Sparks / RevenueCat), `SPEC.md` (spark economy), `D
 
 ---
 
-## 1. Goal & scope
+## 1. Proposed SSV implementation — goal and scope
+
+Sections 1–12 below are the unimplemented rewarded-ad design. The existing gate is
+`ADS_ENABLED` (default false); `ADS_TRUST_CLIENT`, `/ads/ssv` and the AdMob plugin are future
+items, not existing configuration or callable routes. Source checked 2026-10-10.
 
 Let players earn a small number of Sparks by watching a **rewarded video ad**, as a free alternative to buying a Spark pack — without opening a farm-free-currency hole and without violating store policy.
 

@@ -1,5 +1,9 @@
 # LocalPlay Common Ground Game Spec
 
+## Current repository contract (reviewed 2026-10-10)
+
+Rooms accept `common_ground_config`; minimum players is 4. The MVP supports one fact per team even when `mode` is `classic` or `prompted`. Seeded team assignment shuffles the roster and balances teams, then keeps them stable. `COMMON_SYNC.common_ground` carries the actual `COMMON_DISCUSSION`, `COMMON_REVEAL`, `COMMON_VOTING`, `COMMON_ROUND_RESULT`, and `PODIUM` phases. All-team submission automatically reveals; host actions start voting, score, and advance. Discussion/vote deadlines are stored but have no automatic expiry task. Scoring is idempotent after round result, so a repeated `COMMON_SCORE_ROUND` cannot award the round twice. The live UI is `CommonGroundGame.tsx`; dedicated setup and visible countdown timers are follow-ups.
+
 ## Overview
 
 Add **Common Ground** as a team-based icebreaker where small groups discover things they all have in common, submit their best shared facts, and optionally vote on the most surprising or fun answers.
@@ -23,7 +27,7 @@ Status: implemented for standalone LocalPlay.
 - Server creates small teams from connected players.
 - Each round gives all teams the same safe prompt.
 - Teams discuss in person and submit one shared fact that is true for every team member.
-- Spectator/TV shows timer, teams, submission status, and reveal.
+- Spectator/TV shows the prompt, teams, submission status, reveal, and scores. Countdown display is future UX.
 - Optional voting phase lets players vote for funniest, most surprising, or most specific shared fact. MVP defaults to `most_surprising`.
 - Final ranking uses submitted facts plus voting bonuses.
 
@@ -49,7 +53,7 @@ Status: implemented for standalone LocalPlay.
 
 ### Classic Common Ground
 
-Each team must submit N shared facts within the timer.
+Design goal: each team submits N shared facts. The implemented runtime normalizes `facts_per_round` to 1 for every mode.
 
 Example:
 
@@ -188,7 +192,7 @@ Example:
 }
 ```
 
-## Content Model
+## Original Data-Model Design (historical; current payloads use `COMMON_*` phases)
 
 ```ts
 export interface CommonGroundPrompt {
@@ -242,7 +246,7 @@ export interface CommonGroundSubmission {
 5. Round starts with a prompt and discussion timer.
 6. Team members talk in person.
 7. One member per team submits the team's shared fact(s).
-8. When all teams submit or timer ends, server moves to reveal.
+8. When all teams submit, the engine moves to reveal automatically; the host can also reveal early. Deadline expiry does not automatically advance the socket runtime.
 9. Spectator/TV reveals team submissions.
 10. If voting is enabled, players vote on submissions from other teams.
 11. Server scores the round.
@@ -251,8 +255,8 @@ export interface CommonGroundSubmission {
 
 ## Submission Rules
 
-- Any team member can submit or edit the team's answer while the discussion timer is active.
-- Last edit before deadline wins.
+- Any team member can submit or edit the team's answer while the phase is `COMMON_DISCUSSION`.
+- Last edit before phase advancement wins; the stored deadline is not enforced by a background task.
 - Submissions are team-visible while editing.
 - Other teams do not see submissions until reveal.
 - Empty submissions score zero for that round.
@@ -290,7 +294,7 @@ Visibility:
 
 - Team submissions are private to that team during discussion.
 - Spectator sees submission progress only, not text, until reveal.
-- Votes are private until the result.
+- Individual vote choices remain private. Aggregate vote totals appear on revealed submission cards during voting.
 - Final result can show vote totals, not individual votes.
 
 ## Scoring
@@ -310,11 +314,13 @@ If voting is disabled:
 - First team to submit earns +50.
 - Optional host-selected winner is future work, not MVP.
 
-Tie-breakers:
+Implemented tie-breakers after score:
 
-1. More votes received.
-2. More rounds with valid submissions.
-3. Earlier final submission timestamp.
+1. More rounds with valid submissions.
+2. Earlier latest submission timestamp.
+3. Deterministic team id.
+
+A separate total-votes tie-breaker is future work.
 
 ## Spectator/TV UX
 
@@ -467,7 +473,7 @@ Backend tests:
 
 Frontend tests:
 
-- Setup renders team/timer/voting controls.
+- A future setup UI renders team/timer/voting controls; current picker uses defaults.
 - Player sees team and prompt.
 - Team submission editor works.
 - Reveal shows all submissions.

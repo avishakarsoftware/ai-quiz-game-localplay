@@ -1,114 +1,89 @@
-# SPEC-REMOTE-CONFIG — Server-driven config & feature flags
+# SPEC-REMOTE-CONFIG — Server-driven config and feature flags
 
-Status: **Implemented** — the frontend hook + the backend-effective `GET /config/public` endpoint (economy +
-feature flags: `referral_enabled`, `gifting_enabled`, `achievements_enabled`, `ads_enabled`, catalog gating)
-are live. Admin write endpoint remains a follow-up. (reviewed 2026-07-21)
-Owner: Avi
-Related: `frontend/src/hooks/useRemoteConfig.ts`, `frontend/src/types/remoteConfig.ts`, `frontend/public/config.json`, `backend/config.py` (`REMOTE_CONFIG_URL`)
+Status: **Implemented**, reconciled with source 2026-10-10. Public reads, durable admin
+overrides, AI-model selection and frontend catalog/feature gates exist. Deployment state is
+recorded in `DEPLOY.md`; this review changes local source only.
 
----
+## Sources and precedence
 
-## 0. What already exists (do not rebuild)
+`backend/remote_config.py` fetches JSON from `REMOTE_CONFIG_URL`. The legacy fallback derives
+`/quiz/config.json` from the first `ALLOWED_ORIGINS` entry; use an explicit URL for another
+hosting path. There is no `REMOTE_CONFIG_FILE` or mtime-based file reader.
 
-A complete **frontend** remote-config system:
-- `useRemoteConfig` fetches `${BASE_URL}config.json` with localStorage cache + TTL (`cache_ttl_seconds`),
-  merge-with-defaults (crash-proof), foreground refresh on tab visibility, and a `force_config_refresh`
-  escape hatch.
-- `RemoteConfig` schema covers: `operations` (maintenance, kill_switch, kill_generate, kill_payments,
-  min_supported_version), `pricing` (+ promo block), `feature_flags` (show_upgrade_button,
-  enable_image_generation), `announcements`. Consumed by `MaintenanceOverlay`, `AnnouncementBanner`,
-  pricing/promo UI.
-- `config.py` has `REMOTE_CONFIG_URL` (unused hook) and the promo mirrors `PROMO_ID`.
+- Backend fetch interval: 300 seconds; HTTP timeout: five seconds.
+- Fetch/network/JSON failures and non-object payloads keep the last valid cached object;
+  failed refreshes are retried after roughly one minute. A cold cache is an empty object.
+- `app_settings.remote_config_overrides` stores a durable operator layer, deep-merged over the
+  fetched object. Malformed stored values or settings-reader failures act as an empty layer.
+- AI provider/free/paid model getters use the merged `ai_models` object with environment
+  defaults. Startup tolerates a malformed `ai_models` value. Operator changes therefore affect
+  actual generation, not just the public response.
 
-**Today the config is a static file** (`public/config.json`, shipped to IONOS). There is **no backend
-endpoint** and **no game-catalog / spark-cost control** in the schema.
+## Public endpoint
 
-## 1. Gaps this spec closes
+`GET /config/public` is unauthenticated and returns the merged config augmented with:
 
-1. **Backend `GET /config/public`** — a server-owned config source so config can change without a frontend
-   redeploy, and so native builds (which bundle their own `config.json`) can opt into a live source.
-2. **Schema extension** — add `enabled_game_types` (catalog gating) and `economy` (tunable spark costs) +
-   `ads_enabled` / `referral_enabled` flags, wired to real behavior.
-
-## 2. Backend `GET /config/public`
-
-- Reads a JSON file from the data dir: `${DATA_DIR}/remote_config.json` (path via
-  `REMOTE_CONFIG_FILE`, default under the existing SQLite data dir). **In-memory cache** with a short TTL
-  (e.g. 30s) + mtime check so edits are picked up without restart.
-- **Safe defaults:** any missing key falls back to `config.py` constants (`COST_ROOM`, `COST_GENERATE`,
-  the current game-enable flags, etc.). A missing/unparseable file ⇒ return the all-defaults object (never
-  500). This mirrors the frontend's merge-with-defaults so both ends are crash-proof.
-- Response shape is a **superset** of the existing `RemoteConfig` (so the frontend keeps working if pointed
-  here) plus:
-  ```jsonc
-  {
-    "enabled_game_types": ["quiz","wmlt","drawing", ...],   // null/absent ⇒ all enabled
-    "economy": { "cost_room": 10, "cost_generate": 1 },
-    "feature_flags": { ..., "ads_enabled": false, "referral_enabled": true }
+```json
+{
+  "enabled_game_types": null,
+  "economy": { "cost_room": 10, "cost_generate": 1 },
+  "feature_flags": {
+    "show_upgrade_button": true,
+    "enable_image_generation": true,
+    "ads_enabled": false,
+    "referral_enabled": false,
+    "gifting_enabled": false,
+    "achievements_enabled": false
   }
-  ```
-- Cheap, unauthenticated (public read), rate-limited by IP. No secrets in it.
+}
+```
 
-**No admin write endpoint in v1** — the file is edited on the server (like `.env`). A future
-`POST /config` (admin-gated) is noted, not built. *(If added during impl, log it.)*
+The amounts above are examples of the current defaults; `config.COST_ROOM/COST_GENERATE`
+remain authoritative. Referral, gifting and achievement flags reflect backend support and
+Supabase activation flags. Ads remain false while verified ad fulfillment is unimplemented.
+A malformed `feature_flags` value falls back to defaults without discarding other valid fields.
+The endpoint has no dedicated IP rate limiter; do not claim otherwise.
 
-## 3. Frontend extension
+`enabled_game_types` controls the standalone picker when it is a nonempty array; absent, null
+or empty values leave its catalog unfiltered. This is presentation gating, not a server-side
+runtime kill switch. `operations.kill_switch/kill_generate/kill_payments` control frontend
+surfaces. Host-app launch authorization and game exposure use the separate catalog policy in
+`SPEC-REVELRY-INTEGRATION.md`; config cannot add an unimplemented game.
 
-- Extend `RemoteConfig` type + `DEFAULT_CONFIG` + `mergeWithDefaults` with the new fields (all optional,
-  defaulted). **Keep the static-file fetch working**; optionally allow the fetch URL to be the backend
-  endpoint via an env (`VITE_CONFIG_URL`) that defaults to `${BASE_URL}config.json` (backward compatible).
-- **Game-catalog gating:** `GameSelectScreen` filters the offered games by `enabled_game_types` when present
-  (absent ⇒ show all). Complements the existing `ENABLE_BINGO`.
-- `ads_enabled` / `referral_enabled` gate those features' UI (ties into SPEC-ADS / SPEC-REFERRAL).
+## Admin endpoints
 
-## 4. Config / env
-| Var | Default | Notes |
-|---|---|---|
-| `REMOTE_CONFIG_FILE` | `${data}/remote_config.json` | server-side config file |
-| `REMOTE_CONFIG_CACHE_SECONDS` | 30 | in-memory cache TTL |
-| `VITE_CONFIG_URL` (frontend) | `${BASE_URL}config.json` | deployed backend/IONOS/native builds point at backend `/config/public` so backend-authoritative flags such as `referral_enabled` are respected |
+- `GET /admin/config`: returns `fetched`, `overrides`, `effective` and `source_url` separately.
+- `PUT /admin/config` with `{ "overrides": { ... } }`: replaces the entire override layer.
+- `DELETE /admin/config` or PUT with empty overrides: clears that layer.
 
-## 5. Testing
-- `backend/tests/test_remote_config.py`: missing file ⇒ defaults (200, no throw); valid file ⇒ merged over
-  defaults; partial file ⇒ only provided keys override; mtime change busts the cache; response is a superset
-  containing economy + enabled_game_types.
-- Frontend: `mergeWithDefaults` fills the new fields; `GameSelectScreen` hides a game absent from
-  `enabled_game_types` and shows all when the field is absent.
+All three require `Authorization: Bearer <ADMIN_API_KEY>` with constant-time comparison;
+unconfigured admin access returns 503 and invalid credentials return 403. The override layer
+is persisted in both storage backends. It does not write the fetched IONOS file or environment
+variables. Migration `20260727T010000_app_settings{,_gamma}.sql` provides Supabase storage.
 
-## 6. Files touched
-- `backend/config.py` (REMOTE_CONFIG_FILE, cache secs), `backend/remote_config.py` (new: load+cache+merge)
-  or inline, `backend/main.py` (`GET /config/public`), `backend/tests/test_remote_config.py`.
-- `frontend/src/types/remoteConfig.ts` (+fields), `frontend/src/hooks/useRemoteConfig.ts` (merge + optional
-  URL env), `GameSelectScreen` (catalog gating), tests.
+## Frontend
 
-## Admin override layer (added 2026-07-27)
+`useRemoteConfig` fetches `VITE_CONFIG_URL` or `${BASE_URL}config.json`, merges missing fields
+with `DEFAULT_CONFIG`, and caches under `revelry_remote_config` in localStorage.
 
-The fetched config lives on IONOS (`config.json`), which the backend cannot write. So "edit
-config without SSH" is served by an **override layer** stored server-side and deep-merged on top
-of whatever was fetched.
+- Timeout: three seconds. Default/max cache TTL: 24 hours; a positive `cache_ttl_seconds`
+  can shorten it. A fresh cache skips the network.
+- Foreground visibility triggers the same cache-aware read; `force_config_refresh` in the
+  current config bypasses cache. It cannot force a client to discover an unseen remote flag.
+- Unknown/malformed announcement entries are dropped individually; they must not discard
+  valid operational flags or valid neighboring announcements.
+- IONOS/native build scripts point the hook at the backend `/config/public`; bundled/static
+  config remains the default fallback for builds without that setting.
+- Legacy single-pack `pricing` keys are ignored. Spark packs come from the product catalog and
+  native store prices, with balance/spend amounts authoritative on the backend.
 
-- Stored in the `app_settings` table under `remote_config_overrides` (migration
-  `sql/migrations/20260727T010000_app_settings{,_gamma}.sql`). **Persisted, not in-memory** —
-  an override is a kill switch, and an in-memory one evaporates during exactly the bad rollout
-  it exists for.
-- Merge is **deep**, so flipping one nested flag doesn't silently drop its siblings. A top-level
-  replace of `feature_flags` would delete every key the operator didn't restate.
-- `PUT /admin/config` **replaces** the layer wholesale rather than accumulating patches: an
-  override you can't fully see is one you can't safely remove. `{"overrides": {}}` or
-  `DELETE /admin/config` clears it.
-- `GET /admin/config` returns `fetched`, `overrides` and `effective` **separately** — when
-  something behaves oddly you need to know whether it came from IONOS or from an override set
-  weeks ago.
-- All three endpoints are gated by `_check_admin` (`ADMIN_API_KEY`, constant-time compare;
-  503 when unset).
+## Validation and remaining work
 
-**Overrides also drive AI model selection.** `_get_ai_models()` applies them, so
-`{"ai_models": {"free_model": "…"}}` changes what actually generates — not just what
-`/config/public` reports. That directly serves the backlog's Oct 2026 model bump: the switch
-becomes an API call rather than a frontend deploy. A reader failure is swallowed and treated as
-"no overrides", because a broken settings row must never take down config reads (which would
-take AI model selection down with it).
+`test_remote_config.py`, `test_config_public.py` and `test_config_overrides.py` cover source URL,
+last-good cache retention, malformed payloads, backend flags/economy, durable deep overrides,
+admin authorization and model selection. `useRemoteConfig.test.ts` covers merge/cache/foreground
+behavior and malformed announcements preserving kill switches.
 
-Tests: `backend/tests/test_config_overrides.py` (13) — merge depth, add-new-key, persistence,
-replace-not-accumulate, clear, AI model wiring, malformed/non-dict rows, and the admin gate.
-
+Future work: a validated operator UI, server-side operational kill switches if required, and
+shorter/explicit refresh policy for emergency changes. They are not implemented by the existing
+frontend presentation flags.

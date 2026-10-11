@@ -16,6 +16,12 @@ Frontend display name: Musical Chairs
 
 Status: standalone implemented; Revelry gamma support is deployed on the LocalPlay side.
 
+Repository reconciliation: 2026-10-10. Physical chairs is the default; phone-tap behavior below
+applies to `gameplay_mode = "digital"`. Hosted HTML audio exists on the organizer only. Original
+procedural Web Audio files, richer reveal components, timer tightening, and optional reaction
+statistics below remain design targets. Current hosted exposure follows `DEPLOY.md` and remote
+catalog policy; this local review makes no deployment changes.
+
 The current MVP ships two gameplay modes plus a hosted-audio built-in music player:
 
 - `musical_chairs` is a first-class standalone game type and appears in the standalone catalog.
@@ -166,9 +172,9 @@ A future "connect your Spotify" feature could replace the built-in audio, but it
 1. Host starts the round. Music begins playing (built-in or external).
 2. Players see a "waiting" screen with a pulsing visual. They know music is playing but cannot predict when it stops.
 3. After a random interval within the configured window, the server sends the STOP signal.
-4. Built-in mode: music fades out on the organizer/spectator. External mode: organizer gets a "STOP NOW" alert.
-5. Players see a "GRAB A CHAIR!" button appear on their screen. They tap as fast as possible.
-6. Server collects tap timestamps. The slowest player (or players, if multiple chairs are removed) is eliminated.
+4. Built-in mode: the organizer pauses its audio immediately. Spectator/player devices supply visual cues. External mode: organizer gets a "STOP NOW" alert.
+5. Digital mode shows a "GRAB A CHAIR!" button. Physical mode shows instructions while players use real chairs.
+6. Digital mode ranks server tap timestamps and eliminates the slowest/no-tap players. Physical mode waits for the host's `MC_ELIMINATE_PLAYER` selection.
 7. Elimination reveal: dramatic pause, then the eliminated player is announced on all surfaces.
 8. Eliminated players become spectators for the rest of the game. They can still watch on their phone.
 9. Next round begins with one fewer chair.
@@ -190,14 +196,14 @@ Music play duration per round should be randomized within a window:
 - Setup shows this window in minutes. The product default is 1 minute minimum and 5 minutes maximum.
 - Backend validation accepts a minimum as low as 5 seconds for tests/debugging, but the product default is minutes-oriented for real physical play.
 - `grab_window_seconds`: how long players have to tap after the stop signal. After this window closes, any player who hasn't tapped is automatically eliminated.
-- As rounds progress and fewer players remain, the grab window should tighten slightly (e.g., -0.5s per elimination, floor of 2s) to increase tension.
+- The grab window stays fixed in the current runtime. Intensity changes visual energy; automatic window tightening is deferred.
 
 ### Elimination Rules
 
 - Default: 1 player eliminated per round (classic musical chairs).
-- Optional speed mode: eliminate the bottom N players per round for faster games with large groups. Configurable in setup.
-- Ties at the elimination boundary: if two players tap at the exact same server-received millisecond, both survive that round and an extra player is eliminated next round. This is generous by design — punishing ties feels unfair.
-- If a player disconnects during an active round, they are automatically eliminated unless they reconnect within the grab window.
+- Digital API config supports 1-10 eliminations per round, capped at active players minus one at resolution. The current standalone setup does not expose a speed-mode control. Physical mode always eliminates one host-selected player per round.
+- Ranking uses full server receipt timestamps; rounded reaction milliseconds are display-only. Exact equal timestamps use case-insensitive nickname ordering. A replay/extra-elimination tie policy remains a future option.
+- A disconnected digital player who has already tapped keeps that tap; otherwise they count as no-tap unless they reconnect and tap within the window. Physical elimination stays host-controlled.
 
 ### Tap Validation
 
@@ -239,6 +245,7 @@ Add:
 ```ts
 export interface MusicalChairsConfig {
   game_title: string;
+  gameplay_mode: 'physical' | 'digital';
   music_mode: 'builtin' | 'external';
   music_style: 'upbeat' | 'jazzy' | 'suspenseful' | 'retro' | 'tropical';
   music_track_id?: string;
@@ -317,7 +324,7 @@ Validation:
 - `min_music_seconds` clamped to 5-600.
 - `max_music_seconds` clamped to `min_music_seconds`+1 to 900.
 - `grab_window_seconds` clamped to 2-10.
-- `eliminations_per_round` clamped to 1 to `floor(active_players / 2)`.
+- `eliminations_per_round` clamped to 1-10 for digital mode, then at most active players minus one during resolution. Physical mode normalizes it to 1.
 - `music_style` must be a known style.
 - `music_track_id` is optional and sanitized; if missing, the backend chooses the default track for the selected style.
 - `music_mode` must be `builtin` or `external`.
@@ -335,7 +342,7 @@ If LLM features are added later (AI-generated round themes, commentary, etc.), g
 ### Organizer Messages To Server
 
 - `START_GAME`
-  - Validates minimum player count (`MIN_MC_PLAYERS = 3`).
+  - Validates minimum player count (`MIN_MUSICAL_CHAIRS_PLAYERS = 3`).
   - Initializes `mc_active_players` from connected players.
   - Charges `COST_ROOM`.
   - Broadcasts `GAME_STARTING`.
@@ -352,6 +359,9 @@ If LLM features are added later (AI-generated round themes, commentary, etc.), g
 - `MC_NEXT_ROUND`
   - After elimination reveal, starts the next round.
 
+- `MC_ELIMINATE_PLAYER`
+  - Physical mode only, during `MC_PHYSICAL_ELIMINATION`, with `{ "nickname": "player" }`.
+
 - `END_QUIZ`
   - Ends the game early. Broadcasts `PODIUM`.
 
@@ -366,6 +376,11 @@ If LLM features are added later (AI-generated round themes, commentary, etc.), g
   - Rejected if: round not active, music hasn't stopped, player already grabbed, player is eliminated.
 
 ### Server Messages To Clients
+
+Current sync envelopes nest state under `musical_chairs`, including `phase`, roster, chairs,
+timing config, and intensity. `MC_ROUND_START`, `MC_MUSIC_STOP`, `MC_GRAB_COUNT`, and
+`MC_ROUND_OVER` include that state; reconnect uses it inside the normal surface sync.
+The flat payload examples below illustrate the original design and are not exact wire schemas.
 
 - `MC_ROUND_START`
   - Signals a new round is beginning.
@@ -554,7 +569,7 @@ The spectator screen is the most important surface for Musical Chairs. It should
 
 ### Drawing Canvas / Visualizer Component
 
-`frontend/src/components/musical-chairs/MusicVisualizer.tsx`
+`frontend/src/components/musical-chairs/MusicalChairsVisualizer.tsx`
 
 A visual component that responds to Musical Chairs phase/intensity:
 
@@ -563,7 +578,7 @@ A visual component that responds to Musical Chairs phase/intensity:
 - Intensity parameter controls visual energy.
 - Does not require audio analysis in the hosted-track MVP.
 
-`frontend/src/components/musical-chairs/GrabButton.tsx`
+The grab button is rendered by `frontend/src/components/player/MusicalChairsPlayer.tsx`.
 
 - Full-screen tap target.
 - Appears only after `MC_MUSIC_STOP`.
@@ -616,6 +631,9 @@ Playback rules:
 
 ### iOS Safari Considerations
 
+The current player uses HTML audio. AudioContext creation/resume guidance below applies only to
+a future procedural Web Audio implementation and is not a current runtime dependency.
+
 - `AudioContext` must be created and resumed on a user gesture.
 - The organizer "Start Round" tap satisfies this requirement.
 - If the context is suspended (backgrounding), resume on the next user interaction.
@@ -652,6 +670,7 @@ Musical Chairs uses distinct phases, not the quiz `QUESTION`/`LEADERBOARD` cycle
 - `LOBBY` — standard.
 - `MC_MUSIC` — music is playing, waiting for stop.
 - `MC_GRAB` — music stopped, players racing to tap.
+- `MC_PHYSICAL_ELIMINATION` — music stopped, host chooses who did not get a real chair.
 - `MC_REVEAL` — elimination reveal.
 - `MC_BETWEEN_ROUNDS` — organizer can start next round.
 - `PODIUM` — game complete.
@@ -662,7 +681,7 @@ Musical Chairs uses distinct phases, not the quiz `QUESTION`/`LEADERBOARD` cycle
 - Maximum players: same as `MAX_PLAYERS_PER_ROOM`.
 - Musical Chairs has exactly `N-1` rounds for `N` starting players (or fewer if multiple eliminations per round).
 
-## Backend Implementation
+## Backend Implementation (Original Checklist)
 
 ### Files
 
@@ -715,7 +734,7 @@ Add or update:
 - Player reconnect during `MC_GRAB`: if within grab window, can still tap. If window passed, treated as no-tap.
 - Player reconnect during `MC_REVEAL` or `MC_BETWEEN_ROUNDS`: receive current state.
 - Eliminated player reconnect: placed in spectator view.
-- Organizer reconnect: full MC state sync, music task pauses during grace period.
+- Organizer reconnect: full MC state sync. Server auto-stop/grab timers continue during the reconnect grace period; built-in audio may need a new host gesture. Pausing those timers on host disconnect remains follow-up work.
 
 ## History and Results
 
@@ -749,8 +768,8 @@ Standalone Musical Chairs `Play Again` sends `RESET_ROOM`. Room code and connect
   "game_type": "musical_chairs",
   "title": "Musical Chairs",
   "description": "Music plays, then stops. Race to grab a chair. Last one standing wins.",
-  "status": "planned",
-  "launchable": false,
+  "status": "live",
+  "launchable": true,
   "supports_manual_authoring": false,
   "supports_ai_generation": false,
   "requires_content": false,

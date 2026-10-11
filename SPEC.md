@@ -1,11 +1,11 @@
 # LocalPlay System Spec
 
-Status: **Living baseline — describes the system as currently implemented** (reviewed 2026-07-21). For
+Status: **Living baseline — describes the system as currently implemented** (source reviewed 2026-10-10). For
 per-environment live status see DEPLOY.md's ledger; for the forward-looking vision see `SPEC-PLATFORM.md`.
 
 This document describes the system as it exists now. It is intended as a baseline for planning new games and platform upgrades.
 
-For the forward-looking LocalPlay platform vision, including the future Revelry integration boundary, see `SPEC-PLATFORM.md`.
+For the forward-looking LocalPlay platform vision, including the implemented Revelry integration boundary and its remaining roadmap, see `SPEC-PLATFORM.md`.
 
 ## Product
 
@@ -17,13 +17,21 @@ The platform currently supports:
 - Quiz runtime variants: `rebus`, `emoji_charades`, `fact_fiction`, `timeline`, and `odd_one_out`.
 - `wmlt`: "Who's Most Likely To" voting rounds.
 - `drawing`: rotating drawer/guesser rounds with live canvas sync.
-- `musical_chairs`: standalone elimination rounds where music/visual rhythm stops and players race to tap.
+- `musical_chairs`: standalone elimination rounds with default physical-chair/host elimination and optional digital tap racing when the music/visual rhythm stops.
 - `bluff`: standalone card-room MVP with server-dealt private hands, redacted public table state, face-down claims, challenges, and spectator support.
 - `two_truths`: standalone party confession game where players submit two truths and one lie, then the room votes on each author.
 - `story_chain`: standalone sequential creative game where players privately add one sentence each, then the room reveals the final story.
 - `common_ground`: standalone team icebreaker where auto-assigned teams submit shared facts, vote on the best answers, and finish on a team podium.
 - `who_am_i`: standalone clue-ladder guessing game where clues reveal progressively and players submit free-text guesses.
 - `chit_pull`: standalone Random Chit party game where the server picks a player and prompt, then the host marks completed/skipped/redrawn outcomes.
+- `housie` / `bingo`: caller-led 90-ball Housie and configurable 5×5 Bingo with server-validated claims.
+- `find_someone`: social Bingo with person matching and confirmations.
+- `poker`: server-dealt play-chip poker with private hole cards and showdown scoring.
+- `mafia`: secret-role night/day game with private actions and public-safe narration.
+- `impostor`: one-device pass-and-play role reveal, clues, voting, and round results.
+- `party_quests`: ambient quest boards, confirmations, and final standings; includes the Revelry prepared/check-in flow.
+- `photo_clue`: player-uploaded image guessing with private clue-giver context.
+- Simple social runtimes: `would_you_rather`, `never_have_i_ever`, `word_association`, `acronym`, and `odd_question`.
 - `survey_says`: standalone team survey game where players guess ranked answers and the host reveals slots, strikes, steals, and team scoring.
 - Generic Prompt Party games: `hot_takes`, `this_or_that`, `caption_contest`, `pitch_battle`, `roast_toast`, `desert_island`, `memory_lane`, `rapid_fire`, `one_word_vibes`, and `emoji_story`.
 - Standalone custom quiz authoring and saved quiz packs.
@@ -68,7 +76,10 @@ Key files:
 - `backend/chit_pull_engine.py`: random player/chit selection, safe deck sanitization, redraw handling, scoring, public sync, and podium helpers for Random Chit.
 - `backend/survey_says_engine.py`: Survey Says setup validation, team assignment, guess capture, host-revealed answer board, strikes, steals, scoring, late joins, and public/private sync.
 - `backend/generic_prompt_engine.py`: shared prompt, choice, submission, voting, grouping, scoring, and podium helpers for lightweight prompt party games.
-- `backend/image_engine.py`: optional Stable Diffusion image generation for quiz questions.
+- `backend/image_engine.py`: optional Gemini or Stable Diffusion image generation, selected by configuration.
+- `backend/host_app_catalog_policy.py`: cached durable host-app availability and capability intersection.
+- `backend/room_snapshot.py`: optional singleton room recovery; not shared multi-instance state.
+- `backend/photo_clue_media.py`: signed owner/asset attachment proof for uploaded Photo Clue images.
 - `backend/auth.py`: Google/Apple sign-in and session handling.
 - `backend/remote_config.py`: remote config for provider/model/operation flags.
 
@@ -228,13 +239,17 @@ The implemented system supports SQLite and Supabase for durable state:
 - Checkout/webhook idempotency.
 - Legacy entitlements and free-usage tracking.
 - Pending token pickup after checkout return.
+- Saved quiz packs/questions and media asset metadata.
+- Scoped generated content and durable Revelry game sessions.
+- Lightweight game results/statistics, achievements, referrals, gifts, and party-grace state.
+- Remote-config overrides and host-app catalog policy rows.
 
 Local development defaults to SQLite. Deployed production and gamma use Supabase:
 
 - Production: `DB_BACKEND=supabase`, `TABLE_PREFIX=games_`.
 - Gamma: `DB_BACKEND=supabase`, `TABLE_PREFIX=games_gamma_`.
 
-The planned Supabase migration is specified in `SPEC-SUPABASE-MIGRATION.md`. It uses the existing VibePix Supabase project as a shared database, with table/RPC prefixes to avoid collisions:
+The implemented Supabase adapter and migration boundary are specified in `SPEC-SUPABASE-MIGRATION.md`. It uses the existing VibePix Supabase project as a shared database, with table/RPC prefixes to avoid collisions:
 
 - Production: `games_`.
 - Gamma: `games_gamma_`.
@@ -284,23 +299,7 @@ Eviction:
 
 ## Game Types
 
-Frontend game types are defined in `frontend/src/types.ts`:
-
-```ts
-export type QuizVariantGameType = 'rebus' | 'emoji_charades' | 'fact_fiction' | 'timeline' | 'odd_one_out';
-export type GenericPromptGameType =
-  | 'hot_takes'
-  | 'this_or_that'
-  | 'caption_contest'
-  | 'pitch_battle'
-  | 'roast_toast'
-  | 'desert_island'
-  | 'memory_lane'
-  | 'rapid_fire'
-  | 'one_word_vibes'
-  | 'emoji_story';
-export type GameType = /* see frontend/src/types.ts for the full runtime union */ string;
-```
+`frontend/src/types.ts` defines a closed `GameType` union, including picker-only quiz variants and Bingo presets. `QuizVariantGameType`, `GenericPromptGameType`, `SimpleSocialGameType`, and `PassAndPlayGameType` identify their families. The source union is authoritative; adding a frontend id does not automatically make it a REST room type.
 
 The frontend catalog in `frontend/src/gameModes.ts` maps visible game ids to runtime types:
 
@@ -309,7 +308,7 @@ The frontend catalog in `frontend/src/gameModes.ts` maps visible game ids to run
 - `drawing` uses the Drawing runtime.
 - `housie` uses the 90-ball Bingo-family runtime.
 - `bingo` uses the configurable 5x5 Bingo-family runtime.
-- `baby_bingo` is a standalone preset card that opens the Bingo setup with a baby-shower deck, then creates a normal `bingo` runtime room.
+- `baby_bingo`, `wedding_bingo`, `holiday_bingo`, and `road_trip_bingo` are standalone setup presets that create normal `bingo` runtime rooms.
 - `musical_chairs` uses the Musical Chairs runtime.
 - `bluff` uses the shared card-game runtime.
 - `poker` uses the shared card-game runtime.
@@ -319,8 +318,8 @@ The frontend catalog in `frontend/src/gameModes.ts` maps visible game ids to run
 
 Backend room creation accepts runtime game types:
 
-- All runtime ids in `frontend/src/types.ts`, including quiz variants and standalone game runtimes.
-- Generic Prompt Party game ids listed in `backend/generic_prompt_engine.py`.
+- The distinct backend catalog `game_type` values plus the Generic Prompt Party runtime ids, derived into `main.SUPPORTED_ROOM_GAME_TYPES`.
+- Quiz variants submit `game_type=quiz`; their generation/review mode retains the variant identity. Bingo presets submit `game_type=bingo`. Sending the picker-only variant/preset id directly to `/room/create` is rejected.
 
 Unsupported game types are rejected by `RoomCreateRequest.validate_game_type`.
 
@@ -328,32 +327,17 @@ Host-app mode applies an additional catalog gate. A game must be returned as lau
 
 Host-app game availability must be remotely controllable so enabling or disabling a game for Revelry does not require a new LocalPlay release. The code-backed catalog remains the maximum capability set: it declares which games can safely support host-app mode, which creation/start/edit surfaces exist, and which runtime/result contracts are implemented. Remote config or a small durable catalog-flags table is the operational switchboard: it can hide a game, expose it on gamma only, enable it for a party/account allowlist, or toggle features such as content creation, quick start, AI prompt generation, custom photos, and payments. Remote configuration must never enable a game that the code catalog does not declare host-app-compatible.
 
-Implementation-ready availability model:
+Implemented host-app availability model:
 
-- Add a backend module, tentatively `backend/host_app_catalog_policy.py`, that loads host-app game policy, merges it with the static `GAME_CATALOG`, and returns effective catalog entries for host-app requests.
-- Store policy in Supabase/PostgREST as `{TABLE_PREFIX}host_app_catalog_flags` or in the existing remote config service. Prefer the table if operators need per-game edits without replacing a whole JSON blob.
-- If using a table, create columns: `id`, `environment`, `host_app`, `game_id`, `enabled`, `status`, `allowlist_party_ids` JSON array, `allowlist_external_user_ids` JSON array, `rollout_percentage`, `capability_overrides` JSON object, `notes`, `updated_by`, `updated_at`. Add a unique constraint on `(environment, host_app, game_id)`.
-- `capability_overrides` may contain only known boolean capability keys: `can_create_content`, `can_edit_content`, `can_quick_start`, `supports_ai_generation`, `supports_images`, `payments_enabled`, `embedded_authoring_supported`, and future reviewed host-app capabilities.
-- Policy lookup inputs are `environment`, `host_app`, `game_id`, and optional context for allowlists: `external_container_id` / party id and `external_user_id`.
-- Merge algorithm:
-  1. Start with the static code catalog entry.
-  2. Drop the entry if `host_app_supported` is false or `supported_host_apps` does not contain the requested host app.
-  3. Load matching policy for `(environment, host_app, game_id)`.
-  4. In production, drop the entry if no matching policy exists or `enabled` is not true. In gamma/dev, missing policy may fall back to static metadata only when the static entry is explicitly marked host-app-supported.
-  5. If `enabled` is false, return no launchable entry; optionally return a `planned`/`disabled` entry only when the caller requested planned catalog cards.
-  6. If allowlists are present, expose the game only when the party id or actor id is listed.
-  7. If `rollout_percentage` is set, hash a stable key such as `{host_app}:{external_container_id || external_user_id}:{game_id}` into 0-99 and expose only below the threshold.
-  8. Compute every effective capability as static capability AND policy capability. Remote policy can turn supported capabilities off or selectively on only when the static catalog already supports them.
-  9. Set `launchable = enabled && status in ("live", "gamma") && required effective capabilities are present`.
-- Cache policy briefly, around 30-60 seconds, and fail closed on malformed policy in production. Log enough detail for operators without leaking secrets or party/user private data.
-- Add an operator path to update policy without deploy: either an admin-only API, a small CLI/script that writes the table, or documented SQL snippets. Changes should become visible after cache expiry.
-- Include a kill switch path that sets `enabled = false` for one `(environment, host_app, game_id)` and removes it from host-app catalogs immediately after cache expiry while leaving standalone LocalPlay unaffected.
-- `GET /catalog?host_app=...` must be the only source used by host-app surfaces. Frontend hub code should not have separate hardcoded allow/deny lists except for defensive rendering of unknown capabilities.
-- Tests should cover static capability gating, remote disable, gamma/prod differences, allowlisted exposure, rollout hashing, feature-flag intersection, malformed policy, unsupported game ids being ignored, and kill-switch behavior.
+- `backend/host_app_catalog_policy.py` loads `{TABLE_PREFIX}host_app_catalog_flags`, cached for 60 seconds per environment/host app. Admin `GET`/`POST /admin/host-app-catalog-flags` read/upsert policy; upsert clears the local cache.
+- Static host-app support is mandatory. Production omits games lacking policy and fails closed on policy-load errors; non-production can fall back to static metadata.
+- Enabled/status, party and user allowlists, and a stable subject hash for rollout percentage constrain availability. If both allowlists are populated, both must match. A percentage rollout without a stable party/user subject is denied.
+- Overrides intersect with static capabilities. Unknown keys are ignored; explicit opt-in capabilities default off when not enabled in a policy row. `live`/`gamma` status can be launchable; `planned` is informational only.
+- Catalog, prepared-content, quick-start, and launch paths enforce this boundary. It is separate from the standalone frontend `enabled_game_types` filter, which is not a server game kill switch. See `SPEC-REVELRY-INTEGRATION.md` for authenticated context and current staging evidence.
 
 Revelry content callbacks must treat safe `payload.content` metadata as a first-class prepared-game mirror source. `content.created` and `content.updated` callbacks include top-level host-app/container/content ids plus a safe summary object with `localplay_content_id`, `game_type`, `title`, `status`, item/question count, optional thumbnail, and time limit. They must never include raw prompts, questions, answers, options, full media paths, provider prompts, launch tokens, or participant secrets. After signature and envelope validation, Revelry may fetch LocalPlay metadata to confirm or enrich, but a fetch failure must not skip the prepared-game mirror update when safe `payload.content` is present. Versioned updates move the visible prepared setup pointer to the new `content_id` rather than creating a duplicate visible card.
 
-Bingo-family games are a separate runtime family rather than quiz variants. `SPEC-GAME-BINGO-HOUSIE.md` defines the reusable Bingo/Housie engine. Housie is implemented for standalone LocalPlay and Revelry gamma with server-generated tickets, manual/auto number calling, server-side claim validation, and spectator called-board sync. Configurable standalone Bingo is implemented with text/emoji/number/image-shaped deck items, 5x5 cards, optional free center, template/manual/AI-text setup, and host-reviewed generated items. Baby Bingo / dedicated word / emoji / image / photo Bingo remain later named caller-led rulesets on the same engine. `SPEC-GAME-FIND-SOMEONE-WHO.md` is implemented for standalone LocalPlay as a social Bingo-style icebreaker that reuses card layouts and claim patterns but replaces caller draws with real-person matching and optional tap confirmation; it is designed to become a Revelry check-in default game once Revelry adds the host setting and first-check-in trigger.
+Bingo-family games are a separate runtime family rather than quiz variants. `SPEC-GAME-BINGO-HOUSIE.md` defines the reusable Bingo/Housie engine. Housie is implemented for standalone LocalPlay and Revelry gamma with server-generated tickets, manual/auto number calling, server-side claim validation, and spectator called-board sync. Configurable standalone Bingo is implemented with text/emoji/number/image-shaped deck items, 5x5 cards, optional free center, template/manual/AI-text setup, and host-reviewed generated items. Baby/Wedding/Holiday/Road Trip Bingo are current setup presets that create `bingo` rooms. Dedicated new image/photo rulesets remain future work; image-shaped deck items already exist. `SPEC-GAME-FIND-SOMEONE-WHO.md` is implemented for standalone LocalPlay as a social Bingo-style icebreaker that reuses card layouts and claim patterns but replaces caller draws with real-person matching and optional tap confirmation; it is designed to become a Revelry check-in default game once Revelry adds the host setting and first-check-in trigger.
 
 Social icebreakers should be their own lightweight runtime family when they are not caller-led or quiz-shaped. `SPEC-GAME-COMMON-GROUND.md` defines and now implements the standalone Common Ground flow: automatic team assignment, mid-party QR joins with token-based reconnects, private team submissions during discussion, reveal, optional voting, round scoring, spectator sync, and final team podium. Revelry exposure remains disabled until a host-app bridge pass is completed.
 `SPEC-GAME-TWO-TRUTHS.md` defines and now implements the standalone classic player-authored Two Truths and a Lie flow: private statement submission, sequential author reveals, lie voting, deception/detection scoring, spectator sync, and a final individual podium. Revelry exposure remains disabled until a host-app bridge pass is completed.
@@ -368,7 +352,7 @@ Creative sequential games need private-turn queue infrastructure. `SPEC-GAME-STO
 
 ### Musical Chairs
 
-`musical_chairs` is a standalone-first runtime family, not a quiz variant. `SPEC-GAME-MUSICAL-CHAIRS.md` defines the implementation-ready MVP. A host configures gameplay mode plus timing/music mode, creates a room, and starts with at least 3 connected players. Physical mode is the default: LocalPlay starts/stops rounds randomly while players use real chairs, then the host selects who is out. Digital mode uses phone taps: the stop signal opens a grab window, players tap once, and the slowest/no-tap player is eliminated automatically. MVP built-in mode provides server-randomized stop timing plus visual rhythm; procedural Web Audio is a later phase. Revelry/host-app launch remains deferred until a bridge contract is added and tested.
+`musical_chairs` is a standalone-first runtime family, not a quiz variant. `SPEC-GAME-MUSICAL-CHAIRS.md` defines the implementation-ready MVP. A host configures gameplay mode plus timing/music mode, creates a room, and starts with at least 3 connected players. Physical mode is the default: LocalPlay starts/stops rounds randomly while players use real chairs, then the host selects who is out. Digital mode uses phone taps: the stop signal opens a grab window, players tap once, and the slowest/no-tap player is eliminated automatically. Built-in mode uses server-randomized stop timing, visual rhythm, and the current client sound manager. Digital ranking uses unrounded server receipt time; physical rounds eliminate one selected player. Revelry/host-app launch remains deferred until a bridge contract is added and tested.
 
 ### Per-Game UX And Hidden-Information Conventions
 
@@ -429,12 +413,12 @@ Validation requires:
 
 - `questions` exists and is a non-empty list.
 - Each question has `id`, `text`, `options`, `answer_index`.
-- Options count is either 2 or 4.
-- `answer_index` is an integer within option bounds.
+- Classic quiz import/edit/generation accepts 2–4 choices. Fact/Fiction requires exactly `["True", "False"]` after normalization; the other quiz variants require exactly four choices. The editor recognizes True/False by its labels, not merely by having two choices.
+- `answer_index` is an integer within option bounds; booleans and malformed question objects are rejected.
 
 After provider output passes validation and sanitization, the backend shuffles every 4-option multiple-choice question and rewrites `answer_index` to match the shuffled correct answer. This prevents LLM ordering bias where the correct answer is usually option A. Two-option questions are not shuffled; Fact/Fiction questions keep the exact `["True", "False"]` order.
 
-Quiz API responses strip `answer_index` before returning quiz data to clients except export/import and server-internal room data.
+Public `GET /quiz/{quiz_id}` and pre-round player/spectator WebSocket payloads strip `answer_index`. Organizer generation, update, import, export, saved-pack editing, and materialization return the answer key for review. The privacy boundary is the endpoint/viewer contract, not every response containing a quiz.
 
 ### WMLT Content Shape
 
@@ -508,7 +492,7 @@ Validation requires:
     - `mode`, optional quiz variant such as `rebus` or `fact_fiction`.
   - Returns:
     - `quiz_id`
-    - `quiz` with answers stripped.
+    - `quiz` including the answer key for organizer review.
 
 - `GET /quiz/{quiz_id}`
   - Returns quiz with answers stripped.
@@ -524,7 +508,7 @@ Validation requires:
 
 - `POST /quiz/generate-images`
   - Requires authenticated wallet ownership.
-  - Generates one or all question images using Stable Diffusion.
+  - Generates one or all question images using the configured Gemini/Stable Diffusion provider.
 
 - `GET /quiz/{quiz_id}/image/{question_id}`
   - Returns generated PNG image bytes.
@@ -557,10 +541,10 @@ Validation requires:
   - Produces a temporary runtime `quiz_id` from a saved pack so the normal room/review flow can start.
   - Frontend copy should say "Preparing Quiz", not "Generating Quiz".
 
-### Stable Diffusion
+### Image generation status
 
 - `GET /sd/status`
-  - Returns whether image generation backend is available.
+  - Returns whether the configured image generation backend is available; `/sd/status` is the legacy route name.
 
 ### WMLT
 
@@ -636,7 +620,7 @@ Validation requires:
 
 - `POST /room/create`
   - Requires device/wallet context.
-  - Does not charge sparks; game-start charge happens over WebSocket.
+  - No room-start charge; a deferred `COST_GENERATE` may settle when generated content is accepted into the room. The room charge happens later at WebSocket `START_GAME`.
   - Body:
     - `game_type`
     - `time_limit`
@@ -740,7 +724,7 @@ Player join validation:
 - Team names are sanitized and capped.
 - Avatars are capped by `MAX_AVATAR_LENGTH`.
 - Duplicate nickname takeover requires a matching session token.
-- New joins are blocked if the room is locked or no longer in `LOBBY`.
+- A locked room blocks new joins. Outside `LOBBY`, runtime policy applies: Common Ground and Find Someone support late joins, Party Quests/Survey Says respect their late-join configuration, and Generic Prompt games have their own admission path. Other active runtimes reject new player joins; valid seat-token reconnects are separate from new joins.
 
 Reconnection:
 
@@ -1184,7 +1168,8 @@ Game start:
 - Plays start sound.
 - Sends `SET_SHOW_VOTES` for WMLT.
 - Sends `START_GAME`.
-- Sends `NEXT_QUESTION`.
+- Sends `NEXT_QUESTION` for Quiz runtime and WMLT; other runtimes enter their own initial phase on `START_GAME`.
+- Lobby and pass-and-play Start remain disabled while the organizer socket connects. Game actions require an open socket; the latest same-room Impostor roster is retained during connection/reconnection and sent after `AUTH`, before starting.
 
 Round progression:
 
@@ -1231,7 +1216,7 @@ These are the core/shared states. Each additional game adds a runtime state (`BI
 Join:
 
 - Player enters room code, nickname, optional team, and avatar.
-- Session info is stored in `sessionStorage` under `localplay_session`. Target behavior for party-scale mobile reliability is to also keep a TTL-bound copy in durable browser storage so a mobile tab recreation, external-open handoff, or in-app browser recovery can still reclaim the same room participant identity. The durable copy must remain room/session scoped and must not create a cross-party profile.
+- Player credentials are written to both `sessionStorage` and `localStorage` under `localplay_session`, scoped to the saved room/nickname/token. Newly saved entries have a 12-hour TTL; legacy entries without `savedAt` remain accepted. The fallback supports tab recreation and handoff, rather than creating a cross-party player profile.
 - Saved sessions auto-rejoin after refresh.
 - Organizer room credentials are stored locally after room creation or host-app launch. Refreshing the host lobby or an active host screen must reconnect as organizer and restore the same room instead of returning to the game catalog while players remain in the old lobby.
 
@@ -1288,12 +1273,12 @@ Spark costs:
 Bonuses and packs:
 
 - Signup bonus: `SIGNUP_BONUS_TOKENS`, currently 20.
-- Daily bonus: `DAILY_BONUS_TOKENS`, currently 10.
-- Paid token pack: `TOKEN_PACK_AMOUNT`, currently 110.
+- Daily login bonus: `min(STREAK_BASE + (streak - 1) × STREAK_STEP, STREAK_MAX)`, defaults 10/15/20/25/30 Sparks; a missed day resets the streak. Wallet cap can reduce the actual credit.
+- Paid packs: `config.SPARK_PRODUCTS`, 50/200/500 Sparks. `TOKEN_PACK_AMOUNT=110` is a legacy no-SKU webhook fallback, not the current checkout catalog.
 
 Billing:
 
-- Spark packs sell on a unified three-tier ladder (50/200/500 @ $1.99/$4.99/$9.99) across web + iOS + Android. The catalog `config.SPARK_PRODUCTS` is the single source of truth for spark amounts. Full plan + status: **`SPEC-IAP.md`** (RevenueCat-based native IAP; backend + web/frontend implemented 2026-06-29; native plugin install + store/RevenueCat console setup pending).
+- Spark packs sell on a unified three-tier ladder (50/200/500 @ $1.99/$4.99/$9.99) across web + iOS + Android. The catalog `config.SPARK_PRODUCTS` is the single source of truth for spark amounts. Full plan + status: **`SPEC-IAP.md`** (RevenueCat-based native IAP; backend + web/frontend implemented 2026-06-29; native RevenueCat plugin present; per-store activation and release evidence tracked separately in DEPLOY.md).
 - Web purchases use Stripe Checkout (`/checkout/create` takes a `sku`).
 - Native iOS **and Android** requests are blocked from Stripe checkout and directed to in-app purchase; native purchases are fulfilled by `POST /webhook/revenuecat` (bearer-authed, idempotent via `webhook_events` + `credit_purchase(reference_id=iap:{store}:{txn})`).
 - Stripe and RevenueCat webhook events are deduplicated in the `webhook_events` table.
@@ -1302,8 +1287,8 @@ Important behavior:
 
 - Generation endpoints preflight-check balance, but generated content is charged only when it first becomes playable through `/room/create` or a room reset. If room creation/reset fails, no generation spark is taken.
 - Room creation is otherwise free.
-- Game start and room reset charge room-start sparks.
-- iOS native clients are blocked from Stripe checkout by `/checkout/create`; native iOS purchases are expected to use in-app purchase paths when implemented.
+- A successful `START_GAME` consumes the room cost or an eligible party-grace use once, after player gates pass. `RESET_ROOM` stages the next lobby without a room charge.
+- Stripe fulfillment requires a settled checkout (`paid` or `no_payment_required`), a session id, and a verified webhook. Delayed payment success is handled by `checkout.session.async_payment_succeeded`; provider event subscription must be checked before enabling delayed methods. Session-reference deduplication protects the financial credit. See `SPEC-IAP.md`.
 
 ### Historical Monetization Context
 
@@ -1357,7 +1342,7 @@ Current behavior:
 - `POST /auth/signin` accepts provider, id token, and device id.
 - Supported providers are `google` and `apple`.
 - `GET /auth/me` returns the current signed-in user and token status.
-- Frontend session revalidation treats `401/403` from `/auth/me` as an invalid session and signs out, but treats timeouts/network/server errors as transient and keeps the cached signed-in user/session. A slow mobile network must not silently clear a valid login.
+- Frontend session revalidation treats `401/403/410` from `/auth/me` as an invalid session and signs out, but treats timeouts/network/server errors as transient and keeps the cached signed-in user/session. A slow mobile network must not silently clear a valid login.
 - Sign-in and sign-out dispatch `refresh-sparks` so the spark badge refetches the current wallet balance after switching between device and signed-in wallets.
 - Sign-in migrates in-memory game history entries from the device wallet id to the signed-in user id.
 - Token/wallet status is resolved through the current spark economy.
@@ -1376,7 +1361,7 @@ Testing commands are documented in `README.md` and the Makefile.
 Common commands:
 
 - `make test`: backend unit and integration tests (excludes e2e and websocket integration).
-- `make test-e2e`: end-to-end tests that call live LLM generation. These tests still use an `@requires_ollama` skip guard, so local Ollama must be running even if generation is configured to use another provider.
+- `make test-e2e`: serial deterministic generation/editing/API/WebSocket integration tests; no live LLM prerequisite. Keep `-s` for the documented sync-TestClient capture/timing issue.
 - `make test-all`: all tests.
 - `make lint`: frontend TypeScript type check.
 - `make build`: frontend production build.
@@ -1406,7 +1391,7 @@ Known notes:
 - `frontend/ios/App/CapApp-SPM/README.md` is generated Capacitor Swift Package Manager scaffolding and says not to modify it manually.
 - Native iOS checkout must avoid Stripe and use in-app purchase paths.
 - The organizer page adjusts join URL generation when running under Capacitor.
-- Historical plans mention secure storage for native device/session tokens; current code should be checked before relying on a specific native storage implementation.
+- `frontend/src/utils/storage.ts` currently uses localStorage on web and native for device/session credentials. Native Keychain/Keystore storage remains future work; Capacitor scaffolding does not provide it automatically.
 
 ## Current Boundaries And Constraints
 
@@ -1426,7 +1411,7 @@ Known pressure points:
 - `socket_manager.py` contains both shared infrastructure and game-specific rules.
 - `Room.quiz` is a generic content field despite the quiz-specific name.
 - `current_question_index`, `QUESTION`, `QUESTION_OVER`, and related message names are reused for non-quiz games.
-- In-memory generated content and in-memory game history do not survive backend restarts.
+- Standalone generated-content dictionaries and rich game history are process-local. Optional room snapshots can recover attached active-room content on the singleton; saved packs, scoped Revelry content/sessions, and wallet game-result summaries use durable storage.
 - Adding many games by direct branching will make socket and page state machines increasingly large.
 
 These are current design facts, not necessarily defects. They should guide any upgrade plan.
@@ -1438,7 +1423,7 @@ Historical review notes were consolidated into this section and the platform spe
 - **Auth error specificity:** `/auth/signin` currently returns `401 Invalid or expired ID token` for several backend failures, including missing `JWT_SECRET`. Split provider-token verification failures from LocalPlay session creation/config failures so the UI and logs point to the real cause.
 - **Sign-in wallet merge verification:** A newly signed-in gamma user showed `0 sparks`. Verify whether guest sparks should merge into the signed-in wallet in all flows, including existing-user re-sign-in and repeated merge rejection paths.
 - **Signed-in balance refresh:** After sign-in, confirm the header spark balance refreshes from the signed-in session and does not keep stale guest-wallet state.
-- **Show answers control:** The organizer/player "show answers" UI currently appears to do nothing. Trace the intended answer-reveal state, WebSocket message, and client rendering path, then add regression coverage.
+- **Answer reveal:** Review answer-key controls and post-round answer reveal are implemented and covered by component/WebSocket tests; preserve the pre-round redaction invariant when extending quiz variants.
 - **Apple web sign-in regression coverage:** Apple sign-in has been verified on gamma and the IONOS production frontend. Manual smoke coverage is documented in `DEPLOY.md`; add browser automation later if we can provide stable test account/session handling for provider popups.
 - **Provider sign-in diagnostics:** Add a narrow admin/debug view or structured log event for sign-in attempts that reports provider, origin, audience, verification stage, and sanitized failure reason without logging tokens.
 - **Auth config startup checks:** Startup currently warns on short `JWT_SECRET`, but missing `JWT_SECRET` is fatal for sign-in. Add a deployment/startup warning that explicitly says Google/Apple sign-in is disabled when `JWT_SECRET`, `GOOGLE_CLIENT_IDS`, or Apple audience config is absent.
@@ -1448,7 +1433,7 @@ Historical review notes were consolidated into this section and the platform spe
 - **Spectator lifecycle:** `SpectatorPage` has reconnect/backoff handling and cleanup guards, but spectator reconnect behavior should be regression-tested when changing room join/leave UI. In particular, verify reconnect still works after manually leaving one spectator room and joining another in the same mounted page.
 - **Spectator/player client-id collision:** Spectators and players use different client id prefixes, so real collisions are unlikely. Still, room cleanup paths should avoid assuming a `client_id` can only ever belong to one connection map.
 - **Reset-room tests:** Older tests once sent `RESET_ROOM` with inline `quiz_data`; current backend expects a valid `content_id`. Keep reset-room tests aligned with the content-id flow.
-- **Remote config announcement shape:** Historical review notes called out partial normalization of announcement entries. If remote config banners are expanded, normalize `type`, `dismissible`, and defaults explicitly.
+- **Remote config resilience:** Non-object backend payloads retain last-good config. Frontend announcements are filtered and normalized individually so one malformed entry cannot discard valid operation/feature flags. Keep deployment kill-switch acceptance separate from these local shape regressions.
 - **Quick play polish:** Add one-tap quick play for games that can start from default/template content, especially Drawing and WMLT. Current setup-first behavior is safer, but too slow for some live party moments.
 - **Shared host action bar (deferred):** Each game's in-game host controls (Bluff, Poker, Chit Pull, Mafia, Photo Clue, etc.) use their own button vocabulary, ordering, and disabled-vs-hidden policy. A shared host action-bar primitive (primary "advance" action + consistently-placed destructive "End Game", uniform disabled policy) would reduce host cognitive load across games. Deferred as a cross-cutting refactor; do it as one focused pass rather than per-game drift.
 - **Spectator social-game results:** Verified that the TV/spectator surface renders each social/prompt game (including its reveal phase) via the per-game `*_SYNC` messages with `controls="spectator"`, so the big screen advances to results rather than sitting on a stale prompt. If a new social game is added, confirm its component renders a spectator reveal/standings view.
@@ -1474,7 +1459,7 @@ Rationale:
 - Active rooms live in process memory through `socket_manager.rooms`.
 - WebSocket connection objects live in process memory.
 - Generated quiz/WMLT content is stored in process memory.
-- Game history is currently in process memory.
+- Rich standalone game history is in process memory; lightweight wallet game results and Revelry session result summaries are durable.
 - Reconnect behavior assumes the room still exists on the same backend process.
 - This architecture is simple and appropriate while LocalPlay is still expanding its game catalog and gameplay loops.
 
@@ -1567,6 +1552,7 @@ Operational follow-up:
 
 ### Release Candidate Requirements
 
+- The 2026-10-10 spec reconciliation changes runtime code. Earlier candidate/gamma evidence is historical and does not qualify these changes. The account-deletion RPC migration is unapplied; Photo Clue now requires a frontend attachment token, so old-client/backend overlap needs a coordinated promotion decision.
 - A candidate identifies immutable runtime source/image, separate IONOS artifact/hash/build inputs, targeted migrations, sanitized config/catalog diff, and the tested Revelry backend/client version pair. Later docs-only HEAD changes do not change runtime identity.
 - Required CI, persistence/concurrency, gamma gameplay/replay/reconnect and actual cross-app lifecycle evidence must be attributable to that candidate. Narrow runtime deltas need explicit rerun rationale; advisory screenshots, camera skips and device/payment gaps must be recorded without claiming full coverage.
 - Production promotion requires the external Revelry workspace scale/identity/idempotency gate, production RPC readiness, compatible frontend/auth settings, preserved production flags, private recoverable backups, named operators and a go/no-go decision. Capture effective request deadlines; increasing a test timeout does not close a consumer performance defect.
@@ -1576,13 +1562,55 @@ Operational follow-up:
 
 ### Product Boundary
 
-LocalPlay is a separate app/platform. It may later integrate with Revelry accounts or let Revelry users launch and play LocalPlay games, but the current system should be treated as LocalPlay first.
+LocalPlay is a separate app/platform with an implemented Revelry launch/content/session/results bridge. Revelry is the party shell; LocalPlay owns game runtime and party-scoped content. Standalone LocalPlay sign-in/wallet identity remains separate from the main Revelry session.
 
 Backlog:
 
 - Clean up docs and user-facing labels that imply LocalPlay and Revelry are the same product.
 - Keep legacy deployment/package names documented where they are real operational facts.
 - Keep the Revelry integration boundary aligned with `SPEC-REVELRY-INTEGRATION.md`: Revelry is launcher/pointer/results surface; LocalPlay owns authoring, media, lobby, gameplay, and results.
+
+## Specification Reconciliation — 2026-10-10
+
+The subsequent paired Revelry repair is specified in
+[SPEC-REVELRY-CONTRACT-REPAIR.md](SPEC-REVELRY-CONTRACT-REPAIR.md): permissions,
+party-scoped content operations, closed-party starts, authoring correlation,
+session-bound browser recovery, fresh fullscreen ingress, persisted callback/poll
+ordering and bounded guarded workspace reconciliation. Its evidence is separate
+from the earlier review counts below. Its additive clock migrations are unapplied
+and its source changes have not been deployed.
+
+All **48 root `SPEC*.md` documents** were read and compared with their backend engines/APIs/adapters, socket paths, frontend components, and existing tests. Current contracts were corrected where documentation lagged; explicit future product work remains future work. The reviewed groups are:
+
+| Group | Documents |
+|---|---|
+| Baseline and economy (12) | This file; Account Deletion, Achievements, Ads, Analytics, Gifting, IAP, Party Grace, Referral, Remote Config, Share Card, Streak Bonus. |
+| Core games/platform (13) | Bingo-Housie, Bingo, Card Engine, Poker, Mafia, Musical Chairs, Quiz Variants, Rules, Stats, Platform, Velvet Theme, TV App, Pass-and-Play. |
+| Social/image games (17) | Acronym, Chit Pull, Common Ground, Drawing, Find Someone Who, Generic Prompt Party, Never Have I Ever, Odd Question, Party Quests, Photo Clue, Story Chain, Survey Says, Two Truths, Who Am I, Word Association, Would You Rather, Image Games. |
+| Integration/persistence (6) | Revelry Integration, Custom Quiz Authoring, Supabase Migration, Room Lifecycle Reliability, Testing, Media Secret Rotation. |
+
+The review fixes hidden information in Poker, Drawing, Who Am I, and Impostor; duplicate scoring/invalid phase actions in Poker, Common Ground, and Party Quests; raw timestamp ordering in Musical Chairs; malformed config fallback; quiz editor/API choice preservation; stats scope labels; snapshot file isolation; settled Stripe fulfillment; account content deletion; and stale authentication identity. Photo Clue now requires a signed owner/asset attachment proof and a ready durable asset record, using the canonical stored URL. Browser checks also found and fixed missing Mafia fallback rules and organizer actions sent before socket readiness. The serial WebSocket tests now share one entered TestClient event loop, with a regression proving organizer/player/spectator portal identity.
+
+Remaining boundaries are explicit in the detailed specs: saved Quiz/Bingo image attachments still need stronger owner/readiness checks; media finalize trusts metadata rather than verifying remote bytes; CDN deletion/authorization is not implemented; standalone stats keyed only by room code omit subsequent replays; rich standalone history remains process-local; TV hosting/remote controls/native packaging are partial; and real provider/store/payment/cross-app deployment acceptance requires its own evidence.
+
+Validation uses private SQLite directories and a fresh disposable local PostgreSQL/PostgREST stack. No hosted/shared database, deployment flags, or published artifacts were changed by this review. The two targeted account-deletion migrations remain unapplied to hosted environments.
+
+Final local qualification of the reconciled working tree on baseline `3a6af36b`:
+
+| Check | Result and scope |
+|---|---|
+| Broad backend (`pytest backend/tests -q --ignore=backend/tests/test_e2e.py -ra`) | **1,716 passed, 82 skipped.** Optional database/dependency checks are exercised separately below; one legacy per-game rules endpoint remains absent and skipped. |
+| Serial WebSocket E2E (`test_e2e.py`) | **21 passed** in each of **25 independent process runs**, unchanged 15-second receive guard. The combined `test_ws_flow.py` + `test_e2e.py` suite also passed **57 tests** in each of three capture-enabled runs; these overlap the broad/socket counts. |
+| Disposable PostgreSQL 16 / PostgREST 12.2.3 | **130 passed, no skips.** Includes both prefix account-deletion migrations, privilege checks, ownership, forced transaction rollback, and persistence/economy/catalog/concurrency parity. Owned containers and network removed afterward. |
+| Frontend (`npm test -- --run --maxWorkers=4`, run alone) | **538 passed across 79 files.** A prior run overlapping the build and four browser workers hit eight wall-clock timeouts; the affected 28 tests passed in isolation with unchanged timeouts, and the complete bounded-worker rerun passed. |
+| Local Chromium catalog/play and podium continuation | **78 passed, 1 skipped** using `e2e-local-stack.sh` on isolated SQLite. The skip is real-camera Photo Clue play; attachment authorization/upload handling has separate API/socket/component coverage, not a live IONOS upload qualification. |
+| Production frontend build | **Passed** (`npm run build`, including `tsc -b`); existing chunk-size/mixed-import warnings remain. |
+| Source hygiene | `git diff --check` and `bash -n scripts/deploy-gcp.sh` passed. |
+
+These results qualify local source behavior, not a new deployed release. Candidate promotion still
+requires current CI and gamma evidence, coordinated frontend/backend rollout for the Photo Clue
+proof contract, the targeted account-deletion RPC migrations, and the provider/native/Revelry
+acceptance gates in the detailed specs and release plan.
 
 ## Markdown Document Currentness
 
