@@ -117,6 +117,9 @@ atomic admission remains governed by `SPEC-LOCALPLAY-CALLBACK-RECOVERY.md`.
    are outside its write scope. Historical migrations remain unchanged.
 2. Apply only the approved targeted gamma migration, then verify columns,
    triggers, service-only RPC privileges, NULL historical clocks and isolation.
+   Reset the new tombstone table's inherited service-role privileges before
+   granting only SELECT, INSERT and UPDATE. The October 10 hosted catalog shows
+   broader defaults; those shared defaults stay unchanged.
    New provider code requires the snapshot-returning `save_quiz_pack` and
    `delete_integration_content` RPCs; missing schema fails closed. Do not deploy
    it against the old RPC shape or apply full bootstrap SQL as an upgrade.

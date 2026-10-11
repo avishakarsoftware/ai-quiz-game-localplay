@@ -19,7 +19,9 @@ CREATE TABLE IF NOT EXISTS public.games_integration_content_tombstones (
   PRIMARY KEY(content_type,content_id)
 );
 ALTER TABLE public.games_integration_content_tombstones ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.games_integration_content_tombstones FROM PUBLIC, anon, authenticated;
+-- Supabase defaults may grant service_role every table privilege. Reset that
+-- inherited ACL too before granting only the operations required here.
+REVOKE ALL ON public.games_integration_content_tombstones FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE ON public.games_integration_content_tombstones TO service_role;
 
 CREATE OR REPLACE FUNCTION public.games_stamp_integration_clock()

@@ -34,7 +34,7 @@ def pg():
     from psycopg.conninfo import conninfo_to_dict, make_conninfo
     assert_local_postgres_dsn(DSN)
     info = json.loads(subprocess.check_output(["docker", "inspect", CONTAINER], text=True))[0]
-    assert info["Config"]["Labels"]["codex.task"] == "localplay-clock-20261010"
+    assert info["Config"]["Labels"]["codex.task"] in {"localplay-clock-20261010","localplay-gamma-schema-20261010"}
     assert not any(mount["Type"] == "bind" for mount in info["Mounts"])
     ports = info["NetworkSettings"]["Ports"]["5432/tcp"]
     assert all(port["HostIp"] == "127.0.0.1" for port in ports)
@@ -132,6 +132,8 @@ def test_prepared_upgrade_isolated_no_backfill_and_old_binary_compatible(legacy_
     before = connection.execute(f"SELECT to_jsonb(c),xmin::text FROM public.{prefix}generated_content c WHERE id='historical'").fetchone()
     other_before = connection.execute(f"SELECT to_jsonb(c),xmin::text FROM public.{other}generated_content c WHERE id='historical'").fetchone()
     migration = (ROOT / f"sql/migrations/20261010T010000_integration_resource_clocks{suffix}.sql").read_text()
+    # Match the hosted project's observed broad public table defaults.
+    connection.execute("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon,authenticated,service_role")
     connection.execute(migration)
     connection.execute(migration)  # Reinstallation must remain evidence-neutral.
     after = connection.execute(f"SELECT to_jsonb(c),xmin::text FROM public.{prefix}generated_content c WHERE id='historical'").fetchone()
@@ -140,6 +142,9 @@ def test_prepared_upgrade_isolated_no_backfill_and_old_binary_compatible(legacy_
     assert connection.execute(f"SELECT to_jsonb(c),xmin::text FROM public.{other}generated_content c WHERE id='historical'").fetchone() == other_before
     assert connection.execute("SELECT value FROM unrelated_clock_sentinel").fetchone()[0] == "untouched"
     assert connection.execute("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name=%s AND column_name='integration_updated_at_us'", (other + "generated_content",)).fetchone()[0] == 0
+    privileges = connection.execute("SELECT privilege_type FROM information_schema.role_table_grants WHERE table_schema='public' AND table_name=%s AND grantee='service_role'", (prefix + "integration_content_tombstones",)).fetchall()
+    assert {item[0] for item in privileges} == {"SELECT","INSERT","UPDATE"}
+    assert connection.execute("SELECT count(*) FROM information_schema.role_table_grants WHERE table_schema='public' AND table_name=%s AND grantee IN ('anon','authenticated','PUBLIC')", (prefix + "integration_content_tombstones",)).fetchone()[0] == 0
     # Rollback code writes only original columns; clocks are provided by the DB.
     first = connection.execute(f"UPDATE public.{prefix}generated_content SET title='Old writer',updated_at=1 WHERE id='historical' RETURNING to_jsonb({prefix}generated_content)").fetchone()[0]
     second = connection.execute(f"UPDATE public.{prefix}generated_content SET title='Old writer again',updated_at=1,integration_updated_at_us=999999999999999999 WHERE id='historical' RETURNING to_jsonb({prefix}generated_content)").fetchone()[0]
